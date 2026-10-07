@@ -1,0 +1,212 @@
+@page "/reports/lcr-display"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+            @if (!_isAuthorized)
+            {
+                <MudAlert Severity="Severity.Warning" Class="ma-4">
+                    You do not have privilege to access this page.
+                </MudAlert>
+            }
+            else
+            {
+                @* --- Header with Export Button --- *@
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:700; color:#1b4a98;">
+                            LCR Display
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" Class="d-flex justify-end">
+                        <MudButton Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   Style="background-color: #000066; color: white; font-size: 11px;"
+                                   OnClick="HandleExport">
+                            Export To Excel
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                @* --- As On Date Label --- *@
+                <div class="px-4 d-flex justify-end">
+                    <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                        @_asOnDateLabel
+                    </MudText>
+                </div>
+
+                @* --- Data Table --- *@
+                <MudItem xs="12" Class="pa-4">
+                    @if (_loading)
+                    {
+                        <div class="d-flex justify-center pa-10">
+                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                            <MudText Class="ml-3">Loading LCR data...</MudText>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudTable Items="_data" Dense="true" Striped="true" Bordered="true" Hover="true"
+                                  FixedHeader="true" Height="600px" Elevation="2"
+                                  Class="fixed-table auto-index-table" Style="font-size:12px;">
+                            <HeaderContent>
+                                <MudTh Style="background-color:#2a2f5b; color:white; width:60px; text-align:center;">S.No</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Particulars</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">@_headerLastFY</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">@_headerPrevDay</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">@_headerAsOnDate</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Variation from Previous Day</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd Style="text-align:center;">@((_data.IndexOf(context) + 1))</MudTd>
+                                <MudTd>@GetVal(context, "Particulars")</MudTd>
+                                <MudTd Style="text-align:right;">@GetVal(context, "LastFY")</MudTd>
+                                <MudTd Style="text-align:right;">@GetVal(context, "PrevDay")</MudTd>
+                                <MudTd Style="text-align:right;">@GetVal(context, "AsOnDate")</MudTd>
+                                <MudTd Style="text-align:right;">@GetVal(context, "Variation")</MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <td colspan="6" style="text-align:center; padding:40px;">
+                                    <MudText Typo="Typo.subtitle1" Color="Color.Error">No records found</MudText>
+                                </td>
+                            </NoRecordsContent>
+                            <PagerContent>
+                                <MudTablePager PageSizeOptions="new int[] { 25, 50, 100 }" />
+                            </PagerContent>
+                        </MudTable>
+                    }
+                </MudItem>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<style>
+    .fixed-table { table-layout: fixed !important; width: 100% !important; }
+    .auto-index-table { counter-reset: rowNumber; }
+    .auto-index-table tbody tr:has(td:nth-child(2)) { counter-increment: rowNumber; }
+</style>
+
+@code {
+    private bool _isAuthorized = false;
+    private bool _loading = true;
+    private string _asOnDateLabel = "";
+    private string _headerLastFY = "Last FY";
+    private string _headerPrevDay = "Previous Day";
+    private string _headerAsOnDate = "As On Date";
+
+    private List<Dictionary<string, object>> _data = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Check if user is CO — only CO users can access this report
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var privilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "";
+            _isAuthorized = privilege == "CO";
+        }
+
+        if (_isAuthorized)
+        {
+            await LoadData();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+
+        try
+        {
+            // Header columns and data rows are independent — load in parallel
+            var headerTask = ReportService.ExecuteRawQueryAsync(
+                "SELECT TOP 1 LastFY, PrevDay, AsOnDate FROM LCR_Data WHERE Variation LIKE '%variation%'");
+            var dataTask = ReportService.ExecuteRawQueryAsync(
+                "SELECT Particulars, LastFY, PrevDay, AsOnDate, Variation FROM LCR_Data WHERE Variation NOT LIKE '%variation%'");
+
+            await Task.WhenAll(headerTask, dataTask);
+
+            var headerData = headerTask.Result;
+            if (headerData.Count > 0)
+            {
+                var headerRow = headerData[0];
+                _headerLastFY = headerRow.TryGetValue("LastFY", out var lfy) ? lfy?.ToString() ?? "Last FY" : "Last FY";
+                _headerPrevDay = headerRow.TryGetValue("PrevDay", out var pd) ? pd?.ToString() ?? "Previous Day" : "Previous Day";
+                _headerAsOnDate = headerRow.TryGetValue("AsOnDate", out var aod) ? aod?.ToString() ?? "As On Date" : "As On Date";
+            }
+
+            _data = dataTask.Result;
+
+            // Get As On Date label (depends on _data having rows)
+            if (_data.Count > 0)
+            {
+                var dateData = await ReportService.ExecuteRawQueryAsync(
+                    "SELECT TOP 1 AsOnDate FROM LCR_Data WHERE 1=1");
+                if (dateData.Count > 0 && dateData[0].TryGetValue("AsOnDate", out var asOnVal))
+                {
+                    _asOnDateLabel = $"(Data Last Updated On - {asOnVal})";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[LCRDisplay] Error loading data");
+        }
+
+        _loading = false;
+    }
+
+    private string GetVal(Dictionary<string, object> row, string key)
+    {
+        return row.TryGetValue(key, out var val) ? val?.ToString() ?? "" : "";
+    }
+
+    private async Task HandleExport()
+    {
+        try
+        {
+            var exportColumns = new List<ColumnConfig>
+            {
+                new ColumnConfig { Header = "Particulars", PropertyName = "Particulars" },
+                new ColumnConfig { Header = _headerLastFY, PropertyName = "LastFY" },
+                new ColumnConfig { Header = _headerPrevDay, PropertyName = "PrevDay" },
+                new ColumnConfig { Header = _headerAsOnDate, PropertyName = "AsOnDate" },
+                new ColumnConfig { Header = "Variation from Previous Day", PropertyName = "Variation" }
+            };
+
+            var bytes = ReportService.ExportToExcel(_data, exportColumns, "LCR_Position");
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                $"LCRData_{AppTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes)
+            );
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[LCRDisplay] Export error");
+        }
+    }
+}

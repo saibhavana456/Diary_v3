@@ -1,0 +1,181 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/delegations"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@using RequestPortal.Web.Pages.Admin.Dialogs
+@inject IUserRepo UserRepo
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject ICurrentUser CurrentUser
+@inject IAuditService AuditSvc
+
+<PageTitle>Delegations</PageTitle>
+
+<PageHeader PageKey="admin-delegations" Title="Delegations" Crumbs="_crumbs"
+            Subtitle="One user acts in another's role for a bounded validity window. Effective roles = direct grants + in-window delegations." />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudPaper Elevation="1" Class="pa-3">
+    <div class="d-flex align-center mb-2">
+        <MudSwitch T="bool" @bind-Value="_currentOnly" Color="Color.Primary" Label="Current only" />
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="Add">Add</MudButton>
+    </div>
+
+    <MudTable Items="@FilteredRows" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+        <HeaderContent>
+            <MudTh>From</MudTh>
+            <MudTh>To (delegate)</MudTh>
+            <MudTh>Role</MudTh>
+            <MudTh>Valid from</MudTh>
+            <MudTh>Valid to</MudTh>
+            <MudTh>Reason</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@UserName(context.FromEmpCode)</MudTd>
+            <MudTd>@UserName(context.ToEmpCode)</MudTd>
+            <MudTd>@RoleName(context.RoleCode)</MudTd>
+            <MudTd>@context.ValidFrom.ToString("yyyy-MM-dd")</MudTd>
+            <MudTd>@context.ValidTo.ToString("yyyy-MM-dd")</MudTd>
+            <MudTd>@(string.IsNullOrEmpty(context.Reason) ? "\u2014" : context.Reason)</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => Edit(context))" aria-label="Edit" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => Delete(context))" aria-label="Delete" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("Delegations"),
+    };
+
+    private List<Delegation> _rows = new();
+    private List<AppRole> _roles = new();
+    private Dictionary<string, string> _userNames = new();
+    private bool _currentOnly = false;
+
+    private IEnumerable<Delegation> FilteredRows =>
+        _currentOnly
+            ? _rows.Where(d => d.ValidFrom <= AppTime.Now && d.ValidTo > AppTime.Now)
+            : _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rolesTask = UserRepo.ListRolesAsync();
+            var reloadTask = ReloadAsync();
+            await Task.WhenAll(rolesTask, reloadTask);
+            _roles = rolesTask.Result.ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Delegations: failed to load roles/delegation data");
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        _rows = (await UserRepo.ListDelegationsAsync(currentOnly: false)).ToList();
+        var codes = _rows.SelectMany(d => new[] { d.FromEmpCode, d.ToEmpCode }).Distinct().ToList();
+        var unknownCodes = codes.Where(c => !_userNames.ContainsKey(c)).ToList();
+        var dict = new Dictionary<string, string>(_userNames);
+        if (unknownCodes.Count > 0)
+        {
+            var users = await UserRepo.GetByEmpCodesAsync(unknownCodes);
+            foreach (var u in users)
+                dict[u.EmpCode] = $"{u.Name} ({u.AdSamAccountName})";
+            foreach (var code in unknownCodes.Where(c => !dict.ContainsKey(c)))
+                dict[code] = code;
+        }
+        _userNames = dict;
+    }
+
+    private string UserName(string empCode) =>
+        _userNames.TryGetValue(empCode, out var n) ? n : empCode;
+
+    private string RoleName(string roleCode) =>
+        _roles.FirstOrDefault(r => r.Code.ToString() == roleCode) is { } r ? $"{r.Name} ({r.Code})" : roleCode;
+
+    private async Task Add()
+    {
+        var dlg = await Dialogs.ShowAsync<DelegationDialog>("Add delegation", new DialogParameters
+        {
+            ["Roles"] = (IReadOnlyList<AppRole>)_roles
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not DelegationDialog.DelegationFormResult f) return;
+        try
+        {
+            var del = new Delegation
+            {
+                FromEmpCode = f.FromEmpCode, ToEmpCode = f.ToEmpCode, RoleCode = f.RoleCode,
+                ValidFrom = f.ValidFrom, ValidTo = f.ValidTo, Reason = f.Reason
+            };
+            var id = await UserRepo.InsertDelegationAsync(del);
+            await AuditSvc.LogAsync(AuditEntityNames.Delegation, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { del.FromEmpCode, del.ToEmpCode, del.RoleCode, del.ValidFrom, del.ValidTo });
+            Snackbar.Add("Delegation added.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Delegations: failed to save delegation");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task Edit(Delegation d)
+    {
+        var fromTask = UserRepo.SearchAsync(d.FromEmpCode, 1);
+        var toTask = UserRepo.SearchAsync(d.ToEmpCode, 1);
+        await Task.WhenAll(fromTask, toTask);
+        var fromResults = fromTask.Result;
+        var toResults = toTask.Result;
+        var dlg = await Dialogs.ShowAsync<DelegationDialog>("Edit delegation", new DialogParameters
+        {
+            ["Roles"] = (IReadOnlyList<AppRole>)_roles,
+            ["FromUser"] = fromResults.FirstOrDefault(),
+            ["ToUser"] = toResults.FirstOrDefault(),
+            ["SelectedRoleCode"] = d.RoleCode,
+            ["ValidFrom"] = (DateTime?)d.ValidFrom, ["ValidTo"] = (DateTime?)d.ValidTo,
+            ["Reason"] = d.Reason
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not DelegationDialog.DelegationFormResult f) return;
+        var old = new { d.FromEmpCode, d.ToEmpCode, d.RoleCode, d.ValidFrom, d.ValidTo };
+        d.FromEmpCode = f.FromEmpCode; d.ToEmpCode = f.ToEmpCode; d.RoleCode = f.RoleCode;
+        d.ValidFrom = f.ValidFrom; d.ValidTo = f.ValidTo; d.Reason = f.Reason;
+        await UserRepo.UpdateDelegationAsync(d);
+        await AuditSvc.LogAsync(AuditEntityNames.Delegation, d.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { d.FromEmpCode, d.ToEmpCode, d.RoleCode, d.ValidFrom, d.ValidTo });
+        Snackbar.Add("Delegation updated.", Severity.Success);
+        await ReloadAsync();
+    }
+
+    private async Task Delete(Delegation d)
+    {
+        var ok = await Dialogs.ShowMessageBox("Delete delegation",
+            "Remove this delegation? The delegate will lose the in-window role grant.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        await UserRepo.DeleteDelegationAsync(d.Id);
+        await AuditSvc.LogAsync(AuditEntityNames.Delegation, d.Id, AuditEntityNames.ActionDelete, CurrentUser.EmpCode, new { d.FromEmpCode, d.ToEmpCode, d.RoleCode }, null);
+        Snackbar.Add("Delegation deleted.", Severity.Info);
+        await ReloadAsync();
+    }
+}

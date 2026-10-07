@@ -1,0 +1,776 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/MaturityDeposits"
+@using Microsoft.JSInterop
+@using System.Linq
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Models
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Maturing Deposits List — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        width: 100%;
+        table-layout: auto !important;
+        border-collapse: collapse;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .thead-dark {
+        background-color: #2a2f5b;
+        color: white;
+    }
+
+        .thead-dark th {
+            border-right: 1px solid #d0d0d0;
+            text-align: center;
+            font-weight: 700;
+            border-bottom: 1px solid #d0d0d0;
+            white-space: nowrap;
+            padding: 8px 6px;
+        }
+
+    /* Serial number column */
+    .col-sno {
+        width: 60px !important;
+        min-width: 50px !important;
+        text-align: center !important;
+    }
+
+    /* WIDE TEXT COLUMNS */
+    .col-zone {
+        width: 240px !important;
+        min-width: 220px !important;
+        max-width: 360px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-region {
+        width: 240px !important;
+        min-width: 220px !important;
+        max-width: 360px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-branch {
+        width: 300px !important;
+        min-width: 260px !important;
+        max-width: 420px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    /* SolID column - only shown for branch */
+    .col-solid {
+        width: 120px !important;
+        min-width: 100px !important;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    /* NUMBER COLUMNS */
+    .col-num {
+        width: 120px !important;
+        min-width: 110px !important;
+        text-align: right !important;
+        white-space: nowrap !important;
+        padding-right: 10px;
+    }
+
+    /* File link column */
+    .col-file {
+        width: 120px !important;
+        min-width: 110px !important;
+        text-align: center !important;
+    }
+
+    .td-left {
+        text-align: left;
+    }
+
+    .td-right {
+        text-align: right;
+    }
+
+    .td-center {
+        text-align: center;
+    }
+
+    .fixed-table td {
+        border-bottom: 1px solid #eee;
+        padding: 6px 6px;
+        vertical-align: middle;
+    }
+
+    .group-divider {
+        border-right: 1px solid silver;
+    }
+
+    .download-link {
+        color: #000066;
+        text-decoration: underline;
+        font-weight: 500;
+        padding: 4px 8px;
+        border-radius: 4px;
+        display: inline-block;
+    }
+
+        .download-link:hover {
+            background-color: #f0f0f0;
+            color: #c8102e;
+        }
+
+    @@media (max-width: 992px) {
+        .col-num {
+            width: 100px !important;
+            min-width: 90px !important;
+        }
+    }
+</style>
+
+<!-- ================== MATURITY DEPOSITS REPORT TABLE ================== -->
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#fff;">
+
+
+
+            <!-- FILTERS -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Zone" Value="_selectedZone" ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">@z["zone_name_eng"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Region" Value="_selectedRegion" ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedZone == "1" || _selectedZone == "all" && _regions.Count == 0)">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">@r["region_name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Branch" Value="_selectedBranch" ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedRegion == "1" || _selectedRegion == "all" && _branches.Count == 0)">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["SOL_ID"].ToString()">@b["Branch_Name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color:#000066; color:#fff; font-size:11px;"
+                               OnClick="OnExport">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- AS ON DATE HEADER -->
+            <div class="px-4 pb-2 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color:#666;">
+                    @_asOnDateLabel
+                </MudText>
+            </div>
+
+            <!-- ================== TABLE ================== -->
+            <div class="mud-table-container px-4 pb-4">
+                <table class="mud-table fixed-table" aria-label="Maturing Deposits Report">
+
+                    <thead class="thead-dark">
+                        <tr>
+                            <th class="col-sno">S No.</th>
+                            <th class="col-zone">Zone</th>
+                            <th class="col-region">Region</th>
+                            <th class="col-branch">Branch</th>
+
+                            @* SOL ID column - only shown for branch login *@
+                            @if (_userPrivilege == "BRANCH")
+                            {
+                                <th class="col-solid">SolID</th>
+                            }
+
+                            <th class="col-num">No of Accounts</th>
+                            <th class="col-num">Total Amount (Lacs)</th>
+                            @* SOL ID column - only shown for branch login *@
+                            @if (_userPrivilege == "BRANCH")
+                            {
+                                <th class="col-file">Download</th>
+                            }
+                            
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @if (_loading)
+                        {
+                            <tr>
+                                <td colspan="@(_userPrivilege == "BRANCH" ? 8 : 7)" class="td-center">
+                                    Loading…
+                                </td>
+                            </tr>
+                        }
+                        else if (_data.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="@(_userPrivilege == "BRANCH" ? 8 : 7)" class="td-center" style="color:crimson;">
+                                    No Data Found!
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            int sno = 1;
+                            @foreach (var row in _data)
+                            {
+                                <tr>
+                                    <td class="td-center col-sno">@sno</td>
+                                    <td class="td-left col-zone">@Get(row, "zone_name_eng")</td>
+                                    <td class="td-left col-region">@Get(row, "region_name")</td>
+                                    <td class="td-left col-branch">@Get(row, "Branch_Name")</td>
+
+                                    @* SOL ID column - only shown for branch login *@
+                                    @if (_userPrivilege == "BRANCH")
+                                    {
+                                        <td class="td-left col-solid">@Get(row, "SolId")</td>
+                                    }
+
+                                    <td class="td-right col-num">@FmtInt(row, "MaturityDepCount")</td>
+                                    <td class="td-right col-num">@FmtDecimal(row, "MaturityDepAmount")</td>
+                                    @if (_userPrivilege == "BRANCH")
+                                    {
+                                        <td class="td-center col-file">
+                                            @if (row.ContainsKey("MaturityDepFileName") && row["MaturityDepFileName"] != null && !string.IsNullOrEmpty(row["MaturityDepFileName"]?.ToString()))
+                                            {
+                                                <a href="@row["MaturityDepFileName"]" target="_blank" class="download-link">Download File</a>
+                                            }
+                                            else
+                                            {
+                                                <span>—</span>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                                sno++;
+                            }
+                        }
+                    </tbody>
+
+                </table>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // Filters
+    private string _selectedZone { get; set; } = "1";
+    private string _selectedRegion { get; set; } = "1";
+    private string _selectedBranch { get; set; } = "1";
+
+    // Lookup data
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+
+    // Main data
+    private List<Dictionary<string, object>> _data = new();
+
+    // UI state
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    // Privilege (replace with actual auth service)
+    private string _userPrivilege = "CO"; // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // Export columns configuration - dynamically built based on privilege
+    private List<ColumnConfig> GetExportColumns()
+    {
+        var cols = new List<ColumnConfig>
+        {
+            new ColumnConfig { Header = "S No.", PropertyName = "SerialNo" },
+            new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng" },
+            new ColumnConfig { Header = "Region", PropertyName = "region_name" },
+            new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name" }
+        };
+
+        // Add SOL ID column only for branch login
+        if (_userPrivilege == "BRANCH")
+        {
+            cols.Add(new ColumnConfig { Header = "SolID", PropertyName = "SolId" });
+        }
+
+        cols.Add(new ColumnConfig { Header = "No of Accounts", PropertyName = "MaturityDepCount", IsNumeric = true, Format = "N0" });
+        cols.Add(new ColumnConfig { Header = "Total Amount (Lacs)", PropertyName = "MaturityDepAmount", IsNumeric = true, Format = "N2" });
+        if (_userPrivilege == "BRANCH")
+        {
+            cols.Add(new ColumnConfig { Header = "File Name", PropertyName = "MaturityDepFileName" });
+        }
+        
+
+        return cols;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // LoadZones and LoadReport are independent — run in parallel
+        await Task.WhenAll(LoadZones(), LoadReport());
+    }
+
+    private async Task LoadZones()
+    {
+        _zones = await ReportService.GetLookupDataAsync("zone_master", "*", "status='A'", "zone_name_eng");
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        _selectedZone = value;
+        _selectedRegion = "1";
+        _selectedBranch = "1";
+
+        if (value != "1" && value != "all")
+        {
+            _regions = await ReportService.GetLookupDataAsync("region_master", "*", $"zone_solid='{value}'", "region_name");
+        }
+        else
+        {
+            _regions.Clear();
+        }
+
+        _branches.Clear();
+        await LoadReport();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        _selectedRegion = value;
+        _selectedBranch = "1";
+
+        if (value != "1" && value != "all")
+        {
+            _branches = await ReportService.GetLookupDataAsync("branch_master",
+                "CONCAT(UPPER(branch_name), '  (', branch_code, ')') As Branch_Name, SOL_ID",
+                $"region_solid='{value}'",
+                "BRANCH_NAME");
+        }
+        else
+        {
+            _branches.Clear();
+        }
+
+        await LoadReport();
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        _selectedBranch = value;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Build SQL query based on privilege and selections
+            string columns = "";
+            string where = "1=1";
+            string groupBy = "";
+            string orderBy = "";
+            bool isDetailed = false;
+
+            // Common join
+            string fromJoin = "FROM MaturingDepositStatus A " +
+                             "JOIN Branch_Master B ON A.SolId = B.SOL_ID ";
+
+            // Common condition from original code
+            where += " AND B.region_solid <> '00000' AND B.region_solid <> ' '";
+
+            // Column projections
+            string SummaryColumns() => @"
+                SUM(A.OverdueDepCount) as MaturityDepCount,
+                SUM(A.OverdueDepAmount) as MaturityDepAmount,
+                'All' as Branch_Name,
+                'All' as region_name,
+                'All' as zone_name_eng,
+                'All' as SolId,
+                NULL as MaturityDepFileName";
+
+            string ZoneColumns() => @"
+                SUM(A.OverdueDepCount) as MaturityDepCount,
+                SUM(A.OverdueDepAmount) as MaturityDepAmount,
+                'All' as Branch_Name,
+                'All' as region_name,
+                B.zone_name_eng,
+                B.Zone_SolId as SolId,
+                NULL as MaturityDepFileName";
+
+            string RegionColumns() => @"
+                SUM(A.OverdueDepCount) as MaturityDepCount,
+                SUM(A.OverdueDepAmount) as MaturityDepAmount,
+                'All' as Branch_Name,
+                B.region_name,
+                B.zone_name_eng,
+                B.region_SolId as SolId,
+                NULL as MaturityDepFileName";
+
+            string BranchSummaryColumns() => @"
+                SUM(A.OverdueDepCount) as MaturityDepCount,
+                SUM(A.OverdueDepAmount) as MaturityDepAmount,
+                B.BRANCH_NAME as Branch_Name,
+                B.region_name,
+                B.zone_name_eng,
+                B.SOL_ID as SolId,
+                NULL as MaturityDepFileName";
+
+            string BranchDetailColumns() => @"
+                A.OverdueDepCount as MaturityDepCount,
+                A.OverdueDepAmount as MaturityDepAmount,
+                A.OverdueDepFileName as MaturityDepFileName,
+                B.BRANCH_NAME as Branch_Name,
+                B.region_name,
+                B.zone_name_eng,
+                B.SOL_ID as SolId";
+
+            // ==================== PRIVILEGE-BASED LOGIC ====================
+
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1") // All(Summary)
+                {
+                    columns = SummaryColumns();
+                }
+                else if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedRegion == "1") // Zonewise Summary
+                    {
+                        columns = ZoneColumns();
+                        groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng";
+                        orderBy = " ORDER BY B.zone_name_eng";
+                    }
+                    else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_selectedBranch == "1") // Regionwise Summary
+                        {
+                            columns = RegionColumns();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name";
+                        }
+                        else // Branchwise (detailed)
+                        {
+                            isDetailed = true;
+                            columns = BranchDetailColumns();
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                        }
+                    }
+                    else // Specific Region
+                    {
+                        where += $" AND B.region_SolId = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1")
+                        {
+                            columns = RegionColumns();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name";
+                        }
+                        else // Branchwise
+                        {
+                            isDetailed = true;
+                            columns = BranchDetailColumns();
+
+                            if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                        }
+                    }
+                }
+                else // Specific Zone
+                {
+                    where += $" AND B.Zone_SolId = '{_selectedZone}'";
+
+                    if (_selectedRegion == "1") // Zone Summary
+                    {
+                        columns = ZoneColumns();
+                        groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng";
+                        orderBy = " ORDER BY B.zone_name_eng";
+                    }
+                    else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_selectedBranch == "1") // Regionwise Summary
+                        {
+                            columns = RegionColumns();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name";
+                        }
+                        else // Branchwise
+                        {
+                            isDetailed = true;
+                            columns = BranchDetailColumns();
+
+                            if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                        }
+                    }
+                    else // Specific Region
+                    {
+                        where += $" AND B.region_SolId = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1")
+                        {
+                            columns = RegionColumns();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name";
+                        }
+                        else // Branchwise
+                        {
+                            isDetailed = true;
+                            columns = BranchDetailColumns();
+
+                            if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND B.Zone_SolId = '{_userZoneSolid}'";
+
+                if (_selectedRegion == "1") // Zone Summary
+                {
+                    columns = SummaryColumns();
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1") // Regionwise Summary
+                    {
+                        columns = RegionColumns();
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name";
+                    }
+                    else // Branchwise
+                    {
+                        isDetailed = true;
+                        columns = BranchDetailColumns();
+
+                        if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                    }
+                }
+                else // Specific Region
+                {
+                    where += $" AND B.region_SolId = '{_selectedRegion}'";
+
+                    if (_selectedBranch == "1")
+                    {
+                        columns = RegionColumns();
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name";
+                    }
+                    else // Branchwise
+                    {
+                        isDetailed = true;
+                        columns = BranchDetailColumns();
+
+                        if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND B.region_SolId = '{_userRegionSolid}'";
+
+                if (_selectedBranch == "1") // Region Summary
+                {
+                    columns = RegionColumns();
+                    groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    orderBy = " ORDER BY B.zone_name_eng, B.region_name";
+                }
+                else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase)) // Branchwise Summary
+                {
+                    columns = BranchSummaryColumns();
+                    groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.SOL_ID";
+                    orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                }
+                else // Specific Branch
+                {
+                    isDetailed = true;
+                    columns = BranchDetailColumns();
+                    where += $" AND B.SOL_ID = '{_selectedBranch}'";
+                    orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                isDetailed = true;
+                where += $" AND B.SOL_ID = '{_userBranchSolid}'";
+                columns = BranchDetailColumns();
+                orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME";
+            }
+
+            // Build final query
+            string finalQuery = $"SELECT {columns} {fromJoin} WHERE {where}{groupBy}{orderBy}";
+
+            // Execute query and fire date lookup in parallel (date doesn't depend on data)
+            var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            var dateTask = GetAsOnDateAsync();
+
+            _data = await dataTask;
+
+            // Transform amounts to Lacs (divide by 100,000) and ensure proper numeric formatting
+            foreach (var row in _data)
+            {
+                if (row.ContainsKey("MaturityDepAmount") && row["MaturityDepAmount"] != null)
+                {
+                    if (decimal.TryParse(row["MaturityDepAmount"]?.ToString(), out decimal amount))
+                    {
+                        row["MaturityDepAmount"] = Math.Round(amount / 100000, 2);
+                    }
+                }
+            }
+
+            // Get As On Date (already running in parallel)
+            string date = await dateTask;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Error loading report: {ex.Message}");
+            _data = new List<Dictionary<string, object>>();
+            _asOnDateLabel = "Data As On - Error loading data (Rs. in Lacs)";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task<string> GetAsOnDateAsync()
+    {
+        try
+        {
+            var dateQuery = "SELECT CONVERT(varchar, MAX(lastupdatedate), 103) as AsOnDate FROM MaturingDepositStatus WHERE 1=1";
+            var result = await ReportService.ExecuteRawQueryAsync(dateQuery);
+
+            if (result.Any() && result[0].ContainsKey("AsOnDate") && result[0]["AsOnDate"] != null)
+            {
+                return result[0]["AsOnDate"]?.ToString() ?? AppTime.Now.ToShortDateString();
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[Maturity] Unhandled error: " + ex.Message);
+            // Fallback to current date
+        }
+
+        return AppTime.Now.ToShortDateString();
+    }
+
+    private async Task OnExport()
+    {
+        try
+        {
+            // Add serial numbers to export data
+            var exportData = new List<Dictionary<string, object>>();
+            int sno = 1;
+
+            foreach (var row in _data)
+            {
+                var exportRow = new Dictionary<string, object>(row);
+                exportRow["SerialNo"] = sno.ToString();
+                exportData.Add(exportRow);
+                sno++;
+            }
+
+            var bytes = ReportService.ExportToExcel(exportData, GetExportColumns(), "MaturityDeposits");
+            await JS.InvokeVoidAsync("BlazorDownloadFile", $"MaturityDeposits_{AppTime.Now:yyyyMMdd}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Export error: {ex.Message}");
+        }
+    }
+
+    // Helper methods for formatting
+    private string Get(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var v) && v != null && v != DBNull.Value)
+            return v.ToString()!;
+        return "—";
+    }
+
+    private string FmtInt(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var v) || v == null || v == DBNull.Value)
+            return "—";
+
+        if (decimal.TryParse(v.ToString(), out var d))
+            return d.ToString("N0");
+
+        return v.ToString()!;
+    }
+
+    private string FmtDecimal(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var v) || v == null || v == DBNull.Value)
+            return "—";
+
+        if (decimal.TryParse(v.ToString(), out var d))
+            return d.ToString("N2");
+
+        return v.ToString()!;
+    }
+}

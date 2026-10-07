@@ -1,0 +1,1556 @@
+@page "/Landing_Dashboard_V2"
+@using ApexCharts
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@inject MyDiary.Web.Features.Landing_Dashboard_V2.Services.ILandingDashboardV2Service DashboardService
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@using MyDiary.Web.Components.Dialogs
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<PageTitle>Home Dashboard — My Diary | Union Bank of India</PageTitle>
+
+<MudGrid Spacing="3">
+    <!-- LEFT: 9 columns -->
+    <MudItem xs="12" md="10">
+
+        <div id="business-page-root" class="mb-4">
+
+            <MudPaper Elevation="0" Class="rounded-lg border" Style="background-color: #ffffff;">
+                <MudCard Class="overflow-hidden h-100" Elevation="2" Style="border-radius:12px;">
+
+                    <MudCardHeader Class="d-flex align-center justify-center text-white"
+                                   Style="height:48px; font-weight:800; letter-spacing:.2px;
+                                  background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                        Home - Dashboard
+                    </MudCardHeader>
+                    @* As on Date *@
+                    <div class="px-4 py-2 d-flex justify-end" style="border-bottom:1px solid #f1f5f9;">
+                        <MudText Typo="Typo.caption" Style="color:#1b4a98; font-weight:700; font-style:italic;">
+                            As on Date: @AppTime.Now.AddDays(-1).ToString("dd-MMM-yyyy")
+                        </MudText>
+                    </div>
+                    @* --- 2x2 Balanced Grid --- *@
+                    <MudGrid Spacing="2" Class="p-3">
+
+
+                        @* 1. Outstanding Book *@
+                        <MudItem xs="12" md="3">
+                            <MudPaper Class="pa-4 border rounded-lg d-flex flex-column" Elevation="0" Style="height: 320px;">
+
+                                <div class="d-flex justify-space-between align-start mb-2">
+                                    <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Business KPIs</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #1572e8; font-weight: 500;">(% Target Achieved)</MudText>
+                                </div>
+
+                                <div class="flex-grow-1 d-flex align-center justify-center">
+                                    @if (_kpiRadial != null && _kpiRadial.Any())
+                                    {
+                                        <ApexChart TItem="MetricData" Options="_radialOptions" Height="240" Width="@("100%")">
+                                            <ApexPointSeries TItem="MetricData"
+                                                             Items="_kpiRadial"
+                                                             Name="Achievement %"
+                                                             SeriesType="SeriesType.RadialBar"
+                                                             XValue="e => e.Category"
+                                                             YValue="e => e.Value" />
+                                        </ApexChart>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2">Calculating KPIs...</MudText>
+                                    }
+                                </div>
+
+                            </MudPaper>
+                        </MudItem>
+
+                        @* 2. Refined Performance Card *@
+                        <MudItem xs="12" md="3">
+                            <MudPaper Class="pa-4 border rounded-lg d-flex flex-column" Elevation="0" Style="height: 320px;">
+                                <div class="d-flex justify-space-between align-center mb-auto">
+                                    <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Total Advances Performance</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #1572e8;">(Amt. in @_advancesUnit)</MudText>
+                                    </div>
+
+                                    <div class="d-flex align-center justify-space-around flex-grow-1">
+                                        @* Left Side: Big Number *@
+                                        <div class="text-center">
+                                            @* Bind to our dynamic Actual variable *@
+                                            <MudText Typo="Typo.h3" Style="color: #1572e8;" Class="fw-bold">@_advancesActualTotal.ToString("0.00")</MudText>
+                                            <MudText Typo="Typo.subtitle1" Class="mud-text-secondary">Actual Total</MudText>
+                                        </div>
+
+                                        @* Right Side: Mini Stats Vertical *@
+                                        <div class="d-flex flex-column gap-4 border-left pl-6">
+                                            <div>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary uppercase">Current (@_currentFY)</MudText>
+                                                @* Bind to our dynamic Current variable *@
+                                                <MudText Typo="Typo.h5" Class="fw-bold">@_advancesCurrent.ToString("0.00")</MudText>
+                                            </div>
+                                            <div>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary uppercase">Target (@_targetFY)</MudText>
+                                                @* Bind to our dynamic Target variable *@
+                                                <MudText Typo="Typo.h5" Class="fw-bold">@_advancesTarget.ToString("0.00")</MudText>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    @* Bottom: Progress Bar *@
+                                    <div class="mt-auto">
+                                        <div class="d-flex justify-space-between mb-1">
+                                            <MudText Typo="Typo.caption" Class="fw-bold">Progress to Target</MudText>
+                                            @* Bind to our safely calculated percentage *@
+                                            <MudText Typo="Typo.caption" Class="fw-bold">@_advancesProgress.ToString("0")%</MudText>
+                                        </div>
+
+                                        <div class="d-flex justify-space-between mt-5 mb-5">
+                                            <MudProgressLinear Color="MudBlazor.Color.Primary" Value="@_advancesProgress" Height="50" Class="rounded-pill" />
+                                        </div>
+                                    </div>
+                                </MudPaper>
+                            </MudItem>
+
+
+
+                            @* 3. Total Advances Growth : Line Chart *@
+                            <MudItem xs="12" md="3">
+                                <MudPaper Class="pa-4 border rounded-lg" Elevation="0" Style="height: 320px;">
+                                    <div class="d-flex justify-space-between align-center mb-2">
+                                        <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Total Advances Growth</MudText>
+                                        <MudText Typo="Typo.caption" Style="color: #1572e8;">(Amt. in Crores)</MudText>
+                                    </div>
+
+                                    @* Added a quick null check to prevent chart rendering before data arrives *@
+                                    @if (_growthTrend != null && _growthTrend.Any())
+                                {
+                                    <ApexChart TItem="MetricData" Options="_lineOptions" Height="240">
+                                        <ApexPointSeries TItem="MetricData"
+                                                         Items="_growthTrend"
+                                                         Name="Advances (Cr)"
+                                                         SeriesType="SeriesType.Area"
+                                                         XValue="@(e => e.Category)"
+                                                         YValue="@(e => e.Value)" />
+                                    </ApexChart>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                        @* 4. Advances Portfolio Overview : Donut Chart *@
+                        <MudItem xs="12" md="3">
+                            <MudPaper Class="pa-4 border rounded-lg d-flex flex-column" Elevation="0" Style="height: 320px;">
+
+                                @* Header Section *@
+                                <div class="d-flex justify-space-between align-center mb-2">
+                                    <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Advances Portfolio</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #1572e8;">(Amt. in Crores)</MudText>
+                                </div>
+
+                                @* ApexChart Section *@
+                                <div class="flex-grow-1 d-flex align-center justify-center">
+                                    @if (_advancesPortfolioItems != null && _advancesPortfolioItems.Any())
+                                    {
+                                        @* We bind directly to your existing _donutOptions2 for identical colors! *@
+                                        <ApexChart TItem="MetricData" Options="_donutOptions" Height="240" Width="@("100%")">
+                                            <ApexPointSeries TItem="MetricData"
+                                                             Items="_advancesPortfolioItems"
+                                                             Name="Advances"
+                                                             SeriesType="SeriesType.Donut"
+                                                             XValue="@(e => e.Category)"
+                                                             YValue="@(e => e.Value)" />
+                                        </ApexChart>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2">Loading chart data...</MudText>
+                                    }
+                                </div>
+
+                            </MudPaper>
+                        </MudItem>
+
+                        @* 5. Total Business *@
+                        <MudItem xs="12" md="3">
+                            @* Adjust md size based on your layout space! *@
+                            <MudPaper Class="pa-4 border rounded-lg" Elevation="0" Style="height: 320px;">
+
+                                @* Flex header matching your previous charts *@
+                                <div class="d-flex justify-space-between align-center mb-2">
+                                    <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Total Business</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #1572e8;">(Amt. in Crores)</MudText>
+                                </div>
+
+                                @* Render Column Chart *@
+                                @if (_totalBusinessTrend != null && _totalBusinessTrend.Any())
+                                {
+                                    <ApexChart TItem="MetricData" Options="_columnOptions" Height="240">
+                                        <ApexPointSeries TItem="MetricData"
+                                                         Items="_totalBusinessTrend"
+                                                         Name="Business (Cr)"
+                                                         SeriesType="SeriesType.Bar"
+                                                         XValue="@(e => e.Category)"
+                                                         YValue="@(e => e.Value)" />
+                                    </ApexChart>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">Loading business data...</MudText>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                        @* 6. Refined Performance Card *@
+                        <MudItem xs="12" md="3">
+                            <MudPaper Class="pa-4 border rounded-lg d-flex flex-column" Elevation="0" Style="height: 320px;">
+                                <div class="d-flex justify-space-between align-center mb-auto">
+                                    <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Total Deposits Performance</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #1572e8;">(Amt. in @_depositsUnit)</MudText>
+                                    </div>
+
+                                    <div class="d-flex align-center justify-space-around flex-grow-1">
+                                        @* Left Side: Big Number *@
+                                        <div class="text-center">
+                                            <MudText Typo="Typo.h3" Style="color: #1572e8;" Class="fw-bold">@_depositsActualTotal.ToString("0.00")</MudText>
+                                            <MudText Typo="Typo.subtitle1" Class="mud-text-secondary">Actual Total</MudText>
+                                        </div>
+
+                                        @* Right Side: Mini Stats Vertical *@
+                                        <div class="d-flex flex-column gap-4 border-left pl-6">
+                                            <div>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary uppercase">Current (@_currentFY)</MudText>
+                                                <MudText Typo="Typo.h5" Class="fw-bold">@_depositsCurrent.ToString("0.00")</MudText>
+                                            </div>
+                                            <div>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary uppercase">Target (@_targetFY)</MudText>
+                                                <MudText Typo="Typo.h5" Class="fw-bold">@_depositsTarget.ToString("0.00")</MudText>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    @* Bottom: Progress Bar *@
+                                    <div class="mt-auto">
+                                        <div class="d-flex justify-space-between mb-1">
+                                            <MudText Typo="Typo.caption" Class="fw-bold">Progress to Target</MudText>
+                                            <MudText Typo="Typo.caption" Class="fw-bold">@_depositsProgress.ToString("0")%</MudText>
+                                        </div>
+
+                                        <div class="d-flex justify-space-between mt-5 mb-5">
+                                            <MudProgressLinear Color="MudBlazor.Color.Primary" Value="@_depositsProgress" Height="50" Class="rounded-pill" />
+                                        </div>
+                                    </div>
+                                </MudPaper>
+                            </MudItem>
+
+                            @* 7. Total Deposits Growth : Line Chart *@
+
+                            <MudItem xs="12" md="3">
+                                <MudPaper Class="pa-4 border rounded-lg" Elevation="0" Style="height: 320px;">
+                                    <div class="d-flex justify-space-between align-center mb-2">
+                                        <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Total Deposits Growth</MudText>
+                                        <MudText Typo="Typo.caption" Style="color: #1572e8;">(Amt. in Crores)</MudText>
+                                    </div>
+
+                                    @* Quick null check to ensure smooth loading *@
+                                    @if (_depositsGrowthTrend != null && _depositsGrowthTrend.Any())
+                                {
+                                    <ApexChart TItem="MetricData" Options="_lineOptions2" Height="240">
+                                        <ApexPointSeries TItem="MetricData"
+                                                         Items="_depositsGrowthTrend"
+                                                         Name="Deposits (Cr)"
+                                                         SeriesType="SeriesType.Area"
+                                                         XValue="@(e => e.Category)"
+                                                         YValue="@(e => e.Value)" />
+                                    </ApexChart>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+
+                        @* 8. Deposits Portfolio  *@
+
+                        <MudItem xs="12" md="3">
+                            <MudPaper Class="pa-4 border rounded-lg d-flex flex-column" Elevation="0" Style="height: 320px;">
+
+                                @* Header Section with Crores indicator *@
+                                <div class="d-flex justify-space-between align-center mb-2">
+                                    <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Deposits Portfolio</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: #1572e8;">(Amt. in Crores)</MudText>
+                                </div>
+
+                                @* ApexChart Section *@
+                                <div class="flex-grow-1 d-flex align-center justify-center">
+                                    @if (_portfolioItems != null && _portfolioItems.Any())
+                                    {
+                                        <ApexChart TItem="MetricData" Options="_donutOptions2" Height="240" Width="@("100%")">
+                                            <ApexPointSeries TItem="MetricData"
+                                                             Items="_portfolioItems"
+                                                             Name="Deposits"
+                                                             SeriesType="SeriesType.Donut"
+                                                             XValue="@(e => e.Category)"
+                                                             YValue="@(e => e.Value)" />
+                                        </ApexChart>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2">Loading chart data...</MudText>
+                                    }
+                                </div>
+
+                            </MudPaper>
+                        </MudItem>
+
+
+                    </MudGrid>
+                </MudCard>
+            </MudPaper>
+        </div>
+
+    </MudItem>
+    <MudItem xs="12" md="2" Style="display: flex; flex-direction: column; max-height: 740px;">
+
+        <MudCard Class="card-profile mb-2" Elevation="1" Style="overflow:hidden; flex: 0 0 auto;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/blogpost1.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 46px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+                <div class="profile-picture text-center">
+                    <div class="avatar avatar-xl">
+
+                        <MudAvatar Size="MudBlazor.Size.Large" Style="background-color: #1b4a98; color: white;">
+                            <MudIcon Icon="@Icons.Material.Filled.Person" Size="MudBlazor.Size.Large" />
+                        </MudAvatar>
+
+@*                         <MudAvatar Size="MudBlazor.Size.Large"
+                                   Style="@($"background-color:{_avatarBg}; color:white; font-weight:700; font-size:1.1rem;")">
+                            @_initials
+                        </MudAvatar> *@
+                    </div>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-1 text-center" Style="padding-top:8px; padding-bottom:4px;">
+                <MudText Typo="Typo.body2">
+                    <div class="name">@_userName</div>
+                    <div class="job">@_userDesignation</div>
+                    <div class="job">(@_userDeptExtraDesc)</div>
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="card-profile mb-2" Elevation="1" Style="overflow:hidden; flex: 0 0 auto;">
+            <div class="card-header"
+                 style="background-image: url('images/Blogpost_2.png');
+                background-repeat: no-repeat;
+                background-size: 120% 120%;
+                height: 46px;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: 700;
+                font-size: 16px;
+                text-align: center;
+                position: relative;">
+                <h2 style="margin:0; font-size:16px; font-weight:700; color:white;">Staff Details</h2>
+            </div>
+
+            <MudCardContent Class="pt-3 pb-3" Style="min-height:0;">
+                <div class="d-flex flex-column gap-3">
+                    <div class="d-flex justify-space-between align-center border-bottom pb-1">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Badge" Size="MudBlazor.Size.Small" Style="color: #1b4a98;" />
+                            <MudText Typo="Typo.body2" Class="fw-bold" Style="color: #666;">Officers</MudText>
+                        </div>
+                        <MudChip T="string" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small" Style="font-weight:700;">
+                            @_staffSummary.OfficerCount
+                        </MudChip>
+                    </div>
+                    <div class="d-flex justify-space-between align-center border-bottom pb-1">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.SupportAgent" Size="MudBlazor.Size.Small" Style="color: #2a9d5c;" />
+                            <MudText Typo="Typo.body2" Class="fw-bold" Style="color: #666;">CSA</MudText>
+                        </div>
+                        <MudChip T="string" Color="MudBlazor.Color.Success" Size="MudBlazor.Size.Small" Style="font-weight:700;">
+                            @_staffSummary.CSACount
+                        </MudChip>
+                    </div>
+                    <div class="d-flex justify-space-between align-center border-bottom pb-1">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Engineering" Size="MudBlazor.Size.Small" Style="color: #e65100;" />
+                            <MudText Typo="Typo.body2" Class="fw-bold" Style="color: #666;">Sub Staff</MudText>
+                        </div>
+                        <MudChip T="string" Color="MudBlazor.Color.Warning" Size="MudBlazor.Size.Small" Style="font-weight:700;">
+                            @_staffSummary.SubStaffCount
+                        </MudChip>
+                    </div>
+                </div>
+                <div class="mt-2 text-center">
+                    <MudButton Variant="Variant.Filled"
+                               Color="MudBlazor.Color.Primary"
+                               Size="MudBlazor.Size.Small"
+                               Class="rounded-pill px-5"
+                               OnClick="NavigateToStaffDetails"
+                               Style="font-weight: 600;">
+                        View Details
+                    </MudButton>
+                </div>
+
+                <MudDivider Class="my-3" />
+
+                <div class="d-flex flex-column gap-4 mt-1">
+                    <div class="d-flex align-center justify-space-between border-bottom pb-1">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Cake" Size="MudBlazor.Size.Small" Style="color: #1565C0;" />
+                            <MudText Typo="Typo.caption" Style="color: #666; font-weight: 600;">Date of Birth</MudText>
+                        </div>
+                        <MudText Typo="Typo.caption" Style="color: #1E3A8A; font-weight: 700;">
+                            @(_dob.HasValue ? _dob.Value.ToString("dd-MMM-yyyy") : "—")
+                        </MudText>
+                    </div>
+                    <div class="d-flex align-center justify-space-between pb-1">
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@Icons.Material.Filled.EventAvailable" Size="MudBlazor.Size.Small" Style="color: #E65100;" />
+                            <MudText Typo="Typo.caption" Style="color: #666; font-weight: 600;">Retirement</MudText>
+                        </div>
+                        <MudText Typo="Typo.caption" Style="color: #1E3A8A; font-weight: 700;">
+                            @(_retirementDate.HasValue ? _retirementDate.Value.ToString("dd-MMM-yyyy") : "—")
+                        </MudText>
+                    </div>
+                </div>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="card-profile mb-0" Elevation="1" Style="overflow:hidden; flex: 0 0 auto;">
+            <div class="card-header"
+                 style="background: linear-gradient(180deg, #c8102e 0%, #a00d25 100%);
+                background-repeat: no-repeat;
+                background-size: 120% 120%;
+                height: 46px;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: 700;
+                font-size: 16px;
+                text-align: center;
+                position: relative;">
+                <h2 style="margin:0; font-size:16px; font-weight:700; color:white;">@(IsCOUser ? "Network Overview" : "Branch Profile")</h2>
+            </div>
+
+            <MudCardContent Class="pa-4" Style="min-height: 220px;">
+                @if (IsCOUser)
+                {
+                    <div class="d-flex flex-column gap-4">
+                        <div class="d-flex align-center">
+                            <div style="background: linear-gradient(135deg, #E3F2FD, #BBDEFB); border-radius: 10px; width: 42px; height: 42px;"
+                                 class="d-flex align-center justify-center mr-3">
+                                <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="MudBlazor.Size.Small" Style="color: #1565C0;" />
+                            </div>
+                            <div class="flex-grow-1">
+                                <MudText Typo="Typo.caption" Style="color: #64748b; font-weight: 600;">Zones</MudText>
+                                <MudText Typo="Typo.h5" Style="color: #1E3A8A; font-weight: 800; line-height: 1.2;">@_entityCounts.ZoneCount</MudText>
+                                </div>
+                            </div>
+
+                            <div class="d-flex align-center">
+                                <div style="background: linear-gradient(135deg, #FFF3E0, #FFE0B2); border-radius: 10px; width: 42px; height: 42px;"
+                                     class="d-flex align-center justify-center mr-3">
+                                    <MudIcon Icon="@Icons.Material.Filled.Map" Size="MudBlazor.Size.Small" Style="color: #E65100;" />
+                                </div>
+                                <div class="flex-grow-1">
+                                    <MudText Typo="Typo.caption" Style="color: #64748b; font-weight: 600;">Regions</MudText>
+                                    <MudText Typo="Typo.h5" Style="color: #1E3A8A; font-weight: 800; line-height: 1.2;">@_entityCounts.RegionCount</MudText>
+                                </div>
+                            </div>
+
+                            <div class="d-flex align-center">
+                                <div style="background: linear-gradient(135deg, #FFEBEE, #FFCDD2); border-radius: 10px; width: 42px; height: 42px;"
+                                     class="d-flex align-center justify-center mr-3">
+                                    <MudIcon Icon="@Icons.Material.Filled.Store" Size="MudBlazor.Size.Small" Style="color: #C62828;" />
+                                </div>
+                                <div class="flex-grow-1">
+                                    <MudText Typo="Typo.caption" Style="color: #64748b; font-weight: 600;">Branches</MudText>
+                                    <MudText Typo="Typo.h5" Style="color: #1E3A8A; font-weight: 800; line-height: 1.2;">@_entityCounts.BranchCount</MudText>
+                                </div>
+                            </div>
+                        </div>
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-4">
+                        <div class="d-flex align-center">
+                            <div style="background-color: #E3F2FD; border-radius: 8px; width: 36px; height: 36px;"
+                                 class="d-flex align-center justify-center mr-3">
+                                <MudIcon Icon="@Icons.Material.Filled.CalendarMonth" Size="MudBlazor.Size.Small" Style="color: #1565C0;" />
+                            </div>
+                            <div>
+                                <MudText Typo="Typo.caption" Style="color: #1b4a98; font-weight: 700;">Opening Date</MudText>
+                                <MudText Typo="Typo.body2" Style="color: #594ae2; font-weight: 800; line-height: 1.2;">@_branchProfile.SolOpnDt?.ToString("dd-MMM-yy")</MudText>
+                                </div>
+                            </div>
+
+                            <div class="d-flex align-center">
+                                <div style="background-color: #FFF3E0; border-radius: 8px; width: 36px; height: 36px;"
+                                     class="d-flex align-center justify-center mr-3">
+                                    <MudIcon Icon="@Icons.Material.Filled.Badge" Size="MudBlazor.Size.Small" Style="color: #E65100;" />
+                                </div>
+                                <div>
+                                    <MudText Typo="Typo.caption" Style="color: #1b4a98; font-weight: 700;">License Number</MudText>
+                                    <MudText Typo="Typo.body2" Style="color: #594ae2; font-weight: 800; line-height: 1.2;">@_branchProfile.LicenseNumber</MudText>
+                                </div>
+                            </div>
+
+                            <div class="d-flex align-center">
+                                <div style="background-color: #FFEBEE; border-radius: 8px; width: 36px; height: 36px;"
+                                     class="d-flex align-center justify-center mr-3">
+                                    <MudIcon Icon="@Icons.Material.Filled.EventBusy" Size="MudBlazor.Size.Small" Style="color: #C62828;" />
+                                </div>
+                                <div>
+                                    <MudText Typo="Typo.caption" Style="color: #1b4a98; font-weight: 700;">Premises Lease Expiry</MudText>
+                                    <MudText Typo="Typo.body2" Style="color: #594ae2; font-weight: 800; line-height: 1.2;">31-Dec-2027</MudText>
+                                </div>
+                            </div>
+                        </div>
+
+                    <div class="mt-2 text-center gap-4">
+                        <MudButton Variant="Variant.Filled"
+                                   Size="MudBlazor.Size.Small"
+                                   Class="rounded-pill px-5"
+                                   OnClick="NavigateToBranchMgmt"
+                                   Style="font-weight: 600; background-color: #c8102e; color: white;">
+                            View Details
+                        </MudButton>
+                    </div>
+                }
+            </MudCardContent>
+        </MudCard>
+
+
+    </MudItem>
+</MudGrid>
+
+<div class="row">
+
+
+    @* A responsive 5-column row on large+ screens, with gutters for spacing *@
+
+
+    @* Repeat this item 5 times with different content *@
+    <div class="col-md-2">
+
+        <div class="card-cell">
+            <MudCard Class="dashboard-bottom-card" Elevation="2" Style="border-radius:12px;">
+                <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:48px; font-weight:800; letter-spacing:.2px;
+                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    <h2 style="margin:0; font-size:1rem; font-weight:800; color:white;">Digital Business</h2>
+                </MudCardHeader>
+                <MudCardContent Class="flex-grow-1" Style="padding:18px; border-top:1px solid #e5ecfb; min-height:140px;">
+                    <ul style="margin:0; padding-left:18px; line-height: 2;" aria-hidden="true">
+                        <li><span class="fw-bold">Shishu Mudra Digital:</span> @GetValue("Shishu Mudra")</li>
+                        <li><span class="fw-bold">Mudra Tarun Kishore Digital:</span> @GetValue("Mudra Tarun Kishore")</li>
+                        <li><span class="fw-bold">Nari Shakti Digital:</span> @GetValue("Nari Shakti")</li>
+                        <li><span class="fw-bold">Union Education Digital:</span> @GetValue("Union Education Digital")</li>
+                    </ul>
+                    <div class="d-flex justify-end mt-2">
+                        <MudText Typo="Typo.caption" Style="color:#555;">*(Amt. in Lakhs)</MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </div>
+    </div>
+
+    <!-- 2) Operations -->
+    <div class="col-md-2">
+        <div class="card-cell">
+            <MudCard Class="dashboard-bottom-card" Elevation="2" Style="border-radius:12px;">
+                <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:48px; font-weight:800; letter-spacing:.2px;
+                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    Operations
+                </MudCardHeader>
+                <MudCardContent Class="flex-grow-1" Style="padding:18px; border-top:1px solid #e5ecfb; min-height:140px;">
+                    <ul style="margin:0; padding-left:18px; line-height: 2;" aria-hidden="true">
+                        @* Hardcoded ATM Values as requested *@
+                        <li><span class="fw-bold">Total ATMs:</span> 100</li>
+                        <li><span class="fw-bold">Live ATMs:</span> 500</li>
+                        <li><span class="fw-bold">ATM Cash Position:</span> 300</li>
+
+                        @* Dynamic Locker Values from Database *@
+                        <li><span class="fw-bold">Total Lockers:</span> @_operationsData.Total_Lockers.ToString("N0")</li>
+                        <li><span class="fw-bold">Vacant Lockers:</span> @_operationsData.Vacant_Lockers.ToString("N0")</li>
+                    </ul>
+                </MudCardContent>
+            </MudCard>
+        </div>
+    </div>
+    <!-- 3) Pending Position -->
+    <div class="col-md-2">
+        <div class="card-cell">
+            <MudCard Class="dashboard-bottom-card" Elevation="2" Style="border-radius:12px;">
+                <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:48px; font-weight:800; letter-spacing:.2px;
+                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    Pending Position
+                </MudCardHeader>
+                <MudCardContent Class="flex-grow-1" Style="padding:18px; border-top:1px solid #e5ecfb; min-height:140px;">
+                    <ul style="margin:0; padding-left:18px; line-height: 2;" aria-hidden="true">
+                        <li><span class="fw-bold">C-KYC:</span> @_pendingData.Ckyc_Pendency.ToString("N0")</li>
+                        <li><span class="fw-bold">Re-KYC:</span> @_pendingData.ReKyc_Pendency.ToString("N0")</li>
+                        <li><span class="fw-bold">Locker Rent Overdue:</span> @_pendingData.Locker_Rent_Overdue.ToString("N2")</li>
+                    </ul>
+                </MudCardContent>
+            </MudCard>
+        </div>
+    </div>
+
+    <!-- 4) Third Party Products -->
+    <div class="col-md-2">
+        <div class="card-cell">
+            <MudCard Class="dashboard-bottom-card" Elevation="2" Style="border-radius:12px;">
+                @* Header Section matching your other stacked headers *@
+                <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:48px; font-weight:800; letter-spacing:.2px;
+                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    Third Party Products
+                </MudCardHeader>
+                <MudCardContent Class="flex-grow-1" Style="padding:18px; border-top:1px solid #e5ecfb; min-height:140px;">
+                    <ul style="margin:0; padding-left:18px; line-height: 2;" aria-hidden="true">
+                        <li><span class="fw-bold">General Insurance:</span> @_tppData.GeneralInsurance.ToString("N2")</li>
+                        <li><span class="fw-bold">Health Insurance:</span> @_tppData.HealthInsurance.ToString("N2")</li>
+                        <li><span class="fw-bold">Life Insurance:</span> @_tppData.LifeInsurance.ToString("N2")</li>
+                        <li><span class="fw-bold">Mutual Funds:</span> @_tppData.MutualFunds.ToString("N2")</li>
+                    </ul>
+                    <div class="d-flex justify-end mt-2">
+                        <MudText Typo="Typo.caption" Style="color:#555;">*(Amt. in Crores)</MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </div>
+    </div>
+    <!-- 5) Digital Banking -->
+    <div class="col-md-2">
+        <div class="card-cell">
+            <MudCard Class="dashboard-bottom-card" Elevation="2" Style="border-radius:12px;">
+                <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:48px; font-weight:800; letter-spacing:.2px;
+                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    Digital Banking
+                </MudCardHeader>
+                <MudCardContent Class="flex-grow-1" Style="padding:18px; border-top:1px solid #e5ecfb; min-height:140px;">
+                    <ul style="margin:0; padding-left:18px; line-height: 2;" aria-hidden="true">
+                        <li>
+                            <span class="fw-bold">Mobile Banking Registered:</span>
+                            @GetDigiBankingText(_digiBankingData.Mobile_Banking_Issued_Count, _digiBankingData.Mobile_Banking_Eligible_Count)
+                        </li>
+                        <li>
+                            <span class="fw-bold">Debit Card Registered:</span>
+                            @GetDigiBankingText(_digiBankingData.Debit_Card_Issued_Count, _digiBankingData.Debit_Card_Eligible_Count)
+                        </li>
+                        <li>
+                            <span class="fw-bold">Internet Banking Registered:</span>
+                            @GetDigiBankingText(_digiBankingData.Internet_Banking_Issued_Count, _digiBankingData.Internet_Banking_Eligible_Count)
+                        </li>
+                        <li>
+                            <span class="fw-bold">Any one Digi Facility Registered:</span>
+                            @GetDigiBankingText(_digiBankingData.Any_One_Facility_Availed_Count, _digiBankingData.Total_Eligible_Count)
+                        </li>
+                    </ul>
+                </MudCardContent>
+            </MudCard>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card-cell">
+            <MudCard Class="dashboard-bottom-card" Elevation="2" Style="border-radius:12px;">
+                <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:48px; font-weight:800; letter-spacing:.2px;
+                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    Financial Inclusion
+                </MudCardHeader>
+                <MudCardContent Class="flex-grow-1" Style="padding:18px; border-top:1px solid #e5ecfb; min-height:140px;">
+                    <ul style="margin:0; padding-left:18px; line-height: 2;" aria-hidden="true">
+                        @* Map these strings to the exact text in your Base table's parameter_name column *@
+                        <li><span class="fw-bold">PMJDY:</span> @GetFIValue("PMJDY")</li>
+                        <li><span class="fw-bold">PMJJBY:</span> @GetFIValue("PMJJBY")</li>
+                        <li><span class="fw-bold">PMSBY:</span> @GetFIValue("PMSBY")</li>
+                        <li><span class="fw-bold">APY:</span> @GetFIValue("APY")</li>
+                    </ul>
+                </MudCardContent>
+            </MudCard>
+        </div>
+    </div>
+
+</div>
+
+
+<style>
+    .category-nav-wrapper {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+    }
+
+    .nav-item {
+        padding: 10px 22px;
+        background-color: #d1e3ff;
+        color: #1e3a8a;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 700;
+        white-space: nowrap;
+        font-size: 0.9rem;
+        transition: 0.2s;
+    }
+
+        .nav-item.active {
+            background-color: #1b4a98;
+            color: #ffffff;
+        }
+
+    .sub-nav-tabs .mud-tab {
+        color: #666 !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        text-transform: none !important;
+        border-bottom: 3px solid transparent;
+    }
+
+        .sub-nav-tabs .mud-tab.mud-tab-active {
+            color: #1b4a98 !important;
+            border-bottom: 3px solid #1b4a98 !important;
+        }
+
+    .sub-nav-tabs .mud-tabs-slider {
+        display: none !important;
+    }
+
+    .custom-toggle {
+        background: #eee;
+        border-radius: 6px;
+        padding: 2px;
+    }
+
+        .custom-toggle .mud-toggle-item {
+            font-size: 0.75rem !important;
+            padding: 4px 12px !important;
+            border: none !important;
+        }
+
+        .custom-toggle .mud-toggle-item-selected {
+            background: #1a2035 !important;
+            color: white !important;
+            border-radius: 4px !important;
+        }
+
+    .border-bottom {
+        border-bottom: 2px solid #f0f0f0;
+    }
+
+    .border-left {
+        border-left: 1px solid #e0e0e0;
+    }
+
+    .fw-bold {
+        font-weight: 700 !important;
+    }
+
+    .uppercase {
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .dashboard-bottom-card {
+        height: 300px; /* ✅ same height for all cards */
+        display: flex;
+        flex-direction: column;
+    }
+
+        .dashboard-bottom-card .mud-card-content {
+            flex: 1 1 auto; /* ✅ take remaining height */
+            overflow-y: auto; /* ✅ enable scrolling if needed */
+        }
+</style>
+
+@code {
+
+    #region Total Advances Performance
+    private TotalAdvancesPerformance _performanceData = new TotalAdvancesPerformance();
+    private string _currentFY = "";
+    private string _targetFY = "";
+    private double _progressPercent = 0;
+    private void CalculateFinancialYears()
+    {
+        var today = AppTime.Today;
+        int startYear = today.Month >= 4 ? today.Year : today.Year - 1;
+
+        _currentFY = $"FY {startYear % 100}";
+        _targetFY = $"FY {(startYear + 1) % 100}";
+    }
+
+    private void CalculateProgress()
+    {
+        if (_performanceData.Target > 0)
+        {
+            _progressPercent = (double)((_performanceData.Current / _performanceData.Target) * 100);
+            if (_progressPercent > 100) _progressPercent = 100;
+        }
+    }
+    #endregion
+
+    #region Prospective Business
+    private List<ProspectiveBusinessSummary> _prospectiveData = new();
+    private string _userRole = "";
+    private string _brSolid = "";
+    private string _regionSolid = "";
+    private string _zoneSolid = "";
+    // Helper method to safely lookup and convert the value to Lakhs
+    private string GetValue(string dbParameterName)
+    {
+        if (_prospectiveData == null || !_prospectiveData.Any())
+            return "0.00";
+
+        var item = _prospectiveData.FirstOrDefault(x => x.Parameter.Equals(dbParameterName, StringComparison.OrdinalIgnoreCase));
+
+        if (item != null)
+        {
+            // Divide by 100,000 to convert to Lakhs
+            decimal amountInLakhs = item.Sanction_Amount / 100000m;
+
+            // Format to 2 decimal places
+            return amountInLakhs.ToString("N2");
+        }
+
+        return "0.00";
+    }
+    #endregion
+
+    #region Financial Inclusion
+    private List<FinancialInclusionSummary> _financialInclusionData = new();
+    private string GetFIValue(string dbParameterName)
+    {
+        if (_financialInclusionData == null || !_financialInclusionData.Any())
+            return "0";
+
+        var item = _financialInclusionData.FirstOrDefault(x => x.Parameter.Equals(dbParameterName, StringComparison.OrdinalIgnoreCase));
+
+        if (item != null)
+        {
+            // "N0" formats as integer with commas (e.g., 5,000). Use .ToString() if you just want "5000"
+            return item.Total_Enrollment.ToString("N0");
+        }
+
+        return "0";
+    }
+    #endregion
+
+    #region Advances Portfolio
+    private List<MetricData> _advancesPortfolioItems = new();
+    #endregion
+
+    #region Deposit Portfolio
+    private List<MetricData> _portfolioItems = new();
+    #endregion
+
+    #region Digital Banking
+    private DigitalBankingSummary _digiBankingData = new();
+    private string GetDigiBankingText(decimal issuedCount, decimal eligibleCount)
+    {
+        // 1. Guard clause to prevent Divide By Zero exceptions
+        decimal percentage = 0m;
+        if (eligibleCount > 0)
+        {
+            percentage = (issuedCount / eligibleCount) * 100m;
+        }
+
+        // 2. Format: "ExactCount (Percentage%)"
+        // "N0" formats integer with commas: 5,234
+        // "N2" formats decimal to two places: 85.45
+        return $"{issuedCount:N0} ({percentage:N2}%)";
+    }
+    #endregion
+
+    #region Operations
+    private OperationsSummary _operationsData = new();
+    #endregion
+
+    #region Business KPIs
+    private List<MetricData> _kpiRadial = new();
+    private ApexChartOptions<MetricData> _radialOptions = new()
+        {
+            Colors = new List<string>
+    {
+        "#c8102e", // Casa
+        "#f39c12", // Deposits
+        "#2a9d5c", // Advances
+        "#1b4a98"  // Business
+    },
+
+            Legend = new Legend
+            {
+                Show = true,
+                Position = LegendPosition.Bottom,
+                HorizontalAlign = ApexCharts.Align.Center,
+                FontSize = "12px",
+                ItemMargin = new LegendItemMargin
+                {
+                    Horizontal = 8,
+                    Vertical = 0
+                }
+            },
+
+            PlotOptions = new PlotOptions
+            {
+                RadialBar = new PlotOptionsRadialBar
+                {
+                    Hollow = new()
+                    {
+                        Size = "35%"   // ✅ slightly bigger hollow for clean text
+                    },
+                    Track = new()
+                    {
+                        StrokeWidth = "100%",
+                        Margin = 6
+                    },
+                    DataLabels = new RadialBarDataLabels
+                    {
+                        // ✅ Hover behavior (dynamic)
+                        Name = new RadialBarDataLabelsName
+                        {
+                            Show = true,
+                            FontSize = "12px",
+                            OffsetY = -10
+                        },
+                        Value = new RadialBarDataLabelsValue
+                        {
+                            Show = true,
+                            FontSize = "16px",
+                            FontWeight = "700",
+                            OffsetY = 8,
+                            Formatter = @"function (val) {
+                                var num = Number(val);
+                                return isNaN(num) ? '' : num.toFixed(1) + '%';
+                            }"
+                        },
+
+                        // ✅ Default center state (non-hover)
+                        Total = new RadialBarDataLabelsTotal
+                        {
+                            Show = true,
+                            Label = "Business",
+                            FontSize = "12px",
+                            FontWeight = "600",
+                            Color = "#64748b",
+                            Formatter = @"function (w) {
+                        return w.globals.series[3].toFixed(1) + '%';
+                    }"
+                        }
+                    }
+                }
+            },
+
+            Stroke = new Stroke
+            {
+                LineCap = LineCap.Round
+            }
+        };
+    private decimal CalculateAchievement(decimal current, decimal target)
+    {
+        if (target > 0)
+        {
+            decimal percentage = (current / target) * 100m;
+            return Math.Round(percentage, 2);
+        }
+        return 0m;
+    }
+    #endregion
+
+    #region Common
+    public enum ValueUnit
+    {
+        Thousand,
+        Lakh,
+        Crore,
+        ThousandCrore
+    }
+
+    private (decimal scaledValue, string unitLabel) ScaleValue(decimal valueInRupees)
+    {
+        if (valueInRupees >= 1_000_000_000_000m) // ≥ 1,000 Cr
+            return (valueInRupees / 1_000_000_000_000m, "Thousand Cr");
+
+        if (valueInRupees >= 10_000_000m) // ≥ 1 Cr
+            return (valueInRupees / 10_000_000m, "Cr");
+
+        if (valueInRupees >= 100_000m) // ≥ 1 Lakh
+            return (valueInRupees / 100_000m, "Lakh");
+
+        return (valueInRupees / 1_000m, "Thousand");
+    }
+
+    private string _advancesUnit = "";
+    private string _depositsUnit = "";
+    #endregion
+
+    #region Total Advances Performance
+    private decimal _advancesActualTotal = 0m;
+    private decimal _advancesCurrent = 0m;
+    private decimal _advancesTarget = 0m;
+    private double _advancesProgress = 0;
+    #endregion
+
+    #region Total Deposits Performance
+    private decimal _depositsActualTotal = 0m;
+    private decimal _depositsCurrent = 0m;
+    private decimal _depositsTarget = 0m;
+    private double _depositsProgress = 0;
+    #endregion
+
+    #region Total Advances Growth
+    private List<MetricData> _growthTrend = new();
+    #endregion
+
+    #region Total Deposits Growth
+    private List<MetricData> _depositsGrowthTrend = new();
+
+    // --- UPDATED: Options for Deposits to match Advances exactly (No zeros, straight text) ---
+    private ApexChartOptions<MetricData> _lineOptions2 = new()
+        {
+            Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+            Stroke = new Stroke { Curve = Curve.Smooth },
+            Colors = new List<string> { "#f39c12" }, // I set this to Orange for Deposits! Change to "#2a9d5c" if you want it Green like Advances.
+
+            Xaxis = new XAxis
+            {
+                Labels = new XAxisLabels { Rotate = 0, RotateAlways = false, HideOverlappingLabels = false }
+            },
+            Yaxis = new List<YAxis>
+        {
+            new YAxis { Labels = new YAxisLabels { Formatter = @"function(val) { return val.toFixed(0); }" } }
+        },
+            Tooltip = new Tooltip
+            {
+                Y = new TooltipY { Formatter = @"function(val) { return val.toFixed(0); }" }
+            }
+        };
+    #endregion
+
+    #region Total Business
+    private List<MetricData> _totalBusinessTrend = new();
+
+    // --- UPDATED: Apply clean formatting to your existing _columnOptions ---
+    private ApexChartOptions<MetricData> _columnOptions = new()
+        {
+            Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+            Colors = new List<string> { "#147ad6" }, // Standard Blue
+
+            // 1. Force X-Axis Labels to stay completely horizontal (linear)
+            Xaxis = new XAxis { Labels = new XAxisLabels { Rotate = 0, RotateAlways = false, HideOverlappingLabels = false } },
+
+            // 2. Remove decimal points/zeros from the left Y-Axis and Tooltips
+            Yaxis = new List<YAxis> { new YAxis { Labels = new YAxisLabels { Formatter = @"function(val) { return val.toFixed(0); }" } } },
+            Tooltip = new Tooltip { Y = new TooltipY { Formatter = @"function(val) { return val.toFixed(0); }" } }
+        };
+    #endregion
+
+    #region Third Party Products
+    private ThirdPartyProductsSummary _tppData = new();
+    #endregion
+
+    #region Pending Positions
+    private PendingPositionSummary _pendingData = new();
+    #endregion
+
+    #region Staff Summary
+    private StaffSummary _staffSummary = new();
+    #endregion
+
+    #region Branch Profile
+    private BranchProfile _branchProfile = new();
+    #endregion
+
+    #region Entity Counts (CO users)
+    private EntityCountSummary _entityCounts = new();
+    private bool IsCOUser => _userRole?.ToUpper().Contains("CO") == true || _userRole?.ToUpper().Contains("CENTRAL") == true;
+    #endregion
+
+    private string ActiveCategory = "Advances";
+    private string ActiveSubCategory = "Total Advances";
+    private string _currentView = "Terminal";
+
+    private List<string> _categories = new() { "Advances", "Deposits", "Income", "Operating Profit", "Compliance", "Digital Banking", "Customer Satisfaction" };
+    private List<string> _subCategories = new() { "Total Advances", "Retail", "MSME", "Agriculture", "Corporate Loans" };
+
+    public class MetricData { public string Category { get; set; } = ""; public decimal Value { get; set; } }
+
+    private ApexChartOptions<MetricData> _areaOptions = new();
+
+    public class XYPoint
+    {
+        public XYPoint() { }
+        public XYPoint(double x, double y) { X = x; Y = y; }
+
+        public double X { get; set; }
+        public double Y { get; set; }
+    }
+
+    private ApexChartOptions<XYPoint> _scatterOptions = new();
+
+    private List<XYPoint> _scatterPoints = new()
+    {
+        new XYPoint { X = 2.5, Y = 4.1 },
+            new XYPoint { X = 3.2, Y = 5.0 },
+            new XYPoint { X = 5.8, Y = 6.2 },
+            new XYPoint { X = 7.4, Y = 3.9 },
+            new XYPoint { X = 6.0, Y = 7.1 },
+            new XYPoint { X = 4.2, Y = 4.8 },
+    };
+
+    // private ApexChartOptions<MetricData> _radialOptions = new();
+    // private List<MetricData> _kpiRadial = new()
+    // {
+
+
+    //     new MetricData { Category = "Uptime", Value = 92 },
+    //      new MetricData { Category = "SLA", Value = 88 },
+    //       new MetricData { Category = "Security", Value = 81 },
+    //        new MetricData { Category = "NPS", Value = 75 }
+    // };
+
+
+
+    private ApexChartOptions<StockPrice> _candleOptions = new();
+    private List<StockPrice> _ohlc = new()
+    {
+       // ✅ Uses property initializers—no custom ctor required
+new StockPrice { Date = new DateTime(2026, 01, 04), Open = 98,  High = 102, Low = 96,  Close = 101 },
+new StockPrice { Date = new DateTime(2026, 01, 05), Open = 101, High = 105, Low = 100, Close = 103 },
+new StockPrice { Date = new DateTime(2026, 01, 06), Open = 103, High = 106, Low = 99,  Close = 100 },
+new StockPrice { Date = new DateTime(2026, 01, 07), Open = 100, High = 104, Low = 98,  Close = 102 },
+    };
+
+
+    public class StockPrice
+    {
+        public DateTime Date { get; set; }
+        public decimal Open { get; set; }
+        public decimal High { get; set; }
+        public decimal Low { get; set; }
+        public decimal Close { get; set; }
+    }
+
+
+
+    private List<MetricData> _revenueData = new()
+{
+    new MetricData { Category = "North", Value = 12_50_00_000m },
+    new MetricData { Category = "South", Value =  9_75_00_000m },
+    new MetricData { Category = "East",  Value =  7_10_00_000m },
+    new MetricData { Category = "West",  Value = 10_90_00_000m },
+};
+    private List<MetricData> _ticketData = new()
+{
+    new MetricData { Category = "Critical", Value = 18 },
+    new MetricData { Category = "High",     Value = 42 },
+    new MetricData { Category = "Medium",   Value = 76 },
+    new MetricData { Category = "Low",      Value = 55 },
+};
+
+
+
+    //private ApexChartOptions<MetricData> _areaOptions = new();
+
+    // ✅ Use object initializers instead of ctor calls
+    private List<MetricData> _growthData = new()
+    {
+        new MetricData { Category = "FY25-Q1", Value = 4.2m },
+        new MetricData { Category = "FY25-Q2", Value = 5.1m },
+        new MetricData { Category = "FY25-Q3", Value = 3.8m },
+        new MetricData { Category = "FY25-Q4", Value = 6.3m },
+    };
+
+    private string _userName = "Test User";
+    private string _userEmail = "test@example.com";
+    private string _userPhone = "";
+    private string _userDesignation = "";
+    private string _userDeptDesc = "";
+    private string _userDeptExtraDesc = "";
+    private DateTime? _dob;
+    private DateTime? _retirementDate;
+
+    // Initials avatar — same logic as MainLayout
+    private string _initials => GetInitials(_userName);
+    private static string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{char.ToUpper(parts[0][0])}{char.ToUpper(parts[^1][0])}"
+            : char.ToUpper(parts[0][0]).ToString();
+    }
+    private static readonly string[] _avatarPalette =
+    {
+        "#1b4a98", "#0d7377", "#6a1b9a", "#c62828",
+        "#2e7d32", "#e65100", "#283593", "#00695c"
+    };
+    private string _avatarBg => _avatarPalette[Math.Abs((_userName ?? "").GetHashCode()) % _avatarPalette.Length];
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load user identity FIRST so role-based UI renders correctly from the start
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userName = user.FindFirst(ClaimTypes.Name)?.Value ?? "Test User";
+            _userEmail = user.FindFirst("email")?.Value ?? "test@example.com";
+            _userPhone = user.FindFirst("phone")?.Value ?? "";
+            _userDesignation = user.FindFirst("employee_designation")?.Value ?? "";
+            _userDeptDesc = user.FindFirst("department_desc")?.Value ?? "";
+            _userDeptExtraDesc = user.FindFirst("department_extra")?.Value ?? "";
+
+            if (DateTime.TryParse(user.FindFirst("date_of_birth")?.Value, out var dob))
+                _dob = dob;
+            if (DateTime.TryParse(user.FindFirst("expected_end_date")?.Value, out var ret))
+                _retirementDate = ret;
+
+            _userRole = user.FindFirst(ClaimTypes.Role)?.Value ?? user.FindFirst("Role")?.Value ?? "";
+            _brSolid = user.FindFirst("br_solid")?.Value ?? "";
+            _regionSolid = user.FindFirst("region_solid")?.Value ?? "";
+            _zoneSolid = user.FindFirst("zone_solid")?.Value ?? "";
+        }
+
+        // Render immediately with correct role-based card before data loads
+        StateHasChanged();
+
+        #region Total Advances Performance
+        CalculateFinancialYears();
+        string currentZone = "Mumbai";
+        string currentRegion = "Mumbai";
+        _performanceData = await DashboardService.GetAdvancesPerformanceAsync(currentZone, currentRegion);
+        CalculateProgress();
+        #endregion
+
+        _prospectiveData = await DashboardService.GetProspectiveBusinessSummaryAsync(
+            _userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        _financialInclusionData = await DashboardService.GetFinancialInclusionSummaryAsync(
+            _userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        var portfolioData = await DashboardService.GetAdvancesPortfolioSummaryAsync(
+            _userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        _advancesPortfolioItems = new List<MetricData>
+        {
+            new MetricData { Category = "Retail", Value = portfolioData.Retail_Amount / 10000000m },
+            new MetricData { Category = "Agri", Value = portfolioData.Agri_Amount / 10000000m },
+            new MetricData { Category = "MSME", Value = portfolioData.MSME_Amount / 10000000m },
+            new MetricData { Category = "Corporate", Value = portfolioData.Corporate_Amount / 10000000m }
+        };
+
+        var depositData = await DashboardService.GetDepositPortfolioSummaryAsync(
+            _userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        _portfolioItems = new List<MetricData>
+        {
+            new MetricData { Category = "CA", Value = depositData.CA_Amount / 10000000m },
+            new MetricData { Category = "SB", Value = depositData.SB_Amount / 10000000m },
+            new MetricData { Category = "TD", Value = depositData.TD_Amount / 10000000m },
+            new MetricData { Category = "RTD", Value = depositData.RTD_Amount / 10000000m }
+        };
+
+        _digiBankingData = await DashboardService.GetDigitalBankingSummaryAsync(
+            _userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        _operationsData = await DashboardService.GetOperationsSummaryAsync(
+        _userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        var currentKpis = await DashboardService.GetBusinessKpiCurrentAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+        var targetKpis = await DashboardService.GetBusinessKpiTargetAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        // Map directly to percentages for the Radial Bar
+        _kpiRadial = new List<MetricData>
+        {
+            new MetricData { Category = "Casa", Value = CalculateAchievement(currentKpis.Casa, targetKpis.Casa) },
+            new MetricData { Category = "Deposits", Value = CalculateAchievement(currentKpis.Deposits, targetKpis.Deposits) },
+            new MetricData { Category = "Advances", Value = CalculateAchievement(currentKpis.Advances, targetKpis.Advances) },
+            new MetricData { Category = "Business", Value = CalculateAchievement(currentKpis.Business, targetKpis.Business) }
+        };
+
+        #region Total Advances Performance
+        var actualAdvances = await DashboardService.GetTotalAdvancesActualAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+        var targetAdvances = await DashboardService.GetTotalAdvancesTargetAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        var actual = ScaleValue(actualAdvances.Actual_Total);
+        var current = ScaleValue(targetAdvances.Last_Target);
+        var target = ScaleValue(targetAdvances.Target);
+        _advancesUnit = actual.unitLabel;
+
+        _advancesActualTotal = actual.scaledValue;
+        _advancesCurrent = current.scaledValue;
+        _advancesTarget = target.scaledValue;
+
+        _advancesProgress = (_advancesTarget - _advancesCurrent) > 0
+            ? (double)(((_advancesActualTotal - _advancesCurrent) / (_advancesTarget - _advancesCurrent)) * 100m)
+            : 0;
+        #endregion
+        #region Total Deposits Performance
+        var actualDeposits = await DashboardService.GetTotalDepositsActualAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+        var targetDeposits = await DashboardService.GetTotalDepositsTargetAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+
+        var depActual = ScaleValue(actualDeposits.Actual_Total);
+        var depCurrent = ScaleValue(targetDeposits.Last_Target);
+        var depTarget = ScaleValue(targetDeposits.Target);
+        _depositsUnit = depActual.unitLabel;
+
+        _depositsActualTotal = depActual.scaledValue;
+        _depositsCurrent = depCurrent.scaledValue;
+        _depositsTarget = depTarget.scaledValue;
+
+        _depositsProgress = (_depositsTarget - _depositsCurrent) > 0
+            ? (double)(((_depositsActualTotal - _depositsCurrent) / (_depositsTarget - _depositsCurrent)) * 100m)
+            : 0;
+
+        #endregion
+        var currentData = await DashboardService.GetAdvancesGrowthCurrentAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+        var lastFyData = await DashboardService.GetAdvancesGrowthLastAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        // 3. Keep the Dynamic Date Labels (Last FY, Last Qtr, Last Month, As On)
+        DateTime now = AppTime.Now;
+        string lblAsOn = now.ToString("MMM yy");
+        string lblLastMonth = now.AddMonths(-1).ToString("MMM yy");
+
+        int currentQuarter = (now.Month - 1) / 3 + 1;
+        int lastQuarterMonth = (currentQuarter - 1) * 3;
+        int lastQuarterYear = now.Year;
+        if (lastQuarterMonth == 0) { lastQuarterMonth = 12; lastQuarterYear--; }
+        string lblLastQtr = new DateTime(lastQuarterYear, lastQuarterMonth, 1).ToString("MMM yy");
+
+        int lastFyYear = now.Month <= 3 ? now.Year - 1 : now.Year;
+        string lblLastFy = new DateTime(lastFyYear, 3, 1).ToString("MMM yy");
+
+        _growthTrend = new List<MetricData>
+        {
+            new MetricData { Category = "Last FY", Value = lastFyData.Last_Year_Value / 10000000m },
+            new MetricData { Category = "Last Quarter", Value = currentData.Last_Quater_Value / 10000000m },
+            new MetricData { Category = "Last Month", Value = currentData.Last_Month_Value / 10000000m },
+            new MetricData { Category = "As On", Value = currentData.Current_Value / 10000000m }
+        };
+
+        // --- NEW: Fetch Deposits Growth Data ---
+        var currentDepData = await DashboardService.GetDepositsGrowthCurrentAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+        var lastFyDepData = await DashboardService.GetDepositsGrowthLastAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        // --- NEW: Map directly to your _depositsGrowthTrend list in Crores ---
+        _depositsGrowthTrend = new List<MetricData>
+        {
+            new MetricData { Category = "Last FY", Value = lastFyDepData.Last_Year_Value / 10000000m },
+            new MetricData { Category = "Last Quarter", Value = currentDepData.Last_Quater_Value / 10000000m },
+            new MetricData { Category = "Last Month", Value = currentDepData.Last_Month_Value / 10000000m },
+            new MetricData { Category = "As On", Value = currentDepData.Current_Value / 10000000m }
+        };
+
+        DateTime now_tb = AppTime.Now;
+        string lblAsOn_tb = now_tb.ToString("MMM yy");                // e.g., "Mar 26"
+        string lblLast1 = now_tb.AddMonths(-1).ToString("MMM yy"); // e.g., "Feb 26"
+        string lblLast2 = now_tb.AddMonths(-2).ToString("MMM yy"); // e.g., "Jan 26"
+        string lblLast3 = now_tb.AddMonths(-3).ToString("MMM yy"); // e.g., "Dec 25"
+
+        // 3. --- FETCH DATA ---
+        var tbData = await DashboardService.GetTotalBusinessSummaryAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        // 4. --- MAP TO CHART (Strict chronological order: Left to Right) ---
+        _totalBusinessTrend = new List<MetricData>
+        {
+            new MetricData { Category = lblLast3, Value = tbData.Last_3_Month_Value / 10000000m },
+            new MetricData { Category = lblLast2, Value = tbData.Last_2_Month_Value / 10000000m },
+            new MetricData { Category = lblLast1, Value = tbData.Last_Month_Value / 10000000m },
+            new MetricData { Category = lblAsOn_tb, Value = tbData.Current_Value / 10000000m }
+        };
+
+        var rawTppData = await DashboardService.GetThirdPartyProductsAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        // Convert to Crores
+        _tppData = new ThirdPartyProductsSummary
+            {
+                GeneralInsurance = rawTppData.GeneralInsurance / 10000000m,
+                HealthInsurance = rawTppData.HealthInsurance / 10000000m,
+                LifeInsurance = rawTppData.LifeInsurance / 10000000m,
+                MutualFunds = rawTppData.MutualFunds / 10000000m
+            };
+
+        _pendingData = await DashboardService.GetPendingPositionAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        try
+        {
+            _staffSummary = await DashboardService.GetStaffSummaryAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Staff summary unavailable: {ex.Message}");
+            // _staffSummary = new StaffSummary { OfficerCount = 2, CSACount = 2 };
+        }
+
+        _branchProfile = await DashboardService.GetBranchProfileAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        if (IsCOUser)
+        {
+            _entityCounts = await DashboardService.GetEntityCountSummaryAsync();
+        }
+
+        _scatterOptions = new ApexChartOptions<XYPoint>
+            {
+                DataLabels = new DataLabels { Enabled = false },
+                Markers = new Markers { Size = 5 },
+                Title = new Title { Text = "Scatter (X vs Y)" }
+            };
+
+
+        _areaOptions = new ApexChartOptions<MetricData>
+            {
+                DataLabels = new DataLabels { Enabled = false },
+                Stroke = new Stroke { Curve = Curve.Smooth, Width = 2 },
+                Fill = new Fill { Type = FillType.Solid, Opacity = 0.25 },
+                Yaxis = new List<YAxis> {
+                new() { Labels = new YAxisLabels { Formatter = "function(v){return v.toFixed(1)+'%'}" } }
+            },
+                // Title = new Title { Text = "Growth %" }
+            };
+
+
+        _candleOptions = new ApexChartOptions<StockPrice>
+            {
+                Xaxis = new XAxis { Type = XAxisType.Datetime }, // time-based OHLC axis
+                // Title = new Title { Text = "Sample" }
+            };
+        StateHasChanged();
+    }
+
+    private List<MetricData> _bookData = new() {
+        new MetricData { Category = "Mar 25", Value = 221043 },
+        new MetricData { Category = "Dec 25", Value = 234241 },
+        new MetricData { Category = "Feb 25", Value = 250544 },
+        new MetricData { Category = "Mar 26", Value = 273798 }
+    };
+
+    private ApexChartOptions<MetricData> _donutOptions = new()
+        {
+            Legend = new Legend { Position = LegendPosition.Bottom },
+            Colors = new List<string> { "#507CA2", "#518CBF", "#89B1D3", "#6294C1" },
+            Tooltip = new Tooltip { Y = new TooltipY { Formatter = @"function(val) { return val.toFixed(2); }" } }
+        };
+    private ApexChartOptions<MetricData> _donutOptions2 = new()
+        {
+            Legend = new Legend
+            {
+                Position = LegendPosition.Bottom
+            },
+            Colors = new List<string>
+    {
+        "#2a9d5c", // Green
+        "#4fb286",
+        "#6cc4a1",
+        "#97d8b9"
+    },
+            Tooltip = new Tooltip { Y = new TooltipY { Formatter = @"function(val) { return val.toFixed(2); }" } }
+        };
+
+    private ApexChartOptions<MetricData> _lineOptions = new()
+        {
+            Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+            Stroke = new Stroke { Curve = Curve.Smooth },
+            Colors = new List<string> { "#2a9d5c" },
+
+            // 1. Force X-Axis Labels to stay completely horizontal (linear)
+            Xaxis = new XAxis
+            {
+                Labels = new XAxisLabels
+                {
+                    Rotate = 0,               // Forces labels to stay 0-degrees straight
+                    RotateAlways = false,
+                    HideOverlappingLabels = false // Ensures they don't disappear if forced straight
+                }
+            },
+
+            // 2. Remove decimal points and zeros from the left Y-Axis
+            Yaxis = new List<YAxis>
+        {
+            new YAxis
+            {
+                Labels = new YAxisLabels
+                {
+                    // This JavaScript snippet tells the chart to round to 0 decimal places
+                    Formatter = @"function(val) { return val.toFixed(0); }"
+                }
+            }
+        },
+
+            // 3. Remove decimal points and zeros from the Tooltip (when you hover over the chart)
+            Tooltip = new Tooltip
+            {
+                Y = new TooltipY
+                {
+                    Formatter = @"function(val) { return val.toFixed(0); }"
+                }
+            }
+        };
+    // private ApexChartOptions<MetricData> _lineOptions2 = new()
+    //     {
+    //         Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+    //         Stroke = new Stroke { Curve = Curve.Smooth },
+    //         Colors = new Lzist<string> { "#2a9d5c" }
+    //     };
+
+    private List<BreadcrumbItem> _breadcrumbs => new() {
+        new BreadcrumbItem("Business", href: "#"),
+        new BreadcrumbItem(ActiveCategory, href: null, disabled: true)
+    };
+
+
+    private void SelectCategory(string category) { ActiveCategory = category; StateHasChanged(); }
+    private void NavigateToStaffDetails() => Nav.NavigateTo("business?tab=staffdetails");
+    private void NavigateToBranchMgmt() => Nav.NavigateTo("business?tab=BranchMgmt");
+
+    private async Task OpenStaffDetailsDialog()
+    {
+        var staffMembers = await DashboardService.GetBranchStaffMembersAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+
+        var parameters = new DialogParameters<StaffDetailsDialog>
+        {
+            { x => x.StaffMembers, staffMembers }
+        };
+
+        var options = new DialogOptions
+            {
+                CloseOnEscapeKey = true,
+                MaxWidth = MaxWidth.ExtraLarge,
+                FullWidth = true
+            };
+
+        await DialogService.ShowAsync<StaffDetailsDialog>("", parameters, options);
+    }
+    private void OnSubTabChanged(int index)
+    {
+        if (index >= 0 && index < _subCategories.Count)
+        {
+            ActiveSubCategory = _subCategories[index];
+            StateHasChanged();
+        }
+    }
+}

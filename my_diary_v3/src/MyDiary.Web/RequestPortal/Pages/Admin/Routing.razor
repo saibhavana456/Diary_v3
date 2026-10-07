@@ -1,0 +1,264 @@
+﻿@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/routing"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@using RequestPortal.Web.Pages.Admin.Dialogs
+@inject IRoutingRepo RoutingRepo
+@inject IMasterRepo MasterRepo
+@inject IUserRepo UserRepo
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject ICurrentUser CurrentUser
+@inject IAuditService AuditSvc
+
+<PageTitle>Routing Rules</PageTitle>
+
+<PageHeader PageKey="admin-routing" Title="Routing Rules" Crumbs="_crumbs"
+            Subtitle="L1 routing picks the most-specific active rule. Ties break on Priority ascending. Primary assignees own the request; others are co-assigned." />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudGrid>
+    <MudItem xs="12" md="7">
+        <MudPaper Elevation="1" Class="pa-3">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle1">Rules</MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddRule">Add</MudButton>
+            </div>
+            <MudTable Items="@_rules" Dense="true" Hover="true" Striped="true" Class="rp-data-table"
+                      OnRowClick="@((TableRowClickEventArgs<RoutingRule> e) => SelectRule(e.Item))"
+                      T="RoutingRule">
+                <HeaderContent>
+                    <MudTh>Pri</MudTh>
+                    <MudTh>Request type</MudTh>
+                    <MudTh>Unit type</MudTh>
+                    <MudTh>Vertical</MudTh>
+                    <MudTh>Dept</MudTh>
+                    <MudTh>Activity</MudTh>
+                    <MudTh>Active</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Priority</MudTd>
+                    <MudTd>@RequestTypeName(context.RequestTypeId)</MudTd>
+                    <MudTd>@(context.UnitTypeId is null ? "\u2014" : _unitTypes.FirstOrDefault(x => x.Id == context.UnitTypeId)?.Name ?? "?")</MudTd>
+                    <MudTd>@(context.VerticalId is null ? "\u2014" : _verticals.FirstOrDefault(x => x.Id == context.VerticalId)?.Name ?? "?")</MudTd>
+                    <MudTd>@(context.DepartmentId is null ? "\u2014" : _departments.FirstOrDefault(x => x.Id == context.DepartmentId)?.Name ?? "?")</MudTd>
+                    <MudTd>@(context.ActivityId is null ? "\u2014" : _activities.FirstOrDefault(x => x.Id == context.ActivityId)?.Name ?? "?")</MudTd>
+                    <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditRule(context))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       OnClick="@(() => ToggleRule(context))" aria-label="Deactivate" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => DeleteRule(context))" aria-label="Delete" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Elevation="1" Class="pa-3">
+            @if (_selected is null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Select a rule to manage its assignees.</MudText>
+            }
+            else
+            {
+                <div class="d-flex align-center mb-2">
+                    <MudText Typo="Typo.subtitle1">Assignees \u2014 rule #@_selected.Id</MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="AddAssignee">Add</MudButton>
+                </div>
+                <MudTable Items="@_assignees" Dense="true" Hover="true" Class="rp-data-table">
+                    <HeaderContent>
+                        <MudTh>User</MudTh>
+                        <MudTh>Primary</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@UserDisplay(context.EmpCode)</MudTd>
+                        <MudTd>@(context.IsPrimary ? "Yes" : "No")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           OnClick="@(() => DeleteAssignee(context))" aria-label="Delete" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("Routing Rules"),
+    };
+
+    private List<RoutingRule> _rules = new();
+    private List<RequestType> _requestTypes = new();
+    private List<UnitType> _unitTypes = new();
+    private List<Vertical> _verticals = new();
+    private List<Department> _departments = new();
+    private List<Activity> _activities = new();
+
+    private RoutingRule? _selected;
+    private List<RoutingAssignee> _assignees = new();
+    private Dictionary<string, string> _userNames = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rtTask   = MasterRepo.ListRequestTypesAllAsync();
+            var utTask   = MasterRepo.ListUnitTypesAllAsync();
+            var vTask    = MasterRepo.ListVerticalsAllAsync();
+            var dTask    = MasterRepo.ListDepartmentsAllAsync(null);
+            var aTask    = MasterRepo.ListActivitiesAllAsync(null);
+            var rulesTask = ReloadRulesAsync();
+
+            await Task.WhenAll(rtTask, utTask, vTask, dTask, aTask, rulesTask);
+
+            _requestTypes = rtTask.Result.ToList();
+            _unitTypes = utTask.Result.ToList();
+            _verticals = vTask.Result.ToList();
+            _departments = dTask.Result.ToList();
+            _activities = aTask.Result.ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Routing: failed to load master data");
+        }
+    }
+
+    private async Task ReloadRulesAsync()
+        => _rules = (await RoutingRepo.ListRulesAsync()).ToList();
+
+    private string RequestTypeName(long id) =>
+        _requestTypes.FirstOrDefault(r => r.Id == id)?.Name ?? "?";
+
+    private string UserDisplay(string empCode) =>
+        _userNames.TryGetValue(empCode, out var n) ? n : empCode;
+
+    private async Task SelectRule(RoutingRule r)
+    {
+        _selected = r;
+        _assignees = (await RoutingRepo.ListAssigneesAsync(r.Id)).ToList();
+        var fresh = new Dictionary<string, string>(_userNames);
+        var unknownCodes = _assignees.Select(a => a.EmpCode)
+            .Where(c => !_userNames.ContainsKey(c)).Distinct().ToList();
+        if (unknownCodes.Count > 0)
+        {
+            var users = await UserRepo.GetByEmpCodesAsync(unknownCodes);
+            foreach (var u in users)
+                fresh[u.EmpCode] = $"{u.Name} ({u.AdSamAccountName})";
+            foreach (var code in unknownCodes.Where(c => !fresh.ContainsKey(c)))
+                fresh[code] = code;
+        }
+        _userNames = fresh;
+    }
+
+    private DialogParameters BuildRuleParams() => new()
+    {
+        ["RequestTypes"] = (IReadOnlyList<RequestType>)_requestTypes,
+        ["UnitTypes"] = (IReadOnlyList<UnitType>)_unitTypes,
+        ["Verticals"] = (IReadOnlyList<Vertical>)_verticals,
+        ["Departments"] = (IReadOnlyList<Department>)_departments,
+        ["Activities"] = (IReadOnlyList<Activity>)_activities
+    };
+
+    private async Task AddRule()
+    {
+        var p = BuildRuleParams();
+        var dlg = await Dialogs.ShowAsync<RoutingRuleDialog>("Add routing rule", p);
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not RoutingRuleDialog.RuleFormResult f) return;
+        var now = DateTime.UtcNow;
+        var rule = new RoutingRule
+        {
+            RequestTypeId = f.RequestTypeId, UnitTypeId = f.UnitTypeId, VerticalId = f.VerticalId,
+            DepartmentId = f.DepartmentId, ActivityId = f.ActivityId, Priority = f.Priority, IsActive = f.IsActive,
+            CreatedByUserId = CurrentUser.UserId, CreatedAt = now
+        };
+        var id = await RoutingRepo.InsertRuleAsync(rule);
+        await AuditSvc.LogAsync(AuditEntityNames.RoutingRule, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { rule.RequestTypeId, rule.Priority, rule.IsActive });
+        Snackbar.Add("Rule added.", Severity.Success);
+        await ReloadRulesAsync();
+    }
+
+    private async Task EditRule(RoutingRule r)
+    {
+        var p = BuildRuleParams();
+        p["RequestTypeId"] = (long?)r.RequestTypeId;
+        p["UnitTypeId"] = r.UnitTypeId; p["VerticalId"] = r.VerticalId;
+        p["DepartmentId"] = r.DepartmentId; p["ActivityId"] = r.ActivityId;
+        p["Priority"] = r.Priority; p["IsActive"] = r.IsActive;
+        var dlg = await Dialogs.ShowAsync<RoutingRuleDialog>("Edit routing rule", p);
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not RoutingRuleDialog.RuleFormResult f) return;
+        var old = new { r.RequestTypeId, r.UnitTypeId, r.VerticalId, r.DepartmentId, r.ActivityId, r.Priority, r.IsActive };
+        r.RequestTypeId = f.RequestTypeId; r.UnitTypeId = f.UnitTypeId; r.VerticalId = f.VerticalId;
+        r.DepartmentId = f.DepartmentId; r.ActivityId = f.ActivityId; r.Priority = f.Priority; r.IsActive = f.IsActive;
+        r.ModifiedByUserId = CurrentUser.UserId; r.ModifiedAt = DateTime.UtcNow;
+        await RoutingRepo.UpdateRuleAsync(r);
+        await AuditSvc.LogAsync(AuditEntityNames.RoutingRule, r.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { r.RequestTypeId, r.Priority, r.IsActive });
+        Snackbar.Add("Rule updated.", Severity.Success);
+        await ReloadRulesAsync();
+    }
+
+    private async Task ToggleRule(RoutingRule r)
+    {
+        var action = r.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await RoutingRepo.SetRuleActiveAsync(r.Id, !r.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.RoutingRule, r.Id, action, CurrentUser.EmpCode, new { r.IsActive }, new { IsActive = !r.IsActive });
+        await ReloadRulesAsync();
+    }
+
+    private async Task DeleteRule(RoutingRule r)
+    {
+        var ok = await Dialogs.ShowMessageBox("Delete rule",
+            "Remove this rule and all its assignees? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        await RoutingRepo.DeleteRuleAsync(r.Id);
+        await AuditSvc.LogAsync(AuditEntityNames.RoutingRule, r.Id, AuditEntityNames.ActionDelete, CurrentUser.EmpCode, new { r.RequestTypeId, r.Priority }, null);
+        if (_selected?.Id == r.Id) { _selected = null; _assignees = new(); }
+        Snackbar.Add("Rule deleted.", Severity.Info);
+        await ReloadRulesAsync();
+    }
+
+    private async Task AddAssignee()
+    {
+        if (_selected is null) return;
+        var dlg = await Dialogs.ShowAsync<AssigneeDialog>("Add assignee", new DialogParameters());
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not AssigneeDialog.AssigneeFormResult f) return;
+        var a = new RoutingAssignee { RuleId = _selected.Id, EmpCode = f.EmpCode, IsPrimary = f.IsPrimary };
+        var id = await RoutingRepo.InsertAssigneeAsync(a);
+        await AuditSvc.LogAsync(AuditEntityNames.RoutingAssignee, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { RuleId = _selected.Id, f.EmpCode, f.IsPrimary });
+        Snackbar.Add("Assignee added.", Severity.Success);
+        await SelectRule(_selected);
+    }
+
+    private async Task DeleteAssignee(RoutingAssignee a)
+    {
+        await RoutingRepo.DeleteAssigneeAsync(a.Id);
+        await AuditSvc.LogAsync(AuditEntityNames.RoutingAssignee, a.Id, AuditEntityNames.ActionDelete, CurrentUser.EmpCode, new { a.RuleId, a.EmpCode }, null);
+        if (_selected is not null) await SelectRule(_selected);
+    }
+}

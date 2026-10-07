@@ -1,0 +1,99 @@
+@using Microsoft.AspNetCore.Components
+@using MudBlazor
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+
+<MudDialog Style="max-width: 95vw;" aria-labelledby="staff-details-dialog-title">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.People" Color="MudBlazor.Color.Primary" aria-hidden="true" />
+            <MudText id="staff-details-dialog-title" Typo="Typo.h6" Style="font-weight: 700; color: #1b4a98;">Staff Details</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_loading)
+        {
+            <div class="d-flex justify-center pa-6" aria-busy="true" aria-label="Loading staff details">
+                <MudProgressCircular Color="MudBlazor.Color.Primary" Indeterminate="true" />
+                <MudText Class="ml-3">Loading staff details...</MudText>
+            </div>
+        }
+        else if (!StaffMembers.Any())
+        {
+            <MudAlert Severity="Severity.Info">No staff records found.</MudAlert>
+        }
+        else
+        {
+            <MudTextField @bind-Value="_search"
+                          Label="Search staff members"
+                          Placeholder="Search by Name, Branch, Designation..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="MudBlazor.Size.Medium"
+                          Immediate="true"
+                          Class="mb-4"
+                          Style="max-width:400px;"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense" />
+
+            <MudTable Items="@FilteredMembers"
+                      Dense="true"
+                      Hover="true"
+                      Bordered="true"
+                      Striped="true"
+                      Elevation="0"
+                      RowsPerPage="25"
+                      Style="border: 1px solid #e2e8f0;"
+                      T="BranchStaffMember">
+                <HeaderContent>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">S.No.</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">Name</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">Branch</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">SolID</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">Region</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">Zone</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">Designation</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">Contact No.</MudTh>
+                    <MudTh Style="background:#1b4a98; color:white; font-weight:700;">Email</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.SNo</MudTd>
+                    <MudTd>@context.Name</MudTd>
+                    <MudTd>@context.Branch</MudTd>
+                    <MudTd>@context.SolId</MudTd>
+                    <MudTd>@context.Region</MudTd>
+                    <MudTd>@context.Zone</MudTd>
+                    <MudTd>@context.Designation</MudTd>
+                    <MudTd>@context.ContactNo</MudTd>
+                    <MudTd>@context.Email</MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="MudBlazor.Color.Primary" Variant="Variant.Filled" Class="rounded-pill px-5">
+            Close
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public List<BranchStaffMember> StaffMembers { get; set; } = new();
+    [Parameter] public bool _loading { get; set; } = false;
+
+    private string _search = "";
+
+    private IEnumerable<BranchStaffMember> FilteredMembers => string.IsNullOrWhiteSpace(_search)
+        ? StaffMembers
+        : StaffMembers.Where(m =>
+            (m.Name?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (m.Branch?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (m.Region?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (m.Zone?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (m.Designation?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private void Close() => MudDialog.Close();
+}

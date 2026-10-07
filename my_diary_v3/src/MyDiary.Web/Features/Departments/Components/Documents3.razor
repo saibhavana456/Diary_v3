@@ -1,0 +1,656 @@
+﻿@page "/documents3/{ActivityID:int}"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+@using MudBlazor
+@using Microsoft.AspNetCore.Components
+@using MyDiary.Web.Features.Departments.Models
+@using MyDiary.Web.Features.Departments.Services
+@using MyDiary.Web.Features.Shared.Services
+@using global::RequestPortal.Web.Shared
+
+@layout MyDiary.Web.Components.Layout.MainLayout
+@inject IDocumentService DocService
+@inject NavigationManager Nav
+@inject IInlineComponentResolver InlineComponents
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .main-content-container {
+        padding: 25px;
+        background: rgba(255,255,255,0.95);
+        min-height: 85vh;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+    }
+
+    .hero-section {
+        background: var(--primary-gradient);
+        color: white;
+        padding: 2rem;
+        border-radius: 16px;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .breadcrumb-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .breadcrumb-link {
+        color: white !important;
+        text-decoration: none;
+        transition: 0.3s;
+    }
+
+        .breadcrumb-link:hover {
+            text-decoration: underline !important;
+        }
+
+    .documents-container {
+        background: white;
+        border-radius: 16px;
+        padding: 25px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+
+    .table-container {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-top: 20px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+    }
+
+    th {
+        background: #f8fafc;
+        padding: 15px;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid #e5e7eb;
+        color: #1E3A8A;
+    }
+
+    td {
+        padding: 15px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+        overflow: hidden;
+    }
+
+    .download-btn {
+        background: var(--primary-gradient);
+        color: white !important;
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 8px 20px;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        transition: 0.3s;
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-size: 0.85rem;
+        border: none;
+        cursor: pointer;
+    }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+    /* Subsection child rows — constrain buttons within container */
+    .child-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        gap: 12px;
+        overflow: hidden;
+    }
+
+        .child-row:last-child {
+            border-bottom: none;
+        }
+
+    .child-row-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 500;
+        color: #1e293b;
+    }
+
+    .child-row .download-btn {
+        padding: 6px 16px;
+        font-size: 0.8rem;
+        min-width: auto;
+    }
+
+    .inline-preview {
+        width: 100%;
+        height: 70vh;
+        border: 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,.08);
+        background: #f8fafc;
+    }
+
+    .inline-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,.08);
+        background: #f8fafc;
+    }
+</style>
+
+@* <div class="main-content-container"> *@
+    @if (result != null)
+    {
+        <PageHeader Title="@result.ActivityName" PageKey="@_pageKey" Crumbs="_crumbs" />
+    }
+
+    <section class="documents-container">
+        <div class="d-flex justify-space-between align-center">
+            <MudText Typo="Typo.h5" Style="font-weight: 700; color: #1E3A8A;">Documents</MudText>
+
+            <div style="margin-left: auto;">
+                <MudTextField T="string"
+                              Value="@searchString"
+                              ValueChanged="@OnSearchDebounced"
+                              Placeholder="Search documents..."
+                              Immediate="true"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Style="width: 300px; border-radius: 25px; background-color: white;" />
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Document Name</th>
+                        <th style="width: 150px; text-align: center;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (result?.Documents != null && result.Documents.Any())
+                    {
+                        @foreach (var doc in result.Documents)
+                        {
+                            <tr>
+                                <td style="font-weight: 600; color: #1e293b;">
+                                    @doc.DocumentName
+                                </td>
+
+                                <td style="text-align: center;">
+                                    @* --- CHANGED: Folder gets View/Hide; others keep original logic --- *@
+                                    @if (IsFolder(doc))
+                                    {
+                                        <MudButton Variant="Variant.Filled"
+                                                   Style="
+                                                     background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+                                                     color: powderblue;
+                                                     min-width: 120px;
+                                                     height: 38px;
+                                                     font-weight: 600;
+                                                     border-radius: 8px;
+                                                     text-transform: none;"
+                                                   Color="Color.Primary"
+                                                   OnClick="@(async () => await ToggleExpandAsync(doc))">
+                                            @((expandedFolders.Contains(doc.DocumentID)) ? "Hide" : "View")
+                                        </MudButton>
+                                    }
+                                    else if (doc.IsJspCompleted)
+                                    {
+
+                                        <MudButton Variant="Variant.Filled"
+                                                   Style="
+                                                     background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+                                                     color: powderblue;
+                                                     min-width: 120px;
+                                                     height: 38px;
+                                                     font-weight: 600;
+                                                     border-radius: 8px;
+                                                     text-transform: none;"
+                                                   Color="Color.Primary"
+                                                   OnClick="@(() => ToggleInline(doc.DocumentID))">
+                                            @((expandedInline == doc.DocumentID) ? "Hide" : "View")
+
+                                        </MudButton>
+                                    }
+                                    else
+                                    {
+                                        <!-- Normal Click Here (existing) -->
+                                        <a href="@ResolveHref(doc.NewFilePath)"
+                                           target="_blank"
+                                           rel="noopener"
+                                           Color="Color.Primary"
+                                           class="download-btn">
+                                            Click Here
+                                        </a>
+                                    }
+                                </td>
+                            </tr>
+
+                            @* --- Collapsible panel(s) --- *@
+
+                            @* For FOLDER: show children as ordered list of links *@
+                            @if (IsFolder(doc) && expandedFolders.Contains(doc.DocumentID))
+                            {
+                                <tr>
+                                    <td colspan="2" style="padding: 0; border: none;">
+                                        <MudPaper Class="pa-4 my-2" Elevation="2" Style="border-radius:12px; overflow:hidden;">
+                                            @if (GetChildrenCached(doc.DocumentID).Count == 0)
+                                            {
+                                                <MudText Typo="Typo.body2" Style="color:#64748b;">
+                                                    No documents found inside this folder.
+                                                </MudText>
+                                            }
+                                            else
+                                            {
+
+                                                <div style="line-height:2; overflow:hidden;">
+                                                    @RenderChildren(doc.DocumentID, 1)
+                                                </div>
+
+                                            }
+                                        </MudPaper>
+                                    </td>
+                                </tr>
+                            }
+
+                            @* For NON-FOLDER: keep your original inline preview rule *@
+                            @if (!IsFolder(doc) && doc.IsJspCompleted && expandedInline == doc.DocumentID)
+                            {
+                                <tr>
+                                    <td colspan="2" style="padding: 0; border: none;">
+                                        <MudPaper Class="pa-4 my-2" Elevation="2" Style="border-radius:12px;">
+                                            @* 1) Inline component for paths like component://{key} *@
+                                            @if (InlineComponents.ResolveFromPath(doc.NewFilePath) is Type compType)
+                                            {
+                                                <DynamicComponent Type="@compType" />
+                                            }
+                                            else if (IsPdf(doc.NewFilePath))
+                                            {
+                                                @* 2) Inline PDF *@
+                                                <iframe src="@doc.NewFilePath" class="inline-preview"></iframe>
+                                            }
+                                            else if (IsImage(doc.NewFilePath))
+                                            {
+                                                @* 3) Inline image *@
+                                                <img src="@doc.NewFilePath" alt="Preview" class="inline-image" />
+                                            }
+
+                                            else if (doc.DocumentType == "Link" && IsWebLink(doc.NewFilePath))
+                                            {
+                                                <iframe src="@doc.NewFilePath"
+                                                        class="inline-preview"
+                                                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups">
+                                                </iframe>
+                                            }
+                                            else if (IsExcel(doc.NewFilePath))
+                                            {
+                                                <div class="d-flex flex-column align-center">
+                                                    <MudText Typo="Typo.body2" Class="mb-2" Style="color:#64748b;">
+                                                        Excel file. Open in new tab:
+                                                    </MudText>
+
+                                                    <a href="@ResolveHref(doc.NewFilePath)"
+                                                       target="_blank"
+                                                       rel="@ResolveRel(ResolveTarget(ResolveHref(doc.NewFilePath)))"
+                                                       class="download-btn">
+                                                        Open Excel File
+                                                    </a>
+                                                </div>
+                                            }
+
+                                            else
+                                            {
+                                                @* 4) Fallback link inside panel *@
+                                                <div class="d-flex flex-column align-center">
+                                                    <MudText Typo="Typo.body2" Class="mb-2" Style="color:#64748b;">
+                                                        Preview unavailable. Open the file:
+                                                    </MudText>
+                                                    <a href="@ResolveHref(doc.NewFilePath)"
+                                                       target="_blank"
+                                                       rel="@ResolveRel(ResolveTarget(ResolveHref(doc.NewFilePath)))"
+                                                       class="download-btn">
+                                                        Open File
+                                                    </a>
+                                                </div>
+                                            }
+                                        </MudPaper>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="2" style="text-align: center; padding: 40px; color: #64748b;">
+                                <MudIcon Icon="@Icons.Material.Filled.Inbox" Style="font-size: 3rem; color: #cbd5e1;" /><br />
+                                No Documents Found
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="d-flex justify-center mt-6">
+            <MudPagination Color="Color.Primary" Count="@totalPages" Selected="@currentPage" SelectedChanged="PageChanged" />
+        </div>
+    </section>
+@* </div> *@
+
+@code {
+    [Parameter] public int ActivityID { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Source { get; set; }
+
+    private DocumentResult? result;
+    private string searchString = "";
+    private int currentPage = 1;
+    private int totalPages = 1;
+    private const int pageSize = 15;
+    private System.Timers.Timer? _debounceTimer;
+
+    // Track which row is expanded
+    // private int? expandedDocId = null;
+
+    private int? expandedInline = null;
+
+    private HashSet<int> expandedFolders = new();
+
+    private bool IsFromDownloads => Source?.Equals("downloads", StringComparison.OrdinalIgnoreCase) == true;
+    private bool IsFromFaqSop    => Source?.Equals("faq-sop",   StringComparison.OrdinalIgnoreCase) == true;
+    private bool IsFromDeptPage  => Source?.StartsWith("dept-page-", StringComparison.OrdinalIgnoreCase) == true;
+
+    private string _pageKey = "documents";
+    private List<PageHeader.Crumb> _crumbs = new();
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        result = await DocService.GetDocumentsByActivityAsync(ActivityID, searchString, currentPage, pageSize);
+        if (result != null)
+        {
+            totalPages = (int)Math.Ceiling((double)result.TotalRecords / pageSize);
+            BuildCrumbs();
+        }
+        StateHasChanged();
+    }
+
+    private void BuildCrumbs()
+    {
+        if (result == null) return;
+
+        if (IsFromDownloads)
+        {
+            _pageKey = "documents-downloads";
+            _crumbs = new() { new("Downloads", "downloads"), new(result.ActivityName) };
+        }
+        else if (IsFromFaqSop)
+        {
+            _pageKey = "documents-faq-sop";
+            _crumbs = new() { new("Knowledge Hub", "circulars"), new("FAQs/SOPs", "faq-sop"), new(result.ActivityName) };
+        }
+        else if (IsFromDeptPage)
+        {
+            var deptKey = Source!["dept-page-".Length..];
+            _pageKey = "documents-dept-page";
+            _crumbs = new() { new("Knowledge Hub", "circulars"), new(deptKey.Replace("-", " ").Replace("_", " "), $"dept-page2/{deptKey}"), new(result.ActivityName) };
+        }
+        else
+        {
+            _pageKey = "documents";
+            _crumbs = new() { new("Departments", "departmentsnew"), new(result.DepartmentName, $"activities?DeptID={result.DepartmentID}"), new(result.ActivityName) };
+        }
+    }
+
+
+    private void ToggleInline(int docId)
+    {
+        expandedInline = expandedInline == docId ? null : docId;
+    }
+
+    private void OnSearchDebounced(string value)
+    {
+        searchString = value;
+        _debounceTimer?.Stop();
+        _debounceTimer?.Dispose();
+
+        _debounceTimer = new System.Timers.Timer(400);
+        _debounceTimer.Elapsed += async (s, e) =>
+        {
+            _debounceTimer.Stop();
+            currentPage = 1;
+            await InvokeAsync(LoadData);
+        };
+        _debounceTimer.Start();
+    }
+
+    private async Task PageChanged(int i)
+    {
+        currentPage = i;
+        await LoadData();
+    }
+
+    private void NavigateBack()
+    {
+        if (IsFromDownloads)
+            Nav.NavigateTo("downloads");
+        else if (IsFromFaqSop)
+            Nav.NavigateTo("faq-sop");
+        else
+            Nav.NavigateTo($"activities?DeptID={result?.DepartmentID}");
+    }
+
+    // -------- File / path helpers (instance methods; use injected InlineComponents) --------
+
+    private bool IsPdf(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+
+
+    private bool IsImage(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var p = path.ToLowerInvariant();
+        return p.EndsWith(".png") || p.EndsWith(".jpg") || p.EndsWith(".jpeg") || p.EndsWith(".gif") || p.EndsWith(".webp");
+    }
+    private bool IsExcel(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        return path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+               path.EndsWith(".xls", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsWebLink(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        return path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+    }
+
+
+    private string ResolveHref(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "#";
+        if (InlineComponents.IsComponentRef(path)) return "#";
+        return path;
+    }
+
+    private string ResolveTarget(string href) =>
+        href.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? "_blank" : "_self";
+
+    private string ResolveRel(string target) =>
+        target == "_blank" ? "noopener" : "nofollow";
+
+    // -------- NEW: Folder helpers using UploadedBy as parentId --------
+    private static bool IsFolder(Document doc) =>
+        !string.IsNullOrWhiteSpace(doc.DocumentType) &&
+        doc.DocumentType.Equals("Folder", StringComparison.OrdinalIgnoreCase);
+
+    // Cache: folderId -> child docs
+    private readonly Dictionary<int, List<Document>> _childrenCache = new();
+
+    private List<Document> GetChildrenCached(int parentId) =>
+        _childrenCache.TryGetValue(parentId, out var list) ? list : new List<Document>();
+
+    private async Task ToggleExpandAsync(Document doc)
+    {
+        if (expandedFolders.Contains(doc.DocumentID))
+        {
+            expandedFolders.Remove(doc.DocumentID);
+            StateHasChanged();
+            return;
+        }
+
+        if (IsFolder(doc) && !_childrenCache.ContainsKey(doc.DocumentID))
+        {
+            var children = await DocService.GetChildDocumentsByParentUploadedByAsync(doc.DocumentID);
+            _childrenCache[doc.DocumentID] = children ?? new List<Document>();
+        }
+
+        expandedFolders.Add(doc.DocumentID);
+        StateHasChanged();
+    }
+
+    private RenderFragment RenderChildren(int parentId, int level) => builder =>
+    {
+        var children = GetChildrenCached(parentId);
+        int seq = 0;
+
+        foreach (var child in children)
+        {
+            // =========================
+            // ROW (TEXT LEFT + BUTTON RIGHT)
+            // =========================
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "child-row");
+            builder.AddAttribute(seq++, "style", $"margin-left:{level * 12}px;");
+
+            // ===== LEFT SIDE (TEXT) =====
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "child-row-name");
+            builder.AddContent(seq++, child.DocumentName);
+            builder.CloseElement();
+
+            // ===== RIGHT SIDE (BUTTON / LINK) =====
+            if (IsFolder(child))
+            {
+                builder.OpenElement(seq++, "button");
+                builder.AddAttribute(seq++, "class", "download-btn");
+                builder.AddAttribute(seq++, "onclick",
+                EventCallback.Factory.Create(this, async () => await ToggleExpandAsync(child)));
+
+                builder.AddContent(seq++, expandedFolders.Contains(child.DocumentID) ? "Hide" : "View");
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(seq++, "a");
+                builder.AddAttribute(seq++, "href", ResolveHref(child.NewFilePath));
+                builder.AddAttribute(seq++, "target", "_blank");
+                builder.AddAttribute(seq++, "class", "download-btn");
+                builder.AddContent(seq++, "Click Here");
+                builder.CloseElement();
+            }
+
+            builder.CloseElement(); // END ROW
+
+            // =========================
+            // CHILDREN (ALWAYS BELOW)
+            // =========================
+            if (IsFolder(child) && expandedFolders.Contains(child.DocumentID))
+            {
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "style", "width:100%;");
+
+                builder.AddContent(seq++, RenderChildren(child.DocumentID, level + 1));
+
+                builder.CloseElement();
+            }
+        }
+    };
+
+
+    // private RenderFragment RenderChildren(int parentId, int level) => builder =>
+    // {
+    //     var children = GetChildrenCached(parentId);
+    //     int seq = 0;
+
+    //     foreach (var child in children)
+    //     {
+    //         builder.OpenElement(seq++, "div");
+    //         builder.AddAttribute(seq++, "style", $"margin-left:{level * 25}px; padding:6px 0; display : flex; justify-content : space-between; align-items:center;");
+    //         //builder.AddAttribute(seq++, "style", $"margin-left:{level * 25}px; padding:4px 0;");
+
+    //         if (IsFolder(child))
+    //         {
+    //             //builder.OpenElement(seq++, "span");
+    //             //builder.AddContent(seq++, "📁 ");
+    //             //builder.CloseElement();
+
+    //             builder.OpenElement(seq++, "span");
+    //            // builder.AddAttribute(seq++, "style", "margin-left:10px;");
+    //             builder.AddContent(seq++, child.DocumentName);
+    //             builder.CloseElement();
+
+    //             builder.OpenElement(seq++, "button");
+    //             builder.AddAttribute(seq++, "class", "download-btn");
+    //             //builder.AddAttribute(seq++, "style", "margin-left:10px;");
+    //             builder.AddAttribute(seq++, "onclick",
+    //             EventCallback.Factory.Create(this, async () => await ToggleExpandAsync(child)));
+
+    //             builder.AddContent(seq++, expandedFolders.Contains(child.DocumentID) ? "Hide" : "View");
+    //             builder.CloseElement();
+
+
+
+    //             if (expandedFolders.Contains(child.DocumentID))
+    //             {
+    //                 builder.AddContent(seq++, RenderChildren(child.DocumentID, level + 1));
+    //             }
+    //         }
+    //         else
+    //         {
+    //             builder.OpenElement(seq++, "span");
+    //             builder.AddContent(seq++, "📄 ");
+    //             builder.CloseElement();
+
+    //             builder.OpenElement(seq++, "a");
+    //             builder.AddAttribute(seq++, "href", ResolveHref(child.NewFilePath));
+    //             builder.AddAttribute(seq++, "target", "_blank");
+    //             builder.AddContent(seq++, child.DocumentName);
+    //             builder.CloseElement();
+    //         }
+
+    //         builder.CloseElement();
+    //     }
+    // };
+}

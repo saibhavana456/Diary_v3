@@ -1,0 +1,61 @@
+@using MudBlazor
+
+<MudGrid GutterSize="24px">
+    @foreach (var card in _cards)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3" Class="d-flex">
+            <div class="app-card-btn" style="width:100%;">
+                <div class="card-content-wrapper">
+                    <div class="d-flex align-start gap-4">
+                        <div class="icon-badge">
+                            <MudIcon Icon="@card.Icon" Style="@($"font-size:2rem; color:{card.IconColor};")" />
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="card-title">@card.Title</div>
+                        </div>
+                    </div>
+                    <MudDivider Class="my-3" />
+                    <div style="font-size:0.85rem; color:#444; flex-grow:1;">
+                        @foreach (var item in card.Items)
+                        {
+                            <div class="mb-1"><b>@item.Key:</b> @item.Value</div>
+                        }
+                    </div>
+                    <div class="d-flex justify-end mt-4">
+                        <MudButton Class="rounded-pill px-4 go-btn-style"
+                                   EndIcon="@Icons.Material.Filled.ArrowRightAlt">
+                            GO
+                        </MudButton>
+                    </div>
+                </div>
+            </div>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private record CardData(string Title, string Icon, string IconColor, List<KeyValuePair<string, string>> Items);
+
+    private readonly List<CardData> _cards = new()
+    {
+        new("Computers", Icons.Material.Filled.Computer, "#1565C0", new()
+        {
+            new("PCs Installed", "12"),
+            new("Working", "11"),
+            new("Under Repair", "1"),
+        }),
+        new("Printers & Scanners", Icons.Material.Filled.Print, "#7B1FA2", new()
+        {
+            new("Printers", "4"),
+            new("Scanners", "3"),
+            new("Passbook Printers", "2"),
+        }),
+        new("NEd TV & IP Phones", Icons.Material.Filled.Tv, "#E65100", new()
+        {
+            new("NEd TV Count", "2"),
+            new("NEd TV Status", "Operational"),
+            new("IP Phones", "8"),
+            new("Extensions", "Ext 201-208"),
+        }),
+    };
+}

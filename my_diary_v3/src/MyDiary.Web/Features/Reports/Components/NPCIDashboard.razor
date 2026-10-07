@@ -1,0 +1,1313 @@
+@page "/reports/NPCIDashboard"
+
+@using MudBlazor
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@using QuestPDF.Fluent
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Authorization
+@using QuestPDF.Helpers
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@using System.Globalization
+@inject AuthenticationStateProvider AuthStateProvider
+@using DrawingColor = System.Drawing.Color
+@using OfficeOpenXml;
+@using OfficeOpenXml.Style;
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>NPCI Dashboard</PageTitle>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+
+        <MudPaper Elevation="0" Style="background-color:#ffffff;">
+
+            <MudGrid Spacing="2" Class="p-2 align-center">
+
+                <!-- Year -->
+
+                <MudItem xs="12" sm="2">
+
+                    <MudSelect T="string"
+                               Label="Year"
+                               Value="_selectedYear"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               ValueChanged="OnYearChanged"
+                               Dense="true">
+
+                        <MudSelectItem T="string" Value="@("ALL")">
+                            All Years
+                        </MudSelectItem>
+
+                        @foreach (var year in _years)
+                        {
+                            <MudSelectItem T="string" Value="@year">
+                                @year
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+
+                </MudItem>
+
+                <!-- Month -->
+
+                <MudItem xs="12" sm="2">
+
+                    <MudSelect T="string"
+                               Label="Month"
+                               Value="_selectedMonth"
+                               ValueChanged="OnMonthChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem T="string"
+                                       Value="@("ALL")">
+                            All Months
+                        </MudSelectItem>
+
+                        @foreach (var month in _months)
+                        {
+                            <MudSelectItem T="string"
+                                           Value="@month.Value">
+                                @month.Text
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+
+                </MudItem>
+
+                <!-- Product -->
+
+                <MudItem xs="12" sm="2">
+
+                    <MudSelect T="string"
+                               Label="Product"
+                               ValueChanged="OnProductChanged"
+                               Value="_selectedProduct"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem T="string"
+                                       Value="@("ALL")">
+                            All Products
+                        </MudSelectItem>
+
+                        @foreach (var product in _products)
+                        {
+                            <MudSelectItem T="string"
+                                           Value="@product">
+                                @product
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+
+                </MudItem>
+
+                <!-- Buttons -->
+
+                <MudItem xs="12" sm="6"
+                         Class="d-flex align-right gap-2">
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               OnClick="LoadData">
+
+                        Load Report
+
+                    </MudButton>
+
+                    @if (_canAdd)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="ShowAdd">
+                            Add New
+                        </MudButton>
+                    }
+
+                    @if (_data.Any())
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.TableChart"
+                                   OnClick="ExportExcel">
+                            Excel
+                        </MudButton>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                                   OnClick="ExportPdf">
+                            PDF
+                        </MudButton>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.FileDownload"
+                                   OnClick="ExportCsv">
+                            CSV
+                        </MudButton>
+                        
+                    }
+
+                </MudItem>
+                @if (_showAdd)
+                {
+                    <MudPaper Class="pa-4 ma-2">
+
+                        <MudGrid Spacing="2">
+
+                            <MudItem xs="12" sm="4">
+                                <MudTextField Label="Product"
+                                              @bind-Value="_product"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Dense="true" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudDatePicker Label="Month"
+                                               @bind-Date="_month"
+                                               PickerVariant="PickerVariant.Dialog"
+                                               Variant="Variant.Outlined"
+                                               Margin="Margin.Dense"
+                                               Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudTextField Label="Remitter Bank"
+                                              @bind-Value="_remitterBank"
+                                              ReadOnly="true"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Dense="true" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Approved Volume(In Million)"
+                                                 @bind-Value="_newApprovedVolume"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Technical Decline Volume(In Million)"
+                                                 @bind-Value="_newTechnicalVolume"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Business Decline Volume(In Million)"
+                                                 @bind-Value="_newBusinessVolume"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Approved Value(In Crore)"
+                                                 @bind-Value="_newApprovedValue"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Technical Decline Value(In Crore)"
+                                                 @bind-Value="_newTechnicalValue"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Business Decline Value(In Crore)"
+                                                 @bind-Value="_newBusinessValue"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Approved Percentage"
+                                                 @bind-Value="_newApprovedPercentage"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Technical Decline Percentage"
+                                                 @bind-Value="_newTechnicalPercentage"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="decimal?"
+                                                 Label="Business Decline Percentage"
+                                                 @bind-Value="_newBusinessPercentage"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="int?"
+                                                 Label="Union Bank of India Rank"
+                                                 @bind-Value="_newRank"
+                                                 Variant="Variant.Outlined"
+                                                 Margin="Margin.Dense"
+                                                 Dense="true" />
+                            </MudItem>
+                        </MudGrid>
+
+                    </MudPaper>
+                    <MudButton Color="Color.Success"
+                               Variant="Variant.Filled"
+                               OnClick="SaveNpciData">
+
+                        Save
+
+                    </MudButton>
+
+                    <MudButton Color="Color.Error"
+                               Variant="Variant.Filled"
+                               Class="ml-2"
+                               OnClick="CancelAdd">
+
+                        Cancel
+
+                    </MudButton>
+                }
+
+            </MudGrid>
+
+            @if (!_loading && _data.Any())
+            {
+                <MudPaper Elevation="1"
+                          Class="mb-3"
+                          Style="overflow:visible">
+
+                    <div class="f360-sec-hdr"
+                         style="background:#0D47A1">
+
+                        <MudIcon Icon="@Icons.Material.Filled.Analytics"
+                                 Size="Size.Small"
+                                 Class="mr-2" />
+
+                        NPCI Summary
+
+                    </div>
+
+                    <MudGrid Spacing="1" Class="pa-2">
+
+                        @InfoCell("Approved Volume (Mn)",
+                                 _approvedVolume.ToString("N2"))
+
+                        @InfoCell("Approved Value (Cr)",
+                                 _approvedValue.ToString("N2"))
+
+                        @InfoCell("Avg Approval %",
+                                 _approvalPct.ToString("N2"))
+
+                        @InfoCell("Avg Rank",
+                                 _avgRank.ToString("N2"))
+
+                    </MudGrid>
+
+                </MudPaper>
+            }
+
+            @if (!_loading)
+            {
+                <MudPaper Elevation="1"
+                          Class="mb-3"
+                          Style="overflow:hidden">
+
+                    <div class="f360-sec-hdr"
+                         style="background:#004D40">
+
+                        <MudIcon Icon="@Icons.Material.Filled.TableChart"
+                                 Size="Size.Small"
+                                 Class="mr-2" />
+
+                        NPCI Product Performance
+
+                    </div>
+
+                    @if (_data.Any())
+                    {
+                        <div class="npci-table-container">
+                            <table class="f360-perf-table">
+
+                                <thead>
+                                    <tr>
+                                        <th class="sticky-col-1" style="width:220px">
+                                            Products
+                                        </th>
+
+                                        <th class="sticky-col-2" style="width:130px">
+                                            Month
+                                        </th>
+
+                                        <th class="sticky-col-3" style="width:200px">
+                                            Remitter Bank
+                                        </th>
+                                        <th>Approved Volume(In Million)</th>
+                                        <th>Technical Decline Volume(In Million)</th>
+                                        <th>Business Decline Volume(In Million)</th>
+
+                                        <th>Approved Value(In Crore)</th>
+                                        <th>Technical Decline Value(In Crore)</th>
+                                        <th>Business Decline Value(In Crore)</th>
+
+                                        <th>Approved Percentage</th>
+                                        <th>Technical Decline Percentage</th>
+                                        <th>Business Decline Percentage</th>
+
+                                        <th>Union Bank of India Rank</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    @foreach (var row in _data)
+                                    {
+                                        <tr>
+                                            <td class="sticky-col-1">
+    @row["Products"]
+</td>
+
+<td class="sticky-col-2">
+    @FormatMonth(row["Month"])
+</td>
+
+<td class="sticky-col-3">
+    @row["Remitter_Bank"]
+</td>
+
+
+                                            <td>@FormatNumber(row["Approved_Volume_Million"])</td>
+                                            <td>@FormatNumber(row["Technical_Decline_Volume_Million"])</td>
+                                            <td>@FormatNumber(row["Business_Decline_Volume_Million"])</td>
+
+                                            <td>@FormatNumber(row["Approved_Value_Crore"])</td>
+                                            <td>@FormatNumber(row["Technical_Decline_Value_Crore"])</td>
+                                            <td>@FormatNumber(row["Business_Decline_Value_Crore"])</td>
+
+                                            <td>@row["Approved_Percentage"]%</td>
+                                            <td>@row["Technical_Decline_Percentage"]%</td>
+                                            <td>@row["Business_Decline_Percentage"]%</td>
+
+                                            <td>@row["Union_Bank_Of_India_Rank"]</td>
+                                        </tr>
+                                    }
+                                </tbody>
+
+                            </table>
+
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="pa-6 text-center">
+
+                            <MudIcon Icon="@Icons.Material.Filled.SearchOff"
+                                     Size="Size.Large"
+                                     Color="Color.Error" />
+
+                            <MudText Typo="Typo.h6"
+                                     Class="mt-2">
+
+                                No Data Found
+
+                            </MudText>
+
+                            <MudText Typo="Typo.body2"
+                                     Color="Color.Secondary">
+
+                                No records available for selected filters.
+
+                            </MudText>
+
+                        </div>
+                    }
+
+                </MudPaper>
+            }
+
+        </MudPaper>
+
+    </MudItem>
+</MudGrid>
+<style>
+    .npci-table-container {
+        max-height: 600px;
+        overflow: auto;
+        position: relative;
+        border: 1px solid #ddd;
+    }
+
+    .f360-perf-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        min-width: 2200px;
+        width: max-content;
+    }
+
+        /* Header Freeze */
+
+        .f360-perf-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: #004D40;
+            color: white;
+            white-space: nowrap;
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        /* Normal Cells */
+
+        .f360-perf-table td {
+            background: white;
+            border: 1px solid #ddd;
+            padding: 8px;
+            white-space: nowrap;
+        }
+
+    /* Fixed Column 1 */
+
+    .sticky-col-1 {
+        position: sticky;
+        left: 0;
+        min-width: 220px;
+        width: 220px;
+        background: white !important;
+        z-index: 15;
+    }
+
+    /* Fixed Column 2 */
+
+    .sticky-col-2 {
+        position: sticky;
+        left: 220px;
+        min-width: 130px;
+        width: 130px;
+        background: white !important;
+        z-index: 15;
+    }
+
+    /* Fixed Column 3 */
+
+    .sticky-col-3 {
+        position: sticky;
+        left: 350px;
+        min-width: 200px;
+        width: 200px;
+        background: white !important;
+        z-index: 15;
+    }
+
+    /* Header + Fixed Columns */
+
+    /* Fixed Header + Fixed Columns */
+
+    thead .sticky-col-1 {
+        position: sticky;
+        left: 0;
+        z-index: 50 !important;
+        background: #004D40 !important;
+        color: white !important;
+    }
+
+    thead .sticky-col-2 {
+        position: sticky;
+        left: 220px;
+        z-index: 50 !important;
+        background: #004D40 !important;
+        color: white !important;
+    }
+
+    thead .sticky-col-3 {
+        position: sticky;
+        left: 350px;
+        z-index: 50 !important;
+        background: #004D40 !important;
+        color: white !important;
+    }
+    thead th {
+    box-shadow: 1px 0 0 #ddd;
+}
+</style>
+@code {
+
+    private bool _loading = true;
+    private string? _error;
+    private bool _canAdd = false;
+    private List<Dictionary<string, object>> _data = new();
+    private decimal _approvedVolume;
+    private decimal _approvedValue;
+
+    private List<string> _years = new();
+    private List<string> _products = new();
+
+    private string _selectedYear = "ALL";
+    private string _selectedMonth = "ALL";
+    private string _selectedProduct = "ALL";
+
+    private decimal _approvalPct;
+    private decimal _avgRank;
+
+    private bool _showAdd = false;
+    private bool _isEdit = false;
+    private int _editId;
+
+    private string _product = "";
+    private DateTime? _month;
+
+    private string _remitterBank = "Union Bank of India";
+
+    private decimal? _newApprovedVolume;
+    private decimal? _newTechnicalVolume;
+    private decimal? _newBusinessVolume;
+
+    private decimal? _newApprovedValue;
+    private decimal? _newTechnicalValue;
+    private decimal? _newBusinessValue;
+
+    private decimal? _newApprovedPercentage;
+    private decimal? _newTechnicalPercentage;
+    private decimal? _newBusinessPercentage;
+
+    private int? _newRank;
+
+    private List<MonthItem> _months = new();
+    private void CancelAdd()
+    {
+        _showAdd = false;
+        _product = "";
+        _month = null;
+        _remitterBank = "Union Bank of India";
+
+        _newApprovedVolume = null;
+        _newTechnicalVolume = null;
+        _newBusinessVolume = null;
+
+        _newApprovedValue = null;
+        _newTechnicalValue = null;
+        _newBusinessValue = null;
+
+        _newApprovedPercentage = null;
+        _newTechnicalPercentage = null;
+        _newBusinessPercentage = null;
+
+        _newRank = null;
+    }
+
+    private void ShowAdd()
+    {
+        _product = "";
+        _month = null;
+        _remitterBank = "Union Bank of India";
+
+        _newApprovedVolume = 0;
+        _newTechnicalVolume = 0;
+        _newBusinessVolume = 0;
+
+        _newApprovedValue = 0;
+        _newTechnicalValue = 0;
+        _newBusinessValue = 0;
+
+        _newApprovedPercentage = 0;
+        _newTechnicalPercentage = 0;
+        _newBusinessPercentage = 0;
+
+        _newRank = 0;
+
+        _showAdd = true;
+    }
+
+    private async Task SaveNpciData()
+    {
+        if (string.IsNullOrWhiteSpace(_product))
+        {
+            await JS.InvokeVoidAsync("alert", "Product is required");
+            return;
+        }
+
+        if (!_month.HasValue)
+        {
+            await JS.InvokeVoidAsync("alert", "Month is required");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_remitterBank))
+        {
+            await JS.InvokeVoidAsync("alert", "Remitter Bank is required");
+            return;
+        }
+        var total =
+        (_newApprovedPercentage ?? 0) +
+        (_newTechnicalPercentage ?? 0) +
+        (_newBusinessPercentage ?? 0);
+
+        if (total != 100)
+        {
+            await JS.InvokeVoidAsync(
+            "alert",
+            "Approved %, Technical %, Business % should total 100");
+            return;
+        }
+        string query = $@"
+    INSERT INTO npci_dashboard
+    (
+        Products,
+        Month,
+        Remitter_Bank,
+        Approved_Volume_Million,
+        Technical_Decline_Volume_Million,
+        Business_Decline_Volume_Million,
+        Approved_Value_Crore,
+        Technical_Decline_Value_Crore,
+        Business_Decline_Value_Crore,
+        Approved_Percentage,
+        Technical_Decline_Percentage,
+        Business_Decline_Percentage,
+        Union_Bank_Of_India_Rank
+    )
+    VALUES
+    (
+        '{_product}',
+        '{_month:yyyy-MM-dd}',
+        '{_remitterBank}',
+    {_newApprovedVolume},
+    {_newTechnicalVolume},
+    {_newBusinessVolume},
+    {_newApprovedValue},
+    {_newTechnicalValue},
+    {_newBusinessValue},
+    {_newApprovedPercentage},
+    {_newTechnicalPercentage},
+    {_newBusinessPercentage},
+    {_newRank}
+    )";
+
+        await ReportService.ExecuteRawQueryAsync(query);
+
+        _showAdd = false;
+        _product = "";
+        _month = null;
+        _remitterBank = "Union Bank of India";
+
+        _newApprovedVolume = null;
+        _newTechnicalVolume = null;
+        _newBusinessVolume = null;
+
+        _newApprovedValue = null;
+        _newTechnicalValue = null;
+        _newBusinessValue = null;
+
+        _newApprovedPercentage = null;
+        _newTechnicalPercentage = null;
+        _newBusinessPercentage = null;
+
+        _newRank = null;
+
+        await LoadData();
+        await LoadDropdowns();
+        await JS.InvokeVoidAsync(
+        "alert",
+        "NPCI Record Added Successfully");
+    }
+
+    private string FormatNumber(object value)
+    {
+        if (value == DBNull.Value)
+            return "0.00";
+
+        return Convert.ToDecimal(value).ToString("N2");
+    }
+    private string FormatMonth(object value)
+    {
+        if (value == null || value == DBNull.Value)
+            return "-";
+
+        return Convert.ToDateTime(value)
+        .ToString("MMM-yyyy");
+    }
+
+    private Color GetApprovalColor(
+        Dictionary<string, object> row)
+    {
+        decimal pct =
+        Convert.ToDecimal(row["Approved_Percentage"]);
+
+        if (pct >= 95)
+            return Color.Success;
+
+        if (pct >= 90)
+            return Color.Warning;
+
+        return Color.Error;
+    }
+
+    private Color GetRankColor(
+    Dictionary<string, object> row)
+    {
+        int rank =
+        Convert.ToInt32(row["Union_Bank_Of_India_Rank"]);
+
+        if (rank <= 5)
+            return Color.Success;
+
+        if (rank <= 10)
+            return Color.Warning;
+
+        return Color.Error;
+    }
+
+    private async Task OnYearChanged(string value)
+    {
+        _selectedYear = value;
+        await LoadData();
+    }
+
+    private async Task OnMonthChanged(string value)
+    {
+        _selectedMonth = value;
+        await LoadData();
+    }
+
+    private async Task OnProductChanged(string value)
+    {
+        _selectedProduct = value;
+        await LoadData();
+    }
+
+    public class MonthItem
+    {
+        public string Value { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        var department = authState.User
+        .FindFirst("department_desc")?.Value?
+        .ToUpper() ?? "";
+
+        if (department.Contains("STRATEGY"))
+            _canAdd = true;
+        await LoadDropdowns();
+        await LoadData();
+    }
+
+    private static RenderFragment InfoCell(
+        string label,
+        string value) =>
+    @<MudItem xs="6" sm="3">
+        <div class="f360-info-lbl">@label</div>
+        <div class="f360-info-val">@value</div>
+    </MudItem>;
+
+    private void CalculateKpis()
+    {
+        if (!_data.Any())
+        {
+            _approvedVolume = 0;
+            _approvedValue = 0;
+            _approvalPct = 0;
+            _avgRank = 0;
+            return;
+        }
+
+        _approvedVolume = _data.Sum(x =>
+            Convert.ToDecimal(x["Approved_Volume_Million"]));
+
+        _approvedValue = _data.Sum(x =>
+            Convert.ToDecimal(x["Approved_Value_Crore"]));
+
+        _approvalPct = _data.Average(x =>
+            Convert.ToDecimal(x["Approved_Percentage"]));
+
+        var validRanks = _data
+    .Where(x =>
+        x["Union_Bank_Of_India_Rank"] != null &&
+        x["Union_Bank_Of_India_Rank"] != DBNull.Value &&
+        x["Union_Bank_Of_India_Rank"]?.ToString() != "Nil")
+    .Select(x =>
+        Convert.ToDecimal(x["Union_Bank_Of_India_Rank"]))
+    .ToList();
+
+        _avgRank = validRanks.Any()
+            ? validRanks.Average()
+            : 0;
+    }
+
+    private async Task ExportExcel()
+    {
+        using var package = new ExcelPackage();
+
+        var ws = package.Workbook.Worksheets.Add("NPCI Dashboard");
+
+        // Title
+        ws.Cells["A1:M1"].Merge = true;
+        ws.Cells["A1"].Value = "NPCI Dashboard";
+        ws.Cells["A1"].Style.Font.Bold = true;
+        ws.Cells["A1"].Style.Font.Size = 16;
+
+        // Summary Header
+        ws.Cells["A3:D3"].Merge = true;
+        ws.Cells["A3"].Value = "NPCI Summary";
+
+        ws.Cells["A3:D3"].Style.Fill.PatternType = ExcelFillStyle.Solid;
+        ws.Cells["A3:D3"].Style.Fill.BackgroundColor.SetColor(DrawingColor.DarkBlue);
+        ws.Cells["A3:D3"].Style.Font.Color.SetColor(DrawingColor.White);
+        ws.Cells["A3:D3"].Style.Font.Bold = true;
+
+        // KPI Values
+        ws.Cells["A4"].Value = "Approved Volume (Mn)";
+        ws.Cells["B4"].Value = _approvedVolume;
+
+        ws.Cells["C4"].Value = "Approved Value (Cr)";
+        ws.Cells["D4"].Value = _approvedValue;
+
+        ws.Cells["A5"].Value = "Avg Approval %";
+        ws.Cells["B5"].Value = _approvalPct;
+
+        ws.Cells["C5"].Value = "Avg Rank";
+        ws.Cells["D5"].Value = _avgRank;
+
+        int startRow = 8;
+
+        string[] headers =
+        {
+        "Products",
+        "Month",
+        "Remitter Bank",
+        "Approved Volume(In Million)",
+        "Technical Decline Volume(In Million)",
+        "Business Decline Volume(In Million)",
+        "Approved Value(In Crore)",
+        "Technical Decline Value(In Crore)",
+        "Business Decline Value(In Crore)",
+        "Approved Percentage",
+        "Technical Decline Percentage",
+        "Business Decline Percentage",
+        "Union Bank of India Rank"
+    };
+
+        // Header Row
+        for (int i = 0; i < headers.Length; i++)
+        {
+            var cell = ws.Cells[startRow, i + 1];
+
+            cell.Value = headers[i];
+            cell.Style.Font.Bold = true;
+
+            cell.Style.Fill.PatternType = ExcelFillStyle.Solid;
+            cell.Style.Fill.BackgroundColor.SetColor(DrawingColor.DarkGreen);
+
+            cell.Style.Font.Color.SetColor(DrawingColor.White);
+            cell.Style.Border.BorderAround(ExcelBorderStyle.Thin);
+        }
+
+        // Data Rows
+        int rowNo = startRow + 1;
+
+        foreach (var row in _data)
+        {
+            ws.Cells[rowNo, 1].Value = row["Products"];
+            ws.Cells[rowNo, 2].Value = FormatMonth(row["Month"]);
+            ws.Cells[rowNo, 3].Value = row["Remitter_Bank"];
+
+            ws.Cells[rowNo, 4].Value = row["Approved_Volume_Million"];
+            ws.Cells[rowNo, 5].Value = row["Technical_Decline_Volume_Million"];
+            ws.Cells[rowNo, 6].Value = row["Business_Decline_Volume_Million"];
+
+            ws.Cells[rowNo, 7].Value = row["Approved_Value_Crore"];
+            ws.Cells[rowNo, 8].Value = row["Technical_Decline_Value_Crore"];
+            ws.Cells[rowNo, 9].Value = row["Business_Decline_Value_Crore"];
+
+            ws.Cells[rowNo, 10].Value = row["Approved_Percentage"];
+            ws.Cells[rowNo, 11].Value = row["Technical_Decline_Percentage"];
+            ws.Cells[rowNo, 12].Value = row["Business_Decline_Percentage"];
+
+            ws.Cells[rowNo, 13].Value = row["Union_Bank_Of_India_Rank"];
+
+            for (int col = 1; col <= 13; col++)
+            {
+                ws.Cells[rowNo, col].Style.Border.BorderAround(
+                    ExcelBorderStyle.Thin);
+            }
+
+            rowNo++;
+        }
+
+        ws.Cells.AutoFitColumns();
+
+        var bytes = package.GetAsByteArray();
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "NPCI_Dashboard.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private async Task LoadDropdowns()
+    {
+        _years = (await ReportService.ExecuteRawQueryAsync(@"
+        SELECT DISTINCT YEAR([Month]) YearValue
+        FROM npci_dashboard
+        ORDER BY YearValue DESC"))
+            .Select(x => x["YearValue"].ToString())
+            .ToList();
+
+        _products = (await ReportService.ExecuteRawQueryAsync(@"
+        SELECT DISTINCT Products
+        FROM npci_dashboard
+        ORDER BY Products"))
+            .Select(x => x["Products"].ToString())
+            .ToList();
+
+        _months = new()
+    {
+        new(){Value="1",Text="January"},
+        new(){Value="2",Text="February"},
+        new(){Value="3",Text="March"},
+        new(){Value="4",Text="April"},
+        new(){Value="5",Text="May"},
+        new(){Value="6",Text="June"},
+        new(){Value="7",Text="July"},
+        new(){Value="8",Text="August"},
+        new(){Value="9",Text="September"},
+        new(){Value="10",Text="October"},
+        new(){Value="11",Text="November"},
+        new(){Value="12",Text="December"}
+    };
+    }
+
+    private async Task ExportCsv()
+    {
+        if (!_data.Any())
+            return;
+
+        var sb = new System.Text.StringBuilder();
+
+        sb.AppendLine(
+            "Products,Month,Remitter_Bank," +
+            "Approved Volume(In Million)," +
+            "Technical Decline Volume(In Million)," +
+            "Business Decline Volume(In Million)," +
+            "Approved Value(In Crore)," +
+            "Technical Decline Value(In Crore)," +
+            "Business Decline Value(In Crore)," +
+            "Approved Percentage," +
+            "Technical Decline Percentage," +
+            "Business Decline Percentage," +
+            "Union Bank of India Rank");
+
+        foreach (var row in _data)
+        {
+            sb.AppendLine(
+                $"{row["Products"]}," +
+                $"{FormatMonth(row["Month"])}," +
+                $"{row["Remitter_Bank"]}," +
+                $"{row["Approved_Volume_Million"]}," +
+                $"{row["Technical_Decline_Volume_Million"]}," +
+                $"{row["Business_Decline_Volume_Million"]}," +
+                $"{row["Approved_Value_Crore"]}," +
+                $"{row["Technical_Decline_Value_Crore"]}," +
+                $"{row["Business_Decline_Value_Crore"]}," +
+                $"{row["Approved_Percentage"]}," +
+                $"{row["Technical_Decline_Percentage"]}," +
+                $"{row["Business_Decline_Percentage"]}," +
+                $"{row["Union_Bank_Of_India_Rank"]}");
+        }
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "NPCI_Dashboard.csv",
+            "text/csv",
+            Convert.ToBase64String(
+                System.Text.Encoding.UTF8.GetBytes(sb.ToString())));
+    }
+
+    private async Task ExportPdf()
+    {
+        if (!_data.Any())
+            return;
+
+        var pdfBytes = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A3.Landscape());
+                page.Margin(15);
+
+                page.Header()
+                    .Text("NPCI Dashboard")
+                    .FontSize(18)
+                    .Bold();
+
+                page.Content().Column(col =>
+                {
+                    // Summary Header
+                    col.Item()
+                        .Background("#0D47A1")
+                        .Padding(8)
+                        .Text("NPCI Summary")
+                        .FontColor("#FFFFFF")
+                        .Bold();
+
+                    col.Item().PaddingBottom(5);
+
+                    // KPI Row
+                    col.Item().Row(row =>
+                    {
+                        row.RelativeItem()
+    .Text($"Approved Volume (In Million) : {_approvedVolume:N2}");
+
+                        row.RelativeItem()
+                        .Text($"Approved Value (In Crore) : {_approvedValue:N2}");
+
+                        row.RelativeItem()
+                        .Text($"Avg Approval % : {_approvalPct:N2}");
+
+                        row.RelativeItem()
+                        .Text($"Avg Rank : {_avgRank:N2}");
+                    });
+
+                    col.Item().PaddingBottom(10);
+
+                    // Product Performance Header
+                    col.Item()
+                        .Background("#004D40")
+                        .Padding(8)
+                        .Text("NPCI Product Performance")
+                        .FontColor("#FFFFFF")
+                        .Bold();
+
+                    col.Item().PaddingBottom(5);
+
+                    // Table
+                    col.Item().Table(table =>
+                    {
+                        table.ColumnsDefinition(columns =>
+                        {
+                            for (int i = 0; i < 13; i++)
+                            {
+                                columns.RelativeColumn();
+                            }
+                        });
+
+                        table.Header(header =>
+                        {
+                            void HeaderCell(string text)
+                            {
+                                header.Cell()
+                                    .Background("#004D40")
+                                    .Border(1)
+                                    .BorderColor("#FFFFFF")
+                                    .Padding(4)
+                                    .Text(text)
+                                    .FontColor("#FFFFFF")
+                                    .Bold()
+                                    .FontSize(8);
+                            }
+
+                            HeaderCell("Products");
+                            HeaderCell("Month");
+                            HeaderCell("Remitter Bank");
+
+                            HeaderCell("Approved Volume(In Million)");
+                            HeaderCell("Technical Decline Volume(In Million)");
+                            HeaderCell("Business Decline Volume(In Million)");
+
+                            HeaderCell("Approved Value(In Crore)");
+                            HeaderCell("Technical Decline Value(In Crore)");
+                            HeaderCell("Business Decline Value(In Crore)");
+
+                            HeaderCell("Approved %");
+                            HeaderCell("Tech %");
+                            HeaderCell("Business %");
+
+                            HeaderCell("Rank");
+                        });
+
+                        foreach (var row in _data)
+                        {
+                            void Cell(string value)
+                            {
+                                table.Cell()
+                                    .Border(1)
+                                    .BorderColor("#D0D0D0")
+                                    .Padding(3)
+                                    .Text(value)
+                                    .FontSize(8);
+                            }
+
+                            Cell(row["Products"]?.ToString() ?? "");
+                            Cell(FormatMonth(row["Month"]));
+                            Cell(row["Remitter_Bank"]?.ToString() ?? "");
+
+                            Cell(FormatNumber(row["Approved_Volume_Million"]));
+                            Cell(FormatNumber(row["Technical_Decline_Volume_Million"]));
+                            Cell(FormatNumber(row["Business_Decline_Volume_Million"]));
+
+                            Cell(FormatNumber(row["Approved_Value_Crore"]));
+                            Cell(FormatNumber(row["Technical_Decline_Value_Crore"]));
+                            Cell(FormatNumber(row["Business_Decline_Value_Crore"]));
+
+                            Cell(row["Approved_Percentage"]?.ToString() ?? "");
+                            Cell(row["Technical_Decline_Percentage"]?.ToString() ?? "");
+                            Cell(row["Business_Decline_Percentage"]?.ToString() ?? "");
+
+                            Cell(row["Union_Bank_Of_India_Rank"]?.ToString() ?? "");
+                        }
+                    });
+                });
+
+                page.Footer()
+                    .AlignCenter()
+                    .Text(x =>
+                    {
+                        x.Span("Generated on ");
+                        x.Span(AppTime.Now.ToString("dd-MMM-yyyy HH:mm"));
+                    });
+            });
+        }).GeneratePdf();
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "NPCI_Dashboard.pdf",
+            "application/pdf",
+            Convert.ToBase64String(pdfBytes));
+    }
+
+    private void AddMissingPreviousMonthProducts()
+    {
+        if (!_data.Any())
+            return;
+
+        var latestMonth = _data
+            .Max(x => Convert.ToDateTime(x["Month"]));
+
+        var previousMonth = latestMonth.AddMonths(-1);
+
+        var currentMonthProducts = _data
+            .Where(x =>
+                Convert.ToDateTime(x["Month"]).Month == latestMonth.Month &&
+                Convert.ToDateTime(x["Month"]).Year == latestMonth.Year)
+            .Select(x => x["Products"]?.ToString())
+            .Distinct()
+            .ToList();
+
+        var previousMonthProducts = _data
+            .Where(x =>
+                Convert.ToDateTime(x["Month"]).Month == previousMonth.Month &&
+                Convert.ToDateTime(x["Month"]).Year == previousMonth.Year)
+            .Select(x => x["Products"]?.ToString())
+            .ToHashSet();
+
+        foreach (var product in currentMonthProducts)
+        {
+            if (!previousMonthProducts.Contains(product))
+            {
+                _data.Add(new Dictionary<string, object>
+                    {
+                        ["Products"] = product,
+                        ["Month"] = previousMonth,
+                        ["Remitter_Bank"] = "Union Bank of India",
+
+                        ["Approved_Volume_Million"] = 0,
+                        ["Technical_Decline_Volume_Million"] = 0,
+                        ["Business_Decline_Volume_Million"] = 0,
+
+                        ["Approved_Value_Crore"] = 0,
+                        ["Technical_Decline_Value_Crore"] = 0,
+                        ["Business_Decline_Value_Crore"] = 0,
+
+                        ["Approved_Percentage"] = 0,
+                        ["Technical_Decline_Percentage"] = 0,
+                        ["Business_Decline_Percentage"] = 0,
+
+                        ["Union_Bank_Of_India_Rank"] = "Nil"
+                    });
+            }
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            _loading = true;
+            _error = null;
+
+            string query = @"
+        SELECT *
+        FROM npci_dashboard
+        WHERE 1=1";
+
+            if (_selectedYear != "ALL")
+                query += $" AND YEAR([Month]) = {_selectedYear}";
+
+            if (_selectedMonth != "ALL")
+                query += $" AND MONTH([Month]) = {_selectedMonth}";
+
+            if (_selectedProduct != "ALL")
+                query += $" AND Products='{_selectedProduct}'";
+
+            query += " ORDER BY Products, [Month] DESC";
+
+            _data = await ReportService.ExecuteRawQueryAsync(query);
+
+            if (_selectedMonth == "ALL")
+            {
+                AddMissingPreviousMonthProducts();
+            }
+
+            _data = _data
+                .OrderBy(x => x["Products"]?.ToString())
+                .ThenByDescending(x => Convert.ToDateTime(x["Month"]))
+                .ToList();
+
+            CalculateKpis();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "NPCIDashboard: failed to load data");
+            _error = UserFacingError.Generic;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

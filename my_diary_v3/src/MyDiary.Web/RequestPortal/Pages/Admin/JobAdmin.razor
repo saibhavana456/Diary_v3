@@ -1,0 +1,263 @@
+﻿@page "/admin/job-admin"
+@attribute [Authorize(Policy = "SuperAdmin")]
+@using System.Data;
+@using System.Globalization;
+@using MyDiary.Web.Data;
+@inject SqlDbProvider Db
+@inject ISnackbar Snackbar
+
+<PageTitle>Job Administration</PageTitle>
+
+<PageHeader Title="Job Administration"
+            Subtitle="Monitor scheduled jobs"
+            PageKey="job-admin" />
+
+<MudPaper Class="pa-4">
+
+    <MudTabs Elevation="1" Rounded="true">
+
+        <MudTabPanel Text="Job Status">
+
+            <MudTable Items="_jobs"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true">
+
+                <HeaderContent>
+                    <MudTh>S.No</MudTh>
+                    <MudTh>Job Description</MudTh>
+                    <MudTh>Tab Name</MudTh>
+                    <MudTh>Report Name</MudTh>
+                    <MudTh>Frequency</MudTh>
+                    <MudTh>Source Data</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Last Updated</MudTh>
+                </HeaderContent>
+
+                <RowTemplate>
+
+                    <MudTd>@(_jobs.IndexOf(context) + 1)</MudTd>
+
+                    <MudTd>
+                        <div style="@GetRowColor(context)">
+                            @context.JobDesc
+                        </div>
+                    </MudTd>
+
+                    <MudTd>@context.TabName</MudTd>
+                    <MudTd>@context.ReportName</MudTd>
+                    <MudTd>@context.Frequency</MudTd>
+                    <MudTd>@context.SourceData</MudTd>
+                    <MudTd>@context.Status</MudTd>
+                    <MudTd>@context.LastUpdateDate?.ToString("dd/MM/yyyy")</MudTd>
+
+                </RowTemplate>
+
+            </MudTable>
+
+        </MudTabPanel>
+
+       @*  <MudTabPanel Text="Exceptions">
+
+            <MudTable Items="_exceptions"
+                      Dense="true"
+                      Hover="true">
+
+                <HeaderContent>
+                    <MudTh>ID</MudTh>
+                    <MudTh>Message</MudTh>
+                    <MudTh>Date</MudTh>
+                </HeaderContent>
+
+                <RowTemplate>
+                    <MudTd>@context.Id</MudTd>
+                    <MudTd>@context.Message</MudTd>
+                    <MudTd>@context.Date</MudTd>
+                </RowTemplate>
+
+            </MudTable>
+
+        </MudTabPanel> *@
+
+    </MudTabs>
+
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+
+@code {
+
+    private bool _loading;
+
+    private List<JobRow> _jobs = new();
+
+    private List<ExceptionRow> _exceptions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            _loading = true;
+
+            await LoadJobs();
+            await LoadExceptions();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "JobAdmin: failed to load data");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadJobs()
+    {
+        string sql = @"
+        SELECT
+            rn.jobdesc,
+            rn.tabname,
+            rn.reportname,
+            rn.frequency,
+            rn.sourcedata,
+
+            CASE
+                WHEN rn.extra1 IS NULL
+                THEN jm.LastRunStatus
+                ELSE rn.extra1
+            END AS status,
+
+            CASE
+                WHEN rn.extra2 IS NULL
+                THEN jm.LastRunStartDt
+                ELSE CONVERT(datetime,rn.extra2,105)
+            END AS Last_update_date
+
+        FROM JobMasterReportNames rn
+        LEFT JOIN JobMaster jm
+            ON rn.jobtype = jm.JobType
+
+        WHERE rn.jobdesc IS NOT NULL
+
+        ORDER BY jm.frequency,jm.executionorder
+        ";
+
+        DataTable dt = await Db.ExecuteQueryAsync(sql);
+
+        _jobs.Clear();
+
+        foreach (DataRow row in dt.Rows)
+        {
+            _jobs.Add(new JobRow(
+                JobDesc: row["jobdesc"]?.ToString() ?? "",
+                TabName: row["tabname"]?.ToString() ?? "",
+                ReportName: row["reportname"]?.ToString() ?? "",
+                Frequency: row["frequency"]?.ToString() ?? "",
+                SourceData: row["sourcedata"]?.ToString() ?? "",
+                Status: row["status"]?.ToString() ?? "",
+                LastUpdateDate: row["Last_update_date"] == DBNull.Value
+                    ? null
+                    : Convert.ToDateTime(row["Last_update_date"])
+            ));
+        }
+    }
+
+    private async Task LoadExceptions()
+    {
+        string sql =
+                @"SELECT TOP 20 Id, Exception as ErrorMessage, datetime as ErrorDate
+              FROM ExceptionLog
+              ORDER BY Id DESC";
+
+        DataTable dt = await Db.ExecuteQueryAsync(sql);
+
+        _exceptions.Clear();
+
+        foreach (DataRow row in dt.Rows)
+        {
+            _exceptions.Add(new ExceptionRow(
+                Id: Convert.ToInt32(row["Id"]),
+                Message: row["ErrorMessage"]?.ToString() ?? "",
+                Date: row["ErrorDate"]?.ToString() ?? ""
+            ));
+        }
+    }
+
+    private string GetRowColor(JobRow row)
+    {
+        // Yellow for completed with error       
+        if (!string.IsNullOrWhiteSpace(row.Status) && row.Status.Contains("error", StringComparison.OrdinalIgnoreCase))    
+        {               
+            return "background-color:#fff3cd;color:black;padding:5px;";            
+        }                
+        // Red for overdue jobs    
+        if (IsJobOverdue(row))                
+        {                
+            return "background-color:#f8d7da;color:black;padding:5px;";            
+        }               
+        return "";
+    }
+
+    private bool IsJobOverdue(JobRow job)
+    {
+        if (job.LastUpdateDate == null)
+            return true;
+
+        if (job.Frequency == "Daily")
+        {
+            return job.LastUpdateDate.Value.Date < AppTime.Today.AddDays(-1);
+        }
+
+        if (job.Frequency == "Weekly")
+        {
+            DateTime today = AppTime.Today;
+
+            int firstDay =
+                (int)CultureInfo.CurrentCulture
+                    .DateTimeFormat.FirstDayOfWeek + 1;
+
+            DateTime firstDayOfWeek =
+                today.AddDays(-(int)today.DayOfWeek + firstDay);
+
+            DateTime lastSat =
+                firstDayOfWeek.AddDays(-2);
+
+            DateTime lastSun =
+                firstDayOfWeek.AddDays(-1);
+
+            if (job.JobDesc == "InsertToDB")
+            {
+                return job.LastUpdateDate.Value < lastSun;
+            }
+
+            return job.LastUpdateDate.Value < lastSat;
+        }
+
+        return false;
+    }
+
+    private record JobRow(
+        string JobDesc,
+        string TabName,
+        string ReportName,
+        string Frequency,
+        string SourceData,
+        string Status,
+        DateTime? LastUpdateDate);
+
+    private record ExceptionRow(
+        int Id,
+        string Message,
+        string Date);
+}
+

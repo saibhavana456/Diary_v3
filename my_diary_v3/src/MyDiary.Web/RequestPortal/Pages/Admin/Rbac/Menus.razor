@@ -1,0 +1,192 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@page "/admin/rbac/menus"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IRbacRepo Repo
+@inject IRbacService Rbac
+@inject ICurrentUser Me
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider Auth
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Menus</PageTitle>
+
+<PageHeader PageKey="rbac-menus" Title="Menus" Subtitle="Add, edit, and toggle the visibility of menu items. Enable/disable is SuperAdmin-only."
+            Crumbs="_crumbs">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => OpenEdit(null))">Add Menu</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudPaper Elevation="1" Class="pa-3">
+    <MudTable Items="@_rows" Dense="true" Hover="true" Striped="true" Filter="Filter" Class="rp-data-table">
+        <ToolBarContent>
+            <MudTextField @bind-Value="_search" Placeholder="Search by label / route / module"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" Class="mt-0" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Module</MudTh>
+            <MudTh>Code</MudTh>
+            <MudTh>Label</MudTh>
+            <MudTh>Route</MudTh>
+            <MudTh>Order</MudTh>
+            <MudTh>Enabled</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.ModulePath</MudTd>
+            <MudTd><small style="color:#888">@context.Menu.Code</small></MudTd>
+            <MudTd>@context.Menu.Label</MudTd>
+            <MudTd><code>@context.Menu.Route</code></MudTd>
+            <MudTd>@context.Menu.SortOrder</MudTd>
+            <MudTd>
+                <MudSwitch T="bool" Value="@context.Menu.IsEnabled" Color="Color.Primary"
+                           Disabled="@(!_isSuperAdmin)"
+                           ValueChanged="@(async v => await ToggleEnabled(context.Menu, v))" />
+            </MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => OpenEdit(context.Menu))" aria-label="Edit" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => Delete(context.Menu))" aria-label="Delete" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Administration"),
+        new("Menus"),
+    };
+
+    private List<AppModule> _modules = new();
+    private List<MenuRow> _rows = new();
+    private string _search = "";
+    private bool _isSuperAdmin;
+    private string _empId = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authTask = Auth.GetAuthenticationStateAsync();
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            _empId = user.FindFirst("emplid")?.Value;
+
+            var reloadTask = ReloadAsync();
+            await Task.WhenAll(authTask, reloadTask);
+            var state = authTask.Result;
+            _isSuperAdmin = state.User.HasClaim("rp_super_admin", "true");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Menus: failed to load auth state/modules");
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        var modulesTask = Repo.ListModulesAsync();
+        var menusTask = Repo.ListMenusAsync();
+        await Task.WhenAll(modulesTask, menusTask);
+        _modules = modulesTask.Result.ToList();
+        var menus = menusTask.Result;
+        _rows = menus.Select(m => new MenuRow(m, ModulePath(m.ModuleId)))
+                     .OrderBy(r => r.ModulePath).ThenBy(r => r.Menu.SortOrder).ToList();
+    }
+
+    private string ModulePath(long moduleId)
+    {
+        var m = _modules.FirstOrDefault(x => x.Id == moduleId);
+        if (m is null) return $"#{moduleId}";
+        var path = new List<string> { m.Name };
+        while (m?.ParentId is long pid)
+        {
+            m = _modules.FirstOrDefault(x => x.Id == pid);
+            if (m is null) break;
+            path.Insert(0, m.Name);
+        }
+        return string.Join(" → ", path);
+    }
+
+    private bool Filter(MenuRow r)
+    {
+        if (string.IsNullOrWhiteSpace(_search)) return true;
+        var q = _search.Trim();
+        return r.Menu.Label.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || r.Menu.Code.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || r.Menu.Route.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || r.ModulePath.Contains(q, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task ToggleEnabled(AppMenu m, bool enabled)
+    {
+        try
+        {
+            await Rbac.SetMenuEnabledAsync(_empId ?? "", m.Id, enabled);
+            Snackbar.Add(enabled ? $"Menu '{m.Label}' enabled" : $"Menu '{m.Label}' disabled", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Snackbar.Add("Only SuperAdmin can enable / disable menus", Severity.Error);
+        }
+    }
+
+    private async Task OpenEdit(AppMenu? existing)
+    {
+        var leaves = _modules
+            .Where(m => m.IsActive && !_modules.Any(c => c.ParentId == m.Id))
+            .OrderBy(m => ModulePath(m.Id))
+            .ToList();
+        var parameters = new DialogParameters
+        {
+            ["Editing"] = existing,
+            ["LeafModules"] = leaves,
+            ["ModulePathFn"] = (Func<long, string>)ModulePath
+        };
+        var dlg = await Dialogs.ShowAsync<MenuDialog>(existing is null ? "Add Menu" : "Edit Menu", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var res = await dlg.Result;
+        if (res?.Canceled == false && res.Data is AppMenu edited)
+        {
+            try
+            {
+                await Rbac.UpsertMenuAsync(_empId ?? "", edited);
+                Snackbar.Add(existing is null ? "Menu created" : "Menu updated", Severity.Success);
+                await ReloadAsync();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Snackbar.Add("Application Admin or SuperAdmin required", Severity.Error);
+            }
+        }
+    }
+
+    private async Task Delete(AppMenu m)
+    {
+        var ok = await Dialogs.ShowMessageBox("Deactivate menu",
+            $"Soft-delete menu \"{m.Label}\"? It will be hidden until reactivated.",
+            yesText: "Deactivate", cancelText: "Cancel");
+        if (ok != true) return;
+        try
+        {
+            await Rbac.DeleteMenuAsync(_empId ?? "", m.Id);
+            Snackbar.Add("Menu deactivated", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Snackbar.Add("Application Admin or SuperAdmin required", Severity.Error);
+        }
+    }
+
+    private sealed record MenuRow(AppMenu Menu, string ModulePath);
+}

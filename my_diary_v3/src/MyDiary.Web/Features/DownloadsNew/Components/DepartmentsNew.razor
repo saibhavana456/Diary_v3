@@ -1,0 +1,271 @@
+﻿@page "/departmentsnew"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+@using MudBlazor
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Departments.Models
+@using MyDiary.Web.Features.Departments.Services
+
+@inject IDepartmentService DeptService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<style>
+    :root {
+        --card-min-width: 280px;
+        --card-height: 220px;
+        --primary-color: #1E3A8A;
+        --secondary-color: #EF4444;
+    }
+
+    /* ── Business 360 Hero Header ─────────────────────────────── */
+    .main-content-container {
+        padding: 25px;
+        background: #eef1f7;
+        min-height: 85vh;
+    }
+
+    .dept-hero {
+        position: relative; overflow: hidden; border-radius: 18px; color: #fff;
+        background: linear-gradient(120deg, #1E3A8A 0%, #3452b5 45%, #c8102e 130%);
+        padding: 18px 24px; margin-bottom: 12px; display: flex; align-items: center;
+        justify-content: space-between; gap: 16px; flex-wrap: wrap;
+        box-shadow: 0 10px 30px rgba(30,58,138,.28);
+    }
+    .dept-hero-glow { position: absolute; inset: auto -50px -100px auto; width: 280px; height: 280px;
+        background: radial-gradient(circle, rgba(255,255,255,.20), transparent 62%); pointer-events: none; }
+    .dept-hero-main { display: flex; align-items: center; gap: 14px; z-index: 1; min-width: 0; }
+    .dept-hero-ic { width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,.16);
+        border: 1px solid rgba(255,255,255,.28); display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .dept-hero-ic .mud-icon-root { font-size: 28px; color: #fff; }
+    .dept-hero-title { margin: 0; font-size: 1.4rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; }
+    .dept-hero-sub { font-size: .82rem; opacity: .9; margin-top: 2px; }
+
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+        gap: 20px;
+    }
+
+    .card-button-component {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-radius: 20px !important;
+    padding: 0 !important;
+    border: 1px solid #e0e0e0 !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    transition: all 0.25s ease !important;
+    height: 100% !important;
+    display: block !important;
+    text-align: left !important;
+    text-transform: none !important;
+        min-height: var(--card-height) !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+    }
+
+.card-button-component:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.15) !important;
+}
+
+    .card-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1F2937;
+        text-align: center;
+    }
+
+    .icon-badge {
+        background: #f1f5f9;
+        border-radius: 14px;
+        padding: 16px;
+        border: 1px solid #e2e8f0;
+        margin-bottom: 10px;
+    }
+</style>
+
+<!-- ✅ HEADER (Business 360 Style) -->
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden; border-radius:18px;">
+
+            <div class="dept-hero">
+                <div class="dept-hero-glow" aria-hidden="true"></div>
+                <div class="dept-hero-main">
+                    <span class="dept-hero-ic"><MudIcon Icon="@Icons.Material.Filled.Business" /></span>
+                    <div>
+                        <h1 class="dept-hero-title">Departments</h1>
+                        <div class="dept-hero-sub">Browse departments and their resources</div>
+                    </div>
+                </div>
+            </div>
+
+                <div style="display:grid; grid-template-columns:1fr auto; align-items:start;
+                    gap:8px;  border-bottom:1px solid #f1f5f9;">
+            <div class="d-flex flex-wrap gap-2">
+                    
+            </div>
+            <!-- ✅ FILTER BAR -->
+            <div style="
+display:flex;
+justify-content:flex-end;
+align-items:center;
+gap:10px;
+padding:12px 16px;" class="d-flex align-center gap-2">
+
+                <!-- ✅ Search -->
+                <MudTextField T="string"
+                                @bind-Value="searchQuery"
+                                Placeholder="Search departments..."
+                                Adornment="Adornment.Start"
+                                AdornmentIcon="@Icons.Material.Filled.Search"
+                                Variant="Variant.Outlined"
+                                Margin="Margin.Dense"
+                                Immediate="true"
+                                Style="width: 240px; background:white;" />
+
+                <!-- ✅ Toggle -->
+                <MudToggleGroup T="string"
+                                Value="@_viewMode"
+                                ValueChanged="v => { _viewMode = v; StateHasChanged(); }"
+                                Color="Color.Info"
+                                Rounded="true">
+
+                    <MudToggleItem Value='@("List")' Icon="@Icons.Material.Filled.List" />
+                    <MudToggleItem Value='@("Grid")' Icon="@Icons.Material.Filled.GridView" />
+
+                </MudToggleGroup>
+
+            </div>
+            </div>
+        </MudPaper>
+
+    </MudItem>
+</MudGrid>
+
+<!-- ✅ CONTENT SECTION -->
+<MudPaper Elevation="1" Class="pa-3" Style="overflow:hidden">
+
+    @if (_isLoading)
+    {
+        <div class="d-flex flex-column align-center justify-center pa-10">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4" Style="color:#6b7280;">Loading departments...</MudText>
+        </div>
+    }
+    else if (_viewMode == "Grid")
+    {
+        <div class="cards-grid">
+            @foreach (var dept in FilteredDepartments)
+            {
+                <MudButton OnClick="() => NavigateToActivities(dept.DepartmentID)"
+                            Class="card-button-component"
+                            Ripple="false">
+
+                    <div class="d-flex flex-column align-center justify-center w-100">
+
+                        <div class="icon-badge">
+                            <MudIcon Icon="@GetIconForDepartment(dept.IconClass)"
+                                        Style="color:#1E3A8A; font-size:2.5rem;" />
+                        </div>
+
+                        <div class="card-title">
+                            @dept.DisplayName(_currentLang)
+                        </div>
+
+                    </div>
+                </MudButton>
+            }
+        </div>
+    }
+    else
+    {
+        <MudTable Items="FilteredDepartments?.ToList() ?? new()"
+                    Dense="true" Hover="true" Striped="true" Bordered="true">
+
+            <HeaderContent>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Department Name</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white; width:80px;">Action</MudTh>
+            </HeaderContent>
+
+            <RowTemplate>
+
+                <MudTd>
+                    <b>@context.DisplayName(_currentLang)</b>
+                </MudTd>
+
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Launch"
+                                    Color="Color.Primary"
+                                    OnClick="() => NavigateToActivities(context.DepartmentID)" />
+                </MudTd>
+
+            </RowTemplate>
+        </MudTable>
+    }
+
+</MudPaper>
+
+@code {
+    private List<Department> allDepartments = new();
+    private string searchQuery = "";
+    private string _viewMode = "Grid";
+    private string _currentLang = "en";
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        allDepartments = await DeptService.GetActiveDepartmentsAsync();
+        _isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var lang = await JS.InvokeAsync<string>("localStorage.getItem", "lang") ?? "en";
+            if (lang != _currentLang)
+            {
+                _currentLang = lang;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private IEnumerable<Department> FilteredDepartments =>
+        string.IsNullOrWhiteSpace(searchQuery)
+        ? allDepartments
+        : allDepartments.Where(d =>
+            d.DisplayName(_currentLang).Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+            d.DepartmentName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    private void NavigateToActivities(int deptId)
+    {
+        Nav.NavigateTo($"activitiesnew?DeptID={deptId}");
+    }
+
+    private string GetIconForDepartment(string iconClass)
+    {
+        if (string.IsNullOrWhiteSpace(iconClass)) return Icons.Material.Filled.Business;
+
+        return iconClass.ToLower() switch
+        {
+            var ic when ic.Contains("account") => Icons.Material.Filled.AccountBalance,
+            var ic when ic.Contains("loan") => Icons.Material.Filled.CreditCard,
+            var ic when ic.Contains("hr") => Icons.Material.Filled.People,
+            var ic when ic.Contains("it") => Icons.Material.Filled.Computer,
+            var ic when ic.Contains("audit") => Icons.Material.Filled.Assessment,
+            var ic when ic.Contains("legal") => Icons.Material.Filled.Gavel,
+            var ic when ic.Contains("marketing") => Icons.Material.Filled.Campaign,
+            var ic when ic.Contains("operation") => Icons.Material.Filled.Settings,
+            var ic when ic.Contains("finance") => Icons.Material.Filled.AccountBalanceWallet,
+            var ic when ic.Contains("risk") => Icons.Material.Filled.Warning,
+            var ic when ic.Contains("compliance") => Icons.Material.Filled.VerifiedUser,
+            var ic when ic.Contains("customer") => Icons.Material.Filled.SupportAgent,
+            _ => Icons.Material.Filled.Business
+        };
+    }
+}

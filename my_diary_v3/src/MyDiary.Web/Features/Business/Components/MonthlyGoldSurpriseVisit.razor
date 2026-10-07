@@ -1,0 +1,309 @@
+﻿@page "/MonthlyGoldSurpriseVisit"
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+
+@using MudBlazor
+
+<MudPaper Class="pa-4">
+
+	<MudText Typo="Typo.h4" Class="mb-4">
+		Monthly Surprise Verification – Gold Loans
+	</MudText>
+
+	<!-- ROLE TOGGLE (TEMP – replace with real auth later) -->
+	@*     <MudSwitch T="bool"
+	Checked="IsROUser"
+	CheckedChanged="OnRoleChanged"
+	Color="Color.Primary"
+	Label="Logged in as RO (toggle for UI demo)" /> *@
+
+	<MudDivider Class="my-4" />
+
+	@if (_loggedInRole == "REGION")
+	{
+		<!-- ================= RO VIEW ================= -->
+
+		<MudText Typo="Typo.h6" Class="mb-2">
+			Assign Branches to Officers
+		</MudText>
+
+		<MudGrid>
+			<MudItem xs="12" sm="4">
+				<MudSelect T="string" Label="Branch" Dense>
+					<MudSelectItem T="string" Value="@("BR001")">
+						Branch 001
+					</MudSelectItem>
+					<MudSelectItem T="string" Value="@("BR002")">
+						Branch 002
+					</MudSelectItem>
+				</MudSelect>
+			</MudItem>
+
+			<MudItem xs="12" sm="4">
+				<MudSelect T="string" Label="Officer" Dense>
+					<MudSelectItem T="string" Value="@("EMP1001")">
+						R. Sharma
+					</MudSelectItem>
+					<MudSelectItem T="string" Value="@("EMP1002")">
+						S. Kumar
+					</MudSelectItem>
+				</MudSelect>
+			</MudItem>
+
+			<MudItem xs="12" sm="4" Class="d-flex align-end">
+				<MudButton Color="Color.Primary"
+						   StartIcon="@Icons.Material.Filled.AssignmentInd">
+					Assign
+				</MudButton>
+			</MudItem>
+		</MudGrid>
+
+		<MudDivider Class="my-4" />
+
+		<!-- VIEW SUBMITTED REPORTS -->
+		<MudText Typo="Typo.h6" Class="mb-2">
+			Submitted Inspection Reports
+		</MudText>
+
+		<MudTable Dense Items="_submittedReports" Hover="true">
+			<HeaderContent>
+				<MudTh>Branch</MudTh>
+				<MudTh>Officer</MudTh>
+				<MudTh>Inspection Date</MudTh>
+				<MudTh>Status</MudTh>
+				<MudTh>Action</MudTh>
+			</HeaderContent>
+			<RowTemplate>
+				<MudTd>@context.BranchCode</MudTd>
+				<MudTd>@context.OfficerName</MudTd>
+				<MudTd>@context.InspectionDate</MudTd>
+				<MudTd>
+					<MudChip T="string" Color="Color.Success" Variant="Variant.Filled">
+						Submitted
+					</MudChip>
+				</MudTd>
+				<MudTd>
+					<MudButton Variant="Variant.Outlined"
+							   StartIcon="@Icons.Material.Filled.PictureAsPdf">
+						View PDF
+					</MudButton>
+				</MudTd>
+			</RowTemplate>
+		</MudTable>
+	}
+	else if (_loggedInRole == "BRANCH")
+	{
+		<!-- ================= OFFICER VIEW ================= -->
+
+		<MudForm @ref="_form" @bind-IsValid="_isValid">
+
+			<!-- HEADER INFO -->
+			<MudGrid>
+				<MudItem xs="12" sm="4">
+					<MudDatePicker Label="Date of Inspection"
+								   @bind-Date="_model.InspectionDate"
+								   Required />
+				</MudItem>
+				<MudItem xs="12" sm="4">
+					<MudTextField Label="Branch Code"
+								  @bind-Value="_model.BranchCode"
+								  Disabled />
+				</MudItem>
+				<MudItem xs="12" sm="4">
+					<MudTextField Label="Branch Name"
+								  @bind-Value="_model.BranchName"
+								  Disabled />
+				</MudItem>
+			</MudGrid>
+
+			<MudDivider Class="my-4" />
+
+			<!-- COUNTS -->
+			<MudGrid>
+				<MudItem xs="12" sm="4">
+					<MudNumericField T="int"
+									 Label="Gold packets physically available"
+									 @bind-Value="_model.PhysicalPacketsAvailable"
+									 Required />
+				</MudItem>
+				<MudItem xs="12" sm="4">
+					<MudNumericField T="int"
+									 Label="Outstanding Gold Loan Accounts"
+									 @bind-Value="_model.OutstandingAccounts"
+									 Required />
+				</MudItem>
+				<MudItem xs="12" sm="4">
+					<MudNumericField T="int"
+									 Label="Closed a/c – jewels not delivered"
+									 @bind-Value="_model.ClosedButUndelivered" />
+				</MudItem>
+			</MudGrid>
+
+			<MudTextField Class="mt-3"
+						  Lines="2"
+						  Label="Reason if data not tallied"
+						  @bind-Value="_model.MismatchReason" />
+
+			<MudDivider Class="my-4" />
+
+			<!-- CHECKLIST -->
+			<MudText Typo="Typo.h6" Class="mb-2">
+				Inspection Checklist
+			</MudText>
+
+			<MudTable Dense Items="_model.Checklist">
+				<HeaderContent>
+					<MudTh>S.No</MudTh>
+					<MudTh>Particulars</MudTh>
+					<MudTh>Compliance</MudTh>
+					<MudTh>Observations</MudTh>
+				</HeaderContent>
+				<RowTemplate>
+					<MudTd>@context.SerialNo</MudTd>
+					<MudTd>@context.Particulars</MudTd>
+					<MudTd>
+						<MudCheckBox T="bool"
+									 @bind-Checked="context.IsCompliant" />
+					</MudTd>
+					<MudTd>
+						<MudTextField @bind-Value="context.Observations" />
+					</MudTd>
+				</RowTemplate>
+			</MudTable>
+
+			<MudDivider Class="my-4" />
+
+			<MudTextField Label="Other observations"
+						  Lines="3"
+						  @bind-Value="_model.OtherObservations" />
+
+			<!-- ACTIONS -->
+			<MudStack Direction="Row"
+					  Justify="Justify.FlexEnd"
+					  Spacing="2"
+					  Class="mt-4">
+
+				<MudButton Variant="Variant.Outlined"
+						   StartIcon="@Icons.Material.Filled.Save">
+					Save Draft
+				</MudButton>
+
+				<MudButton Color="Color.Primary"
+						   StartIcon="@Icons.Material.Filled.CheckCircle">
+					Submit Report
+				</MudButton>
+			</MudStack>
+
+		</MudForm>
+	}
+	else
+	{
+		<MudText Typo="Typo.body1" Class="mt-2" Style="color:#555; max-width:500px; text-align:center;">
+			You don't have access to this page.
+		</MudText>
+	}
+
+</MudPaper>
+
+@code {
+
+	// ================= TEMP ROLE FLAG =================
+	// private bool IsROUser = true;
+	private string _loggedInRole = "CO";
+
+	// ================= OFFICER FORM =================
+	private MudForm? _form;
+	private bool _isValid;
+
+	protected override async Task OnInitializedAsync()
+	{
+		var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+		var user = authState.User;
+
+		if (user.Identity?.IsAuthenticated == true)
+		{
+			_loggedInRole = user.FindFirst(ClaimTypes.Role)?.Value?.ToUpper()
+								?? user.FindFirst("Role")?.Value?.ToUpper()
+								?? "CO";
+		}
+	}
+
+	private MonthlyGoldVerificationVM _model = new()
+		{
+			BranchCode = "BR001",
+			BranchName = "Main Branch",
+			Checklist = GetDefaultChecklist()
+		};
+
+	// ================= RO VIEW =================
+	private List<SubmittedReportVM> _submittedReports = new()
+	{
+		new() { BranchCode = "BR001", OfficerName = "R. Sharma", InspectionDate = "05-Apr-2026" },
+		new() { BranchCode = "BR002", OfficerName = "S. Kumar", InspectionDate = "06-Apr-2026" }
+	};
+
+	// ================= MODELS =================
+	class MonthlyGoldVerificationVM
+	{
+		public DateTime? InspectionDate { get; set; }
+		public string BranchCode { get; set; } = "";
+		public string BranchName { get; set; } = "";
+		public int PhysicalPacketsAvailable { get; set; }
+		public int OutstandingAccounts { get; set; }
+		public int ClosedButUndelivered { get; set; }
+		public string? MismatchReason { get; set; }
+		public List<ChecklistItem> Checklist { get; set; } = new();
+		public string? OtherObservations { get; set; }
+	}
+
+	class ChecklistItem
+	{
+		public int SerialNo { get; set; }
+		public string Particulars { get; set; } = "";
+		public bool IsCompliant { get; set; }
+		public string? Observations { get; set; }
+	}
+
+	class SubmittedReportVM
+	{
+		public string BranchCode { get; set; } = "";
+		public string OfficerName { get; set; } = "";
+		public string InspectionDate { get; set; } = "";
+	}
+
+	// ================= CHECKLIST =================
+	static List<ChecklistItem> GetDefaultChecklist() => new()
+	{
+		new() { SerialNo = 1, Particulars = "Application filled completely and contains signatures of borrower(s), Gold Appraiser and sanctioning authority" },
+		new() { SerialNo = 2, Particulars = "Gold loan documents executed properly by borrower(s)" },
+		new() { SerialNo = 3, Particulars = "Approval obtained for sanction of gold loans to spouse of staff members where applicable" },
+		new() { SerialNo = 4, Particulars = "Previous gold loan liabilities not shifted by fresh loans without borrower consent" },
+		new() { SerialNo = 5, Particulars = "Pass book / acknowledgement card signed by branch officials given to borrower" },
+		new() { SerialNo = 6, Particulars = "Gold loans not sanctioned without appraisal by empanelled appraiser" },
+		new() { SerialNo = 7, Particulars = "Proper due diligence conducted for new customers outside command area" },
+		new() { SerialNo = 8, Particulars = "No gold loans sanctioned to pawn brokers or jewellers" },
+		new() { SerialNo = 9, Particulars = "Enhanced Due Diligence conducted for loans above ₹25 lakhs" },
+		new() { SerialNo = 10, Particulars = "Loans not sanctioned against gold coins sold by non‑banks (if yes, details furnished)" },
+		new() { SerialNo = 11, Particulars = "Two independent appraisers used where required (loans above ₹25 lakhs)" },
+		new() { SerialNo = 12, Particulars = "Gold ornaments kept in security pouches as per extant guidelines" },
+		new() { SerialNo = 13, Particulars = "Gold ornament movement (Safe‑in / Safe‑out) register maintained daily" },
+		new() { SerialNo = 14, Particulars = "No unauthorized access provided to the gold safe" },
+		new() { SerialNo = 15, Particulars = "Appraiser agreement validity verified and in force" },
+		new() { SerialNo = 16, Particulars = "Key register maintained and dual custody changes properly recorded" },
+		new() { SerialNo = 17, Particulars = "Branch Head submits monthly certificate tallying gold packets with outstanding loans" },
+		new() { SerialNo = 18, Particulars = "Borrower acknowledgement for return of jewels recorded in security register" },
+		new() { SerialNo = 19, Particulars = "Quarterly re‑appraisal carried out as per guidelines" },
+		new() { SerialNo = 20, Particulars = "Re‑appraisal certificate submitted to controlling office" },
+		new() { SerialNo = 21, Particulars = "Recovery actions initiated for gold loans outstanding beyond 12 months" },
+		new() { SerialNo = 22, Particulars = "Designated gold loan appraisal area covered under CCTV surveillance" },
+		new() { SerialNo = 23, Particulars = "Multiple loans to same borrower comply with re‑appraisal threshold limits" },
+		new() { SerialNo = 24, Particulars = "Job rotation for staff handling gold loans implemented" },
+		new() { SerialNo = 25, Particulars = "Date of last visit of ZO Roving Officer recorded" },
+		new() { SerialNo = 26, Particulars = "End‑use certificate with full details available on record" },
+		new() { SerialNo = 27, Particulars = "Closed loan documents and used gold pouches kept under joint custody" },
+		new() { SerialNo = 28, Particulars = "Auction details recorded for the month (accounts, amounts, notices, surplus credit)" },
+		new() { SerialNo = 29, Particulars = "Gold loan ornament register updated up to date" },
+		new() { SerialNo = 30, Particulars = "Any other observation noted during inspection" }
+	};
+}

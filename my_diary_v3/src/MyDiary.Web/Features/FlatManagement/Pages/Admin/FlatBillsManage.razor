@@ -1,0 +1,355 @@
+@page "/flatmgmt/admin/flat-bills-manage"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminFlatAllocationService AllocationService
+@inject IAdminFlatBillsService BillsService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Flat Utility Bills - Flat Management System</PageTitle>
+
+<div class="fbm-page">
+    <a href="flatmgmt/admin/flat-bills" class="fbm-back">&laquo; Back to Flat Utility Bills</a>
+
+    <PageHeader Title="Flat Utility Bills" Crumbs="_crumbs" PageKey="flatmgmt-admin-flat-bills-manage" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (loadError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">@loadError</MudAlert>
+    }
+    else
+    {
+        <MudCard Class="fbm-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="fbm-section-title">Flat Details</MudText></MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fbm-label">Flat No.</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat!.FlatNo</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fbm-label">Type / Area</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.BhkDetails / @flat.FlatArea Sqmtr</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fbm-label">Category / Status</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.FamilyDetails / @occupancyLabel</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fbm-label">Building / Location</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.SocietyName - @flat.LocationName</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fbm-label">Address</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.Address</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="fbm-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="fbm-section-title">Current Occupant Details</MudText></MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@currentOccupants" Hover="true" Bordered="true" Dense="true" Class="fbm-table">
+                    <HeaderContent>
+                        <MudTh>PF No.</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Designation</MudTh>
+                        <MudTh>Email</MudTh>
+                        <MudTh>Phone</MudTh>
+                        <MudTh>Department</MudTh>
+                        <MudTh>Occupy Date</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd DataLabel="PF No.">@row.EmployeePf</MudTd>
+                        <MudTd DataLabel="Name">@row.EmployeeName</MudTd>
+                        <MudTd DataLabel="Designation">@row.EmployeeDesignation</MudTd>
+                        <MudTd DataLabel="Email">@row.Email</MudTd>
+                        <MudTd DataLabel="Phone">@row.Phone</MudTd>
+                        <MudTd DataLabel="Department">@row.EmployeeDepartment</MudTd>
+                        <MudTd DataLabel="Occupy Date">@row.OccupyDate</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No Current Occupant</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="fbm-card mt-4" Elevation="2">
+            <MudCardContent>
+                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="fbm-tabs" PanelClass="pa-0 pt-4">
+                    <MudTabPanel Text="Add New Utility Bill">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="billTypeCode" Label="Utility Bill Type*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var t in BillTypeOptions)
+                                            {
+                                                <MudSelectItem Value="@t">@t</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="providerName" Label="Provider Name*" Variant="Variant.Outlined" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="6">
+                                        <MudSelect T="string" @bind-Value="billMonth" Label="Bill Month*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var m in MonthOptions)
+                                            {
+                                                <MudSelectItem Value="@m.Key">@m.Value</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="6">
+                                        <MudSelect T="string" @bind-Value="billYear" Label="Year*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var y in YearOptions)
+                                            {
+                                                <MudSelectItem Value="@y">@y</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="billPeriod" Label="Bill Period" Variant="Variant.Outlined" MaxLength="100" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="billNo" Label="Bill No." Variant="Variant.Outlined" MaxLength="50" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="billAmount" Label="Bill Amount*(Rs.)" Variant="Variant.Outlined" Required="true" MaxLength="6" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="paidAmount" Label="Paid Amount* (Rs.)" Variant="Variant.Outlined" Required="true" MaxLength="6" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="billDate" Label="Bill Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="paymentDate" Label="Payment Date" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="remark" Label="Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+
+                        <div class="fbm-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isSaving" OnClick="HandleAddBill">
+                                @(isSaving ? "Saving..." : "Add Details")
+                            </MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Utility Bills History">
+                        <MudTable Items="@billHistory" Hover="true" Bordered="true" Dense="true" Class="fbm-table">
+                            <HeaderContent>
+                                <MudTh>Bill Type</MudTh>
+                                <MudTh>Provider</MudTh>
+                                <MudTh>Bill Month</MudTh>
+                                <MudTh>Bill Amount</MudTh>
+                                <MudTh>Bill Period</MudTh>
+                                <MudTh>Paid Amount</MudTh>
+                                <MudTh>Bill Date</MudTh>
+                                <MudTh>Payment Date</MudTh>
+                                <MudTh>Remark</MudTh>
+                                <MudTh>Entered On</MudTh>
+                            </HeaderContent>
+                            <RowTemplate Context="row">
+                                <MudTd DataLabel="Bill Type">@row.BillTypeName</MudTd>
+                                <MudTd DataLabel="Provider">@row.ProviderName</MudTd>
+                                <MudTd DataLabel="Bill Month">@row.BillMonthToShow</MudTd>
+                                <MudTd DataLabel="Bill Amount">@row.BillAmount</MudTd>
+                                <MudTd DataLabel="Bill Period">@row.BillCycleEndDate</MudTd>
+                                <MudTd DataLabel="Paid Amount">@row.PaidAmount</MudTd>
+                                <MudTd DataLabel="Bill Date">@row.BillGenerationDate</MudTd>
+                                <MudTd DataLabel="Payment Date">@row.PaymentDate</MudTd>
+                                <MudTd DataLabel="Remark">@row.Remark</MudTd>
+                                <MudTd DataLabel="Entered On">@row.BillAddDate</MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText>No Bill Added Yet</MudText>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </MudTabPanel>
+                </MudTabs>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="fbm-modal-overlay" @onclick="() => message = null">
+            <div class="fbm-modal @(isError ? "fbm-modal-error" : "fbm-modal-success")" @onclick:stopPropagation="true">
+                <div class="fbm-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="fbm-modal-text">@message</p>
+                <button type="button" class="fbm-btn @(isError ? "fbm-btn-secondary" : "fbm-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Flat Utility Bills") };
+    private static readonly string[] BillTypeOptions = { "Electricity Bill", "Gas Bill", "Water Bill", "DTH", "Landline" };
+    private static readonly Dictionary<string, string> MonthOptions = new()
+    {
+        ["01"] = "January", ["02"] = "February", ["03"] = "March", ["04"] = "April",
+        ["05"] = "May", ["06"] = "June", ["07"] = "July", ["08"] = "August",
+        ["09"] = "September", ["10"] = "October", ["11"] = "November", ["12"] = "December",
+    };
+    private static readonly string[] YearOptions = Enumerable.Range(2016, AppTime.Now.Year - 2016 + 1)
+        .Select(y => y.ToString()).ToArray();
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery(Name = "flatId")]
+    public string? FlatId { get; set; }
+
+    private string adminPfNo = "";
+    private bool isLoading = true;
+    private string? loadError;
+    private FlatAllocationFlatInfo? flat;
+    private string occupancyLabel = "";
+
+    private List<FlatOccupantRow> currentOccupants = new();
+    private List<FlatBillRow> billHistory = new();
+
+    private string billTypeCode = "";
+    private string providerName = "";
+    private string billMonth = "";
+    private string billYear = "";
+    private string billPeriod = "";
+    private string billNo = "";
+    private string billAmount = "";
+    private string paidAmount = "";
+    private DateTime? billDate;
+    private DateTime? paymentDate;
+    private string remark = "";
+    private bool isSaving;
+
+    private string? message;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(FlatId))
+        {
+            loadError = "Invalid request.";
+            isLoading = false;
+            return;
+        }
+
+        await LoadAllAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadAllAsync()
+    {
+        flat = await AllocationService.GetFlatInfoAsync(FlatId!);
+        if (flat is null)
+        {
+            loadError = "Flat Details with this Flat No. doesn't exist..";
+            return;
+        }
+
+        occupancyLabel = string.Equals(flat.OccupancyStatus, "Vacant", StringComparison.OrdinalIgnoreCase)
+            ? "Vacant"
+            : $"{flat.OccupantCount}-Occupants";
+
+        currentOccupants = await AllocationService.GetCurrentOccupantsAsync(FlatId!);
+        billHistory = await BillsService.GetBillHistoryAsync(FlatId!);
+    }
+
+    private async Task HandleAddBill()
+    {
+        message = null;
+
+        if (string.IsNullOrWhiteSpace(billTypeCode)) { ShowError("Select Bill Type"); return; }
+        if (string.IsNullOrWhiteSpace(providerName)) { ShowError("Fill name"); return; }
+        if (string.IsNullOrWhiteSpace(billMonth)) { ShowError("select a month"); return; }
+        if (string.IsNullOrWhiteSpace(billYear)) { ShowError("select a year"); return; }
+        if (string.IsNullOrWhiteSpace(billAmount)) { ShowError("Fill Bill Amount"); return; }
+        if (string.IsNullOrWhiteSpace(paidAmount)) { ShowError("Fill Paid Amount"); return; }
+        if (billDate is null) { ShowError("Fill bill date"); return; }
+
+        isSaving = true;
+        try
+        {
+            var billMonthKey = billYear + billMonth;
+            var alreadyExists = await BillsService.CheckExistingBillAsync(FlatId!, billTypeCode, billMonthKey);
+            if (alreadyExists)
+            {
+                ShowError($"{billTypeCode} for {MonthOptions[billMonth]}-{billYear} has been already added. You can see the bill in Billing History");
+                return;
+            }
+
+            var result = await BillsService.AddBillAsync(new AddBillRequest(
+                FlatId: FlatId!,
+                FlatNo: flat?.FlatNo,
+                BillTypeCode: billTypeCode,
+                BillTypeName: billTypeCode,
+                ProviderName: providerName.Trim(),
+                BillMonth: billMonthKey,
+                BillMonthToShow: $"{MonthOptions[billMonth]}-{billYear}",
+                BillGenerationDate: billDate.Value.ToString("dd/MM/yyyy"),
+                BillCycleEndDate: billPeriod,
+                BillNo: billNo,
+                BillAmount: billAmount.Trim(),
+                PaidAmount: paidAmount.Trim(),
+                PaymentDate: paymentDate?.ToString("dd/MM/yyyy"),
+                Remark: remark,
+                EnteredBy: adminPfNo));
+
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Some Error Occured. Please try later...");
+                return;
+            }
+
+            billHistory = await BillsService.GetBillHistoryAsync(FlatId!);
+            ResetForm();
+            ShowSuccess("Bill Details Added SuccessFully..");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        billTypeCode = "";
+        providerName = "";
+        billMonth = "";
+        billYear = "";
+        billPeriod = "";
+        billNo = "";
+        billAmount = "";
+        paidAmount = "";
+        billDate = null;
+        paymentDate = null;
+        remark = "";
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

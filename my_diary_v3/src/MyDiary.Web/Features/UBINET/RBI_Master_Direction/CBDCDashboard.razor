@@ -1,0 +1,312 @@
+@page "/departments/cbdc-dashboard"
+@page "/departments/cbdc-dashboard/{DeptId}"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@inject NavigationManager Nav
+@using MyDiary.Web.Components.Layout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout PublicLayout
+<PageTitle>CBDC Dashboard – @_deptLabel</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4 mb-8">
+
+    <!-- Page Header -->
+    <MudPaper Elevation="3" Class="pa-4 mb-4"
+              Style="background: linear-gradient(135deg, #00695c 0%, #004d40 100%);
+                     color:white; border-radius:12px;
+                     box-shadow: 0 4px 20px rgba(0,105,92,0.35) !important;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.Dashboard"
+                         Style="font-size:2.5rem; color:rgba(255,255,255,0.85);" />
+                <div>
+                    <MudText Typo="Typo.h5" Style="font-weight:700; color:white;">
+                        CBDC Dashboard
+                    </MudText>
+                    <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.75); margin-top:2px;">
+                        Central Bank Digital Currency – Daily Reports &nbsp;|&nbsp; @_deptLabel
+                    </MudText>
+                </div>
+            </MudStack>
+            <MudStack Row="true" Spacing="2" Class="mt-2 mt-sm-0">
+                <MudButton Variant="Variant.Filled"
+                           Style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.4);"
+                           StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                           OnClick="@(() => Nav.NavigateTo("departments/other-info/" + DeptId))">
+                    Other Info
+                </MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.4);"
+                           StartIcon="@Icons.Material.Filled.Home" Size="Size.Small"
+                           OnClick="@(() => Nav.NavigateTo(""))">Home</MudButton>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    <!-- Breadcrumb -->
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 pa-0" />
+
+    <!-- Stats Row -->
+    <MudGrid Spacing="3" Class="mb-5">
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top:3px solid #00695c;">
+                <MudText Typo="Typo.h5" Style="font-weight:700; color:#00695c;">@_activeEntries.Count</MudText>
+                <MudText Typo="Typo.caption" Style="color:#555;">Active Reports</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top:3px solid #1565c0;">
+                <MudText Typo="Typo.h5" Style="font-weight:700; color:#1565c0;">@_archivedEntries.Count</MudText>
+                <MudText Typo="Typo.caption" Style="color:#555;">Archived Reports</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top:3px solid #f57f17;">
+                <MudText Typo="Typo.h5" Style="font-weight:700; color:#f57f17;">
+                    @(_activeEntries.Any() ? _activeEntries.First().DateLabel : "–")
+                </MudText>
+                <MudText Typo="Typo.caption" Style="color:#555;">Latest Report</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top:3px solid #880e4f;">
+                <MudText Typo="Typo.h5" Style="font-weight:700; color:#880e4f;">PDF/XLSX</MudText>
+                <MudText Typo="Typo.caption" Style="color:#555;">Formats</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Dept notice if not recon -->
+    @if (DeptId != "recon")
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" Style="border-radius:10px;">
+            CBDC Dashboard reports are available under the <strong>Reconciliation</strong> department.
+            Showing Reconciliation data below.
+        </MudAlert>
+    }
+
+    <!-- Search -->
+    <MudPaper Elevation="1" Class="pa-3 mb-4" Style="border-radius:10px;">
+        <MudTextField @bind-Value="_searchText"
+                      Placeholder="Search by date (e.g. 01-05-2026)..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      AdornmentColor="Color.Primary"
+                      Variant="Variant.Outlined"
+                      Clearable="true"
+                      Immediate="true"
+                      Margin="Margin.Dense"
+                      FullWidth="true"
+                      Style="font-size:0.9rem;" />
+    </MudPaper>
+
+    <!-- Active Reports -->
+    <MudPaper Elevation="2" Class="pa-4 mb-4" Style="border-radius:12px; border-left:4px solid #00695c;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Style="color:#00695c;" />
+            <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a237e;">Active Reports</MudText>
+            <MudChip T="string" Size="Size.Small"
+                     Style="background:#00695c; color:white; font-size:0.75rem; font-weight:600;
+                            height:22px; margin-left:auto;">
+                @FilteredActive.Count() report@(FilteredActive.Count() != 1 ? "s" : "")
+            </MudChip>
+        </MudStack>
+        <MudDivider Class="mb-3" />
+
+        @if (!FilteredActive.Any())
+        {
+            <MudText Typo="Typo.body2" Style="color:#9e9e9e; text-align:center; padding:16px;">
+                No active reports match your search.
+            </MudText>
+        }
+        else
+        {
+            <MudTable Items="@FilteredActive" Hover="true" Striped="true" Dense="true"
+                      Breakpoint="Breakpoint.Xs" Style="font-size:0.875rem;">
+                <HeaderContent>
+                    <MudTh Style="width:60px; background:#00695c; color:white; font-weight:700;">#</MudTh>
+                    <MudTh Style="background:#00695c; color:white; font-weight:700;">Report Date</MudTh>
+                    <MudTh Style="width:80px; background:#00695c; color:white; font-weight:700; text-align:center;">Format</MudTh>
+                    <MudTh Style="width:100px; background:#00695c; color:white; font-weight:700; text-align:center;">Action</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="#" Style="text-align:center; font-weight:600; color:#555;">
+                        @context.Index
+                    </MudTd>
+                    <MudTd DataLabel="Report Date">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                            <MudIcon Icon="@Icons.Material.Filled.CalendarToday"
+                                     Size="Size.Small" Style="color:#00695c;" />
+                            <MudText Style="font-weight:600; font-size:0.875rem;">
+                                CBDC Dashboard as on @context.DateLabel
+                            </MudText>
+                        </MudStack>
+                    </MudTd>
+                    <MudTd DataLabel="Format" Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small"
+                                 Style="@(context.Url.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                                    ? "background:#e53935; color:white; font-size:0.72rem; font-weight:700; height:22px;"
+                                    : "background:#1565c0; color:white; font-size:0.72rem; font-weight:700; height:22px;")">
+                            @(context.Url.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "PDF" : "XLSX")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Action" Style="text-align:center;">
+                        <MudButton Variant="Variant.Filled"
+                                   Style="background:#00695c; color:white; border-radius:8px;
+                                          font-size:0.75rem; font-weight:600;"
+                                   StartIcon="@Icons.Material.Filled.OpenInNew"
+                                   Size="Size.Small"
+                                   Href="@context.Url"
+                                   Target="_blank">
+                            Open
+                        </MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    <!-- Archived Reports (collapsible) -->
+    @if (_archivedEntries.Any())
+    {
+        <MudExpansionPanels>
+            <MudExpansionPanel Style="border-radius:12px; border-left:4px solid #9e9e9e; overflow:hidden;">
+                <TitleContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Archive" Style="color:#9e9e9e;" />
+                        <MudText Typo="Typo.subtitle1" Style="font-weight:700; color:#555;">
+                            Archived Reports
+                        </MudText>
+                        <MudChip T="string" Size="Size.Small"
+                                 Style="background:#9e9e9e; color:white; font-size:0.75rem;
+                                        font-weight:600; height:22px; margin-left:auto;">
+                            @_archivedEntries.Count report@(_archivedEntries.Count != 1 ? "s" : "")
+                        </MudChip>
+                    </MudStack>
+                </TitleContent>
+                <ChildContent>
+                    <MudTable Items="@FilteredArchived" Hover="true" Striped="true" Dense="true"
+                              Breakpoint="Breakpoint.Xs" Style="font-size:0.875rem; margin-top:8px;">
+                        <HeaderContent>
+                            <MudTh Style="width:60px; background:#757575; color:white; font-weight:700;">#</MudTh>
+                            <MudTh Style="background:#757575; color:white; font-weight:700;">Report Date</MudTh>
+                            <MudTh Style="width:80px; background:#757575; color:white; font-weight:700; text-align:center;">Format</MudTh>
+                            <MudTh Style="width:100px; background:#757575; color:white; font-weight:700; text-align:center;">Action</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="#" Style="text-align:center; font-weight:600; color:#555;">
+                                @context.Index
+                            </MudTd>
+                            <MudTd DataLabel="Report Date">
+                                <MudText Style="font-size:0.875rem; color:#555;">
+                                    CBDC Dashboard as on @context.DateLabel
+                                </MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Format" Style="text-align:center;">
+                                <MudChip T="string" Size="Size.Small"
+                                         Style="@(context.Url.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                                            ? "background:#e53935; color:white; font-size:0.72rem; font-weight:700; height:22px;"
+                                            : "background:#1565c0; color:white; font-size:0.72rem; font-weight:700; height:22px;")">
+                                    @(context.Url.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "PDF" : "XLSX")
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Action" Style="text-align:center;">
+                                <MudButton Variant="Variant.Outlined"
+                                           Style="border-color:#757575; color:#555; border-radius:8px;
+                                                  font-size:0.75rem; font-weight:600;"
+                                           StartIcon="@Icons.Material.Filled.OpenInNew"
+                                           Size="Size.Small"
+                                           Href="@context.Url"
+                                           Target="_blank">
+                                    Open
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </ChildContent>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+
+</MudContainer>
+
+@code {
+    [Parameter] public string DeptId { get; set; } = "recon";
+
+    private string _searchText  = "";
+    private string _deptLabel   = "Reconciliation";
+
+    private List<BreadcrumbItem> _breadcrumbs = new();
+
+    private record CbdcEntry(int Index, string DateLabel, string Url);
+
+    // ---- Active reports (currently live, not commented out in JSP) ----
+    private List<CbdcEntry> _activeEntries = new()
+    {
+        new(1, "01-05-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 010526.pdf"),
+        new(2, "30-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 300426.pdf"),
+        new(3, "29-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 290426.pdf"),
+        new(4, "28-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 280426.pdf"),
+    };
+
+    // ---- Archived reports (commented-out in JSP — preserved for reference) ----
+    private List<CbdcEntry> _archivedEntries = new()
+    {
+        new(1,  "26-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC Dashboard as on 26.04.2026.pdf"),
+        new(2,  "25-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC Dashboard 25-04-2026.pdf"),
+        new(3,  "23-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASHBOARD 23-04-2026.pdf"),
+        new(4,  "22-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 220426.pdf"),
+        new(5,  "21-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 210426.pdf"),
+        new(6,  "20-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 200426.pdf"),
+        new(7,  "19-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 190426.pdf"),
+        new(8,  "18-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 180426.pdf"),
+        new(9,  "17-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 170426.pdf"),
+        new(10, "16-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 160426.pdf"),
+        new(11, "15-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 150426.pdf"),
+        new(12, "13-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 130426.pdf"),
+        new(13, "12-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 120426.pdf"),
+        new(14, "11-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 110426.pdf"),
+        new(15, "09-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 090426.pdf"),
+        new(16, "08-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASHBOARD_08042026.pdf"),
+        new(17, "07-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 070426.pdf"),
+        new(18, "06-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 06.04.2026.xlsx"),
+        new(19, "05-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 05.04.2026.xlsx"),
+        new(20, "04-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 04.04.2026.xlsx"),
+        new(21, "03-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 03.04.2026.xlsx"),
+        new(22, "02-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 02.04.2026.xlsx"),
+        new(23, "01-04-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 01.04.2026.xlsx"),
+        new(24, "31-03-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC/CBDC DASH BOARD AS ON 31.03.2026.xlsx"),
+        new(25, "30-03-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC DASH BOARD AS ON 30.03.2026.xlsx"),
+        new(26, "29-03-2026", "https://ubinet.unionbankofindia.co.in/download/CBDC DASH BOARD AS ON 29.03.2026-New.xlsx"),
+    };
+
+    private IEnumerable<CbdcEntry> FilteredActive =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _activeEntries
+            : _activeEntries.Where(e => e.DateLabel.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<CbdcEntry> FilteredArchived =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _archivedEntries
+            : _archivedEntries.Where(e => e.DateLabel.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrWhiteSpace(DeptId)) DeptId = "recon";
+
+        _deptLabel = DeptId switch
+        {
+            "recon"  => "Reconciliation",
+            "cmplc"  => "Compliance",
+            _        => DeptId
+        };
+
+        _breadcrumbs = new()
+        {
+            new BreadcrumbItem("Home",           href: "",             icon: Icons.Material.Filled.Home),
+            new BreadcrumbItem("Departments",    href: "departments"),
+            new BreadcrumbItem(_deptLabel,       href: $"departments/other-info/{DeptId}"),
+            new BreadcrumbItem("CBDC Dashboard", href: null, disabled: true),
+        };
+    }
+}

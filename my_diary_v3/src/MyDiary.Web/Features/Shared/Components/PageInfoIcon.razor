@@ -1,0 +1,58 @@
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+
+@inject IDialogService DialogService
+@inject IPageInfoService PageInfoService
+
+<MudIconButton Icon="@Icons.Material.Filled.Info"
+               Color="Color.Inherit"
+               Size="Size.Medium"
+               Style="
+                    background:rgba(255,255,255,.15);
+                    border-radius:50%;
+                    color:white;
+                    width:34px;
+                    height:34px;"
+               OnClick="OpenDialog" />
+
+@code {
+
+    [Parameter]
+    public string PageKey { get; set; } = "";
+
+    private async Task OpenDialog()
+    {
+        try
+        {
+            var info = await PageInfoService.GetPageInfoAsync(PageKey);
+
+            if (info == null)
+                return;
+
+            var parameters = new DialogParameters<PageInfoDialog>
+        {
+            { x => x.Model, info }
+        };
+
+            var options = new DialogOptions
+                {
+                    NoHeader = true,
+                    CloseButton = false,
+                    FullWidth = false,
+                    MaxWidth = MaxWidth.Small,
+                    BackdropClick = true
+                };
+
+            await DialogService.ShowAsync<PageInfoDialog>(
+                string.Empty,
+                parameters,
+                options);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[PageInfoIcon] Unhandled error: " + ex.Message);
+            throw;
+        }
+    }
+}

@@ -1,0 +1,587 @@
+@page "/assurance-snapshot"
+@page "/app/assurance-snapshot"
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.Options
+@using MudBlazor
+@using MyDiary.Web.Features.Focus360.Components
+@using MyDiary.Web.Features.Focus360.Models
+@using MyDiary.Web.Features.Focus360.Services
+@using MyDiary.Web.Features.Assurance.Services
+@using MyDiary.Web.Features.Assurance.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@using MyDiary.Web.Features.OperationDashboard.Services
+@using MyDiary.Web.Features.Shared.Components
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Web
+@using System.Data
+@using MyDiary.Web.Core.Extensions
+@inject IGapService GapSvc
+@inject AssurancePanelService PanelSvc
+@inject AssuranceExportService ExportSvc
+@inject IOptions<GapReportSettings> ReportConfig
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ILandingDashboardV2Service LandingDashboardService
+@inject NavigationManager Nav
+@inject IStaticAssetPathResolver Assets
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<PageTitle>@_cfg.AssuranceReportName</PageTitle>
+
+<PageHeader PageKey="assurance-snapshot" Title="Assurance Snapshot"
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Assurance"), new("Assurance Snapshot") })"
+            Subtitle="Financial Operational and Compliance Unit Snapshot" />
+
+@* ── Filter Toolbar ──────────────────────────────────────────────────── *@
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+          @*   <MudCard Elevation="2" Style="border-top-left-radius: 10px; border-top-right-radius: 10px;">
+                <MudCardHeader Class="justify-center text-white"
+                               Style="height:48px; font-weight:800; background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    <h2 class="ma-0" style="font-size:1.25rem; font-weight:800; color:white;">@_cfg.AssuranceReportName</h2>
+                </MudCardHeader>
+            </MudCard> *@
+
+            @* ── Filter bar with RBAC-aware cascading dropdowns (same as Focus360) ── *@
+            <MudGrid Spacing="2" Class="p-2 align-center">
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string" Label="Zone" Value="@_selectedZone" ValueChanged="OnZoneChangedAsync"
+                               Disabled="@_isZoneDisabled" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                               aria-label="Select Zone">
+                        @if (CanViewAll)
+                        {
+                            <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                        }
+                        @foreach (var zone in _zones)
+                        {
+                            <MudSelectItem Value="@zone.zone_solid">@zone.zone_name_eng</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string" Label="Region" Value="@_selectedRegion" ValueChanged="OnRegionChangedAsync"
+                               Disabled="@_isRegionDisabled" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                               aria-label="Select Region">
+                        <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                        @foreach (var region in _regions)
+                        {
+                            <MudSelectItem Value="@region.region_solid">@region.region_name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string" Label="Branch" Value="@_selectedBranch" ValueChanged="OnBranchChangedAsync"
+                               Disabled="@_isBranchDisabled" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                               aria-label="Select Branch">
+                        <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                        @foreach (var branch in _branches)
+                        {
+                            <MudSelectItem Value="@branch.SOL_ID">@branch.branch_name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2"></MudItem>
+                <MudItem xs="12" sm="4" Class="d-flex align-right gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Medium"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               OnClick="LoadReport" Disabled="@_loading"
+                               Style="white-space:nowrap">
+                        @(_loading ? "Loading…" : "Load Report")
+                    </MudButton>
+                    @if (_report is not null)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Medium"
+                                   StartIcon="@Icons.Material.Filled.GridOn"
+                                   OnClick="DownloadExcel" Disabled="@ExportDisabled">Excel</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Medium"
+                                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                                   OnClick="DownloadPdf" Disabled="@ExportDisabled">PDF</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Medium"
+                                   StartIcon="@Icons.Material.Filled.FileDownload"
+                                   OnClick="DownloadCsv" Disabled="@ExportDisabled">CSV</MudButton>
+                        @* <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Medium"
+                                   StartIcon="@Icons.Material.Filled.Print"
+                                   OnClick="Print">Print</MudButton> *@
+                    }
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-6" />
+    }
+    else if (_report is null)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">Select a Zone, Region or Branch and click Load Report to generate the Assurance Snapshot.</MudAlert>
+    }
+    else if (_categories.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            No assurance panel data found. Configure dbo.ASSURANCE_PANEL_DEF (see db/sqlserver/GAP_04_assurance_panels.sql).
+        </MudAlert>
+    }
+    else
+    {
+        <div id="asr-report" class="asr-report">
+            @* ── Report header — same style as Focus 360 (two logos + centred title) ── *@
+            <div class="asr-banner">
+                <img class="asr-logo asr-logo-left" src="images/My_Diary_Log-transparent.png" alt="My Diary" />
+                <div class="asr-banner-center">
+                    <div class="asr-banner-title">@_cfg.AssuranceReportName</div>
+                    @if (!string.IsNullOrWhiteSpace(_cfg.BankName))
+                    {
+                        <div class="asr-banner-bank">@_cfg.BankName</div>
+                    }
+                    <div class="asr-banner-sub">
+                        Union Bank of India &nbsp;|&nbsp; ZO/RO/Branch: @_report.Branch.BranchName (@_report.Branch.BranchCode)
+                    </div>
+                </div>
+                <img class="asr-logo asr-logo-right" src="images/UBI_Logo.png" alt="Union Bank of India" />
+            </div>
+
+            <div class="asr-detail-band">Branch / ZO Details &nbsp; As on @((_report.AsOnDate ?? AppTime.Today).ToString("dd-MMM-yyyy"))</div>
+            <table class="asr-tbl asr-head-tbl">
+                <thead><tr><th>Branch</th><th>Code</th><th>Zone</th><th>Region</th><th>BM</th><th>Working Since</th>
+                   @*  <th>Assurance Head</th>
+                    <th>Working Since</th> *@
+                </tr></thead>
+                <tbody><tr>
+                    <td>@_report.Branch.BranchName</td><td>@_report.Branch.BranchCode</td><td>@_report.Branch.ZoneName</td>
+                    <td>@_report.Branch.RegionName</td><td>@_report.Branch.ZMBMName</td>
+                    @* <td></td><td></td><td></td> *@
+                </tr></tbody>
+            </table>
+
+            @* <div class="asr-page-title">Assurance Snapshot</div> *@
+
+            @* ── Categories — red banner, containing one or more rows of side-by-side panels
+                 (blue title bars), matching the old FOCUS-Assurance report exactly. Column
+                 headers, row labels and panel grouping all come from the data-driven panel
+                 grid (usp_Assurance_GetPanelGrid), not hardcoded per category. ── *@
+            @foreach (var cat in _categories)
+            {
+                <div class="asr-section">
+                <div class="asr-section-title" style="@($"background-color:{GetPanelColor(cat.Label,"category")}; color:white;")">@cat.Label</div>
+                    <div class="asr-section-body">
+                        @foreach (var group in cat.PanelRowGroups)
+                        {
+                            <div class="asr-panel-grid" style="@($"grid-template-columns:repeat({group.Panels.Count},1fr);")">
+                                @foreach (var panel in group.Panels)
+                                {
+                                    <div class="asr-panel">
+                                    <div class="asr-subhead"
+                                         style="@($"background-color:{GetPanelColor(panel.Title, "title")}; color:white;")">
+                                        @panel.Title
+                                       @*  <div>
+                                            @panel.AsOnDate
+                                        </div> *@
+                                    </div>
+                                        <table class="asr-tbl">
+                                            <thead>
+                                                <tr>
+                                                    @if (panel.Rows.Any(r => !string.IsNullOrEmpty(r.RowLabel)))
+                                                    {
+                                                        <th>@(panel.RowLabelHeader ?? "Parameter")</th>
+                                                    }
+                                                    @foreach (var ch in panel.ColumnHeaders)
+                                                    {
+                                                    <th class="asr-num" title="@ch">@ch</th>
+                                                    }
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var row in panel.Rows)
+                                                {
+                                                    <tr>
+                                                        @if (panel.Rows.Any(r => !string.IsNullOrEmpty(r.RowLabel)))
+                                                        {
+                                                            <td>@row.RowLabel</td>
+                                                        }
+                                                        @foreach (var cell in row.Cells)
+                                                        {
+                                                            <td class="asr-num">@cell</td>
+                                                        }
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            @* ══ 9. OPERATIONS DASHBOARD ══════════════════════════════════════════════ *@
+       @*  @if (dashboardData != null)
+        {
+            <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+                <div class="f360-sec-hdr" style="background:#0070C0">
+                    <MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Small" Class="mr-2" />
+                    Operations
+                </div>
+                <MudGrid Spacing="0" Class="flex-nowrap">
+                    <MudItem xs="12" Style="border-right:1px solid #CFD8DC">
+                        <F360SuspenseSundryPanel DashboardData="dashboardData" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <F360DefaultingPanel DashboardData="dashboardData" />
+                    </MudItem> 
+                </MudGrid>
+                <MudGrid Spacing="0" Class="flex-nowrap" Style="border-top:1px solid #CFD8DC">
+                    <MudItem xs="6" Style="border-right:1px solid #CFD8DC">
+                        <F360CashHoldingPanel DashboardData="dashboardData" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <F360CustomerComplaintsPanel DashboardData="dashboardData" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        } *@
+        </div>
+    }
+@* </div> *@
+
+
+<style>
+    .asr-report { background:#fff; font-size:.72rem; }
+    /* Report header — same as Focus 360: white band, two logos, centred title */
+    .asr-banner { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid #e3e6ef; border-bottom:none; padding:8px 14px; border-radius:10px 10px 0 0; }
+    .asr-logo { height:36px; object-fit:contain; flex:0 0 auto; }
+    .asr-logo-left { width:50px; }
+    .asr-logo-right { width:110px; }
+    .asr-banner-center { flex:1 1 auto; text-align:center; }
+    .asr-banner-title { font-size:1.05rem; font-weight:800; color:#0b4ea2; letter-spacing:.01em; }
+   
+    .asr-banner-bank { font-size:.8rem; color:#455a64; font-weight:600; }
+    .asr-banner-sub { font-size:.7rem; color:#607d8b; }
+
+    .asr-detail-band {
+        background:#c8102e;
+        color: #fff;
+        font-weight: 700;
+        font-size: .72rem;
+        padding: 4px 10px;
+        text-align: center;
+    }
+    .asr-page-title { background:#c0143c; color:#fff; font-weight:800; font-size:.9rem; padding:6px 10px; text-align:center; margin:6px 0; }
+    .asr-section { border:1px solid #e3e6ef; margin-bottom:4px; }
+    .asr-section-title { font-weight:700; font-size:.78rem; padding:4px 10px; background:#c0143c; color:#fff; }
+    .asr-section-body { padding:4px 6px; }
+    .asr-panel-grid { display:grid; gap:0 8px; align-items:start; margin-bottom:4px; }
+    .asr-panel { min-width:0; }
+    /* .asr-subhead { font-weight:700; font-size:.7rem; color:#fff; background:#1b4a98; padding:2px 8px; } */
+
+    .asr-subhead {
+        font-weight: 700;
+        font-size: .7rem;
+        color: #000;
+        /* background: #1b4a98; */
+        padding: 2px 8px;
+    }
+    .asr-tbl { width:100%; border-collapse:collapse; font-size:.66rem; margin-bottom:2px; table-layout:fixed; }
+
+        .asr-tbl th {
+            background: #f4f6fb;
+            color: #33415c;
+            font-weight: 600;
+            text-align: left;
+            padding: 2px 4px;
+            border: 1px solid #dce1ee;
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+            word-break: break-word;
+        }
+   
+    /* .asr-tbl th { background:#f4f6fb; color:#33415c; font-weight:600; text-align:left; padding:2px 4px; border:1px solid #dce1ee; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } */
+    .asr-tbl td { padding:2px 4px; border:1px solid #e6e9f2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .asr-head-tbl th, .asr-head-tbl td { font-size:.66rem; }
+    .asr-num { text-align:right; font-variant-numeric:tabular-nums; }
+    @@media print {
+        .asr-toolbar { display:none !important; }
+        .rp-page-header { display:none !important; }
+        .asr-report { font-size:.6rem; }
+        .asr-section { break-inside:avoid; }
+        .asr-panel { break-inside:avoid; }
+        @@page { size: A4 portrait; margin: 8mm; }
+    }
+</style>
+
+@code {
+
+    private GapReportSettings _cfg = new();
+    private List<BranchDto> _branches = new();
+    private List<RegionDto> _regions = new();
+    private List<ZoneDto> _zones = new();
+    private string _selectedZone = "ALL";
+    private string _selectedRegion = "ALL";
+    private string _selectedBranch = "ALL";
+    private bool _isZoneDisabled = false;
+    private bool _isRegionDisabled = false;
+    private bool _isBranchDisabled = false;
+    // User claims for RBAC
+    private string _loggedInRole = "CO";
+    private string? _loggedInZoneSolid;
+    private string? _loggedInRegionSolid;
+    private string? _loggedInBranchSolid;
+    private bool CanLoadReport => !_loading;
+    private GapReportViewModel? _report;
+    private List<AssuranceCategory> _categories = new();   
+    private bool ExportDisabled => _report is null || _categories.Count == 0;
+    private bool isLoading = true;
+    private List<F360CategoryColor> _categoryColors = new();
+
+    // Operations Dashboard state
+    private string currentSolId = null;    
+    private DataSet dashboardData;
+    private bool _loading = false;
+
+    private int scaleCode = 0;
+    private bool CanViewAll = false;
+
+    // private List<AssuranceExportService.Section> _sections = new();
+
+    // Lookup helper: returns formatted value from AllData by parameter name
+    private string V(string paramName)
+    {
+        if (_report is null) return "—";
+        var row = _report.AllData.FirstOrDefault(r =>
+            string.Equals(r.ParameterName, paramName, StringComparison.OrdinalIgnoreCase));
+        if (row is null) return "—";
+        return row.ActualCr.HasValue ? Fmt(row.ActualCr, row.DataType) : "—";
+    }
+
+    // Numeric lookup — returns the raw value formatted as number
+    private string N(string paramName)
+    {
+        if (_report is null) return "";
+        var row = _report.AllData.FirstOrDefault(r =>
+            string.Equals(r.ParameterName, paramName, StringComparison.OrdinalIgnoreCase));
+        if (row is null) return "";
+        if (row.ActualCr.HasValue) return Fmt(row.ActualCr, row.DataType);
+        return "";
+    }
+
+    private static string Fmt(decimal? v, string dataType)
+    {
+        if (v is null) return "—";
+        return dataType switch
+        {
+            "PERCENTAGE" => $"{v.Value:0.##}%",
+            "COUNT" => $"{v.Value:#,##0}",
+            _ => $"{v.Value:#,##0.##}",
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cfg = ReportConfig.Value;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _loggedInRole = user.FindFirst(ClaimTypes.Role)?.Value?.ToUpper() ?? user.FindFirst("Role")?.Value?.ToUpper() ?? "CO";
+            _loggedInZoneSolid = user.FindFirst("zone_solid")?.Value;
+            _loggedInRegionSolid = user.FindFirst("region_solid")?.Value;
+            _loggedInBranchSolid = user.FindFirst("branch_solid")?.Value;
+
+            int.TryParse(user.FindFirst("employee_scale_code")?.Value, out scaleCode);
+            CanViewAll = _loggedInRole.Equals("co", StringComparison.OrdinalIgnoreCase) && scaleCode < 6;
+        }
+        try { _zones = await LandingDashboardService.GetZonesAsync(); }
+        catch (Exception ex) { AppLogger.LogError(ex, "AssuranceSnapshot: Failed to load zones"); }
+        if (_loggedInRole == "ZONE")
+        {
+            _selectedZone = _loggedInZoneSolid;
+            _isZoneDisabled = true;
+            if (!string.IsNullOrEmpty(_selectedZone))
+                _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+        }
+        else if (_loggedInRole == "REGION")
+        {
+            _selectedZone = _loggedInZoneSolid;
+            _selectedRegion = _loggedInRegionSolid;
+            _isZoneDisabled = true;
+            _isRegionDisabled = true;
+            if (!string.IsNullOrEmpty(_selectedZone))
+                _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+            if (!string.IsNullOrEmpty(_selectedRegion))
+                _branches = await LandingDashboardService.GetBranchesByRegionAsync(_selectedRegion);
+        }
+        else if (_loggedInRole == "BRANCH")
+        {
+            _selectedZone = _loggedInZoneSolid;
+            _selectedRegion = _loggedInRegionSolid;
+            _selectedBranch = _loggedInBranchSolid;
+            _isZoneDisabled = true;
+            _isRegionDisabled = true;
+            _isBranchDisabled = true;
+            if (!string.IsNullOrEmpty(_selectedZone))
+                _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+            if (!string.IsNullOrEmpty(_selectedRegion))
+                _branches = await LandingDashboardService.GetBranchesByRegionAsync(_selectedRegion);
+        }
+        else if (!CanViewAll && _zones.Count > 0)
+        {
+            // CO user with scale >= 6: no "All Zones" option, auto-select first zone
+            _selectedZone = _zones.First().zone_solid;
+            _selectedRegion = "ALL";
+            _selectedBranch = "ALL";
+            _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+        }
+
+        // Auto-load report on page open (same as Focus 360) — uses the user's
+        // default scope (branch user → their branch, zone → zone, CO → requires selection)
+        // await LoadReport();
+    }
+
+    private async Task OnZoneChangedAsync(string? newValue)
+    {
+        _selectedZone = newValue ?? "ALL";
+        _selectedRegion = "ALL";
+        _selectedBranch = "ALL";
+        _regions.Clear();
+        _branches.Clear();
+        _report = null;
+        if (_selectedZone != "ALL")
+            _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+    }
+
+    private async Task OnRegionChangedAsync(string? newValue)
+    {
+        _selectedRegion = newValue ?? "ALL";
+        _selectedBranch = "ALL";
+        _branches.Clear();
+        _report = null;
+        if (_selectedRegion != "ALL")
+            _branches = await LandingDashboardService.GetBranchesByRegionAsync(_selectedRegion);
+    }
+
+    private static string SectionLabel(GapReportViewModel r, string cat)
+
+    { var c = r.CategoryColors.FirstOrDefault(x => string.Equals(x.Category, cat, StringComparison.OrdinalIgnoreCase)); return string.IsNullOrWhiteSpace(c?.SectionLabel) ? cat : c!.SectionLabel; }
+
+    private static int SectionSort(GapReportViewModel r, string cat)
+
+    { var c = r.CategoryColors.FirstOrDefault(x => string.Equals(x.Category, cat, StringComparison.OrdinalIgnoreCase)); return c?.SortOrder ?? 999; }
+
+    private static string NiceSub(string sub, string cat) => string.IsNullOrWhiteSpace(sub) || string.Equals(sub, cat, StringComparison.OrdinalIgnoreCase) ? "" : sub;
+
+    private string FileBase => $"Assurance_Snapshot_{_report?.Branch.BranchCode ?? "branch"}_{AppTime.Now:yyyyMMdd}";
+
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Assurance 360"), new("Assurance Snapshot")
+    };
+
+    private async Task OnBranchChangedAsync(string branch)
+    {
+        _selectedBranch = branch;
+        _report = null;
+    }
+    private string GetPanelColor(string panelTitle, string type)
+    {
+        var color = _categoryColors.FirstOrDefault(x =>
+            string.Equals(x.SectionLabel, panelTitle, StringComparison.OrdinalIgnoreCase));
+        return color?.ColorHex ?? "#1b4a98"; // default blue
+    }
+
+    /// <summary>
+    /// Resolves the effective SOL_ID based on dropdown selection (same as Focus360).
+    /// Falls back to the logged-in user's scope when "All" is selected.
+    /// </summary>
+    private string ResolveEffectiveSolId()
+    {
+        if (_selectedBranch != "ALL" && !string.IsNullOrEmpty(_selectedBranch))
+            return _selectedBranch.PadLeft(5, '0');
+        if (_selectedRegion != "ALL" && !string.IsNullOrEmpty(_selectedRegion))
+            return _selectedRegion.PadLeft(5, '0');
+        if (_selectedZone != "ALL" && !string.IsNullOrEmpty(_selectedZone))
+            return _selectedZone.PadLeft(5, '0');
+
+        return _loggedInRole switch
+        {
+            "ZONE"   => (_loggedInZoneSolid ?? "00000").PadLeft(5, '0'),
+            "REGION" => (_loggedInRegionSolid ?? "00000").PadLeft(5, '0'),
+            "BRANCH" => (_loggedInBranchSolid ?? "00000").PadLeft(5, '0'),
+            _        => (_loggedInBranchSolid ?? "00000").PadLeft(5, '0')
+        };
+    }
+
+    private async Task LoadReport()
+    {
+        string resolvedSolId = ResolveEffectiveSolId();
+        if (string.IsNullOrWhiteSpace(resolvedSolId) || resolvedSolId == "00000")
+        {
+            // CO user with "All" selected — show a helpful message instead of an empty report
+            _report = null;
+            Snackbar.Add("Please select a Zone, Region or Branch to load the report.", Severity.Info);
+            return;
+        }
+
+        _loading = true; StateHasChanged();
+        try
+        {
+            _report = await GapSvc.BuildReportAsync(resolvedSolId);
+            _categories = await PanelSvc.GetPanelGridAsync(resolvedSolId);
+            _categoryColors = await GapSvc.GetCategoryColorsAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "AssuranceSnapshot: failed to load snapshot");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+            _report = null; _categories = new();
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("window.print");
+
+    private async Task DownloadExcel()
+    {
+        if (_report is null) return;
+
+        var AppLogo = Assets.Resolve(_cfg.AppLogoPath);
+        var CoLogo = Assets.Resolve(_cfg.LogoPath);
+        var bytes = ExportSvc.ExportToExcel(_report, _categories, _categoryColors, _cfg.AssuranceReportName, _cfg.BankName, AppLogo, CoLogo);
+
+        await JS.InvokeVoidAsync("focus360Download", $"{FileBase}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
+    }
+
+    private async Task DownloadCsv()
+    {
+        if (_report is null) return;
+        var bytes = ExportSvc.ExportToCsv(_report, _categories, _cfg.AssuranceReportName, _cfg.BankName);
+        await JS.InvokeVoidAsync("focus360Download", $"{FileBase}.csv", "text/csv", bytes);
+    }
+
+    private async Task DownloadPdf()
+    {
+        if (_report is null) return;
+        try
+        {
+            var AppLogo = Assets.Resolve(_cfg.AppLogoPath);
+            var CoLogo = Assets.Resolve(_cfg.LogoPath);
+
+            var bytes = ExportSvc.ExportToPdf(_report, _categories, _categoryColors, _cfg.AssuranceReportName, _cfg.BankName, AppLogo, CoLogo);
+
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("focus360DownloadStream", $"{FileBase}.pdf", streamRef);
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "AssuranceSnapshot: PDF export failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+}

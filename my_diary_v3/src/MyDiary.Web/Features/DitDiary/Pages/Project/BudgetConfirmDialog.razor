@@ -1,0 +1,84 @@
+@* Confirmation shown before a Capital / Revenue allotment is saved *@
+
+<MudDialog>
+	<TitleContent>
+		<div style="display:flex;align-items:center;gap:12px;">
+			<div style="width:40px;height:40px;border-radius:11px;background:@Soft;display:flex;align-items:center;justify-content:center;flex:none;">
+				<MudIcon Icon="@(IsCapital ? Icons.Material.Filled.AccountBalance : Icons.Material.Filled.ReceiptLong)"
+						 Style="@($"color:{Accent};")" />
+			</div>
+			<div>
+				<div style="font-size:1.05rem;font-weight:600;line-height:1.25;color:#111827;">
+					Confirm @(IsCapital ? "Capital" : "Revenue") Budget
+				</div>
+				<div style="font-size:0.75rem;color:#6b7280;">Review the amounts before saving</div>
+			</div>
+		</div>
+	</TitleContent>
+
+	<DialogContent>
+		<div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+
+			<div style="background:@Soft;padding:11px 15px;border-bottom:1px solid #e5e7eb;">
+				<div style="font-size:0.68rem;letter-spacing:.07em;text-transform:uppercase;color:#6b7280;">Project</div>
+				<div style="font-size:0.92rem;font-weight:600;color:#111827;word-break:break-word;">@ProjectName</div>
+			</div>
+
+			<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+				<tbody>
+					<tr>
+						<td style="padding:10px 15px;color:#4b5563;">Financial Year</td>
+						<td style="padding:10px 15px;text-align:right;font-weight:600;color:#111827;white-space:nowrap;">@FyLabel</td>
+					</tr>
+					<tr style="border-top:1px solid #f1f2f4;">
+						<td style="padding:10px 15px;color:#4b5563;">Spillover Allotted</td>
+						<td style="padding:10px 15px;text-align:right;font-weight:600;color:#111827;white-space:nowrap;">@Money(Spillover)</td>
+					</tr>
+					<tr style="border-top:1px solid #f1f2f4;">
+						<td style="padding:10px 15px;color:#4b5563;">Fresh Allotted</td>
+						<td style="padding:10px 15px;text-align:right;font-weight:600;color:#111827;white-space:nowrap;">@Money(Fresh)</td>
+					</tr>
+					<tr style="border-top:2px solid @Accent;background:@Soft;">
+						<td style="padding:12px 15px;font-weight:700;color:@Accent;">Total Allotted</td>
+						<td style="padding:12px 15px;text-align:right;font-weight:700;font-size:1.05rem;color:@Accent;white-space:nowrap;">@Money(Total)</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<div style="display:flex;gap:9px;align-items:flex-start;margin-top:14px;padding:10px 13px;background:#fff8e1;border:1px solid #ffe0a3;border-radius:9px;">
+			<MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Style="color:#b26a00;flex:none;" />
+			<span style="font-size:0.78rem;line-height:1.5;color:#7a4f00;">
+				Once saved, this allotment can be changed only from <b>Edit Project</b> using the <b>Revise</b> option.
+			</span>
+		</div>
+	</DialogContent>
+
+	<DialogActions>
+		<MudButton OnClick="Cancel" Variant="Variant.Text" Style="color:#6b7280;">Cancel</MudButton>
+		<MudButton OnClick="Ok" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Check"
+				   Style="@($"background:{Accent};color:#ffffff;margin-left:8px;")">
+			Confirm &amp; Save
+		</MudButton>
+	</DialogActions>
+</MudDialog>
+
+@code {
+	[CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+	[Parameter] public string BudgetType { get; set; } = "CAPITAL";
+	[Parameter] public string ProjectName { get; set; } = "";
+	[Parameter] public string FyLabel { get; set; } = "";
+	[Parameter] public decimal Spillover { get; set; }
+	[Parameter] public decimal Fresh { get; set; }
+
+	private bool IsCapital => BudgetType == "CAPITAL";
+	private string Accent => IsCapital ? "#594ae2" : "#00897b";
+	private string Soft => IsCapital ? "#f4f2ff" : "#eef8f6";
+	private decimal Total => Spillover + Fresh;
+
+	private string Money(decimal v) => "₹ " + v.ToString("N2") + " Cr";
+
+	private void Ok() => MudDialog.Close(DialogResult.Ok(true));
+	private void Cancel() => MudDialog.Cancel();
+}

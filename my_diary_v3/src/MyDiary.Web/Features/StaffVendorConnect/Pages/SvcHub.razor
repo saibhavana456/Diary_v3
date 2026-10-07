@@ -1,0 +1,83 @@
+@page "/svc/hub"
+@using global::RequestPortal.Web.Shared
+@inject NavigationManager Nav
+
+<PageTitle>Staff and Vendor Connect - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+
+<PageHeader Title="Staff and Vendor Connect" Subtitle="Group Data for External Members and Internal Staff — outsourced vendor records and internal staff directory, in one place." Crumbs="_crumbs" PageKey="svc-hub" />
+
+<div class="svc-section-heading">VENDORS (EXTERNAL MEMBERS)</div>
+<div class="svc-hub-grid mb-6">
+    <div class="svc-hub-card" @onclick="@(() => Nav.NavigateTo("svc/vendor/categories"))">
+        <MudIcon Icon="@Icons.Material.Filled.Store" Class="svc-hub-card-icon" />
+        <div class="svc-hub-card-title">Vendor Records</div>
+        <div class="svc-hub-card-desc">Add or update outsourced vendor details — Architects, Security Officers, Fire Officers and more.</div>
+    </div>
+</div>
+
+<div class="svc-section-heading">STAFF (INTERNAL)</div>
+<div class="svc-hub-grid mb-6">
+    <div class="svc-hub-card" @onclick="@(() => Nav.NavigateTo("svc/staff"))">
+        <MudIcon Icon="@Icons.Material.Filled.Badge" Class="svc-hub-card-icon" />
+        <div class="svc-hub-card-title">Staff Directory</div>
+        <div class="svc-hub-card-desc">IT/Technical/Law Officers — filter by zone, region, branch, specialization and scale.</div>
+    </div>
+</div>
+
+<AuthorizeView Policy="AppAdmin">
+    <Authorized>
+        <MudDivider Class="mb-6" />
+        <div class="svc-section-heading svc-section-admin">
+            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" Class="mr-1" />
+            ADMINISTRATION
+        </div>
+        <div class="svc-hub-grid">
+            <div class="svc-hub-card svc-hub-card-admin" @onclick="@(() => Nav.NavigateTo("svc/admin/form-builder"))">
+                <MudIcon Icon="@Icons.Material.Filled.DynamicForm" Class="svc-hub-card-icon" />
+                <div class="svc-hub-card-title">Form Builder</div>
+                <div class="svc-hub-card-desc">Define entry/update form fields per category — labels, types, validation, dropdown options.</div>
+            </div>
+            <div class="svc-hub-card svc-hub-card-admin" @onclick="@(() => Nav.NavigateTo("svc/admin/report"))">
+                <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="svc-hub-card-icon" />
+                <div class="svc-hub-card-title">Report Generation</div>
+                <div class="svc-hub-card-desc">Parameterized vendor report by category/zone/region/branch, with Excel export.</div>
+            </div>
+            <div class="svc-hub-card svc-hub-card-admin" @onclick="@(() => Nav.NavigateTo("svc/admin/audit"))">
+                <MudIcon Icon="@Icons.Material.Filled.History" Class="svc-hub-card-icon" />
+                <div class="svc-hub-card-title">Change Audit Log</div>
+                <div class="svc-hub-card-desc">Who created or changed which vendor category, and what changed.</div>
+            </div>
+            <div class="svc-hub-card svc-hub-card-admin" @onclick="@(() => Nav.NavigateTo("svc/admin/comm-log"))">
+                <MudIcon Icon="@Icons.Material.Filled.Send" Class="svc-hub-card-icon" />
+                <div class="svc-hub-card-title">Sent Communications</div>
+                <div class="svc-hub-card-desc">Email/SMS/WhatsApp notifications sent to Staff or Vendors, with per-recipient status.</div>
+            </div>
+            <div class="svc-hub-card svc-hub-card-admin" @onclick="@(() => Nav.NavigateTo("svc/admin/masters"))">
+                <MudIcon Icon="@Icons.Material.Filled.ListAlt" Class="svc-hub-card-icon" />
+                <div class="svc-hub-card-title">Masters</div>
+                <div class="svc-hub-card-desc">Dropdown value lists (states, districts, cities, ...) feeding every category's DROPDOWN fields.</div>
+            </div>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+</AuthenticatedOnly>
+
+<style>
+    .svc-section-heading { font-size: .8rem; font-weight: 700; letter-spacing: .06em; color: var(--mud-palette-text-secondary); margin-bottom: 12px; }
+    .svc-section-admin { color: var(--rp-navy, #1E3A8A); display: flex; align-items: center; }
+    .svc-hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .svc-hub-card { cursor: pointer; border-radius: 12px; padding: 20px; background: #fff; border: 1px solid rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s; }
+    .svc-hub-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .svc-hub-card-admin { border-left: 3px solid var(--rp-navy, #1E3A8A); }
+    .mud-theme-dark .svc-hub-card, .cc-dark .svc-hub-card { background: #1c1f24; border-color: #2a2e35; }
+    .svc-hub-card-icon { font-size: 2rem; color: var(--mud-palette-primary); margin-bottom: 8px; }
+    .svc-hub-card-title { font-weight: 600; font-size: 1rem; margin-bottom: 4px; }
+    .svc-hub-card-desc { font-size: .82rem; opacity: .75; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect") };
+}

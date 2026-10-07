@@ -1,0 +1,148 @@
+@namespace RequestPortal.Web.Pages.Oversight
+@page "/oversight/dashboard"
+@inject IRequestService Requests
+@inject IUccrmcService Uccrmc
+
+<PageTitle>Oversight Dashboard</PageTitle>
+
+<PageHeader PageKey="oversight-dashboard" Title="Oversight Dashboard" Crumbs="_crumbs" />
+
+<MudGrid>
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4 kpi-card" Elevation="2">
+            <MudText Typo="Typo.subtitle2">Open</MudText>
+            <MudText Typo="Typo.h3">@_open</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4 kpi-card" Elevation="2">
+            <MudText Typo="Typo.subtitle2">Breached</MudText>
+            <MudText Typo="Typo.h3" Style="color:#d32f2f;">@_breached</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4 kpi-card" Elevation="2">
+            <MudText Typo="Typo.subtitle2">Resolved (page)</MudText>
+            <MudText Typo="Typo.h3" Style="color:#2e7d32;">@_resolved</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="3">
+        <MudPaper Class="pa-4 kpi-card" Elevation="2">
+            <MudText Typo="Typo.subtitle2">Reopened</MudText>
+            <MudText Typo="Typo.h3" Style="color:#7b1fa2;">@_reopened</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-2">Pendency by level</MudText>
+            <MudTable Items="@_pendency" Dense="true">
+                <HeaderContent>
+                    <MudTh>Level</MudTh>
+                    <MudTh>Open</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>L@(context.Level)</MudTd>
+                    <MudTd>@context.Count</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-2">Aging buckets (working days)</MudText>
+            <MudTable Items="@_aging" Dense="true">
+                <HeaderContent>
+                    <MudTh>Bucket</MudTh>
+                    <MudTh>Count</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Bucket</MudTd>
+                    <MudTd>@context.Count</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_uccrmc is not null)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="1">
+        <div class="d-flex align-center mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Report" Class="mr-2" Color="Color.Error" />
+            <MudText Typo="Typo.h6">UCCRMC Alerts — closure &amp; pendency</MudText>
+            <MudSpacer />
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Closure @_uccrmc.ClosureRatePct%</MudChip>
+        </div>
+        <MudGrid>
+            <MudItem xs="6" md="2"><MudPaper Class="pa-3 kpi-card" Elevation="2"><MudText Typo="Typo.caption">Total</MudText><MudText Typo="Typo.h4">@_uccrmc.Total</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="2"><MudPaper Class="pa-3 kpi-card" Elevation="2"><MudText Typo="Typo.caption">Open / Pending</MudText><MudText Typo="Typo.h4" Style="color:#ed6c02;">@_uccrmc.Open</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="2"><MudPaper Class="pa-3 kpi-card" Elevation="2"><MudText Typo="Typo.caption">Overdue</MudText><MudText Typo="Typo.h4" Style="color:#d32f2f;">@_uccrmc.Overdue</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="2"><MudPaper Class="pa-3 kpi-card" Elevation="2"><MudText Typo="Typo.caption">Resolved</MudText><MudText Typo="Typo.h4" Style="color:#0288d1;">@_uccrmc.Resolved</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="2"><MudPaper Class="pa-3 kpi-card" Elevation="2"><MudText Typo="Typo.caption">Closed</MudText><MudText Typo="Typo.h4" Style="color:#2e7d32;">@_uccrmc.Closed</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="2"><MudPaper Class="pa-3 kpi-card" Elevation="2"><MudText Typo="Typo.caption">Cancelled</MudText><MudText Typo="Typo.h4" Style="color:#757575;">@_uccrmc.Cancelled</MudText></MudPaper></MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Oversight"),
+        new("Dashboard"),
+    };
+
+    private int _open;
+    private int _breached;
+    private int _resolved;
+    private int _reopened;
+    private List<(int Level, int Count)> _pendency = new();
+    private List<AgingBucket> _aging = new();
+    private RequestPortal.Core.Dtos.UccrmcDashboard? _uccrmc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uccrmcTask = SafeGetDashboardAsync();
+        var listTask = Requests.ListAsync(new FilterDto(Page: 1, PageSize: 1000), null, null);
+
+        await Task.WhenAll(uccrmcTask, listTask);
+
+        _uccrmc = uccrmcTask.Result;
+        var (items, total) = listTask.Result;
+        _open = items.Count(i => i.Status is "InProgress" or "Submitted" or "Reopened" or "ClarificationSought");
+        _breached = items.Count(i => i.SlaDueUtc.HasValue && i.SlaDueUtc.Value < DateTime.UtcNow && i.Status is "InProgress");
+        _resolved = items.Count(i => i.Status == "Resolved");
+        _reopened = items.Count(i => i.Status == "Reopened");
+
+        _pendency = items
+            .Where(i => i.Status is "InProgress" or "Submitted" or "Reopened" or "ClarificationSought")
+            .GroupBy(i => i.CurrentLevel)
+            .OrderBy(g => g.Key)
+            .Select(g => (g.Key, g.Count()))
+            .ToList();
+
+        _aging = BucketAging(items);
+    }
+
+    private static List<AgingBucket> BucketAging(IEnumerable<RequestListItem> items)
+    {
+        var open = items.Where(i => i.Status is "InProgress" or "Submitted" or "Reopened" or "ClarificationSought").ToList();
+        int b1 = open.Count(i => (DateTime.UtcNow - i.CreatedAt).TotalDays <= 2);
+        int b2 = open.Count(i => { var d = (DateTime.UtcNow - i.CreatedAt).TotalDays; return d > 2 && d <= 5; });
+        int b3 = open.Count(i => { var d = (DateTime.UtcNow - i.CreatedAt).TotalDays; return d > 5 && d <= 10; });
+        int b4 = open.Count(i => (DateTime.UtcNow - i.CreatedAt).TotalDays > 10);
+        return new()
+        {
+            new AgingBucket("0–2 days", b1),
+            new AgingBucket("3–5 days", b2),
+            new AgingBucket("6–10 days", b3),
+            new AgingBucket(">10 days", b4),
+        };
+    }
+
+    private async Task<RequestPortal.Core.Dtos.UccrmcDashboard?> SafeGetDashboardAsync()
+    {
+        try { return await Uccrmc.GetDashboardAsync(null, null); }
+        catch (Exception ex) { AppLogger.LogError(ex, "Oversight Dashboard: failed to load UCCRMC dashboard data"); return null; }
+    }
+}

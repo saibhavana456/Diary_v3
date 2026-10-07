@@ -1,0 +1,231 @@
+@using MyDiary.Web.Core.Extensions
+@page "/dept-page2/{DeptKey}"
+@page "/dept-page2/{DeptKey}/{DeptId:int}"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@using MyDiary.Web.Features.Departments.Models
+@using MyDiary.Web.Features.Departments.Services
+@using global::RequestPortal.Web.Shared
+@layout MyDiary.Web.Components.Layout.MainLayout
+@inject IActivityService ActivityService
+@inject IDepartmentService DeptService
+@inject NavigationManager Nav
+
+<PageTitle>@_pageTitle — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    :root {
+        --card-min-width: 320px;
+        --card-height: 200px;
+    }
+
+    .kh-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+        gap: 1.5rem;
+        padding: 20px 0 2rem;
+    }
+
+    .kh-activity-card {
+        background: white !important;
+        border-radius: 16px !important;
+        padding: 1.5rem !important;
+        border: 2px solid #e2e8f0 !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: var(--card-height) !important;
+        width: 100% !important;
+        text-transform: none !important;
+        cursor: pointer !important;
+    }
+
+        .kh-activity-card:hover {
+            transform: translateY(-6px) !important;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1) !important;
+            border-color: var(--rp-navy, #1E3A8A) !important;
+        }
+
+        .kh-activity-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: var(--rp-grad);
+        }
+
+    .kh-activity-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #2d3748;
+        line-height: 1.3;
+        text-align: center;
+        margin: auto;
+    }
+
+    .kh-empty-state, .kh-loading-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #64748b;
+    }
+</style>
+
+<PageHeader Title="@_pageTitle"
+            Subtitle="@_departmentDescription"
+            PageKey="@_pageKey"
+            Crumbs="_crumbs" />
+
+<div class="pa-4">
+    @if (_isLoading)
+    {
+        <div class="kh-loading-state">
+            <MudProgressCircular Indeterminate="true" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4" Style="color:#64748b;">Loading…</MudText>
+        </div>
+    }
+    else if (_notFound)
+    {
+        <div class="kh-empty-state">
+            <MudIcon Icon="@Icons.Material.Filled.SearchOff" Style="font-size: 4rem; color: #cbd5e1;" />
+            <h4>Department Not Found</h4>
+            <p>No department matching "@DeptKey" was found in the system.</p>
+            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Primary"
+                       OnClick='() => Nav.NavigateTo("departmentsnew")' Class="mt-3">
+                Browse All Departments
+            </MudButton>
+        </div>
+    }
+    else if (!_activities.Any())
+    {
+        <div class="kh-empty-state">
+            <MudIcon Icon="@Icons.Material.Filled.Inbox" Style="font-size: 4rem; color: #cbd5e1;" />
+            <h4>No Items Found</h4>
+            <p>No items are available for this section at this time.</p>
+        </div>
+    }
+    else
+    {
+        <div class="kh-cards-grid">
+            @foreach (var act in _activities)
+            {
+                <MudButton Class="kh-activity-card"
+                           OnClick="() => NavigateToDocuments(act)"
+                           Ripple="false">
+                    <h3 class="kh-activity-title">@act.ActivityName</h3>
+                </MudButton>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// Department keyword used to find the department by name (partial match).
+    /// Examples: "FAQ", "StepByStep", "Escalation", "Process", "SOP"
+    /// Also supports display-friendly names like "Step-By-Step-Process" which
+    /// will be searched as "Step By Step Process".
+    /// </summary>
+    [Parameter] public string DeptKey { get; set; } = "";
+
+    /// <summary>
+    /// Optional: If you already know the DepartmentID, pass it directly.
+    /// This skips the keyword search and loads activities by ID.
+    /// Usage: /dept-page/MyDept/42
+    /// </summary>
+    [Parameter] public int DeptId { get; set; }
+
+    private bool _isLoading = true;
+    private bool _notFound = false;
+    private List<Activity> _activities = new();
+    private string _pageTitle = "";
+    private string _departmentDescription = "";
+    private int _resolvedDeptId;
+    private string _pageKey = "dept-page";
+    private List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Knowledge Hub", "circulars"),
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Build a display-friendly title from the route key
+        _pageTitle = FormatTitle(DeptKey);
+        _pageKey = "dept-page-" + DeptKey.Trim('/').ToLowerInvariant().Replace(' ', '-');
+        _crumbs = new() { new("Knowledge Hub", "circulars"), new(_pageTitle) };
+
+        try
+        {
+            int resolvedDeptId = DeptId;
+
+            // If DeptId was not provided via route, resolve it from the keyword
+            if (resolvedDeptId == 0)
+            {
+                var allDepts = await DeptService.GetActiveDepartmentsAsync("Knowledge Hub");
+
+                // Search keyword: replace hyphens with spaces for matching
+                var searchTerm = DeptKey.Replace("-", " ").Replace("_", " ");
+
+                // Try exact match first, then partial match
+                var dept = allDepts.FirstOrDefault(d =>
+                    d.DepartmentName.Equals(searchTerm, StringComparison.OrdinalIgnoreCase))
+                ?? allDepts.FirstOrDefault(d =>
+                    d.DepartmentName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+                if (dept == null)
+                {
+                    _notFound = true;
+                    return;
+                }
+
+                resolvedDeptId = dept.DepartmentID;
+                _pageTitle = dept.DepartmentName;
+                _departmentDescription = dept.Description;
+                _crumbs = new() { new("Knowledge Hub", "circulars"), new(_pageTitle) };
+            }
+
+            _activities = await ActivityService.GetActivitiesByDeptIdAsync(resolvedDeptId);
+            _resolvedDeptId = resolvedDeptId;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[DeptPage] Unhandled error: " + ex.Message);
+            _notFound = true;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void NavigateToDocuments(Activity activity)
+    {
+        // Check if this is a Circular or Policy activity → route to ECircular page
+        if (activity.ActivityCode.EndsWith("-CIR", StringComparison.OrdinalIgnoreCase))
+        {
+            var deptId = DeptId > 0 ? DeptId : _resolvedDeptId;
+            Nav.NavigateTo($"ecircular/{deptId}");
+            return;
+        }
+
+        if (activity.ActivityCode.EndsWith("-POL", StringComparison.OrdinalIgnoreCase))
+        {
+            var deptId = DeptId > 0 ? DeptId : _resolvedDeptId;
+            Nav.NavigateTo($"ecircular/{deptId}/POLICY");
+            return;
+        }
+
+        // Pass the DeptKey as source so Documents.razor can build the correct breadcrumb
+        Nav.NavigateTo($"documents3/{activity.ActivityID}?source=dept-page-{DeptKey}");
+    }
+
+    /// <summary>
+    /// Converts a URL-friendly key like "Step-By-Step-Process" into "Step By Step Process"
+    /// </summary>
+    private static string FormatTitle(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return "Department";
+        return key.Replace("-", " ").Replace("_", " ");
+    }
+}

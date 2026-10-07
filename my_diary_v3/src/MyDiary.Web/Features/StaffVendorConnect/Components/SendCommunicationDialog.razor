@@ -1,0 +1,229 @@
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject ISvcCommunicationService CommService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>Send Communication</TitleContent>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else
+        {
+            <MudTabs Rounded="true" @bind-ActivePanelIndex="_channelTab">
+                <MudTabPanel Text="Email">
+                    <MudTextField @bind-Value="_subject" Label="Subject" Variant="Variant.Outlined" Class="mb-3" />
+                    <MudTextField @bind-Value="_body" Label="Body" Variant="Variant.Outlined" Lines="6" Class="mb-3" />
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Class="mb-2">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AttachFile">Attach a File</MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                    @if (!string.IsNullOrEmpty(_attachmentError))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mb-2">@_attachmentError</MudText>
+                    }
+                    @if (_attachments.Count > 0)
+                    {
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            @foreach (var a in _attachments)
+                            {
+                                <MudChip T="string" Size="Size.Small" OnClose="@(() => RemoveAttachment(a))">@a.FileName (@FormatSize(a.Content.Length))</MudChip>
+                            }
+                        </div>
+                    }
+                </MudTabPanel>
+                <MudTabPanel Text="SMS">
+                    @if (_smsTemplates.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-3">
+                            No approved SMS templates found. Add one under Notifications → Notification Templates first — SMS can only send an approved template, not free text.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudSelect T="long?" Label="Approved Template" Value="_smsTemplateId" ValueChanged="OnSmsTemplateChanged" Variant="Variant.Outlined" Class="mb-3">
+                            @foreach (var t in _smsTemplates)
+                            {
+                                <MudSelectItem T="long?" Value="@((long?)t.Id)">@t.EventCode — @t.Subject</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudTextField @bind-Value="_body" Label="Message (from approved template)" Variant="Variant.Outlined" Lines="4" ReadOnly="true" />
+                    }
+                </MudTabPanel>
+                <MudTabPanel Text="WhatsApp">
+                    <MudTextField @bind-Value="_waTemplateId" Label="WhatsApp Template Id" Variant="Variant.Outlined" Class="mb-3"
+                                  HelperText="The pre-approved Karix/WhatsApp Business templateId (e.g. clickpay2023) — not free text." />
+                    <MudTextField @bind-Value="_waLanguage" Label="Language Code" Variant="Variant.Outlined" Class="mb-3" HelperText="e.g. en" />
+                    <MudTextField @bind-Value="_waParametersCsv" Label="Parameter Values (comma-separated, in order)" Variant="Variant.Outlined" Class="mb-3"
+                                  HelperText="Fills the template's {{1}}, {{2}}, ... placeholders in order." />
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Class="mb-2">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AttachFile">Attach Media (optional — sends as a Media Template)</MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                    @if (!string.IsNullOrEmpty(_attachmentError))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mb-2">@_attachmentError</MudText>
+                    }
+                    @if (_attachments.Count > 0)
+                    {
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            @foreach (var a in _attachments)
+                            {
+                                <MudChip T="string" Size="Size.Small" OnClose="@(() => RemoveAttachment(a))">@a.FileName (@FormatSize(a.Content.Length))</MudChip>
+                            }
+                        </div>
+                    }
+                </MudTabPanel>
+            </MudTabs>
+
+            <MudDivider Class="my-4" />
+
+            <MudRadioGroup T="bool" Value="_sendToAll" ValueChanged="@((bool v) => _sendToAll = v)">
+                <MudRadio T="bool" Value="true" Color="Color.Primary">Send to All (@_candidates.Count recipients)</MudRadio>
+                <MudRadio T="bool" Value="false" Color="Color.Primary">Send to Selected</MudRadio>
+            </MudRadioGroup>
+
+            @if (!_sendToAll)
+            {
+                <MudSelect T="string" Label="Recipients" MultiSelection="true" @bind-SelectedValues="_selected" Variant="Variant.Outlined" Class="mt-2">
+                    @foreach (var c in _candidates)
+                    {
+                        <MudSelectItem T="string" Value="@c.Id">@c.Name (@(c.Email ?? c.Mobile ?? "no contact"))</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SendAsync" Disabled="_sending">
+            @(_sending ? "Sending..." : "Send")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string TargetModule { get; set; } = "STAFF";   // VENDOR | STAFF
+    [Parameter] public string? CategoryCode { get; set; }
+    [Parameter] public string ActorPfNo { get; set; } = "";
+
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;   // 10 MB per file
+    private const int MaxAttachmentCount = 5;
+
+    private bool _loading = true, _sending;
+    private int _channelTab;
+    private string _subject = "", _body = "";
+    private bool _sendToAll = true;
+    private List<SvcRecipientCandidate> _candidates = new();
+    private IEnumerable<string> _selected = new List<string>();
+    private readonly List<SvcAttachmentFile> _attachments = new();
+    private string? _attachmentError;
+
+    private List<global::RequestPortal.Core.Models.NotifTemplate> _smsTemplates = new();
+    private long? _smsTemplateId;
+
+    private string _waTemplateId = "", _waLanguage = "en", _waParametersCsv = "";
+
+    private string Channel => _channelTab switch { 0 => "EMAIL", 1 => "SMS", 2 => "WHATSAPP", _ => "EMAIL" };
+
+    private void OnSmsTemplateChanged(long? id)
+    {
+        _smsTemplateId = id;
+        _body = _smsTemplates.FirstOrDefault(t => t.Id == id)?.Body ?? "";
+    }
+
+    private async Task OnFileSelected(IBrowserFile file)
+    {
+        _attachmentError = null;
+        if (_attachments.Count >= MaxAttachmentCount)
+        {
+            _attachmentError = $"At most {MaxAttachmentCount} attachments per message.";
+            return;
+        }
+        if (file.Size > MaxAttachmentBytes)
+        {
+            _attachmentError = $"'{file.Name}' is larger than 10 MB.";
+            return;
+        }
+        await using var stream = file.OpenReadStream(MaxAttachmentBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        _attachments.Add(new SvcAttachmentFile
+        {
+            FileName = file.Name,
+            ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
+            Content = ms.ToArray()
+        });
+    }
+
+    private void RemoveAttachment(SvcAttachmentFile a) => _attachments.Remove(a);
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} KB";
+        return $"{bytes / (1024.0 * 1024.0):0.#} MB";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _candidates = await CommService.GetRecipientCandidatesAsync(TargetModule, CategoryCode);
+        _smsTemplates = await CommService.GetApprovedSmsTemplatesAsync();
+        _loading = false;
+    }
+
+    private async Task SendAsync()
+    {
+        if (Channel == "EMAIL" && string.IsNullOrWhiteSpace(_body))
+        {
+            Snackbar.Add("Message body is required.", Severity.Warning);
+            return;
+        }
+        if (Channel == "SMS" && _smsTemplateId is null)
+        {
+            Snackbar.Add("Select an approved SMS template.", Severity.Warning);
+            return;
+        }
+        if (Channel == "WHATSAPP" && string.IsNullOrWhiteSpace(_waTemplateId))
+        {
+            Snackbar.Add("Enter the approved WhatsApp template id.", Severity.Warning);
+            return;
+        }
+
+        _sending = true;
+        try
+        {
+            var smsTemplate = _smsTemplateId is not null ? _smsTemplates.FirstOrDefault(t => t.Id == _smsTemplateId) : null;
+            var request = new SvcSendCommunicationRequest
+            {
+                TargetModule = TargetModule,
+                Channel = Channel,
+                Subject = Channel == "EMAIL" ? _subject : null,
+                Body = Channel == "SMS" ? (smsTemplate?.Body ?? "") : _body,
+                TemplateName = Channel == "SMS" ? smsTemplate?.EventCode : null,
+                SendToAll = _sendToAll,
+                SelectedRecipientIds = _selected.ToList(),
+                Attachments = Channel == "SMS" ? new() : _attachments,
+                WhatsAppTemplateId = Channel == "WHATSAPP" ? _waTemplateId : null,
+                WhatsAppLanguage = _waLanguage,
+                WhatsAppParameterValues = Channel == "WHATSAPP"
+                    ? _waParametersCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
+                    : new()
+            };
+            var (commId, sent, failed) = await CommService.SendAsync(request, ActorPfNo);
+            Snackbar.Add($"{sent} sent/queued, {failed} failed.", failed == 0 ? Severity.Success : Severity.Warning);
+            MudDialog.Close(DialogResult.Ok(commId));
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

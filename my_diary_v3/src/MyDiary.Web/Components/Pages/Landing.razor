@@ -1,0 +1,885 @@
+﻿@page "/"
+@layout MyDiary.Web.Components.Layout.LandingLayout
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@implements IDisposable
+@using MudBlazor
+@using MyDiary.Web.Components.Dialogs
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Landing.Services
+@using MyDiary.Web.Core.Extensions
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject ILeftNavService LeftNavService
+@inject LanguageState LangState
+@inject ILandingCarouselService CarouselService
+
+<PageTitle>My Diary — Union Bank of India</PageTitle>
+<style>
+    /* Left Pane Background */
+    .left-pane-bg {
+        background-image: url('images/form_bg.jpeg');
+        background-size: cover;
+        background-position: center;
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: center;
+        align-items: center;
+        padding: 40px;
+        flex-grow: 1;
+    }
+
+    /* Right Pane Background & Overlay - SYNCED TO DESIGN */
+    .right-pane-bg {
+        position: relative;
+        background: linear-gradient(to bottom, rgb(239 205 205 / 68%), rgb(239 195 205 / 94%)), url('images/landing_bg_.jpeg');
+        background-size: cover;
+        background-position: center;
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem;
+        flex-grow: 1;
+    }
+
+    .arch-wrapper {
+        width: 220px;
+        height: 280px;
+        border-radius: 110px 110px 110px 0;
+        overflow: hidden;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        margin-bottom: 12px;
+        background-image: linear-gradient(51deg, #2490dfa1, transparent);
+        position: relative;
+    }
+
+    .arch-wrapper::before {
+        content: "";
+        border: 2px solid #fff;
+        height: 25%;
+        border-top: initial;
+        position: absolute;
+        border-right: initial;
+        width: 30%;
+        left: -10px;
+        bottom: -10px;
+        z-index: -1;
+    }
+
+    .arch-wrapper::after {
+        content: "";
+        border: 3px solid #FFE;
+        height: 160px;
+        border-bottom: initial;
+        position: absolute;
+        border-top: initial;
+        border-left: initial;
+        width: 80px;
+        left: 65%;
+        bottom: 50%;
+        right: 30%;
+        border-radius: 50%;
+        transform: rotate(320deg);
+        clip-path: inset(20% 0% 20% 18%);
+        z-index: -1;
+    }
+
+    /* Container for the carousel to maintain the white border look */
+    .photo-frame {
+        border-radius: 24px;
+        padding: 0;
+        width: 100%;
+        /* max-width: 1850px; */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+        margin-left: 50%;
+        transform: translateX(-50%);
+    }
+
+    .carousel-wrapper {
+        width: 100%;
+        position: relative;
+        padding: 14px;
+        overflow: hidden;
+        border-radius: 12px;
+        background: transparent;
+        display: flex;
+        justify-content: center;
+    }
+
+    .line {
+        position: absolute;
+        border: 4px solid #fff;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 12px;
+        z-index: 2;
+        pointer-events: none;
+    }
+
+
+    .photo-frame .mud-carousel {
+        position: relative;
+        z-index: 2; /* image on top */
+    }
+
+        .photo-frame .mud-carousel-item {
+            border-radius: 24px;
+            overflow: hidden;
+        }
+
+        .photo-frame .mud-carousel-item img{
+            border-radius: 24px;
+            transform: scale(1.01);
+        }
+
+    .md_title {
+        color: #1565c0;
+        font-weight: 700;
+        font-size: 22px;
+        border-bottom: 2px dashed #fff;
+        justify-content: center;
+        display: flex;
+        width: 100%;
+        padding: 1rem 0px;
+        text-align: center;
+        min-height: 60px;
+    }
+
+    /* MD container — white border encloses the photo + title */
+    .md-container {
+        /* border: 2px solid rgba(255, 255, 255, 0.85); */
+        border-radius: 20px;
+        padding: 16px 20px 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 90%;
+        margin-bottom: 12px;
+        background: rgba(255,255,255,0.08);
+    }
+
+    .md_subcontet {
+        color: #333;
+        line-height: 1.8;
+        justify-content: start;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 92%;
+        text-align: justify;
+        padding: 0.5rem 0px 0px 0px;
+        font-size: 1.15rem;
+        min-height: 6rem;
+        max-height: 6rem;
+    }
+
+    /* Board member content — fade transition */
+    .board-member-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        min-height: 480px;
+        animation: boardFadeIn 0.6s ease-in-out;
+    }
+
+    @@keyframes boardFadeIn {
+        0%   { opacity: 0; transform: translateY(8px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+
+    .btnlogin {
+        border-top: initial;
+        border-radius: 0.5rem;
+        margin: 0.5rem;
+        width: 100%;
+        text-align: center;
+        padding: 10px;
+    }
+
+    .login-section {
+        width: 90%;
+        /* border: 2px solid rgba(255,255,255,0.85); */
+        border-radius: 16px;
+        padding: 16px 20px;
+        background: rgba(255,255,255,0.1);
+        text-align: center;
+        margin-top: 8px;
+    }
+
+    .login-label {
+        color: #1565c0;
+        font-weight: 800;
+        font-size: 1.2rem;
+        letter-spacing: 0.5px;
+        margin-bottom: 10px;
+        display: block;
+    }
+    .photo-frame .mud-carousel-bullets {
+        display: none !important;
+    }
+    .slide_left_menu .mud-button-outlined{
+        color: rgb(247 240 240);
+        border: 1px solid rgb(245 243 243);
+    }
+
+    /* Left nav quick-link boxes */
+    .left-nav-box {
+        position: relative;
+        width: 100%;
+        margin-bottom: 10px;
+    }
+
+    /* Tile button — white card with blue border, matching screenshot */
+    .left-nav-trigger {
+        width: 100%;
+        background: #ffffff;
+        border: 2.5px solid #1a73b8;
+        border-radius: 14px;
+        padding: 14px 8px;
+        color: #1a73b8;
+        font-weight: 700;
+        font-size: 0.88rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        line-height: 1.3;
+        transition: background 0.2s, color 0.2s;
+        min-height: 72px;
+    }
+
+    .left-nav-box:hover .left-nav-trigger {
+        background: #0d3b7a;
+        border-color: #0d3b7a;
+        color: #ffffff;
+    }
+
+    /* Keyboard focus only — :focus-visible ensures mouse clicks don't trigger this */
+    .left-nav-trigger:focus-visible {
+        outline: 3px solid #1a73b8;
+        outline-offset: 2px;
+        background: #0d3b7a;
+        border-color: #0d3b7a;
+        color: #ffffff;
+    }
+
+    /* Invisible bridge fills the gap between trigger and dropdown
+       so the mouse can travel across without losing hover state */
+    .left-nav-box::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 100%;
+        width: 24px;   /* must be >= the gap (10px) + a little extra */
+        height: 100%;
+        background: transparent;
+        display: none;
+    }
+
+    .left-nav-box:hover::after {
+        display: block;
+    }
+
+    /* Flyout panel — slides out to the RIGHT */
+    .left-nav-dropdown {
+        display: none;
+        position: absolute;
+        left: calc(100% + 10px);
+        top: 0;
+        z-index: 9999;
+        width: 480px;
+        background: #ffffff;
+        border-radius: 14px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        overflow: hidden;
+        animation: lnFadeIn 0.15s ease-out;
+        pointer-events: auto;
+    }
+
+    .left-nav-box:hover {
+        z-index: 10000;
+    }
+
+    /* Show dropdown on HOVER only — pure hover-based, no sticky focus */
+    .left-nav-box:hover .left-nav-dropdown {
+        display: block;
+    }
+
+    /* Keyboard accessibility: show dropdown when button has focus-visible
+       (Tab navigation) — :focus-within with :has(:focus-visible) ensures
+       only keyboard focus triggers it, not mouse clicks */
+    .left-nav-box:focus-within .left-nav-dropdown {
+        display: block;
+    }
+
+    /* Prevent mouse-click focus from keeping dropdown open:
+       When the trigger is focused but NOT via keyboard, hide dropdown
+       unless the box is also being hovered */
+    .left-nav-trigger:focus:not(:focus-visible) ~ .left-nav-dropdown {
+        display: none;
+    }
+
+    /* But if hovering, always show regardless of focus state */
+    .left-nav-box:hover .left-nav-trigger:focus:not(:focus-visible) ~ .left-nav-dropdown {
+        display: block;
+    }
+
+
+    @@keyframes lnFadeIn {
+        from { opacity: 0; transform: translateX(-8px); }
+        to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .left-nav-dropdown-header {
+        background: #0d3b7a;
+        color: white;
+        font-weight: 700;
+        font-size: 0.95rem;
+        padding: 12px 18px;
+    }
+
+    .left-nav-dropdown-grid {
+        padding: 14px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        /* Allow scrolling if many links */
+        max-height: 420px;
+        overflow-y: auto;
+    }
+
+    .left-nav-dropdown a {
+        display: block;
+        background: #c8102e;
+        color: #ffffff !important;
+        font-weight: 600;
+        font-size: 0.82rem;
+        padding: 10px 14px;
+        border-radius: 999px;
+        text-decoration: none !important;
+        text-align: center;
+        transition: background 0.2s, transform 0.15s;
+        line-height: 1.3;
+        /* Ensure links are always clickable */
+        pointer-events: auto;
+        cursor: pointer;
+    }
+
+    .left-nav-dropdown a:hover {
+        background: #a00d25;
+        transform: translateY(-1px);
+    }
+
+    /* "More" link spans full width in blue */
+    .left-nav-dropdown a.ln-more {
+        grid-column: 1 / -1;
+        background: #1a73b8;
+    }
+
+    .left-nav-dropdown a.ln-more:hover {
+        background: #0d3b7a;
+    }
+    /* Carousel navigation arrows */
+    .carousel-nav-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+        width: 100%;
+        /* max-width: 850px; */
+    }
+
+    .carousel-center {
+        width: 100%;
+    }
+
+    /* Dot carousel below the image */
+    .carousel-dots {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        padding: 16px 0 6px 0;
+        width: 100%;
+        max-width: 850px;
+        margin: 0 auto;
+    }
+
+    .carousel-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.5);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .carousel-dot:hover {
+        background: rgba(255, 255, 255, 0.8);
+        transform: scale(1.2);
+    }
+
+    .carousel-dot.active {
+        background: #1565c0;
+        border-color: #1565c0;
+        transform: scale(1.25);
+        box-shadow: 0 0 6px rgba(21, 101, 192, 0.5);
+    }
+
+    .btnlogin {
+        border-top: initial;
+        border-radius: 0.5rem;
+        margin: 0.5rem;
+        width: 100%;
+        text-align: center;
+        padding: 10px;
+    }
+
+    .readmore {
+        border: 2px solid #fff;
+        clip-path: inset(10% 0% 0% 0%);
+        border-top: initial;
+        border-radius: 0.5rem;
+        
+        width: 100%;
+        text-align: center;
+        
+    }
+    /* White background frame BEHIND the image */
+    .image-back-frame {
+    position: absolute;
+
+    /* ✅ Increase height */
+    top: 0px;
+    bottom: 0px;
+
+    /* ✅ Decrease width */
+    left: 90px;
+    right: 90px;
+
+    border: 3px solid rgba(255, 255, 255, 0.9);
+    border-radius: 24px;
+
+    z-index: 0;          /* stays behind image */
+    pointer-events: none;
+    border-radius: 28px;
+}
+
+</style>
+
+<MudGrid Spacing="0" Class="flex-grow-1">     
+    <MudItem xs="12" md="8" Class="d-flex flex-column">      
+          <div class="left-pane-bg">   
+               <div Class="slide_left_menu">
+                   @* Left nav quick-link boxes — white tiles with blue border, flyout on hover *@
+                   @foreach (var group in _leftNavGroups)
+                   {
+                       var groupId = $"lnav-{group.Label.Replace(" ", "-").ToLower()}";
+                       <div class="left-nav-box">
+                        <button class="left-nav-trigger"
+                                @onmousedown="@((e) => { })"
+                                @onmousedown:preventDefault="false"
+                                @onfocus="@(() => { })"
+                                tabindex="0"
+                                aria-haspopup="true"
+                                aria-expanded="false"
+                                aria-controls="@groupId">
+                            @group.DisplayLabel(_currentLang)
+                        </button>
+                           <div class="left-nav-dropdown" id="@groupId" role="menu" aria-label="@group.DisplayLabel(_currentLang)">
+                            <div class="left-nav-dropdown-header" aria-hidden="true">@group.DisplayLabel(_currentLang)</div>
+                               <div class="left-nav-dropdown-grid">
+                                   @foreach (var link in group.Links)
+                                   {
+                                       <a href="@link.Url"
+                                          role="menuitem"
+                                          target="@(link.IsExternal ? "_blank" : "_self")"
+                                          rel="@(link.IsExternal ? "noopener noreferrer" : "")">
+                                        @link.DisplayLabel(_currentLang)
+                                       </a>
+                                   }
+                                   @if (group.MoreUrl != null)
+                                   {
+                                       <a href="@group.MoreUrl"
+                                          role="menuitem"
+                                          target="@(group.MoreExternal ? "_blank" : "_self")"
+                                          class="ln-more">
+                                           More @group.DisplayLabel(_currentLang) →
+                                       </a>
+                                   }
+                               </div>
+                           </div>
+                       </div>
+                   }
+                   @if (_leftNavLoading)
+                   {
+                       <MudProgressCircular Indeterminate="true" Size="MudBlazor.Size.Small" Color="MudBlazor.Color.Default" />
+                   }
+               </div>
+                <div class="carousel-nav-container">                
+                    <div class="carousel-center">
+                        <div class="photo-frame">
+                            <div class="carousel-wrapper">
+                                <div class="image-back-frame"></div>
+                                <MudCarousel @ref="carousel" Class="mud-width-full" Style="height:480px; overflow: hidden;" ShowArrows="false" ShowBullets="false" AutoCycle="true" AutoCycleTime="TimeSpan.FromSeconds(10)" TData="object" SelectedIndexChanged="OnCarouselIndexChanged">
+                                    <ChildContent>
+                                        @foreach (var img in _carouselImages)
+                                        {
+                                            <MudCarouselItem Transition="Transition.Slide">
+                                                <MudImage Src="@img.ResolvedUrl" Alt="@img.AltText" Fluid="true" ObjectFit="ObjectFit.Fill" Style="width:100%; height:100%;" loading="lazy" />
+                                            </MudCarouselItem>
+                                        }
+                                    </ChildContent>
+                                </MudCarousel>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* Dot navigation *@
+                    <div class="carousel-dots" role="group" aria-label="Slide navigation">
+                        @for (int i = 0; i < _totalSlides; i++)
+                        {
+                            var index = i;
+                            <span class="carousel-dot @(currentIndex == index ? "active" : "")"
+                                  @onclick="() => GoToSlide(index)"
+                                  @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") GoToSlide(index); })"
+                                  role="button"
+                                  tabindex="0"
+                                  aria-label="Go to slide @(index + 1)"
+                                  aria-pressed="@(currentIndex == index ? "true" : "false")"></span>
+                        }
+                    </div>
+                </div>
+        </div>                  
+    </MudItem>
+
+    <MudItem xs="12" md="4" Class="d-flex flex-column">
+        <div class="right-pane-bg">
+            @if (_boardMembers.Any() && _currentBoardIndex >= 0 && _currentBoardIndex < _boardMembers.Count)
+            {
+                        <div class="board-member-content" @key="_currentBoardIndex">
+                            <div class="arch-wrapper">
+                                <MudImage Src="@_boardMembers[_currentBoardIndex].ImageUrl" Alt="@_boardMembers[_currentBoardIndex].Name" ObjectFit="ObjectFit.Cover" Style="width:100%; height:100%;" />
+                            </div>
+
+                            <p class="md_title" >                    
+                                <span data-i18n="@_boardMembers[_currentBoardIndex].Name"></span>,&nbsp;
+                                <span data-i18n="@_boardMembers[_currentBoardIndex].Role"></span>
+                            </p>
+
+                            <MudText Typo="Typo.body1" Class="md_subcontet" data-i18n="@_boardMembers[_currentBoardIndex].SummaryI18nKey">
+                            </MudText>
+
+                            <div class="readmore">
+                                <MudButton Variant="Variant.Filled"
+                                           Color="MudBlazor.Color.Info"
+                                           Size="MudBlazor.Size.Small"
+                                           Class="rounded-pill px-5 my-5"
+                                           OnClick="() => OpenBoardMemberDialog(_currentBoardIndex)"
+                                           Style="background-color: #1976d2; font-weight: 600;"
+                                           aria-label="@($"Read more about {_boardMembers[_currentBoardIndex].Name}")" data-i18n="READ_MORE">
+                                </MudButton>
+                            </div>
+                        </div>
+            }
+            @* Board of Directors dot navigation *@
+            <div class="carousel-dots" role="group" aria-label="Board of Directors navigation">
+                @for (int i = 0; i < _boardMembers.Count; i++)
+                {
+                    var index = i;
+                    <span class="carousel-dot @(_currentBoardIndex == index ? "active" : "")"
+                          @onclick="() => GoToBoardMember(index)"
+                          @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") GoToBoardMember(index); })"
+                          role="button"
+                          tabindex="0"
+                          aria-label="View @_boardMembers[index].Name"
+                          aria-pressed="@(_currentBoardIndex == index ? "true" : "false")"></span>
+                }
+            </div>
+
+            <div class="login-section">
+                <MudButton Variant="Variant.Filled"
+                           Target="_blank"
+                           FullWidth="true"
+                           Class="rounded-pill py-3"
+                           OnClick="NavigateToLogin"
+                           data-i18n="LOGIN"
+                           Style="background-color: #d32f2f; color: white; font-weight: 800; font-size: 1.25rem; box-shadow: 0 6px 16px rgba(211, 47, 47, 0.4); letter-spacing: 0.5px;">
+                    My Diary - Login
+                </MudButton>
+            </div>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool _isExpanded = false;
+    private MudCarousel<object>? carousel;
+    private int currentIndex = 0;
+    private int _totalSlides = 0;
+
+    // DB-driven carousel images
+    private List<ResolvedCarouselImage> _carouselImages = new();
+
+    // Left nav quick-link boxes
+    private bool _leftNavLoading = true;
+    private List<LeftNavGroup> _leftNavGroups = new();
+
+    private string _currentLang = "en";
+
+    // Board of Directors carousel
+    private int _currentBoardIndex = 0;
+    private System.Threading.Timer? _boardTimer;
+
+    /// <summary>Carousel image with its resolved URL (NFS or wwwroot).</summary>
+    private sealed class ResolvedCarouselImage
+    {
+        public string ResolvedUrl { get; set; } = "";
+        public string AltText { get; set; } = "";
+    }
+
+    private class BoardMember
+    {
+        public string Name { get; set; } = "";
+        public string Role { get; set; } = "";
+        public string ImageUrl { get; set; } = "";
+        public string DialogImageUrl { get; set; } = "";
+        public string DialogImageHindiUrl { get; set; } = "";
+        public string SummaryI18nKey { get; set; } = "";
+        public string BioI18nKey { get; set; } = "";
+        public bool IsMD { get; set; } = false;
+    }
+
+    private List<BoardMember> _boardMembers = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Initialize from current state
+            _currentLang = LangState.CurrentLang;
+
+            // Subscribe to instant language changes from the layout
+            LangState.OnChange += OnLanguageChanged;
+
+            // Blur nav triggers on mouse click so :focus-within doesn't keep dropdowns open
+            await JS.InvokeVoidAsync("eval", @"
+                document.querySelectorAll('.left-nav-trigger').forEach(function(btn) {
+                    btn.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
+                    });
+                });
+            ");
+
+            // Start board members auto-cycle timer (every 5 seconds)
+            _boardTimer = new System.Threading.Timer(async _ =>
+            {
+                try
+                {
+                    if (_boardMembers.Count > 0)
+                    {
+                        _currentBoardIndex = (_currentBoardIndex + 1) % _boardMembers.Count;
+                    }
+                    await InvokeAsync(async () =>
+                    {
+                        StateHasChanged();
+                        await Task.Delay(80);
+                        await JS.InvokeVoidAsync("loadLanguage");
+                    });
+                }
+                catch
+                {
+                    // Circuit may be disconnected — ignore silently
+                }
+            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+
+            // Initial i18n load for board member text
+            await Task.Delay(100);
+            await JS.InvokeVoidAsync("loadLanguage");
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load carousel images and board members from DB, left nav groups — all independent
+        _ = LoadLeftNavGroupsAsync();
+        _ = LoadCarouselImagesAsync();
+        _ = LoadBoardMembersAsync();
+    }
+
+    private string ResolveImageUrl(string fileName)
+    {
+        // The NFS path-rewrite middleware (UseStaticAssetPathRewrite) automatically
+        // rewrites /images/... → /MyDiary/images/... in Production/UAT.
+        // So we just return the plain relative path here.
+        return $"images/{fileName}";
+    }
+
+    private async Task LoadCarouselImagesAsync()
+    {
+        try
+        {
+            var items = await CarouselService.GetActiveImagesAsync();
+
+            _carouselImages = items.Select(img => new ResolvedCarouselImage
+            {
+                ResolvedUrl = ResolveImageUrl(img.FileName),
+                AltText = img.AltText
+            }).ToList();
+
+            _totalSlides = _carouselImages.Count;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Landing: failed to load carousel images from DB");
+            _carouselImages = new();
+            _totalSlides = 0;
+        }
+    }
+
+    private async Task LoadBoardMembersAsync()
+    {
+        try
+        {
+            var items = await CarouselService.GetActiveBoardMembersAsync();
+
+            _boardMembers = items.Select(m => new BoardMember
+                {
+                    Name = m.NameKey,
+                    Role = m.RoleKey,
+                    ImageUrl = ResolveImageUrl(m.ImageFileName),
+                    DialogImageUrl = ResolveImageUrl(m.DialogImageFileName),
+                    DialogImageHindiUrl = string.IsNullOrWhiteSpace(m.DialogImageHindiFileName)
+            ? ""
+            : ResolveImageUrl(m.DialogImageHindiFileName),
+                    SummaryI18nKey = m.SummaryI18nKey,
+                    BioI18nKey = m.BioI18nKey,
+                    IsMD = m.IsMD
+                }).ToList();
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Landing: failed to load board members from DB");
+            _boardMembers = new();
+        }
+    }
+
+    private async Task LoadLeftNavGroupsAsync()
+    {
+        try
+        {
+            _leftNavGroups = await LeftNavService.GetLeftNavGroupsAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[Landing] Failed to load left nav groups");
+        }
+        finally
+        {
+            _leftNavLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task NavigateToLogin()
+    {
+        await JS.InvokeVoidAsync("open", "login", "_blank");
+    }
+
+    private async Task OpenBoardMemberDialog(int index)
+    {
+        var member = _boardMembers[index];
+
+        // Pause the auto-cycle timer while dialog is open
+        _boardTimer?.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+        var dialogImage =
+    _currentLang.Equals("hi", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(member.DialogImageHindiUrl)
+            ? member.DialogImageHindiUrl
+            : member.DialogImageUrl;
+
+        var parameters = new DialogParameters<MDSirProfileDialog>
+{
+    { x => x.ImageUrl, member.IsMD ? dialogImage : member.ImageUrl },
+    { x => x.Name, member.Name },
+    { x => x.Role, member.Role }
+};
+
+        if (!member.IsMD)
+        {
+            parameters.Add(x => x.BioI18nKey, member.BioI18nKey);
+        }
+
+        var dialog = await DialogService.ShowAsync<MDSirProfileDialog>("", parameters, options);
+        await dialog.Result;
+
+        // Resume the auto-cycle timer after dialog is closed
+        _boardTimer?.Change(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task GoToBoardMember(int index)
+    {
+        _currentBoardIndex = index;
+        // Reset the auto-cycle timer when user manually navigates
+        _boardTimer?.Change(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        StateHasChanged();
+        await Task.Delay(50);
+        await JS.InvokeVoidAsync("loadLanguage");
+    }
+
+    private void OnCarouselIndexChanged(int index)
+    {
+        currentIndex = index;
+        StateHasChanged();
+    }
+
+    private void GoToSlide(int index)
+    {
+        if (carousel != null)
+        {
+            carousel.MoveTo(index);
+            currentIndex = index;
+        }
+    }
+
+    public void Dispose()
+    {
+        _boardTimer?.Dispose();
+        LangState.OnChange -= OnLanguageChanged;
+    }
+
+    private void OnLanguageChanged()
+    {
+        _currentLang = LangState.CurrentLang;
+        InvokeAsync(StateHasChanged);
+    }
+}

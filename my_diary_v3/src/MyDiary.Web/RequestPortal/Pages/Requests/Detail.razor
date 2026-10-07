@@ -1,0 +1,373 @@
+@namespace RequestPortal.Web.Pages.Requests
+@page "/requests/{Id:long}"
+@using Microsoft.AspNetCore.Components.Forms
+@inject IRequestService Requests
+@inject IAttachmentService Attachments
+@using RequestPortal.Core.Services
+@inject IAttachmentRepo AttachmentRepo
+@inject ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject Microsoft.AspNetCore.DataProtection.IDataProtectionProvider DataProtection
+
+<PageTitle>Request</PageTitle>
+
+@if (_detail is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <PageHeader PageKey="requests-detail" Title="@($"#{_detail.ReqNo} · {_detail.Subject}")" Crumbs="@BuildCrumbs()" />
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-6" Elevation="1">
+                <MudChip T="string" Color="@StatusColor(_detail.Status)">@_detail.Status</MudChip>
+                <MudChip T="string" Class="ml-1">L@(_detail.CurrentLevel)</MudChip>
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.body2"><b>Type:</b> @_detail.RequestTypeName</MudText>
+                <MudText Typo="Typo.body2"><b>Unit:</b> @_detail.UnitName</MudText>
+                <MudText Typo="Typo.body2"><b>Path:</b> @_detail.VerticalName / @_detail.DepartmentName / @_detail.ActivityName</MudText>
+                <MudText Typo="Typo.body2"><b>Raised by:</b> @_detail.RaisedByName</MudText>
+                <MudText Typo="Typo.body2"><b>Created:</b> @AppTime.ToIndia(_detail.CreatedAt).ToString("g")</MudText>
+                @if (_detail.SlaDueUtc.HasValue)
+                {
+                    <MudText Typo="Typo.body2"><b>SLA due:</b> @AppTime.ToIndia(_detail.SlaDueUtc.Value).ToString("g")</MudText>
+                }
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.h6">Description</MudText>
+                <MudText Style="white-space: pre-wrap;">@_detail.Description</MudText>
+            </MudPaper>
+
+            @if (CanAct)
+            {
+                <MudPaper Class="pa-6 mt-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Take action</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#59636e;">
+                        Acting at L@(_detail.CurrentLevel). Pick an action, add remarks (and attach files if needed), then submit.
+                    </MudText>
+
+                    <MudSelect T="string" Label="Action" @bind-Value="_action" Required="true" Class="mt-3">
+                        @if (_detail.CurrentLevel < 4)
+                        {
+                            <MudSelectItem T="string" Value="@("forward")">Escalate to next level</MudSelectItem>
+                        }
+                        <MudSelectItem T="string" Value="@("resolve")">Mark as Resolved</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("close")">Close (with reason)</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("clarify")">Seek clarification from requester</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("cancel")">Cancel request</MudSelectItem>
+                    </MudSelect>
+
+                    @if (_action == "close")
+                    {
+                        <MudSelect T="CloseReason" Label="Close reason" @bind-Value="_closeReason" Required="true" Class="mt-3">
+                            @foreach (var r in Enum.GetValues<CloseReason>())
+                            {
+                                <MudSelectItem T="CloseReason" Value="@r">@PrettyReason(r)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+
+                    <MudTextField @bind-Value="_remarks" Label="Reply / remarks" Lines="4" Required="true"
+                                  Placeholder="Type your reply or comments…" Class="mt-3" />
+
+                                        
+
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnFilePicked" Accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" Class="mt-3">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AttachFile">
+                                @(_pendingFile is null ? "Add attachment" : $"Replace ({_pendingFile.Name})")
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                    @if (_pendingFile is not null)
+                    {
+                        <MudText Typo="Typo.caption" Class="mt-1" Style="color:#59636e;">
+                            @_pendingFile.Name · @($"{_pendingFile.Size / 1024.0:0.0} KB")
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="ClearFile" aria-label="Close" />
+                        </MudText>
+                    }
+
+                    <div class="mt-3">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit" Disabled="@_busy">
+                            @(_busy ? "Submitting…" : "Submit")
+                        </MudButton>
+                    </div>
+                </MudPaper>
+            }
+
+            @if (CanReplyClarification)
+            {
+                <MudPaper Class="pa-6 mt-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Reply to clarification</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#59636e;">
+                        The handler is awaiting your response. SLA is paused until you reply.
+                    </MudText>
+                    <MudTextField @bind-Value="_clarifyAnswer" Label="Your reply" Lines="3" Required="true" Class="mt-3" />
+                    <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="ReplyClarification" Disabled="@_busy">
+                        @(_busy ? "Sending…" : "Send reply")
+                    </MudButton>
+                </MudPaper>
+            }
+
+            @if (CanReopen)
+            {
+                <MudPaper Class="pa-6 mt-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Reopen this request</MudText>
+                    <MudTextField @bind-Value="_reopenReason" Label="Justification" Lines="2" />
+                    <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Tertiary" OnClick="Reopen">
+                        Reopen
+                    </MudButton>
+                </MudPaper>
+            }
+            @if (CanFeedback)
+            {
+                <MudPaper Class="pa-6 mt-4" Elevation="1">
+                    <MudText Typo="Typo.h6">How was the resolution?</MudText>
+                    <MudRating @bind-SelectedValue="_rating" />
+                    <MudTextField @bind-Value="_feedback" Lines="2" Label="Comments (optional)" />
+                    <MudButton Class="mt-2" Variant="Variant.Filled" OnClick="SubmitFeedback">Submit feedback</MudButton>
+                </MudPaper>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            @* Attachments *@
+            @if (_attachments.Any())
+            {
+                <MudPaper Class="pa-4 mb-4" Elevation="1">
+                    <MudText Typo="Typo.h6" Class="mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.AttachFile" Size="Size.Small" Class="mr-1" />
+                        Attachments (@_attachments.Count)
+                    </MudText>
+                    @foreach (var att in _attachments)
+                    {
+                        <div class="rp-attachment-row">
+                            <MudIcon Icon="@AttIcon(att.Mime)" Size="Size.Small" Style="@AttIconStyle(att.Mime)" />
+                            <div class="rp-att-info">
+                                <div class="rp-att-name" title="@att.FileName">@att.FileName</div>
+                                <div class="rp-att-meta">@($"{att.SizeBytes / 1024.0:0.#} KB") · @AppTime.ToIndia(att.UploadedAt).ToString("dd-MMM HH:mm")</div>
+                            </div>
+                            <div class="rp-att-actions">
+                                <MudTooltip Text="View">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                                   Href="@AttachmentUrl(att.Id, download: false)" Target="_blank" aria-label="View" />
+                                </MudTooltip>
+                                <MudTooltip Text="Download">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small"
+                                                   Href="@AttachmentUrl(att.Id, download: true)" aria-label="Download" />
+                                </MudTooltip>
+                            </div>
+                        </div>
+                    }
+                </MudPaper>
+            }
+
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Action history</MudText>
+                <RequestTimeline RequestId="Id" @key="_timelineKey" />
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private RequestDetail? _detail;
+    private IReadOnlyList<Attachment> _attachments = Array.Empty<Attachment>();
+    private string? _reopenReason;
+    private int _rating = 5;
+    private string? _feedback;
+
+    private string _action = "forward";
+    private CloseReason _closeReason = CloseReason.Resolved;
+    private string? _remarks;
+    private IBrowserFile? _pendingFile;
+    private bool _busy;
+    private int _timelineKey;
+
+    private string? _clarifyAnswer;
+
+    private List<PageHeader.Crumb> BuildCrumbs() => new()
+    {
+        new("My Requests", "/requests/mine"),
+        new($"#{_detail?.ReqNo ?? "?"}"),
+    };
+
+    private bool IsHandlerOrAdmin =>
+        CurrentUser.IsInRole(RoleCode.VertL1) || CurrentUser.IsInRole(RoleCode.VertL2)
+        || CurrentUser.IsInRole(RoleCode.VertL3) || CurrentUser.IsInRole(RoleCode.VertL4)
+        || CurrentUser.IsInRole(RoleCode.AppAdmin) || CurrentUser.IsInRole(RoleCode.SuperAdmin)
+        || CurrentUser.IsInRole(RoleCode.CoVertAdmin);
+
+    private bool CanAct => _detail is not null
+        && IsHandlerOrAdmin
+        && _detail.Status != "Closed"
+        && _detail.Status != "Cancelled"
+        && _detail.Status != "Resolved";
+
+    private bool IsRequester => _detail is not null && !string.IsNullOrEmpty(CurrentUser.EmpCode);
+
+    private bool CanReplyClarification => _detail is not null
+        && _detail.Status == "ClarificationSought"
+        && CurrentUser.IsInRole(RoleCode.BranchUser);
+
+    private bool CanReopen => _detail is not null
+        && (_detail.Status == "Closed" || _detail.Status == "Resolved")
+        && CurrentUser.IsInRole(RoleCode.BranchUser);
+
+    private bool CanFeedback => _detail is not null
+        && (_detail.Status == "Resolved" || _detail.Status == "Closed")
+        && CurrentUser.IsInRole(RoleCode.BranchUser);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            // Independent lookups — run concurrently instead of sequentially.
+            var detailTask = Requests.GetAsync(Id);
+            var attachmentsTask = AttachmentRepo.ListByRequestAsync(Id);
+            await Task.WhenAll(detailTask, attachmentsTask);
+            _detail      = detailTask.Result;
+            _attachments = attachmentsTask.Result;
+            if (_detail is not null && _detail.CurrentLevel >= 4 && _action == "forward")
+                _action = "resolve";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Detail: failed to load request detail for Id={Id}");
+        }
+    }
+
+    // Attachment helpers
+    private string AttachmentUrl(long attachmentId, bool download) =>
+        MyDiary.Web.Api.AttachmentLinkSigner.BuildUrl(DataProtection, attachmentId, CurrentUser.EmpCode ?? "", download);
+
+    private static string AttIcon(string mime) => mime switch
+    {
+        "application/pdf"                => Icons.Material.Filled.PictureAsPdf,
+        "image/png" or "image/jpeg"      => Icons.Material.Filled.Image,
+        _                                => Icons.Material.Filled.InsertDriveFile
+    };
+    private static string AttIconStyle(string mime) => mime switch
+    {
+        "application/pdf"           => "color:#EF4444",
+        "image/png" or "image/jpeg" => "color:#0ea5e9",
+        _                           => "color:#59636e"
+    };
+
+    private void OnFilePicked(IBrowserFile file) => _pendingFile = file;
+    private void ClearFile() => _pendingFile = null;
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_remarks)) { Snackbar.Add("Remarks are required.", Severity.Warning); return; }
+        var empCode = CurrentUser.EmpCode ?? "";
+        if (string.IsNullOrEmpty(empCode)) { Snackbar.Add("Sign in required.", Severity.Error); return; }
+        _busy = true;
+        try
+        {
+            if (_action == "clarify")
+                await Requests.SeekClarificationAsync(new ClarificationDto(Id, _remarks!), empCode);
+            else if (_action == "close")
+                await Requests.ActAsync(new ActionDto(Id, _action, _remarks!, CloseReason: _closeReason.ToString()), empCode);
+            else
+                await Requests.ActAsync(new ActionDto(Id, _action, _remarks!), empCode);
+
+            if (_pendingFile is not null)
+                await UploadAttachment(_pendingFile, empCode);
+
+            Snackbar.Add("Action recorded.", Severity.Success);
+            _remarks = null;
+            _pendingFile = null;
+            _detail = await Requests.GetAsync(Id);
+            _timelineKey++;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Detail: submit action failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task UploadAttachment(IBrowserFile file, string empCode)
+    {
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            await Attachments.StoreAsync(Id, null, file.Name, file.ContentType, stream, empCode);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Detail: attachment upload failed for RequestId={Id} — {ex.Message}");
+            AppLogger.LogError(ex, $"Detail: attachment upload failed for RequestId={Id}");
+            Snackbar.Add(UserFacingError.Generic, Severity.Warning);
+        }
+    }
+
+    private async Task ReplyClarification()
+    {
+        if (string.IsNullOrWhiteSpace(_clarifyAnswer)) { Snackbar.Add("Please type a reply.", Severity.Warning); return; }
+        var ec = CurrentUser.EmpCode ?? ""; if (string.IsNullOrEmpty(ec)) return;
+        _busy = true;
+        try
+        {
+            await Requests.ReplyToOpenClarificationAsync(Id, _clarifyAnswer!, ec);
+            Snackbar.Add("Reply sent.", Severity.Success);
+            _clarifyAnswer = null;
+            _detail = await Requests.GetAsync(Id);
+            _timelineKey++;
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "Detail: action submission failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task Reopen()
+    {
+        if (string.IsNullOrWhiteSpace(_reopenReason)) { Snackbar.Add("Please provide a justification.", Severity.Warning); return; }
+        try
+        {
+            await Requests.ReopenAsync(Id, _reopenReason!, CurrentUser.EmpCode ?? "");
+            Snackbar.Add("Request reopened.", Severity.Success);
+            _detail = await Requests.GetAsync(Id);
+            _timelineKey++;
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "Detail: reopen request failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+
+    private async Task SubmitFeedback()
+    {
+        try
+        {
+            await Requests.SubmitFeedbackAsync(Id, _rating, _feedback, CurrentUser.EmpCode ?? "");
+            Snackbar.Add("Thanks for the feedback.", Severity.Success);
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "Detail: submit feedback failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+
+    private Color StatusColor(string s) => s switch
+    {
+        "Resolved" => Color.Success,
+        "Closed" => Color.Dark,
+        "Cancelled" => Color.Error,
+        "ClarificationSought" => Color.Warning,
+        "Reopened" => Color.Tertiary,
+        _ => Color.Primary
+    };
+
+    private static string PrettyReason(CloseReason r) => r switch
+    {
+        CloseReason.Resolved => "Resolved",
+        CloseReason.NotFeasible => "Not feasible",
+        CloseReason.NotAsPerPolicy => "Not as per policy",
+        CloseReason.OutOfScope => "Out of scope",
+        CloseReason.DuplicateRequest => "Duplicate request",
+        CloseReason.InsufficientInformation => "Insufficient information",
+        CloseReason.WithdrawnByUser => "Withdrawn by user",
+        CloseReason.NoActionRequired => "No action required",
+        CloseReason.ResolvedByOtherMeans => "Resolved by other means",
+        _ => r.ToString()
+    };
+}

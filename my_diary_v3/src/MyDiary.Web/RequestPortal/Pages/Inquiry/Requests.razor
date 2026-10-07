@@ -1,0 +1,128 @@
+@namespace RequestPortal.Web.Pages.Inquiry
+@page "/inquiry/requests"
+@inject IRequestRepo RequestRepo
+@inject IMasterRepo MasterRepo
+@inject NavigationManager Nav
+
+<PageTitle>Request Inquiry</PageTitle>
+<PageHeader PageKey="inquiry-requests" Title="Request Inquiry" Subtitle="Search and view any request across the portal."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Inquiry"), new("Requests") })" />
+
+<MudPaper Elevation="1" Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudTextField @bind-Value="_reqNo" Label="Ref / Ticket #" Clearable="true"
+                          Placeholder="REQ-2026-0001" Variant="Variant.Outlined" Dense="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudTextField @bind-Value="_subject" Label="Subject keyword" Clearable="true"
+                          Placeholder="e.g. timeout" Variant="Variant.Outlined" Dense="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" @bind-Value="_status" Label="Status" Variant="Variant.Outlined" Dense="true" Clearable="true">
+                <MudSelectItem T="string" Value="@("InProgress")">In Progress</MudSelectItem>
+                <MudSelectItem T="string" Value="@("ClarificationSought")">Clarif. Pending</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Reopened")">Reopened</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Resolved")">Resolved</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Closed")">Closed</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Cancelled")">Cancelled</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="long?" @bind-Value="_typeId" Label="Request Type" Variant="Variant.Outlined" Dense="true" Clearable="true">
+                @foreach (var t in _types)
+                {
+                    <MudSelectItem T="long?" Value="@((long?)t.Id)">@t.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                       StartIcon="@Icons.Material.Filled.Search" OnClick="Search"
+                       Disabled="@_loading">Search</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Elevation="1">
+    <MudTable T="RequestListItem" Items="@_items" Dense="true" Hover="true" Class="rp-data-table" Loading="@_loading"
+              RowClass="cursor-pointer"
+              OnRowClick="@((TableRowClickEventArgs<RequestListItem> e) => Nav.NavigateTo($"requests/{e.Item.Id}"))">
+        <ToolBarContent>
+            @if (_searched)
+            {
+                <MudText Typo="Typo.subtitle2"><b>@_items.Count</b> result(s) found</MudText>
+            }
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Ref #</MudTh><MudTh>Type</MudTh><MudTh>Subject</MudTh>
+            <MudTh>Raised By</MudTh><MudTh>Unit</MudTh><MudTh>Level</MudTh>
+            <MudTh>Status</MudTh><MudTh>Created</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><MudLink Href="@($"requests/{context.Id}")" Color="Color.Primary">@context.ReqNo</MudLink></MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.RequestTypeName</MudChip></MudTd>
+            <MudTd Style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@context.Subject</MudTd>
+            <MudTd>@context.RaisedByName</MudTd>
+            <MudTd>@context.UnitName</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Default">L@context.CurrentLevel</MudChip></MudTd>
+            <MudTd>@StatusBadge(context.Status)</MudTd>
+            <MudTd><MudText Typo="Typo.caption">@AppTime.ToIndia(context.CreatedAt).ToString("dd-MMM-yyyy")</MudText></MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-6 text-center" Color="Color.Secondary">
+                @(_searched ? "No requests matched your search." : "Enter search criteria above and click Search.")
+            </MudText>
+        </NoRecordsContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private string _reqNo = "", _subject = "", _status = "";
+    private long? _typeId;
+    private List<RequestType> _types = new();
+    private List<RequestListItem> _items = new();
+    private bool _loading, _searched;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var typesTask = MasterRepo.ListRequestTypesAllAsync();
+        var searchTask = Search();
+        await Task.WhenAll(typesTask, searchTask);
+        _types = typesTask.Result.ToList();
+    }
+
+    private async Task Search()
+    {
+        _loading = true;
+        var filter = new FilterDto(
+            RequestTypeId: _typeId,
+            Status: string.IsNullOrWhiteSpace(_status) ? null : _status,
+            PageSize: 500);
+        var (all, _) = await RequestRepo.ListAsync(filter, null, null);
+
+        _items = all.Where(r =>
+            (string.IsNullOrWhiteSpace(_reqNo)   || r.ReqNo.Contains(_reqNo, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(_subject) || r.Subject.Contains(_subject, StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+
+        _searched = true;
+        _loading  = false;
+    }
+
+    private RenderFragment StatusBadge(string s) =>@<text>
+        @{
+            var (color, label) = s switch
+            {
+                "InProgress"          => (Color.Primary, "In Progress"),
+                "ClarificationSought" => (Color.Info,    "Clarif. Pending"),
+                "Reopened"            => (Color.Warning,  "Reopened"),
+                "Resolved"            => (Color.Success,  "Resolved"),
+                "Closed"              => (Color.Default,  "Closed"),
+                "Cancelled"           => (Color.Error,    "Cancelled"),
+                _                     => (Color.Default,  s)
+            };
+        }
+        <MudChip T="string" Size="Size.Small" Color="@color" Variant="Variant.Filled">@label</MudChip>
+    </text>;
+}

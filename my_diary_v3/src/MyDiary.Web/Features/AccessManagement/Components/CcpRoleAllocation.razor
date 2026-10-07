@@ -1,0 +1,287 @@
+@page "/access-management/ccp-roles"
+@using MudBlazor
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject ICcpRbacService CcpRbacService
+@inject IUserRepo UserRepo
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+
+<PageTitle>CCP Role Allocation</PageTitle>
+
+<PageHeader PageKey="ccp-role-allocation" Title="Corporate Credit Portal — Role Allocation" Crumbs="_crumbs" />
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+    BranchMaker, BranchHead, and ZonalHead are assigned automatically from each employee's existing
+    Branch/Zone attributes — nothing to do here for those. Only <b>CO Lcv</b> and <b>CO Mcv</b> need
+    explicit assignment below, since HRMS has no LCV/MCV distinction.
+</MudAlert>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    @if (_canManageVerticalAdmins)
+    {
+        <MudPaper Elevation="1" Class="pa-3 mb-4">
+            <div class="d-flex flex-wrap align-center mb-3">
+                <MudText Typo="Typo.h6">CCP Vertical Admins</MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenAddAdminDialog">Add Vertical Admin</MudButton>
+            </div>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                A CCP Vertical Admin may assign/revoke CO Lcv and CO Mcv below, without needing full
+                Application Admin rights. Restricted to App/Super Admins to grant.
+            </MudText>
+            @if (_verticalAdmins.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No CCP Vertical Admins assigned yet — only App/Super Admins can assign CO roles until one is added.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@_verticalAdmins" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Employee Code</MudTh><MudTh>Assigned By</MudTh><MudTh>Assigned At</MudTh><MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee Code">@context.EmpCode</MudTd>
+                        <MudTd DataLabel="Assigned By">@context.AssignedByEmp</MudTd>
+                        <MudTd DataLabel="Assigned At">@context.AssignedAtUtc.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           Title="Revoke" OnClick="@(() => RevokeAdminAsync(context.EmpCode))" aria-label="Revoke" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+
+    <MudPaper Elevation="1" Class="pa-3 mb-4">
+        <div class="d-flex flex-wrap align-center mb-3">
+            <MudText Typo="Typo.h6">CO Lcv / CO Mcv Assignments</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenAddRoleDialog" Disabled="@(!_canManageRoles)">Assign Role</MudButton>
+        </div>
+        @if (!_canManageRoles)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-2">
+                You are not a CCP Vertical Admin (or App/Super Admin) — you can view assignments but not change them.
+            </MudAlert>
+        }
+        @if (_roleAssignments.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No CO Lcv/Mcv assignments yet.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_roleAssignments" Dense="true" Hover="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Employee Code</MudTh><MudTh>Role</MudTh><MudTh>Assigned By</MudTh><MudTh>Assigned At</MudTh><MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Employee Code">@context.EmpCode</MudTd>
+                    <MudTd DataLabel="Role">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.RoleCode == "CoLcv" ? Color.Info : Color.Success)" Variant="Variant.Filled">
+                            @(context.RoleCode == "CoLcv" ? "CO Lcv" : "CO Mcv")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Assigned By">@context.AssignedByEmp</MudTd>
+                    <MudTd DataLabel="Assigned At">@context.AssignedAtUtc.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       Disabled="@(!_canManageRoles)" Title="Revoke"
+                                       OnClick="@(() => RevokeRoleAsync(context.Id))" aria-label="Revoke" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+<MudDialog @bind-Visible="_addAdminOpen" Options="_dialogOptions">
+    <TitleContent>Add CCP Vertical Admin</TitleContent>
+    <DialogContent>
+        <MudTextField T="string" Label="Employee Code (PF Number)" @bind-Value="_newAdminEmpCode"
+                       Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addAdminOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAdminAsync" Disabled="@_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_addRoleOpen" Options="_dialogOptions">
+    <TitleContent>Assign CO Role</TitleContent>
+    <DialogContent>
+        <MudTextField T="string" Label="Employee Code (PF Number)" @bind-Value="_newRoleEmpCode"
+                       Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+        <MudSelect T="string" Label="Role" @bind-Value="_newRoleCode" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3">
+            <MudSelectItem T="string" Value="@("CoLcv")">CO Lcv (Large Corporate Vertical)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("CoMcv")">CO Mcv (Mid Corporate Vertical)</MudSelectItem>
+        </MudSelect>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3">
+            Assigning a new role replaces any existing active CCP role assignment for this employee.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addRoleOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveRoleAsync" Disabled="@_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Access Management"), new("CCP Role Allocation") };
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _loading = true, _saving;
+    private bool _canManageRoles;
+    private bool _canManageVerticalAdmins;
+    private List<CcpVerticalAdmin> _verticalAdmins = new();
+    private List<CcpRoleAssignment> _roleAssignments = new();
+
+    private bool _addAdminOpen;
+    private string _newAdminEmpCode = "";
+
+    private bool _addRoleOpen;
+    private string _newRoleEmpCode = "";
+    private string _newRoleCode = "CoLcv";
+
+    private string ActorEmpCode => CurrentUser.EmplId ?? "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _canManageRoles = await CcpRbacService.CanManageRolesAsync(ActorEmpCode);
+        _canManageVerticalAdmins = await CcpRbacService.CanManageVerticalAdminsAsync(ActorEmpCode);
+        _verticalAdmins = (await CcpRbacService.ListVerticalAdminsAsync()).Where(a => a.IsActive).ToList();
+        _roleAssignments = (await CcpRbacService.ListRoleAssignmentsAsync()).Where(a => a.IsActive).ToList();
+    }
+
+    private void OpenAddAdminDialog()
+    {
+        _newAdminEmpCode = "";
+        _addAdminOpen = true;
+    }
+
+    private async Task SaveAdminAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newAdminEmpCode))
+        {
+            Snackbar.Add("Employee code is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await CcpRbacService.GrantVerticalAdminAsync(ActorEmpCode, _newAdminEmpCode.Trim());
+            Snackbar.Add("CCP Vertical Admin added.", Severity.Success);
+            _addAdminOpen = false;
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "CcpRoleAllocation: grant vertical admin failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RevokeAdminAsync(string empCode)
+    {
+        try
+        {
+            await CcpRbacService.RevokeVerticalAdminAsync(ActorEmpCode, empCode);
+            Snackbar.Add("CCP Vertical Admin revoked.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "CcpRoleAllocation: revoke vertical admin failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private void OpenAddRoleDialog()
+    {
+        _newRoleEmpCode = "";
+        _newRoleCode = "CoLcv";
+        _addRoleOpen = true;
+    }
+
+    private async Task SaveRoleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newRoleEmpCode))
+        {
+            Snackbar.Add("Employee code is required.", Severity.Warning);
+            return;
+        }
+        if (!Enum.TryParse<RoleCode>(_newRoleCode, out var role))
+        {
+            Snackbar.Add("Select a role.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await CcpRbacService.AssignRoleAsync(ActorEmpCode, _newRoleEmpCode.Trim(), role);
+            Snackbar.Add("CO role assigned.", Severity.Success);
+            _addRoleOpen = false;
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "CcpRoleAllocation: assign role failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RevokeRoleAsync(long assignmentId)
+    {
+        try
+        {
+            await CcpRbacService.RevokeRoleAsync(ActorEmpCode, assignmentId);
+            Snackbar.Add("CO role revoked.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "CcpRoleAllocation: revoke role failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+}

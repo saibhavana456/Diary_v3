@@ -1,0 +1,577 @@
+@page "/flatmgmt/admin/flat-allocation-manage"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminFlatAllocationService AllocationService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Flat Allocation - Flat Management System</PageTitle>
+
+<div class="fam-page">
+    <a href="flatmgmt/admin/flat-allocation" class="fam-back">&laquo; Back to Flat Allocation</a>
+
+    <PageHeader Title="Flat Allocation" Crumbs="_crumbs" PageKey="flatmgmt-admin-flat-allocation-manage" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (loadError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">@loadError</MudAlert>
+    }
+    else
+    {
+        <MudCard Class="fam-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="fam-section-title">Flat Details</MudText></MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fam-label">Flat No.</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat!.FlatNo</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fam-label">Type / Area</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.BhkDetails / @flat.FlatArea</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fam-label">Category / Status</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.FamilyDetails / @occupancyLabel</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fam-label">Building / Location</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.SocietyName - @flat.LocationName</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fam-label">Address</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.Address</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fam-label">Managed By</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.ManagedByCode / @flat.ManagedByName</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="fam-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="fam-section-title">Current Occupant Details</MudText></MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@currentOccupants" Hover="true" Bordered="true" Dense="true" Class="fam-table">
+                    <HeaderContent>
+                        <MudTh>PF No.</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Designation</MudTh>
+                        <MudTh>Email</MudTh>
+                        <MudTh>Phone</MudTh>
+                        <MudTh>Department</MudTh>
+                        <MudTh>Occupy Date</MudTh>
+                        <MudTh>Modify</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        @if (editingPf == row.EmployeePf)
+                        {
+                            <MudTd DataLabel="PF No.">@row.EmployeePf</MudTd>
+                            <MudTd DataLabel="Name"><MudTextField @bind-Value="editName" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                            <MudTd DataLabel="Designation"><MudTextField @bind-Value="editDesignation" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                            <MudTd DataLabel="Email"><MudTextField @bind-Value="editEmail" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                            <MudTd DataLabel="Phone"><MudTextField @bind-Value="editPhone" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                            <MudTd DataLabel="Department"><MudTextField @bind-Value="editDepartment" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                            <MudTd DataLabel="Occupy Date">@row.OccupyDate</MudTd>
+                            <MudTd DataLabel="Modify">
+                                <MudIconButton Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success" OnClick="HandleOccupantSave" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => editingPf = null)" />
+                            </MudTd>
+                        }
+                        else
+                        {
+                            <MudTd DataLabel="PF No.">@row.EmployeePf</MudTd>
+                            <MudTd DataLabel="Name">@row.EmployeeName</MudTd>
+                            <MudTd DataLabel="Designation">@row.EmployeeDesignation</MudTd>
+                            <MudTd DataLabel="Email">@row.Email</MudTd>
+                            <MudTd DataLabel="Phone">@row.Phone</MudTd>
+                            <MudTd DataLabel="Department">@row.EmployeeDepartment</MudTd>
+                            <MudTd DataLabel="Occupy Date">@row.OccupyDate</MudTd>
+                            <MudTd DataLabel="Modify">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => StartEditOccupant(row))" />
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No Current Occupant</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="fam-card mt-4" Elevation="2">
+            <MudCardContent>
+                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="fam-tabs" PanelClass="pa-0 pt-4">
+                    <MudTabPanel Text="New Allocation">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocPfNo" Label="PF No.*" Variant="Variant.Outlined" MaxLength="6"
+                                                      Required="true" @bind-Value:after="HandlePfChanged" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocName" Label="Name*" Variant="Variant.Outlined" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@allocDesignation" Label="Designation" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocEmail" Label="Email*" Variant="Variant.Outlined" Required="true" MaxLength="100" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocPhone" Label="Phone*" Variant="Variant.Outlined" Required="true" MaxLength="10" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocDepartment" Label="Department*" Variant="Variant.Outlined" Required="true" MaxLength="100" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@allocRoDisplay" Label="RO (Region) Code / Name" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@allocZoDisplay" Label="ZO (Division) Code / Name" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@(allocPostingDate)" Label="Posting Date" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@(allocRetirementDate)" Label="Retirement Date" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="allocOccupyDate" Label="Occupy/Visit Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocAllotmentLetterNo" Label="Allotement Letter No." Variant="Variant.Outlined" MaxLength="100" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocTransferLetterNo" Label="Transfer Letter No." Variant="Variant.Outlined" MaxLength="100" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="allocKeysGiven" Label="Door Keys Given*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var k in KeyOptions)
+                                            {
+                                                <MudSelectItem Value="@k">@k</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocVehicle" Label="Vehicle Details" Variant="Variant.Outlined" MaxLength="100" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocRemark" Label="Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+
+                        <div class="fam-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isAllocating" OnClick="HandleAllocate">
+                                @(isAllocating ? "Saving..." : "Allocate")
+                            </MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Deallocation">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="deallocPfNo" Label="Choose PF No." Variant="Variant.Outlined"
+                                                   @bind-Value:after="HandleDeallocPfChanged">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var pf in allocatablePfs)
+                                            {
+                                                <MudSelectItem Value="@pf">@pf</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@deallocNameDisplay" Label="Name" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@deallocCandidate?.EmployeeDesignation" Label="Designation" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@deallocEmailPhoneDisplay" Label="Email / Phone" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@deallocCandidate?.OccupyDate" Label="Occupy Date" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="deallocExitDate" Label="Vacated Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="deallocKeysBack" Label="Keys handed Back*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var k in KeyOptions)
+                                            {
+                                                <MudSelectItem Value="@k">@k</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="deallocKeysBackTo" Label="Keys handed to" Variant="Variant.Outlined" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="deallocRemark" Label="Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+
+                        <div class="fam-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isDeallocating" OnClick="HandleDeallocate">
+                                @(isDeallocating ? "Saving..." : "De-Allocate")
+                            </MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Previous Occupant">
+                        <MudTable Items="@previousOccupants" Hover="true" Bordered="true" Dense="true" Class="fam-table">
+                            <HeaderContent>
+                                <MudTh>PF No.</MudTh>
+                                <MudTh>Name</MudTh>
+                                <MudTh>Designation</MudTh>
+                                <MudTh>Department</MudTh>
+                                <MudTh>Occupy Date</MudTh>
+                                <MudTh>Exit Date</MudTh>
+                                <MudTh>Status</MudTh>
+                            </HeaderContent>
+                            <RowTemplate Context="row">
+                                <MudTd DataLabel="PF No.">@row.EmployeePf</MudTd>
+                                <MudTd DataLabel="Name">@row.EmployeeName</MudTd>
+                                <MudTd DataLabel="Designation">@row.EmployeeDesignation</MudTd>
+                                <MudTd DataLabel="Department">@row.EmployeeDepartment</MudTd>
+                                <MudTd DataLabel="Occupy Date">@row.OccupyDate</MudTd>
+                                <MudTd DataLabel="Exit Date">@row.ExitDate</MudTd>
+                                <MudTd DataLabel="Status">@row.OccupyStatus</MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText>Not Occupy Yet by Anybody</MudText>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </MudTabPanel>
+                </MudTabs>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="fam-modal-overlay" @onclick="() => message = null">
+            <div class="fam-modal @(isError ? "fam-modal-error" : "fam-modal-success")" @onclick:stopPropagation="true">
+                <div class="fam-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="fam-modal-text">@message</p>
+                <button type="button" class="fam-btn @(isError ? "fam-btn-secondary" : "fam-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Flat Allocation") };
+    private static readonly string[] KeyOptions = { "Select", "0", "1", "2", "3", "4", "5", "More than 5" };
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery(Name = "flatId")]
+    public string? FlatId { get; set; }
+
+    private string adminPfNo = "";
+    private bool isLoading = true;
+    private string? loadError;
+    private FlatAllocationFlatInfo? flat;
+    private string occupancyLabel = "";
+
+    private List<FlatOccupantRow> currentOccupants = new();
+    private List<PreviousOccupantRow> previousOccupants = new();
+    private List<string> allocatablePfs = new();
+
+    private string? editingPf;
+    private string editName = "";
+    private string editDesignation = "";
+    private string editDepartment = "";
+    private string editEmail = "";
+    private string editPhone = "";
+
+    private string allocPfNo = "";
+    private string allocName = "";
+    private string allocDesignation = "";
+    private string allocDepartment = "";
+    private string allocEmail = "";
+    private string allocPhone = "";
+    private string allocRoCode = "";
+    private string allocRoName = "";
+    private string allocZoCode = "";
+    private string allocZoName = "";
+    private string allocPostingDate = "";
+    private string allocRetirementDate = "";
+    private DateTime? allocOccupyDate;
+    private string allocAllotmentLetterNo = "";
+    private string allocTransferLetterNo = "";
+    private string allocKeysGiven = "";
+    private string allocVehicle = "";
+    private string allocRemark = "";
+    private bool isAllocating;
+
+    private string allocRoDisplay => $"{allocRoCode} / {allocRoName}";
+    private string allocZoDisplay => $"{allocZoCode} / {allocZoName}";
+
+    private string deallocPfNo = "";
+    private DeallocationCandidate? deallocCandidate;
+    private DateTime? deallocExitDate;
+    private string deallocKeysBack = "";
+    private string? deallocKeysBackTo;
+    private string? deallocRemark;
+    private bool isDeallocating;
+
+    private string deallocNameDisplay => deallocCandidate is null ? "" : $"{deallocCandidate.EmployeeName} ({deallocCandidate.EmployeePf})";
+    private string deallocEmailPhoneDisplay => deallocCandidate is null ? "" : $"{deallocCandidate.Email} / {deallocCandidate.Phone}";
+
+    private string? message;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(FlatId))
+        {
+            loadError = "Invalid request.";
+            isLoading = false;
+            return;
+        }
+
+        await LoadAllAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadAllAsync()
+    {
+        flat = await AllocationService.GetFlatInfoAsync(FlatId!);
+        if (flat is null)
+        {
+            loadError = "Flat Details with this Flat No. doesn't exist..";
+            return;
+        }
+
+        occupancyLabel = string.Equals(flat.OccupancyStatus, "Vacant", StringComparison.OrdinalIgnoreCase)
+            ? "Vacant"
+            : $"{flat.OccupantCount}-Occupants";
+
+        currentOccupants = await AllocationService.GetCurrentOccupantsAsync(FlatId!);
+        previousOccupants = await AllocationService.GetPreviousOccupantsAsync(FlatId!);
+        allocatablePfs = await AllocationService.GetAllocatablePfListAsync(FlatId!);
+    }
+
+    private void StartEditOccupant(FlatOccupantRow row)
+    {
+        editingPf = row.EmployeePf;
+        editName = row.EmployeeName ?? "";
+        editDesignation = row.EmployeeDesignation ?? "";
+        editDepartment = row.EmployeeDepartment ?? "";
+        editEmail = row.Email ?? "";
+        editPhone = row.Phone ?? "";
+    }
+
+    private async Task HandleOccupantSave()
+    {
+        if (editingPf is null) return;
+
+        var result = await AllocationService.UpdateOccupantAsync(new FlatOccupantEditRequest(
+            FlatId: FlatId!,
+            EmployeePf: editingPf,
+            EmployeeName: editName,
+            EmployeeDesignation: editDesignation,
+            EmployeeDepartment: editDepartment,
+            Email: editEmail,
+            Phone: editPhone));
+
+        editingPf = null;
+
+        if (!result.Success)
+        {
+            ShowError(result.Error ?? "Some Error Occured. Please try later...");
+            return;
+        }
+
+        currentOccupants = await AllocationService.GetCurrentOccupantsAsync(FlatId!);
+        ShowSuccess("Occupant details updated.");
+    }
+
+    private async Task HandlePfChanged()
+    {
+        allocName = "";
+        allocDesignation = "";
+        allocDepartment = "";
+        allocRoCode = "";
+        allocRoName = "";
+        allocZoCode = "";
+        allocZoName = "";
+        allocPostingDate = "";
+        allocRetirementDate = "";
+        allocPhone = "";
+        allocEmail = "";
+
+        if (string.IsNullOrWhiteSpace(allocPfNo)) return;
+
+        var staff = await AllocationService.GetStaffByPfAsync(allocPfNo.Trim());
+        if (staff is not null)
+        {
+            allocName = staff.Name ?? "";
+            allocDesignation = staff.Designation ?? "";
+            allocDepartment = staff.Department ?? "";
+            allocRoCode = staff.RoCode ?? "";
+            allocRoName = staff.RoName ?? "";
+            allocZoCode = staff.ZoCode ?? "";
+            allocZoName = staff.ZoName ?? "";
+            allocPostingDate = staff.PostingDate ?? "";
+            allocRetirementDate = staff.RetirementDate ?? "";
+            allocPhone = staff.Phone ?? "";
+            allocEmail = staff.Email ?? "";
+        }
+    }
+
+    private async Task HandleAllocate()
+    {
+        message = null;
+
+        if (string.IsNullOrWhiteSpace(allocPfNo)) { ShowError("Fill PF No"); return; }
+        if (string.IsNullOrWhiteSpace(allocName)) { ShowError("Enter name"); return; }
+        if (string.IsNullOrWhiteSpace(allocEmail)) { ShowError("Fill Email ID"); return; }
+        if (string.IsNullOrWhiteSpace(allocPhone)) { ShowError("Enter Phone number"); return; }
+        if (string.IsNullOrWhiteSpace(allocDepartment)) { ShowError("Fill Department Name"); return; }
+        if (allocOccupyDate is null) { ShowError("Enter Date"); return; }
+        if (string.IsNullOrWhiteSpace(allocKeysGiven) || allocKeysGiven == "Select") { ShowError("Select Keys"); return; }
+
+        isAllocating = true;
+        try
+        {
+            var result = await AllocationService.AllocateAsync(new FlatAllocationRequest(
+                FlatId: FlatId!,
+                EmployeePf: allocPfNo.Trim(),
+                EmployeeName: allocName.Trim(),
+                EmployeeDesignation: allocDesignation,
+                EmployeeDepartment: allocDepartment,
+                OccupyDate: allocOccupyDate!.Value.ToString("dd/MM/yyyy"),
+                AllotmentLetterNo: allocAllotmentLetterNo,
+                TransferLetterNo: allocTransferLetterNo,
+                KeysGiven: allocKeysGiven,
+                VehicleDetails: allocVehicle,
+                Remark: allocRemark,
+                Email: allocEmail,
+                Phone: allocPhone,
+                RoCode: allocRoCode,
+                RoName: allocRoName,
+                ZoCode: allocZoCode,
+                ZoName: allocZoName,
+                PostingDate: allocPostingDate,
+                RetirementDate: allocRetirementDate,
+                EnteredBy: adminPfNo));
+
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Some Error Occured. Please try later...");
+                return;
+            }
+
+            await LoadAllAsync();
+            ResetAllocationForm();
+            ShowSuccess("Flat Allocated SuccessFully..");
+        }
+        finally
+        {
+            isAllocating = false;
+        }
+    }
+
+    private void ResetAllocationForm()
+    {
+        allocPfNo = "";
+        allocName = "";
+        allocDesignation = "";
+        allocDepartment = "";
+        allocEmail = "";
+        allocPhone = "";
+        allocRoCode = "";
+        allocRoName = "";
+        allocZoCode = "";
+        allocZoName = "";
+        allocPostingDate = "";
+        allocRetirementDate = "";
+        allocOccupyDate = null;
+        allocAllotmentLetterNo = "";
+        allocTransferLetterNo = "";
+        allocKeysGiven = "";
+        allocVehicle = "";
+        allocRemark = "";
+    }
+
+    private async Task HandleDeallocPfChanged()
+    {
+        deallocCandidate = string.IsNullOrEmpty(deallocPfNo)
+            ? null
+            : await AllocationService.GetOccupantByPfAsync(deallocPfNo);
+    }
+
+    private async Task HandleDeallocate()
+    {
+        message = null;
+
+        if (string.IsNullOrEmpty(deallocPfNo)) { ShowError("Select PF No."); return; }
+        if (deallocExitDate is null) { ShowError("Choose Date"); return; }
+        if (string.IsNullOrWhiteSpace(deallocKeysBack) || deallocKeysBack == "Select") { ShowError("Select Keys"); return; }
+
+        isDeallocating = true;
+        try
+        {
+            var result = await AllocationService.DeallocateAsync(new FlatDeallocationRequest(
+                FlatId: FlatId!,
+                EmployeePf: deallocPfNo,
+                ExitDate: deallocExitDate!.Value.ToString("dd/MM/yyyy"),
+                KeysBack: deallocKeysBack,
+                KeysBackTo: deallocKeysBackTo,
+                Remark: deallocRemark,
+                EnteredBy: adminPfNo));
+
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Some Error Occured. Please try later...");
+                return;
+            }
+
+            await LoadAllAsync();
+            deallocPfNo = "";
+            deallocCandidate = null;
+            deallocExitDate = null;
+            deallocKeysBack = "";
+            deallocKeysBackTo = null;
+            deallocRemark = null;
+            ShowSuccess("Flat De-Allocated SuccessFully..");
+        }
+        finally
+        {
+            isDeallocating = false;
+        }
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

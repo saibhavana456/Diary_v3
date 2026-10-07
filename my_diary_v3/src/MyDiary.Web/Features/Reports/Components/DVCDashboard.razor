@@ -1,0 +1,1011 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/DVCDashboard"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@using MyDiary.Web.Components.Dialogs
+@inject MyDiary.Web.Features.Shared.Services.IComplianceSummaryService SummaryService
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+@using ApexCharts
+
+<PageTitle>DVC Monitoring Dashboard — My Diary</PageTitle>
+
+<style>
+    .grouped-header th {
+        background-color: #2a2f5b !important;
+        color: white !important;
+        text-align: center !important;
+        font-weight: 700;
+        font-size: 12px;
+        padding: 6px 8px;
+        border: 1px solid #3d4480;
+    }
+
+    .status-cell {
+        cursor: default;
+        position: relative;
+    }
+
+    .status-cell-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        color: #1565C0;
+        text-decoration: underline;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: inherit;
+        font-family: inherit;
+        line-height: inherit;
+    }
+
+    .status-cell-btn:hover {
+        color: #0d47a1;
+    }
+
+    .status-cell-zero {
+        color: #9e9e9e;
+    }
+
+    .detail-panel {
+        border: 2px solid #1b4a98;
+        border-radius: 8px;
+        background: #f8f9ff;
+    }
+
+    .custom-dialog-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0,0,0,0.5);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .custom-dialog-card {
+        width: 95vw;
+        max-width: 1100px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* Prevents double scrollbars */
+    }
+
+    .custom-dialog-header {
+        padding: 12px 20px;
+        background: #fdfdfd;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .custom-dialog-body {
+        flex-grow: 1;
+        padding: 16px;
+        overflow-y: auto; /* Only the body scrolls if the table is long */
+    }
+
+    .custom-dialog-footer {
+        padding: 12px 20px;
+        border-top: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .kpi-card {
+        border-radius: 16px;
+        text-align: center;
+        background: linear-gradient(180deg, #ffffff, #f5f7ff);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+        .kpi-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+        }
+
+    .kpi-title {
+        font-weight: 600;
+        color: #555;
+        margin-bottom: 8px;
+    }
+
+    .kpi-value {
+        font-weight: 800;
+    }
+
+        .kpi-value.blue {
+            color: #0d47a1;
+        }
+
+        .kpi-value.amber {
+            color: #ffb300;
+        }
+
+        .kpi-value.green {
+            color: #2e7d32;
+        }
+
+        .kpi-value.red {
+            color: #c62828;
+        }
+
+        .kpi-value.orange {
+            color: #f57c00;
+        }
+
+
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <div id="report-page-root" class="mb-4">
+			<MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+				@* --- Breadcrumb --- *@
+				<ReportBreadcrumb />
+
+				@* --- Header --- *@
+@*                 <MudCard Class="overflow-hidden h-100" Elevation="2"
+                         Style="border-top-left-radius: 10px; border-top-right-radius: 10px; border-bottom-left-radius: 0; border-bottom-right-radius: 0;">
+                    <MudCardHeader Class="d-flex align-center justify-center text-white"
+                                   Style="height:50px; font-weight:800; letter-spacing:.3px;
+                                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                        <MudText Typo="Typo.h6">Union Compliance Dashboard</MudText>
+                    </MudCardHeader>
+                </MudCard> *@
+                
+                @* --- ExecSummary --- *@
+
+
+                @* --- ExecSummary --- *@
+                @if (ExecSummary != null)
+                {
+                    <MudPaper Class="mx-4 mt-4 mb-2 pa-4" Elevation="1"
+                              Style="border-radius:12px; background:#fafbff;">
+
+                        <!-- Executive Summary Heading -->
+                        <MudText Typo="Typo.subtitle1"
+                                 Class="mb-3"
+                                 Style="font-weight:800; color:#1b4a98;">
+                            DVC Executive Summary Dashboard – Current FY
+                        </MudText>
+
+                        <!-- KPI Cards -->
+                        <MudGrid Spacing="3">
+
+                            @* <MudItem xs="0" md="1"></MudItem> *@
+
+                            <!-- Total Request Received -->
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                    <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                        Total Request Received
+                                    </MudText>
+                                    <MudText Typo="Typo.h4" Class="kpi-value blue">
+                                        @ExecSummary.TotalRequestReceived
+                                    </MudText>
+                                </MudPaper>
+                            </MudItem>
+
+                            <!-- Submitted Within Timeline -->
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                    <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                        Submitted Within Timeline
+                                    </MudText>
+                                    <MudText Typo="Typo.h4" Class="kpi-value green">
+                                        @ExecSummary.SubmittedWithinTimeline
+                                    </MudText>
+                                </MudPaper>
+                            </MudItem>
+
+                            <!-- Submitted Beyond Timeline -->
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                    <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                        Submitted Beyond Timeline
+                                    </MudText>
+                                    <MudText Typo="Typo.h4" Class="kpi-value orange">
+                                        @ExecSummary.SubmittedBeyondTimeline
+                                    </MudText>
+                                </MudPaper>
+                            </MudItem>
+
+                            <!-- Pending Within Timeline -->
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                    <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                        Pending Within Timeline
+                                    </MudText>
+                                    <MudText Typo="Typo.h4" Class="kpi-value blue">
+                                        @ExecSummary.PendingWithinTimeline
+                                    </MudText>
+                                </MudPaper>
+                            </MudItem>
+
+                            <!-- Pending Beyond Timeline -->
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                    <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                        Pending Beyond Timeline
+                                    </MudText>
+                                    <MudText Typo="Typo.h4" Class="kpi-value red">
+                                        @ExecSummary.PendingBeyondTimeline
+                                    </MudText>
+                                </MudPaper>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                    <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                        TAT %
+                                    </MudText>
+
+                                    <MudText Typo="Typo.h4" Class="kpi-value green">
+                                        @string.Format("{0:0.##}%", ExecSummary.TatPercentage)
+                                    </MudText>
+                                </MudPaper>
+                            </MudItem>
+
+                        </MudGrid>
+                    </MudPaper>
+                }
+
+
+
+                @* @if (ExecSummary != null)
+                {
+
+                    <MudGrid Spacing="3" Class="pa-5">
+                        <MudItem xs="0" md="1"></MudItem>
+                        <!-- Total Requests -->
+                        <MudItem xs="12" sm="6" md="2" lg="2">
+                            <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                    Total Requests
+                                </MudText>
+                                <MudText Typo="Typo.h4" Class="kpi-value blue">
+                                    @ExecSummary.TotalRequests
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- Pending Requests -->
+                        <MudItem xs="12" sm="6" md="2" lg="2">
+                            <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                    Pending Requests
+                                </MudText>
+                                <MudText Typo="Typo.h4" Class="kpi-value amber">
+                                    @ExecSummary.PendingRequests
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- Completed Requests -->
+                        <MudItem xs="12" sm="6" md="2" lg="2">
+                            <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                    Completed Requests
+                                </MudText>
+                                <MudText Typo="Typo.h4" Class="kpi-value green">
+                                    @ExecSummary.CompletedRequests
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- TAT Compliance -->
+                        <MudItem xs="12" sm="6" md="2" lg="2">
+                            <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                    TAT Compliance
+                                </MudText>
+                                <MudText Typo="Typo.h4" Class="kpi-value green">
+                                    @string.Format("{0:0.##}%", ExecSummary.TatCompliancePercent)
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- Delayed Requests -->
+                        <MudItem xs="12" sm="6" md="2" lg="2">
+                            <MudPaper Elevation="3" Class="pa-4 kpi-card">
+                                <MudText Typo="Typo.subtitle2" Class="kpi-title">
+                                    Delayed Requests
+                                </MudText>
+                                <MudText Typo="Typo.h4" Class="kpi-value red">
+                                    @ExecSummary.DelayedRequests
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+
+                    </MudGrid> *@
+
+
+
+
+                    @*  <MudPaper Class="mx-4 mt-4 mb-2 pa-4" Elevation="2"
+                              Style="border-radius:10px;">
+
+                        <MudText Typo="Typo.subtitle1"
+                                 Class="mb-3"
+                                 Style="font-weight:700; color:#1b4a98;">
+                            Executive Summary
+                        </MudText>
+
+                        <MudSimpleTable Dense="true" Bordered="true" Striped="true"
+                                        Style="font-size:14px;">
+                            <tbody>
+                                <tr>
+                                    <td style="font-weight:600;">Total Requests</td>
+                                    <td style="font-weight:700; color:#0d47a1;">
+                                        @ExecSummary.TotalRequests
+                                    </td>
+                                </tr>
+
+                                <tr>
+                                    <td style="font-weight:600;">Pending Requests</td>
+                                    <td style="font-weight:700; color:#ffb300;">
+                                        @ExecSummary.PendingRequests
+                                    </td>
+                                </tr>
+
+                                <tr>
+                                    <td style="font-weight:600;">Completed Requests</td>
+                                    <td style="font-weight:700; color:#2e7d32;">
+                                        @ExecSummary.CompletedRequests
+                                    </td>
+                                </tr>
+
+                                <tr>
+                                    <td style="font-weight:600;">TAT Compliance (%)</td>
+                                    <td style="font-weight:700; color:#2e7d32;">
+                                        @string.Format("{0:0.##}%", ExecSummary.TatCompliancePercent)
+                                    </td>
+                                </tr>
+
+                                <tr>
+                                    <td style="font-weight:600;">Delayed Requests</td>
+                                    <td style="font-weight:700; color:#c62828;">
+                                        @ExecSummary.DelayedRequests
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudPaper> *@
+               @*  }     *@            
+
+                @* --- Filters --- *@
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="int" Label="Fin Year" Value="Filter.FyStartYear" ValueChanged="OnFyStartYearChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            @foreach (var fy in FinancialYears)
+                            {
+                                <MudSelectItem Value="@fy">@fy-@(fy + 1)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudDatePicker Label="Start Date" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                       Date="Filter.StartDate" DateChanged="OnStartDateChanged" />
+                    </MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudDatePicker Label="To Date" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                       Date="Filter.EndDate" DateChanged="OnEndDateChanged" />
+                    </MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Assigned Dept" Value="Filter.DeptName" ValueChanged="OnDeptChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem Value="@("All")">All Departments</MudSelectItem>
+                            @foreach (var d in DeptNames)
+                            {
+                                <MudSelectItem Value="@d">@d</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Letter Type" Value="Filter.LetterType" ValueChanged="OnLetterTypeChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem Value="@("All")">All Letter Types</MudSelectItem>
+                            @foreach (var lt in LetterTypes)
+                            {
+                                <MudSelectItem Value="@lt">@lt</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Addressed To" Value="Filter.AddressedTo" ValueChanged="OnAddressedToChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            @foreach (var a in AddressedTos)
+                            {
+                                <MudSelectItem Value="@a">@a</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Status" Value="Filter.DashStatus" ValueChanged="OnDashStatusChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            <MudSelectItem Value="@("Submitted")">Submitted</MudSelectItem>
+                            <MudSelectItem Value="@("Interim")">Interim</MudSelectItem>
+                            <MudSelectItem Value="@("Pending")">Pending</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Timeliness" Value="Filter.Timeliness" ValueChanged="OnTimelinessChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            <MudSelectItem Value="@("Intime")">Intime</MudSelectItem>
+                            <MudSelectItem Value="@("Delayed")">Delayed</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+
+                    @if (Filter.DashStatus == "Pending" && Filter.Timeliness == "Delayed")
+                    {
+                        <MudItem xs="12" sm="2">
+                            <MudSelect T="string" Label="Pending Bucket" Value="Filter.PendingBucket" ValueChanged="OnPendingBucketChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                <MudSelectItem Value="@("All")">All</MudSelectItem>
+                                <MudSelectItem Value="@("LT3")">Less than 3 Days</MudSelectItem>
+                                <MudSelectItem Value="@("3TO5")">3 to 5 Days</MudSelectItem>
+                                <MudSelectItem Value="@("5TO10")">5 to 10 Days</MudSelectItem>
+                                <MudSelectItem Value="@("GT10")">More than 10 Days</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    }
+
+                    @if (SummaryFlag == "A")
+                    {
+                        <MudItem xs="12" sm="2">
+                            <MudSelect T="string" Label="Authority" Value="Filter.Authority" ValueChanged="OnAuthorityChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                <MudSelectItem Value="@("All")">All Authorities</MudSelectItem>
+                                @foreach (var a in AuthorityList)
+                                {
+                                    <MudSelectItem Value="@a">@a</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    }
+                    <MudSpacer />
+                    <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                        <MudButton Variant="Variant.Filled" StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                                   Style="background-color: #000066; color: white; font-size: 11px;"
+                                   OnClick="HandleExport">Export To Excel</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                <MudPaper Class="mx-4 mb-2 pa-2">
+                    <MudRadioGroup T="string"
+                                   Value="SummaryFlag"
+                                   ValueChanged="OnSummaryFlagChanged"
+                                   Row="true">
+
+                        <MudRadio T="string" Value="@("A")" Label="Authority wise" />
+                        <MudRadio T="string" Value="@("D")" Label="Department wise" />
+
+                    </MudRadioGroup>
+                </MudPaper>           
+
+                @* --- Pie Chart --- *@
+                <MudPaper Elevation="1" Class="mx-4 mb-4 pa-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">
+                        @(SummaryFlag == "D"
+                            ? "Department-wise Compliance Distribution"
+                            : "Authority-wise Compliance Distribution")
+                    </MudText>
+
+                    @if (!_pieData.Any())
+                    {
+                        <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">
+                            No data available for selected filters.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <ApexCharts.ApexChart @key="PieChartRenderKey"
+                                              TItem="AuthorityPieItem"
+                                              Options="_pieOptions"
+                                              Height="300">
+                            <ApexCharts.ApexPointSeries TItem="AuthorityPieItem"
+                                             Items="_pieData"
+                                             SeriesType="SeriesType.Donut"
+                                             XValue="@(x => x.Authority)"
+                                             YValue="@(x => x.Count)"
+                                             Name="Total" />
+                        </ApexCharts.ApexChart>
+                    }
+                </MudPaper>
+
+                @* --- Table with Grouped Headers --- *@
+                <div class="px-4 d-flex justify-end">
+                    <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">@AsOnDateLabel</MudText>
+                </div>
+
+                <MudItem xs="12" Class="pa-4">
+                    <MudSimpleTable Dense="true" Bordered="true" Striped="true" FixedHeader="true"
+                                    Elevation="2" Style="font-size:12px; overflow-x:auto; max-height:750px;">
+                        <thead>
+                            <tr class="grouped-header">
+                                <th rowspan="2" style="width:50px; vertical-align:middle;">S.No</th>
+                                @* <th rowspan="2" style="width:20%; vertical-align:middle;">Authority</th> *@
+                                    <th rowspan="2">
+                                        @(SummaryFlag == "D" ? "Department" : "Authority")
+                                    </th>
+
+                                <th colspan="3" style="border-bottom:2px solid #4caf50;">Submitted</th>
+                                <th colspan="3" style="border-bottom:2px solid #ff9800;">Interim</th>
+                                <th colspan="3" style="border-bottom:2px solid #f44336;">Pending</th>
+                                <th rowspan="2" style="width:8%; vertical-align:middle;">Grand Total</th>
+                            </tr>
+                            <tr class="grouped-header">
+                                <th style="width:8%;">In Time</th>
+                                <th style="width:8%;">Delayed</th>
+                                <th style="width:8%;">Total</th>
+                                <th style="width:8%;">In Time</th>
+                                <th style="width:8%;">Delayed</th>
+                                <th style="width:8%;">Total</th>
+                                <th style="width:8%;">In Progress</th>
+                                <th style="width:8%;">Delayed</th>
+                                <th style="width:8%;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (IsLoading)
+                            {
+                                <tr>
+                                    <td colspan="12" style="text-align:center; padding:40px;">
+                                        <MudProgressCircular Color="MudBlazor.Color.Primary" Indeterminate="true" Size="MudBlazor.Size.Small" />
+                                        <span class="ml-2">Loading...</span>
+                                    </td>
+                                </tr>
+                            }
+                            else if (!Data.Any())
+                            {
+                                <tr>
+                                    <td colspan="12" style="text-align:center; padding:40px;">
+                                        <MudText Typo="Typo.subtitle1" Color="MudBlazor.Color.Error">No record found</MudText>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                int sno = 1;
+                                @foreach (var row in Data)
+                                {
+                                    @* var authority = row.ContainsKey("AUTHORITY") ? row["AUTHORITY"]?.ToString() ?? "" : ""; *@
+                                    var labelValue = row.ContainsKey("FLAG_TXT")
+                                    ? row["FLAG_TXT"]?.ToString() ?? ""
+                                    : "";
+
+                                    var currentAuthority = labelValue;
+                                    @* var currentAuthority = authority; *@
+                                    <tr>
+                                        <td style="text-align:center;">@(sno++)</td>
+                                       @*  <td>@authority</td> *@
+                                        <td>@labelValue</td>
+                                        @foreach (var col in _statusColumns)
+                                        {
+                                            var cellVal = GetCellValue(row, col.PropertyName);
+                                            var isZero = cellVal == "0";
+                                            var capturedStatusKey = col.StatusKey;
+                                            var capturedAuthority = currentAuthority;
+                                            <td class="status-cell" style="text-align:right;">
+                                                @if (isZero)
+                                                {
+                                                    <span class="status-cell-zero">@cellVal</span>
+                                                }
+                                                else
+                                                {
+                                                    <MudButton Variant="Variant.Text"
+                                                               Size="MudBlazor.Size.Small"
+                                                               Color="MudBlazor.Color.Primary"
+                                                               Style="text-decoration:underline; font-weight:600; min-width:auto; padding:0; font-size:inherit; text-transform:none;"
+                                                               OnClick="@(() => OnCellClick(capturedAuthority, capturedStatusKey,SummaryFlag == "D"))">
+                                                        @cellVal
+                                                    </MudButton>
+                                                }
+                                            </td>
+                                        }
+                                        <td style="text-align:right; font-weight:700;">@GetCellValue(row, "CNT_TOTAL")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudItem>
+
+                @* --- Popup Detail Dialog (shown when a count is clicked) --- *@
+                @* --- Popup Detail Dialog (Pure MudBlazor Version) --- *@
+                <MudOverlay @bind-Visible="_showDetailPanel"
+                            AutoClose="true"
+                            DarkBackground="true"
+                            ZIndex="10000">
+
+                    @* The MudPaper replaces the custom-dialog-card div. AutoClose handles the backdrop logic automatically *@
+                    <MudPaper Class="custom-dialog-card" Elevation="4">
+
+                        @* HEADER *@
+                        <div class="custom-dialog-header">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="MudBlazor.Color.Primary" />
+                                <MudText Typo="Typo.h6" Style="font-weight: 700; color: #1b4a98;">
+                                    @_detailAuthority — @_detailStatusKey
+                                </MudText>
+                            </MudStack>
+                            @* Use OnClick (Capital O) - this is a MudBlazor parameter, not an HTML attribute *@
+                            <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                           Color="MudBlazor.Color.Default"
+                                           OnClick="CloseDetailPanel" />
+                        </div>
+
+                        @* BODY *@
+                        <div class="custom-dialog-body">
+                            @if (_detailLoading)
+                            {
+                                <MudStack AlignItems="AlignItems.Center" Class="pa-10">
+                                    <MudProgressCircular Color="MudBlazor.Color.Primary" Indeterminate="true" />
+                                    <MudText Typo="Typo.body2" Class="mt-2">Loading details...</MudText>
+                                </MudStack>
+                            }
+                            else if (!_detailData.Any())
+                            {
+                                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No detail records found.</MudAlert>
+                            }
+                            else
+                            {
+                                <MudTable Items="@_detailData" Dense="true" Bordered="true"
+                                          Hover="true" Elevation="0" RowsPerPage="10" T="ComplianceStatusDetail"
+                                          Style="font-size:12px;">
+                                    <HeaderContent>
+                                        <MudTh Style="background:#2a2f5b; color:white;">S.No</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Letter Serial No</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Received From</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Subject</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Send Dept</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Target Date</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Letter Date</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Received On</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Action Taken</MudTh>
+                                        <MudTh Style="background:#2a2f5b; color:white;">Action Date</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@context.SNo</MudTd>
+                                            <MudTd>@context.LetterRefNo</MudTd>
+                                            <MudTd>@context.Authority</MudTd>
+                                            <MudTd>@context.Subject</MudTd>
+                                            <MudTd>@context.DeptName</MudTd>
+                                            <MudTd>@context.DueDate</MudTd>
+                                            <MudTd>@context.LetterDate</MudTd>
+                                            <MudTd>@context.ReceivedDate</MudTd>
+                                            <MudTd>@context.ActionTaken</MudTd>
+                                            <MudTd>@context.ActionDate</MudTd>
+                                        </RowTemplate>
+                                        <PagerContent>
+                                            <MudTablePager PageSizeOptions="new int[] { 5, 10, 25 }" />
+                                        </PagerContent>
+                                    </MudTable>
+                            }
+                        </div>
+
+                        @* FOOTER *@
+                        <div class="custom-dialog-footer">
+                            <MudButton OnClick="CloseDetailPanel"
+                                       Color="MudBlazor.Color.Primary"
+                                       Variant="Variant.Filled"
+                                       Class="rounded-pill px-6">
+                                Close
+                            </MudButton>
+                        </div>
+                    </MudPaper>
+                </MudOverlay>
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public ReportConfig Config { get; set; } = new();
+    [Parameter] public List<Dictionary<string, object>> Data { get; set; } = new();
+    public ComplianceFilters Filter { get; set; } = new();
+    public List<int> FinancialYears { get; set; } = new();
+    public List<string> DeptNames { get; set; } = new();
+    public List<string> LetterTypes { get; set; } = new();
+    public List<string> AddressedTos { get; set; } = new();
+    public string AsOnDateLabel { get; set; } = "Data as on " + AppTime.Today.ToString("dd-MM-yyyy");
+    public bool IsLoading { get; set; }
+    public string? ErrorMessage { get; set; }
+    // private ExecutiveSummary? ExecSummary;
+
+    private DVCExecutiveSummary? ExecSummary;
+
+    // private string? SummaryFlag = null;
+    // null or "" = Authority-wise (default)
+    // "D"        = Department-wise
+    private string SummaryFlag = "A"; // Default = Authority
+    public List<string> AuthorityList { get; set; } = new();
+
+    // Pie chart
+    private List<AuthorityPieItem> _pieData = new();
+    private Guid PieChartRenderKey = Guid.NewGuid();
+
+    // Inline detail panel state
+    private bool _showDetailPanel = false;
+    private bool _detailLoading = false;
+    private string _detailAuthority = "";
+    private string _detailStatusKey = "";
+    private List<ComplianceStatusDetail> _detailData = new();
+
+    // Status column definitions for the grouped table
+    private record StatusColumn(string PropertyName, string StatusKey);
+    private readonly List<StatusColumn> _statusColumns = new()
+    {
+        new("CNT_SUBMITTED_INTIME", "Submitted - Intime"),
+        new("CNT_SUBMITTED_DELAYED", "Submitted - Delayed"),
+        new("CNT_TOTAL_SUBMITTED", "Submitted"),
+        new("CNT_INTERIM_INTIME", "Interim - Intime"),
+        new("CNT_INTERIM_DELAYED", "Interim - Delayed"),
+        new("CNT_TOTAL_INTERIM", "Interim"),
+        new("CNT_PENDING_INPROGRESS", "Pending - InProgress"),
+        new("CNT_PENDING_DELAYED", "Pending - Delayed"),
+        new("CNT_TOTAL_PENDING", "Pending"),
+    };
+
+    // Column config kept for export compatibility
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new() { Header = "Authority / Department", PropertyName = "FLAG_TXT", Width = "20%" },
+        new() { Header = "SUBMITTED - INTIME", PropertyName = "CNT_SUBMITTED_INTIME", Format = "N0", Width = "10%" },
+        new() { Header = "SUBMITTED - DELAYED", PropertyName = "CNT_SUBMITTED_DELAYED", Format = "N0", Width = "10%" },
+        new() { Header = "TOTAL SUBMITTED", PropertyName = "CNT_TOTAL_SUBMITTED", Format = "N0", Width = "10%" },
+        new() { Header = "INTERIM INTIME", PropertyName = "CNT_INTERIM_INTIME", Format = "N0", Width = "10%" },
+        new() { Header = "INTERIM - DELAYED", PropertyName = "CNT_INTERIM_DELAYED", Format = "N0", Width = "10%" },
+        new() { Header = "TOTAL INTERIM", PropertyName = "CNT_TOTAL_INTERIM", Format = "N0", Width = "10%" },
+        new() { Header = "PENDING - INPROGRESS", PropertyName = "CNT_PENDING_INPROGRESS", Format = "N0", Width = "10%" },
+        new() { Header = "PENDING - DELAYED", PropertyName = "CNT_PENDING_DELAYED", Format = "N0", Width = "10%" },
+        new() { Header = "TOTAL PENDING", PropertyName = "CNT_TOTAL_PENDING", Format = "N0", Width = "10%" },
+        new() { Header = "GRAND TOTAL", PropertyName = "CNT_TOTAL", Format = "N0", Width = "10%" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Config.Columns = _summaryCols;
+        var today = AppTime.Today;
+        var currentFyStart = today.Month >= 4 ? today.Year : today.Year - 1;
+        FinancialYears = Enumerable.Range(currentFyStart - 5, 6).Reverse().ToList();
+        Filter.FyStartYear = currentFyStart;
+
+        await LoadAuthorityList();
+        await LoadAsync();
+    }
+
+    private Task OnAuthorityChanged(string v)
+    {
+        Filter.Authority = v;
+        return LoadAsync();
+    }
+
+    private Task OnPendingBucketChanged(string v)
+    {
+        Filter.PendingBucket = v;
+        return LoadAsync();
+    }
+
+    private Task OnSummaryFlagChanged(string value)
+    {
+        SummaryFlag = value;   // null or "D"
+        Filter.Authority = "All";
+        return LoadAsync();
+    }
+
+    public static (DateTime StartDate, DateTime EndDate) GetCurrentFinancialYear()
+    {
+        var today = AppTime.Today;
+
+        int fyStartYear = today.Month >= 4   // April or later
+            ? today.Year
+            : today.Year - 1;
+
+        return FyWindow(fyStartYear);
+    }
+
+
+    private static (DateTime from, DateTime to) FyWindow(int fyStartYear)
+    {
+        return (new DateTime(fyStartYear, 4, 1),
+                new DateTime(fyStartYear + 1, 3, 31));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            IsLoading = true;
+            ErrorMessage = null;
+            _showDetailPanel = false;
+   
+            var (from, to) = GetCurrentFinancialYear();
+
+            ExecSummary = await SummaryService.GetDVCExecutiveSummaryAsync(from, to);
+
+            var (rows, retval) =
+            await SummaryService.GetDVCSummaryAsync(Filter,SummaryFlag);
+
+            var (depts, letters, adds) = await SummaryService.GetDVCFiltersAsync(Filter);
+            Data = rows;
+            DeptNames = depts;
+            LetterTypes = letters;
+            AddressedTos = adds;
+            BuildPieData();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[DVCDashboard] Error: " + ex.Message);
+            ErrorMessage = UserFacingError.Generic;
+            Data = new List<Dictionary<string, object>>
+            {
+                MockRow("RBI", 12, 3, 15, 5, 2, 7, 4, 6, 10, 32),
+                MockRow("SEBI", 8, 1, 9, 3, 1, 4, 2, 3, 5, 18),
+                MockRow("IRDAI", 6, 2, 8, 2, 0, 2, 1, 2, 3, 13),
+                MockRow("GOI", 10, 4, 14, 4, 3, 7, 3, 5, 8, 29),
+            };
+            BuildPieData();
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private Dictionary<string, object> MockRow(string auth, int si, int sd, int st, int ii, int id, int it, int pi, int pd, int pt, int gt)
+    {
+        return new Dictionary<string, object>
+        {
+            ["AUTHORITY"] = auth,
+            ["CNT_SUBMITTED_INTIME"] = si, ["CNT_SUBMITTED_DELAYED"] = sd, ["CNT_TOTAL_SUBMITTED"] = st,
+            ["CNT_INTERIM_INTIME"] = ii, ["CNT_INTERIM_DELAYED"] = id, ["CNT_TOTAL_INTERIM"] = it,
+            ["CNT_PENDING_INPROGRESS"] = pi, ["CNT_PENDING_DELAYED"] = pd, ["CNT_TOTAL_PENDING"] = pt,
+            ["CNT_TOTAL"] = gt
+        };
+    }
+
+    private async Task OnCellClick(string authority, string statusKey, bool isDepartmentWise)
+    {
+        _detailAuthority = authority;
+        _detailStatusKey = statusKey;
+        _detailData = new();
+        _detailLoading = true;
+        _showDetailPanel = true;
+        StateHasChanged();
+
+        try
+        {
+            _detailData = await SummaryService.GetDVCStatusDetailAsync(Filter, authority, statusKey, isDepartmentWise);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Detail fetch error: {ex.Message}");
+        }
+        finally
+        {
+            _detailLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseDetailPanel()
+    {
+        _showDetailPanel = false;
+    }
+
+    private string GetCellValue(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var val) || val == DBNull.Value || val == null) return "0";
+        if (int.TryParse(val.ToString(), out var n)) return n.ToString("N0");
+        return val.ToString() ?? "0";
+    }
+
+    private void BuildPieData()
+    {
+        if (Data == null || Data.Count == 0)
+        {
+            _pieData.Clear();
+            PieChartRenderKey = Guid.NewGuid();
+            return;
+        }
+
+        _pieData = Data
+            .Where(r => r.ContainsKey("FLAG_TXT") && r.ContainsKey("CNT_TOTAL"))
+            .Select(r => new AuthorityPieItem
+                {
+                    Authority = r["FLAG_TXT"]?.ToString() ?? "Unknown",
+                    Count = decimal.TryParse(r["CNT_TOTAL"]?.ToString(), out var v) ? v : 0
+                })
+            .Where(p => p.Count > 0)
+            .ToList();
+
+        PieChartRenderKey = Guid.NewGuid();
+    }
+
+    private async Task LoadAuthorityList()
+    {
+        try
+        {
+            // Call SP with minimal filter (ALL)
+            var tempFilter = new ComplianceFilters
+                {
+                    FyStartYear = Filter.FyStartYear,
+                    DeptName = "All",
+                    LetterType = "All",
+                    AddressedTo = "All",
+                    DashStatus = "All",
+                    Timeliness = "All",
+                    Authority = "All",
+                    PendingBucket = "All"
+                };
+
+            var (rows, _) = await SummaryService.GetDVCSummaryAsync(tempFilter, "A");
+
+            AuthorityList = rows.Where(x => x.ContainsKey("FLAG_TXT"))
+                                .Select(x => x["FLAG_TXT"]?.ToString() ?? "")
+                                .Distinct()
+                                .OrderBy(x => x)
+                                .ToList();
+        }
+        catch
+        {
+            AuthorityList = new List<string>();
+        }
+    }
+
+    // Filter change handlers
+    private Task OnFiltersChanged() => LoadAsync();
+    private Task OnFyStartYearChanged(int v) { Filter.FyStartYear = v; Filter.DeptName = "All"; Filter.LetterType = "All"; Filter.AddressedTo = "All"; Filter.DashStatus = "All"; Filter.Timeliness = "All"; Filter.StartDate = null; Filter.EndDate = null; return OnFiltersChanged(); }
+    private Task OnDeptChanged(string v) { Filter.DeptName = v; Filter.LetterType = "All"; Filter.AddressedTo = "All"; Filter.DashStatus = "All"; Filter.Timeliness = "All"; return OnFiltersChanged(); }
+    private Task OnLetterTypeChanged(string v) { Filter.LetterType = v; Filter.AddressedTo = "All"; Filter.DashStatus = "All"; Filter.Timeliness = "All"; return OnFiltersChanged(); }
+    private Task OnAddressedToChanged(string v) { Filter.AddressedTo = v; Filter.DashStatus = "All"; Filter.Timeliness = "All"; return OnFiltersChanged(); }
+
+    private Task OnDashStatusChanged(string v) { Filter.DashStatus = v; Filter.Timeliness = "All"; Filter.PendingBucket = "All";  return OnFiltersChanged(); }
+
+    private Task OnTimelinessChanged(string v)
+    {
+        Filter.Timeliness = v;
+        if (v != "Delayed")
+        {
+            Filter.PendingBucket = "All";
+        }
+
+        return OnFiltersChanged();
+    }
+
+    private Task OnStartDateChanged(DateTime? d) { Filter.StartDate = d; return OnFiltersChanged(); }
+    private Task OnEndDateChanged(DateTime? d) { Filter.EndDate = d; return OnFiltersChanged(); }
+
+    private async Task HandleExport()
+    {
+        var bytes = SummaryService.ExportToExcel(Data, Config.Columns, "DVCMonitoring");
+        await JS.InvokeVoidAsync(
+           "BlazorDownloadFile",
+           "DVC_Monitoring_Report.xlsx",
+           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+           Convert.ToBase64String(bytes)
+       );
+    }
+
+    public class AuthorityPieItem
+    {
+        public string Authority { get; set; } = string.Empty;
+        public decimal Count { get; set; }
+    }
+
+    private ApexChartOptions<AuthorityPieItem> _pieOptions = new()
+    {
+        Chart = new() { Type = ApexCharts.ChartType.Donut, Toolbar = new() { Show = true } },
+        Legend = new() { Position = ApexCharts.LegendPosition.Right },
+        DataLabels = new() { Enabled = true, Formatter = @"function(val){ return val.toFixed(1) + '%' }" }
+    };
+}

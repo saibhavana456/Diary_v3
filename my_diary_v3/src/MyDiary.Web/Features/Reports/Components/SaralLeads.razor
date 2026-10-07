@@ -1,0 +1,280 @@
+@page "/reports/saralLeads"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@if (_showAsteriskNote)
+{
+    <div class="px-4 pb-4">
+        <em style="font-size:12px; color:crimson;">
+            ** Data is sorted based on the Branch creating the Inward Register.
+            If SARAL has created Inward Register for the Branch, account will be listed under SARAL Only
+        </em>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true, _showAsteriskNote = false;
+    private bool _isSummary = true;
+    private ReportConfig _activeConfig = new();
+
+    // Privilege context (map from auth if needed)
+    private string _userPrivilege = "CO";             // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    private const string SARAL_CENTER_PIN = "SARAL";
+    private const int SARAL_PROCESS_AT = 2;
+
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new ColumnConfig { Header = "Zone",  PropertyName = "zone_name_eng",                      Width = "22%" },
+        new ColumnConfig { Header = "Region",PropertyName = "region_name",                        Width = "22%" },
+        new ColumnConfig { Header = "Branch",PropertyName = "Branch_Name",                        Width = "22%" },
+        new ColumnConfig { Header = "No of Applications Processed",   PropertyName = "TotalNoOfApplicationsProcessed",   IsNumeric = true, Format = "N0", Width = "12%" },
+        new ColumnConfig { Header = "No of Applications Sanctioned",  PropertyName = "TotalNoOfApplicationsSanctioned",  IsNumeric = true, Format = "N0", Width = "12%" },
+        new ColumnConfig { Header = "Sanctioned Amount",              PropertyName = "AmountSanctioned",                 IsNumeric = true, Format = "N2", Width = "10%" }
+    };
+
+    private readonly List<ColumnConfig> _detailCols = new()
+    {
+        new ColumnConfig { Header = "Sol ID",                 PropertyName = "SolId",          Width = "8%"  },
+        new ColumnConfig { Header = "Originated Branch",      PropertyName = "Branch_Name",    Width = "18%" },
+        new ColumnConfig { Header = "Customer Name",          PropertyName = "Inward_CustName",Width = "18%" },
+        new ColumnConfig { Header = "Application No",         PropertyName = "App_No",         Width = "12%" },
+        new ColumnConfig { Header = "Application Creation Date", PropertyName = "App_CreateDate", IsDate = true, Width = "12%" },
+        new ColumnConfig { Header = "Status",                 PropertyName = "Status",         Width = "10%" },
+        new ColumnConfig { Header = "Account No",             PropertyName = "CBS_AccountNo",  Width = "12%" },
+        new ColumnConfig { Header = "Total Amount",           PropertyName = "AmountInLacs",   IsNumeric = true, Format = "N2", Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Applications Processed at SARAL (During this FY)";
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var (columns, where, groupBy, orderBy, isSummary) = BuildQuery();
+        _isSummary = isSummary;
+
+        string finalQuery =
+            $"SELECT {columns} " +
+            "FROM LasApplicationData A " +
+            "JOIN Branch_Master B ON A.INWARD_ORGINATEBRANCH = B.Branch_Code " +
+            $"WHERE {where} {groupBy} {orderBy}";
+
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("LASApplicationData");
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+        string date = dateTask.Result;
+        _activeConfig.Columns = _isSummary ? _summaryCols : _detailCols;
+        _asOnDateLabel = _data.Count > 0 ? $"Data As On - {date} (Rs. in Lacs**)" : " ";
+        _showAsteriskNote = _data.Count > 0;
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    
+    private (string columns, string where, string groupBy, string orderBy, bool isSummary) BuildQuery()
+    {
+        var baseWhere =
+            $"(inward_applnprocessat = {SARAL_PROCESS_AT} Or (inward_applnprocessat = 1 and B.new_pin = '{SARAL_CENTER_PIN}')) " +
+            "and Inward_Sector = 'c' " +
+            "and Inward_AppliedFor <> 'R' " +
+            "and PRD_STAFFPRD <> 'Y' " +
+            "and APP_DELFLAG <> 'Y' " +
+            "and region_solid <> '00000' and region_solid <> ' '";
+
+        var metricsCols =
+            "Count(*) As TotalNoOfApplicationsProcessed, " +
+            "Sum(Case When App_Status In ('PA','CA') then 1 else 0 end) As TotalNoOfApplicationsSanctioned, " +
+            "Sum(Case  When App_ValuesIn = 'A' Then convert(float, Loan_RecmdAmt)/100000 " +
+            "          When App_ValuesIn = 'C' Then convert(float, Loan_RecmdAmt)*100 " +
+            "          When App_ValuesIn = 'L' Then convert(float, Loan_RecmdAmt) " +
+            "          Else 0 End) As AmountSanctioned";
+
+        var detailCols =
+            "Inward_CustName, App_No, App_CreateDate, Inward_CreatedOn, CBS_AccountNo, " +
+            "(Case When App_Status In ('PA','CA') Then 'Sanctioned' else 'Not Sanctioned' end)Status, " +
+            "(Case App_ValuesIn When 'A' Then convert(float, Loan_RecmdAmt)/100000 When 'C' Then convert(float, Loan_RecmdAmt)*100 Else convert(float, Loan_RecmdAmt) End) As AmountInLacs , " +
+            "Branch_Name, 'All' As region_name,'All' As zone_name_eng,Sol_Id As SolId";
+
+        string columns = "";
+        string where = baseWhere;
+        string groupBy = "";
+        string orderBy = "";
+        bool isSummary = true;
+
+        switch (_userPrivilege)
+        {
+            case "CO":
+                break;
+            case "ZONE":
+                where += $" and zone_solid = '{_userZoneSolid}'";
+                break;
+            case "REGION":
+                where += $" and region_solid = '{_userRegionSolid}'";
+                break;
+            case "BRANCH":
+                where += $" and sol_id = '{_userBranchSolid}'";
+                isSummary = false;
+                break;
+        }
+
+        if (_userPrivilege == "BRANCH")
+        {
+            columns = detailCols;
+            orderBy = " Order By Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID";
+            return (columns, where, groupBy, orderBy, isSummary);
+        }
+
+        if (_selectedZone == "1")
+        {
+            // All (Summary)
+            columns = $"{metricsCols}, 'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As SolId";
+        }
+        else if (_selectedZone == "all")
+        {
+            if (_selectedRegion == "1")
+            {
+                // Zonewise summary
+                columns = $"{metricsCols}, 'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                groupBy = " Group By Zone_SolId,zone_name_eng";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1")
+                {
+                    // Regionwise summary
+                    columns = $"{metricsCols}, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                    groupBy = " Group By region_name,region_SolId,zone_name_eng";
+                }
+                else
+                {
+                    // Branchwise detail (ALL)
+                    columns = detailCols;
+                    orderBy = " Order By Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID";
+                    isSummary = false;
+                }
+            }
+            else
+            {
+                // Specific region selected
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = $"{metricsCols}, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                    groupBy = " Group By Region_name,region_SolId,zone_name_eng";
+                }
+                else
+                {
+                    if (_selectedBranch != "all") where += $" and sol_id = '{_selectedBranch}'";
+                    columns = detailCols;
+                    orderBy = " Order By Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID";
+                    isSummary = false;
+                }
+            }
+        }
+        else
+        {
+            // Specific zone selected
+            where += $" and zone_solid = '{_selectedZone}'";
+
+            if (_selectedRegion == "1")
+            {
+                columns = $"{metricsCols}, 'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                groupBy = " Group By Zone_SolId,zone_name_eng";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1")
+                {
+                    columns = $"{metricsCols}, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                    groupBy = " Group By region_name,region_SolId,zone_name_eng";
+                }
+                else
+                {
+                    columns = detailCols;
+                    orderBy = " Order By Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID";
+                    isSummary = false;
+                }
+            }
+            else
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = $"{metricsCols}, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                    groupBy = " Group By Region_name,region_SolId,zone_name_eng";
+                }
+                else
+                {
+                    if (_selectedBranch != "all") where += $" and sol_id = '{_selectedBranch}'";
+                    columns = detailCols;
+                    orderBy = " Order By Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID";
+                    isSummary = false;
+                }
+            }
+        }
+
+        return (columns, where, groupBy, orderBy, isSummary);
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "SARAL_Leads_Report");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "SARAL_Leads_Report.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

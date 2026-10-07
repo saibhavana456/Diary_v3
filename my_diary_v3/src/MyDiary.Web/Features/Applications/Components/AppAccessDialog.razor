@@ -1,0 +1,213 @@
+@using MudBlazor
+@using QRCoder
+@using System.Drawing
+
+<MudDialog Class="app-access-dialog">
+    <DialogContent>
+        <div class="d-flex flex-column align-center" style="min-width: 420px; max-width: 580px;">
+
+            @* ── Title ── *@
+            <MudText Typo="Typo.h5" Align="Align.Center"
+                     Style="font-weight: 800; color: #1E3A8A; margin-bottom: 16px;">
+                @AppName
+            </MudText>
+
+            @* ── Info message with the app's standard "i" icon ── *@
+            <div class="d-flex align-start gap-3 pa-3 mb-4"
+                 style="background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 12px; width: 100%;">
+                <div class="dialog-info-icon">
+                    <span class="dialog-i-letter">i</span>
+                </div>
+                <MudText Typo="Typo.body2" Style="color: #9A3412; line-height: 1.6;">
+                    @InfoMessage
+                </MudText>
+            </div>
+
+            @if (AccessType == "MobileOnly")
+            {
+                @* ── Android + iOS side by side ── *@
+                <div class="d-flex gap-4" style="width: 100%;">
+
+                    @* Android *@
+                    <div style="flex: 1;">
+                        <MudText Typo="Typo.subtitle2"
+                                 Style="font-weight: 700; color: #1E3A8A; margin-bottom: 8px;">
+                            <MudIcon Icon="@Icons.Material.Filled.Android"
+                                     Style="vertical-align: middle; margin-right: 4px; color: #3DDC84;" />
+                            For Android Devices
+                        </MudText>
+                        <div class="d-flex flex-column align-center pa-3"
+                             style="background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+                            <img src="@GetQrUrl(AndroidUrl)" alt="Android QR Code"
+                                 style="width: 140px; height: 140px; border-radius: 8px;" />
+                            <div class="d-flex align-center gap-2 mt-3" style="width: 100%;">
+                                <MudText Typo="Typo.caption" Style="font-weight: 700; color: #64748B; white-space: nowrap;">URL</MudText>
+                                <MudText Typo="Typo.caption"
+                                         Style="color: #374151; word-break: break-all; line-height: 1.4; font-size: 0.7rem;">
+                                    @AndroidUrl
+                                </MudText>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* iOS *@
+                    <div style="flex: 1;">
+                        <MudText Typo="Typo.subtitle2"
+                                 Style="font-weight: 700; color: #1E3A8A; margin-bottom: 8px;">
+                            <MudIcon Icon="@Icons.Material.Filled.PhoneIphone"
+                                     Style="vertical-align: middle; margin-right: 4px; color: #555;" />
+                            For iOS Devices
+                        </MudText>
+                        <div class="d-flex flex-column align-center pa-3"
+                             style="background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+                            <img src="@GetQrUrl(IOSUrl)" alt="iOS QR Code"
+                                 style="width: 140px; height: 140px; border-radius: 8px;" />
+                            <div class="d-flex align-center gap-2 mt-3" style="width: 100%;">
+                                <MudText Typo="Typo.caption" Style="font-weight: 700; color: #64748B; white-space: nowrap;">URL</MudText>
+                                <MudText Typo="Typo.caption"
+                                         Style="color: #374151; word-break: break-all; line-height: 1.4; font-size: 0.7rem;">
+                                    @IOSUrl
+                                </MudText>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                @* ── External App: single QR + URL ── *@
+                <div class="d-flex flex-column align-center pa-3 mb-3"
+                     style="background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; width: 100%;">
+                    <img src="@GetQrUrl(AppUrl)" alt="QR Code"
+                         style="width: 180px; height: 180px; border-radius: 8px;" />
+                </div>
+
+                <div class="d-flex align-center gap-2 mb-2" style="width: 100%;">
+                    <MudText Typo="Typo.body2" Style="font-weight: 700; color: #64748B; white-space: nowrap;">URL</MudText>
+                    <MudText Typo="Typo.body2"
+                             Style="color: #374151; word-break: break-all; line-height: 1.5;">
+                        @AppUrl
+                    </MudText>
+                </div>
+            }
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <div class="d-flex justify-center w-100 pb-2">
+            <MudButton OnClick="Close"
+                       Variant="Variant.Filled"
+                       Style="background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%); color: white; font-weight: 700; border-radius: 999px; padding: 8px 40px;">
+                Close
+            </MudButton>
+        </div>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .dialog-info-icon {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 10px rgba(30,58,138,0.35);
+    }
+
+    .dialog-i-letter {
+        font-family: 'Georgia', serif;
+        font-weight: 900;
+        font-style: italic;
+        font-size: 1.3rem;
+        color: white;
+    }
+</style>
+
+@code {
+    /// <summary>"External" or "MobileOnly"</summary>
+    [Parameter] public string AccessType { get; set; } = "External";
+
+    [Parameter] public string AppName { get; set; } = "";
+    [Parameter] public string AppUrl { get; set; } = "";
+    [Parameter] public string AndroidUrl { get; set; } = "";
+    [Parameter] public string IOSUrl { get; set; } = "";
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private string InfoMessage => AccessType == "MobileOnly"
+        ? "Please download the mobile application from the App Store or Google Play Store using the QR Code or URL provided below. Kindly ensure you access it from an Internet-enabled mobile device."
+        : "This URL is accessible only through the internet. Kindly open the link from an Internet-facing desktop.";
+
+    private void Close() => MudDialog.Close();
+
+    private static string GetQrUrl(string data)
+    {
+        if (string.IsNullOrWhiteSpace(data))
+            return string.Empty;
+
+        var payloadUrl = BuildQRUrl(data, "860921");
+
+        var pngBytes = GenerateQrPngBytes(payloadUrl, pixelsPerModule: 8);
+
+        // Convert to Base64 image URL (Blazor-friendly)
+        return $"data:image/png;base64,{Convert.ToBase64String(pngBytes)}";
+    }
+
+    public static string BuildQRUrl(string baseUrl, string userId)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            throw new ArgumentException("Base URL is required", nameof(baseUrl));
+        if (string.IsNullOrWhiteSpace(userId))
+            throw new ArgumentException("userId is required", nameof(userId));
+
+        return $"{baseUrl.TrimEnd('?', '/')}?v={Uri.EscapeDataString(userId)}";
+    }
+
+    public static byte[] GenerateQrPngBytes(string payload, int pixelsPerModule = 6)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            throw new ArgumentException("Payload is required", nameof(payload));
+
+        byte[]? logoBytes = null;
+       
+        var logoPath = Path.Combine("wwwroot", "images", "logo.png");
+        if (File.Exists(logoPath))
+            logoBytes = File.ReadAllBytes(logoPath);
+
+        using var generator = new QRCodeGenerator();
+        var ecc = logoBytes == null
+            ? QRCodeGenerator.ECCLevel.Q
+            : QRCodeGenerator.ECCLevel.H;
+
+        using var data = generator.CreateQrCode(payload, ecc);
+
+        // No logo → fast PNG
+        if (logoBytes == null)
+        {
+            var pngQr = new PngByteQRCode(data);
+            return pngQr.GetGraphic(pixelsPerModule);
+        }
+
+        // With logo
+        using var logoStream = new MemoryStream(logoBytes);
+        using var logoBitmap = (Bitmap)Image.FromStream(logoStream);
+        using var qrCode = new QRCode(data);
+        using var qrBitmap = qrCode.GetGraphic(
+            pixelsPerModule,
+            System.Drawing.Color.Black,
+            System.Drawing.Color.White,
+            logoBitmap,
+            iconSizePercent: 20,
+            iconBorderWidth: 4,
+            drawQuietZones: true);
+
+        using var ms = new MemoryStream();
+        qrBitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+        return ms.ToArray();
+    }
+
+
+}

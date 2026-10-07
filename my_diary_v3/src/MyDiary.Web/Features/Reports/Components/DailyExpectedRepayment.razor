@@ -1,0 +1,1022 @@
+﻿@page "/reports/DailyExpectedRepayment"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+<My_Diary_V2.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Daily Expected Repayment Report — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b !important;
+    }
+</style>
+
+<MudGrid Spacing="3">
+
+    <MudItem xs="12">
+
+        <MudPaper Elevation="0" Style="background-color:#ffffff;">
+
+            <!-- FILTERS -->
+
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+
+
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Zone"
+                               Value="SelectedZone"
+                               ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_name_eng"].ToString()">
+                                @z["zone_name_eng"]
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_name"].ToString()">
+                                @r["region_name"]
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Branch"
+                               Value="SelectedBranch"
+                               ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["sol_id"].ToString()">
+                                @b["branch_name"]
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudDatePicker Label="From Date"
+                                   Date="FromDate"
+                                   DateChanged="HandleFromDateChanged"
+                                   Disabled="DisableDate"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true" />
+                </MudItem>
+
+                <MudItem xs="12" sm="2">
+                    <MudDatePicker Label="To Date"
+                                   Date="ToDate"
+                                   DateChanged="HandleToDateChanged"
+                                   Disabled="DisableDate"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true" />
+                </MudItem>
+
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Month"
+                               Value="SelectedMonth"
+                               ValueChanged="HandleMonthChanged"
+                               Disabled="DisableMonth"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        <MudSelectItem Value="@("1")">January</MudSelectItem>
+                        <MudSelectItem Value="@("2")">February</MudSelectItem>
+                        <MudSelectItem Value="@("3")">March</MudSelectItem>
+                        <MudSelectItem Value="@("4")">April</MudSelectItem>
+                        <MudSelectItem Value="@("5")">May</MudSelectItem>
+                        <MudSelectItem Value="@("6")">June</MudSelectItem>
+                        <MudSelectItem Value="@("7")">July</MudSelectItem>
+                        <MudSelectItem Value="@("8")">August</MudSelectItem>
+                        <MudSelectItem Value="@("9")">September</MudSelectItem>
+                        <MudSelectItem Value="@("10")">October</MudSelectItem>
+                        <MudSelectItem Value="@("11")">November</MudSelectItem>
+                        <MudSelectItem Value="@("12")">December</MudSelectItem>
+
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2"> </MudItem>
+                <MudItem xs="12" sm="2"> </MudItem>
+                <MudItem xs="12" sm="2"> </MudItem>
+                <MudItem xs="12" sm="2"> </MudItem>
+
+                <MudItem xs="12" sm="4" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Error"
+                               Style="font-size:11px;margin-left:10px;"
+                               OnClick="ClearFilters">
+                        Clear Filters
+                    </MudButton>
+                    @if (_canAdd)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Style="background-color:green;color:white;font-size:11px;margin-right:10px;"
+                                   OnClick="ShowAdd">
+                            Add New
+                        </MudButton>
+                    }
+
+                    <MudButton Variant="Variant.Filled"
+                               Style="background-color:#000066;color:white;font-size:11px;"
+                               OnClick="OnExportInternal">
+                        Export
+                    </MudButton>
+
+                </MudItem>
+
+            </MudGrid>
+
+            <!-- ADD FORM -->
+            @if (_showAdd)
+            {
+                <MudPaper Class="pa-4 mx-4 mt-2 mb-2">
+
+                    <MudGrid Spacing="2">
+
+                        <MudItem xs="12" sm="3">
+                            <MudDatePicker Label="Date"
+                                           @bind-Date="_entryDate"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Name Of Borrower"
+                                          @bind-Value="_borrower"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="SOL"
+                                          @bind-Value="_solid"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Branch"
+                                          @bind-Value="_branch"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Region"
+                                          @bind-Value="_region"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Zone"
+                                          @bind-Value="_zone"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField Label="Repayment Amount"
+                                             @bind-Value="_repaymentAmount"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudSelect T="string"
+                                       Label="LTL/STL"
+                                       @bind-Value="_loanType"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true">
+
+                                <MudSelectItem Value="@("LTL")">LTL</MudSelectItem>
+                                <MudSelectItem Value="@("STL")">STL</MudSelectItem>
+
+                            </MudSelect>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudSelect T="string"
+                                       Label="Interest Table Code"
+                                       @bind-Value="_interestTableCode"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true">
+
+                                <MudSelectItem Value="@("MCLR")">MCLR</MudSelectItem>
+                                <MudSelectItem Value="@("T-BILL")">T-BILL</MudSelectItem>
+                                <MudSelectItem Value="@("EBLR")">EBLR</MudSelectItem>
+
+                            </MudSelect>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="9">
+                            <MudTextField Label="Remarks"
+                                          @bind-Value="_remarks"
+                                          Lines="3"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudButton Color="Color.Success" OnClick="SaveRow">
+                                @(_isEdit ? "Update" : "Save")
+                            </MudButton>
+
+                            <MudButton Color="Color.Error" OnClick="CancelAdd">
+                                Cancel
+                            </MudButton>
+                        </MudItem>
+
+                    </MudGrid>
+
+                </MudPaper>
+            }
+
+            <!-- TABLE -->
+
+            <MudItem xs="12" Class="pa-4">
+
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+
+                    <HeaderContent>
+
+                        <MudTh Style="background-color:#2a2f5b;color:white;">S.No</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Date</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Borrower</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">SOL</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Branch</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Region</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Zone</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Repayment Amount</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">LTL/STL</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Interest Table Code</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Remarks</MudTh>
+                        @if (_canAdd)
+                        {
+                            <MudTh Style="background-color:#2a2f5b;color:white;">
+                                Created By
+                            </MudTh>
+
+                            <MudTh Style="background-color:#2a2f5b;color:white;">
+                                Created On
+                            </MudTh>
+
+                            <MudTh Style="background-color:#2a2f5b;color:white;">
+                                Modified By
+                            </MudTh>
+
+                            <MudTh Style="background-color:#2a2f5b;color:white;">
+                                Modified On
+                            </MudTh>
+
+                            <MudTh Style="background-color:#2a2f5b;color:white;">
+                                Action
+                            </MudTh>
+                        }
+
+                    </HeaderContent>
+
+                    <RowTemplate>
+
+                        <MudTd>@(_data.IndexOf(context) + 1)</MudTd>
+
+                        <MudTd>
+                            @Convert.ToDateTime(context["EntryDate"]).ToString("dd-MM-yyyy")
+                        </MudTd>
+
+                        <MudTd>@context["BorrowerName"]</MudTd>
+
+                        <MudTd>@context["Solid"]</MudTd>
+                        <MudTd>@context["BranchName"]</MudTd>
+                        <MudTd>@context["RegionName"]</MudTd>
+                        <MudTd>@context["ZoneName"]</MudTd>
+
+                        <MudTd Style="text-align:right;">
+                            @context["RepaymentAmount"]
+                        </MudTd>
+
+                        <MudTd>@context["LoanType"]</MudTd>
+
+                        <MudTd>@context["InterestTableCode"]</MudTd>
+
+                        <MudTd>@context["Remarks"]</MudTd>
+
+                        @if (_canAdd)
+                        {
+                            <MudTd>
+                                @(context.ContainsKey("CreatedBy") ? context["CreatedBy"] : "")
+                            </MudTd>
+
+                            <MudTd>
+                                @(context["CreatedOn"] == DBNull.Value || context["CreatedOn"] == null
+                                    ? ""
+                                    : Convert.ToDateTime(context["CreatedOn"]).ToString("dd-MM-yyyy HH:mm"))
+                            </MudTd>
+
+                            <MudTd>
+                                @(context["ModifiedBy"] == DBNull.Value || context["ModifiedBy"] == null
+                                    ? ""
+                                    : context["ModifiedBy"])
+                            </MudTd>
+
+                            <MudTd>
+                                @(context["ModifiedOn"] == DBNull.Value || context["ModifiedOn"] == null
+                                    ? ""
+                                    : Convert.ToDateTime(context["ModifiedOn"]).ToString("dd-MM-yyyy HH:mm"))
+                            </MudTd>
+
+                            <MudTd>
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
+                                               OnClick="@(() => EditRow(context))" />
+                            </MudTd>
+                        }
+
+                    </RowTemplate>
+
+                    <NoRecordsContent>
+                        <td colspan="11" style="text-align:center;padding:40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">
+                                No Data Found!
+                            </MudText>
+                        </td>
+                    </NoRecordsContent>
+
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10,25,50,100}" />
+                    </PagerContent>
+
+                </MudTable>
+
+            </MudItem>
+
+        </MudPaper>
+
+    </MudItem>
+
+</MudGrid>
+
+@code {
+
+    private bool _loading = true;
+    private bool _showAdd = false;
+    private bool _canAdd = false;
+    private string SelectedMonth = "All";
+    private DateTime? FromDate;
+    private DateTime? ToDate;
+
+    private List<Dictionary<string, object>> _data = new();
+    private bool DisableMonth = false;
+    private bool DisableDate = false;
+    private DateTime? _entryDate = AppTime.Today;
+
+    private string _borrower = "";
+    private string _branch = "";
+
+    private decimal _repaymentAmount;
+
+    private string _loanType = "LTL";
+
+    private string _interestTableCode = "MCLR";
+
+    private bool _isEdit = false;
+
+    private int _editId = 0;
+
+    private string _loggedInUser = "";
+
+    private string SelectedZone = "All";
+    private string SelectedRegion = "All";
+    private string SelectedBranch = "All";
+
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+
+    private string _solid = "";
+    private string _region = "";
+    private string _zone = "";
+
+
+
+    private string _remarks = "";
+
+    private List<ColumnConfig> _cols = new();
+
+    private async Task ClearFilters()
+    {
+        SelectedZone = "All";
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        SelectedMonth = "All";
+        FromDate = null;
+        ToDate = null;
+
+        DisableMonth = false;
+        DisableDate = false;
+
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            "1=1",
+            "region_name");
+
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "branch_name, sol_id",
+            "1=1",
+            "branch_name");
+
+        await LoadData();
+    }
+
+    private async Task HandleFromDateChanged(DateTime? value)
+    {
+        FromDate = value;
+
+        if (value.HasValue || ToDate.HasValue)
+        {
+            SelectedMonth = "All";
+            DisableMonth = true;
+        }
+        else
+        {
+            DisableMonth = false;
+        }
+
+        await LoadData();
+    }
+    private async Task HandleToDateChanged(DateTime? value)
+    {
+        ToDate = value;
+
+        if (FromDate.HasValue || value.HasValue)
+        {
+            SelectedMonth = "All";
+            DisableMonth = true;
+        }
+        else
+        {
+            DisableMonth = false;
+        }
+
+        await LoadData();
+    }
+
+
+    private async Task HandleMonthChanged(string value)
+    {
+        SelectedMonth = value;
+
+        if (value != "All")
+        {
+            FromDate = null;
+            ToDate = null;
+            DisableDate = true;
+        }
+        else
+        {
+            DisableDate = false;
+        }
+
+        await LoadData();
+    }
+
+    private void BuildExportColumns()
+    {
+        _cols = new List<ColumnConfig>
+    {
+        new ColumnConfig { Header = "Date", PropertyName = "EntryDate" },
+        new ColumnConfig { Header = "Borrower Name", PropertyName = "BorrowerName" },
+        new ColumnConfig { Header = "SOL", PropertyName = "Solid" },
+        new ColumnConfig { Header = "Branch", PropertyName = "BranchName" },
+        new ColumnConfig { Header = "Region", PropertyName = "RegionName" },
+        new ColumnConfig { Header = "Zone", PropertyName = "ZoneName" },
+
+        new ColumnConfig
+        {
+            Header = "Repayment Amount",
+            PropertyName = "RepaymentAmount",
+            IsNumeric = true,
+            Format = "N2"
+        },
+
+        new ColumnConfig
+        {
+            Header = "LTL/STL",
+            PropertyName = "LoanType"
+        },
+
+        new ColumnConfig
+        {
+            Header = "Interest Table Code",
+            PropertyName = "InterestTableCode"
+        },
+
+        new ColumnConfig
+        {
+            Header = "Remarks",
+            PropertyName = "Remarks"
+        }
+    };
+
+        if (_canAdd)
+        {
+            _cols.Add(new ColumnConfig
+                {
+                    Header = "Created By",
+                    PropertyName = "CreatedBy"
+                });
+
+            _cols.Add(new ColumnConfig
+                {
+                    Header = "Created On",
+                    PropertyName = "CreatedOn",
+                    Format = "dd-MM-yyyy"
+                });
+
+            _cols.Add(new ColumnConfig
+                {
+                    Header = "Modified By",
+                    PropertyName = "ModifiedBy"
+                });
+
+            _cols.Add(new ColumnConfig
+                {
+                    Header = "Modified On",
+                    PropertyName = "ModifiedOn",
+                    Format = "dd-MM-yyyy"
+                });
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        _loggedInUser =
+    authState.User.FindFirst("EMPLID")?.Value
+    ?? authState.User.Identity?.Name
+    ?? "";
+
+        var empId = authState.User
+    .FindFirst("EMPLID")?.Value ?? "";
+        string staffQuery = $@"
+SELECT BRSOLID
+FROM staffdetails
+WHERE EMPLID = '{empId}'";
+
+        var staff = await ReportService.ExecuteRawQueryAsync(staffQuery);
+
+
+        if (staff.Count > 0)
+        {
+            _solid = staff[0]["BRSOLID"]?.ToString() ?? "";
+
+            string branchQuery = $@"
+    SELECT
+        branch_name,
+        region_name,
+        zone_name_eng
+    FROM branch_master
+    WHERE sol_id = '{_solid}'";
+
+            var branchData =
+                await ReportService.ExecuteRawQueryAsync(branchQuery);
+
+            if (branchData.Count > 0)
+            {
+                _branch =
+                    branchData[0]["branch_name"]?.ToString() ?? "";
+
+                _region =
+                    branchData[0]["region_name"]?.ToString() ?? "";
+
+                _zone =
+                    branchData[0]["zone_name_eng"]?.ToString() ?? "";
+            }
+        }
+
+
+        var userPrivilege = authState.User
+            .FindFirst("privilege")?.Value?
+            .ToUpper() ?? "";
+
+        if (userPrivilege == "BRANCH")
+            _canAdd = true;
+
+        var department =
+            authState.User.FindFirst("department_desc")?.Value?.ToUpper() ?? "";
+
+        if (department == "LARGE CORPORATE")
+            _canAdd = true;
+
+        BuildExportColumns();
+
+
+        _zones = await ReportService.GetLookupDataAsync(
+    "zone_master",
+    "zone_name_eng, zone_solid",
+    "1=1",
+    "zone_name_eng");
+
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            "1=1",
+            "region_name");
+
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "branch_name, sol_id",
+            "1=1",
+            "branch_name");
+
+        await LoadData();
+    }
+
+    private void ShowAdd()
+    {
+        _isEdit = false;
+        _editId = 0;
+
+        _entryDate = AppTime.Today;
+        _borrower = "";
+        _repaymentAmount = 0;
+        _loanType = "LTL";
+        _interestTableCode = "MCLR";
+        _remarks = "";
+
+        _showAdd = true;
+    }
+
+    private void CancelAdd()
+    {
+        _showAdd = false;
+    }
+
+    private async Task SaveRow()
+    {
+        if (_isEdit)
+        {
+            string updateQuery = $@"
+UPDATE DailyExpectedRepayment
+SET
+    BorrowerName = '{_borrower}',
+    RepaymentAmount = {_repaymentAmount},
+    LoanType = '{_loanType}',
+    InterestTableCode = '{_interestTableCode}',
+    Remarks = '{_remarks}',
+    ModifiedBy = '{_loggedInUser}',
+    ModifiedOn = GETDATE()
+WHERE Id = {_editId}";
+
+            await ReportService.ExecuteRawQueryAsync(updateQuery);
+        }
+        else
+        {
+            string insertQuery = $@"
+INSERT INTO DailyExpectedRepayment
+(
+    EntryDate,
+    BorrowerName,
+    Solid,
+    BranchName,
+    RegionName,
+    ZoneName,
+    RepaymentAmount,
+    LoanType,
+    InterestTableCode,
+    Remarks,
+    CreatedBy,
+    CreatedOn
+)
+VALUES
+(
+    '{_entryDate.Value:yyyy-MM-dd}',
+    '{_borrower}',
+    '{_solid}',
+    '{_branch}',
+    '{_region}',
+    '{_zone}',
+    {_repaymentAmount},
+    '{_loanType}',
+    '{_interestTableCode}',
+    '{_remarks}',
+    '{_loggedInUser}',
+    GETDATE()
+)";
+            await ReportService.ExecuteRawQueryAsync(insertQuery);
+        }
+
+        _showAdd = false;
+        _isEdit = false;
+        _editId = 0;
+
+        await LoadData();
+    }
+
+    private void EditRow(Dictionary<string, object> row)
+    {
+        _isEdit = true;
+
+        _editId = Convert.ToInt32(row["Id"]);
+
+        _entryDate =
+            Convert.ToDateTime(row["EntryDate"]);
+
+        _borrower =
+            row["BorrowerName"]?.ToString() ?? "";
+
+        _repaymentAmount =
+            Convert.ToDecimal(row["RepaymentAmount"]);
+
+        _loanType =
+            row["LoanType"]?.ToString() ?? "";
+
+        _interestTableCode =
+            row["InterestTableCode"]?.ToString() ?? "";
+
+        _remarks =
+            row["Remarks"]?.ToString() ?? "";
+
+        _showAdd = true;
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+
+        string where = "1=1";
+
+        if (!string.Equals(SelectedZone, "All",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            where +=
+                $" AND REPLACE(LTRIM(RTRIM(UPPER(ZoneName))),CHAR(160),'') = UPPER('{SelectedZone}')";
+        }
+
+        if (!string.Equals(SelectedRegion, "All",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            where +=
+                $" AND REPLACE(LTRIM(RTRIM(UPPER(RegionName))),CHAR(160),'') = UPPER('{SelectedRegion}')";
+        }
+
+        if (!string.Equals(SelectedBranch, "All",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            where +=
+                $" AND LTRIM(RTRIM(Solid)) = '{SelectedBranch}'";
+        }
+
+        // RBAC: clamp to the logged-in user's own scope for non-CO users (fail-closed to BRANCH).
+        // This report keys on the denormalized branch SOL ID (Solid); zone/region scope is enforced
+        // via a branch_master subquery on the user's zone/region SOL ID.
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            if (__scope.IsZone)
+                where += $" AND LTRIM(RTRIM(Solid)) IN (SELECT sol_id FROM branch_master WHERE zone_solid = '{__scope.ZoneSolid}')";
+            else if (__scope.IsRegion)
+                where += $" AND LTRIM(RTRIM(Solid)) IN (SELECT sol_id FROM branch_master WHERE region_solid = '{__scope.RegionSolid}')";
+            else if (__scope.IsBranch)
+                where += $" AND LTRIM(RTRIM(Solid)) = '{__scope.BranchSolid}'";
+        }
+
+        // Month Filter
+        if (SelectedMonth != "All")
+        {
+            where += $" AND MONTH(EntryDate) = {SelectedMonth}";
+        }
+
+        // Date Filter
+        if (FromDate.HasValue)
+        {
+            where +=
+                $" AND CAST(EntryDate AS DATE) >= '{FromDate.Value:yyyy-MM-dd}'";
+        }
+
+        if (ToDate.HasValue)
+        {
+            where +=
+                $" AND CAST(EntryDate AS DATE) <= '{ToDate.Value:yyyy-MM-dd}'";
+        }
+
+        string query = $@"
+SELECT *
+FROM DailyExpectedRepayment
+WHERE {where}
+ORDER BY EntryDate DESC";
+
+
+        _data = await ReportService.ExecuteRawQueryAsync(query);
+
+        _loading = false;
+
+        StateHasChanged();
+    }
+
+    private async Task HandleZoneChanged(string val)
+    {
+        SelectedZone = val;
+
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        if (val == "All")
+        {
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                "1=1",
+                "region_name");
+        }
+        else
+        {
+            var zoneRow = _zones.FirstOrDefault(x =>
+                x["zone_name_eng"]?.ToString() == val);
+
+            var zoneSolid = zoneRow?["zone_solid"]?.ToString() ?? "";
+
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"zone_solid='{zoneSolid}'",
+                "region_name");
+        }
+
+        _branches.Clear();
+
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string val)
+    {
+        SelectedRegion = val;
+
+        SelectedBranch = "All";
+
+        if (val == "All")
+        {
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                "1=1",
+                "branch_name");
+        }
+        else
+        {
+            var regionRow = _regions.FirstOrDefault(x =>
+                x["region_name"]?.ToString() == val);
+
+            var regionSolid =
+                regionRow?["region_solid"]?.ToString() ?? "";
+
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                $"region_solid='{regionSolid}'",
+                "branch_name");
+        }
+
+        await LoadData();
+    }
+
+    private async Task HandleBranchChanged(string val)
+    {
+        SelectedBranch = val;
+        await LoadData();
+    }
+
+    private async Task OnExportInternal()
+    {
+        try
+        {
+            var exportData = _data
+                .Select(x => new Dictionary<string, object>(x))
+                .ToList();
+
+            foreach (var row in exportData)
+            {
+                if (row.ContainsKey("EntryDate") &&
+                    row["EntryDate"] != DBNull.Value)
+                {
+                    row["EntryDate"] =
+                        Convert.ToDateTime(row["EntryDate"])
+                            .ToString("dd-MM-yyyy");
+                }
+
+                if (row.ContainsKey("CreatedOn") &&
+                    row["CreatedOn"] != DBNull.Value)
+                {
+                    row["CreatedOn"] =
+                        Convert.ToDateTime(row["CreatedOn"])
+                            .ToString("dd-MM-yyyy HH:mm");
+                }
+
+                if (row.ContainsKey("ModifiedOn") &&
+                    row["ModifiedOn"] != DBNull.Value)
+                {
+                    row["ModifiedOn"] =
+                        Convert.ToDateTime(row["ModifiedOn"])
+                            .ToString("dd-MM-yyyy HH:mm");
+                }
+            }
+
+            var bytes = ReportService.ExportToExcel(
+                exportData,
+                _cols,
+                "DailyExpectedRepayment");
+
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                "DailyExpectedRepayment.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(
+                ex,
+                "[DailyExpectedRepayment] Unhandled error: " + ex.Message);
+        }
+    }
+}

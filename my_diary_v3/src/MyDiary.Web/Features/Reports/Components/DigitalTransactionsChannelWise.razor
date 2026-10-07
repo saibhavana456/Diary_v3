@@ -1,0 +1,374 @@
+﻿@page "/reports/digital-txn-channelwise"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Digital Transactions Channel Wise — My Diary</PageTitle>
+
+<!-- Month-wise -->
+<DynamicDashboard Config="_configMonthly"
+                  Data="_dataMonthly"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabelMonthly"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExportMonthly" />
+
+<!-- FY-wise -->
+<DynamicDashboard Config="_configFY"
+                  Data="_dataFY"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabelFY"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExportFY" />
+
+@code {
+    // Optional page title
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    // Shared Filters (mapped from your dropdown semantics)
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+
+    // Shared state
+    private bool _loading = true;
+
+    // Two datasets (Month-wise & FY-wise)
+    private List<Dictionary<string, object>> _dataMonthly = new();
+    private List<Dictionary<string, object>> _dataFY = new();
+
+    // Two headers
+    private string _asOnDateLabelMonthly = "";
+    private string _asOnDateLabelFY = "";
+
+    // Two dashboard configs (share columns, distinct titles)
+    private ReportConfig _configMonthly = new();
+    private ReportConfig _configFY = new();
+
+    // User context (wire to claims if/when you expose them)
+    private string _userPrivilege = "CO"; // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ---------------- Columns for both dashboards ----------------
+    private readonly List<ColumnConfig> _cols = new()
+    {
+        new ColumnConfig { Header = "Zone",   PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name",   Width = "12%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name",   Width = "18%" },
+        new ColumnConfig { Header = "SolID",  PropertyName = "SolId",         Width = "8%"  },
+
+        // ATM (Credit/Debit x Txns/Amt)
+        new ColumnConfig { Header = "ATM Cr Txns",  PropertyName = "Credit_ATM_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "ATM Cr Amt",   PropertyName = "Credit_ATM_TRAN_AMT", IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "ATM Dr Txns",  PropertyName = "Debit_ATM_Txns",      IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "ATM Dr Amt",   PropertyName = "Debit_ATM_TRAN_AMT",  IsNumeric = true, Width = "6%" },
+
+        // UPI
+        new ColumnConfig { Header = "UPI Cr Txns",  PropertyName = "Credit_UPI_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "UPI Cr Amt",   PropertyName = "Credit_UPI_TRAN_AMT", IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "UPI Dr Txns",  PropertyName = "Debit_UPI_Txns",      IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "UPI Dr Amt",   PropertyName = "Debit_UPI_TRAN_AMT",  IsNumeric = true, Width = "6%" },
+
+        // POS
+        new ColumnConfig { Header = "POS Cr Txns",  PropertyName = "Credit_POS_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "POS Cr Amt",   PropertyName = "Credit_POS_TRAN_AMT", IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "POS Dr Txns",  PropertyName = "Debit_POS_Txns",      IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "POS Dr Amt",   PropertyName = "Debit_POS_TRAN_AMT",  IsNumeric = true, Width = "6%" },
+
+        // Mobile
+        new ColumnConfig { Header = "MOB Cr Txns",  PropertyName = "Credit_MOB_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "MOB Cr Amt",   PropertyName = "Credit_MOB_TRAN_AMT", IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "MOB Dr Txns",  PropertyName = "Debit_MOB_Txns",      IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "MOB Dr Amt",   PropertyName = "Debit_MOB_TRAN_AMT",  IsNumeric = true, Width = "6%" },
+
+        // Internet Banking
+        new ColumnConfig { Header = "IBK Cr Txns",  PropertyName = "Credit_IBK_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "IBK Cr Amt",   PropertyName = "Credit_IBK_TRAN_AMT", IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "IBK Dr Txns",  PropertyName = "Debit_IBK_Txns",      IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "IBK Dr Amt",   PropertyName = "Debit_IBK_TRAN_AMT",  IsNumeric = true, Width = "6%" },
+
+        // IMPS
+        new ColumnConfig { Header = "IMPS Cr Txns", PropertyName = "Credit_IMPS_Txns",    IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "IMPS Cr Amt",  PropertyName = "Credit_IMPS_TRAN_AMT",IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "IMPS Dr Txns", PropertyName = "Debit_IMPS_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "IMPS Dr Amt",  PropertyName = "Debit_IMPS_TRAN_AMT", IsNumeric = true, Width = "6%" },
+
+        // NEFT
+        new ColumnConfig { Header = "NEFT Cr Txns", PropertyName = "Credit_NEFT_Txns",    IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "NEFT Cr Amt",  PropertyName = "Credit_NEFT_TRAN_AMT",IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "NEFT Dr Txns", PropertyName = "Debit_NEFT_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "NEFT Dr Amt",  PropertyName = "Debit_NEFT_TRAN_AMT", IsNumeric = true, Width = "6%" },
+
+        // AEPS
+        new ColumnConfig { Header = "AEPS Cr Txns", PropertyName = "Credit_AEPS_Txns",    IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "AEPS Cr Amt",  PropertyName = "Credit_AEPS_TRAN_AMT",IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "AEPS Dr Txns", PropertyName = "Debit_AEPS_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "AEPS Dr Amt",  PropertyName = "Debit_AEPS_TRAN_AMT", IsNumeric = true, Width = "6%" },
+
+        // ETXN
+        new ColumnConfig { Header = "ETXN Cr Txns", PropertyName = "Credit_ETXN_Txns",    IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "ETXN Cr Amt",  PropertyName = "Credit_ETXN_TRAN_AMT",IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "ETXN Dr Txns", PropertyName = "Debit_ETXN_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "ETXN Dr Amt",  PropertyName = "Debit_ETXN_TRAN_AMT", IsNumeric = true, Width = "6%" },
+
+        // RTGS
+        new ColumnConfig { Header = "RTGS Cr Txns", PropertyName = "Credit_RTGS_Txns",    IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "RTGS Cr Amt",  PropertyName = "Credit_RTGS_TRAN_AMT",IsNumeric = true, Width = "6%" },
+        new ColumnConfig { Header = "RTGS Dr Txns", PropertyName = "Debit_RTGS_Txns",     IsNumeric = true, Width = "5%" },
+        new ColumnConfig { Header = "RTGS Dr Amt",  PropertyName = "Debit_RTGS_TRAN_AMT", IsNumeric = true, Width = "6%" }
+    };
+
+    // ---------------- Lifecycle ----------------
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        // Titles
+        _configMonthly.Title = Title ?? "Digital Transactions (Monthly) - Channel Wise";
+        _configFY.Title = Title ?? "Digital Transactions (FY) - Channel Wise";
+
+        // Lock columns
+        _configMonthly.Columns = _cols;
+        _configFY.Columns = _cols;
+
+        await LoadBoth();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadBoth();
+    }
+
+    // ---------------- Loaders ----------------
+    private async Task LoadBoth()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Monthly and FY loads are independent — run in parallel
+        await Task.WhenAll(LoadMonthly(), LoadFY());
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadMonthly()
+    {
+        string sql = BuildFinalQuery(isFY: false);
+        _dataMonthly = await ReportService.ExecuteRawQueryAsync(sql);
+
+        var (fromText, toText) = await GetHeaderDatesAsync(isFY: false);
+        _asOnDateLabelMonthly = $"Monthly Transactions, from {fromText} to {toText}";
+    }
+
+    private async Task LoadFY()
+    {
+        string sql = BuildFinalQuery(isFY: true);
+        _dataFY = await ReportService.ExecuteRawQueryAsync(sql);
+
+        var (fromText, toText) = await GetHeaderDatesAsync(isFY: true);
+        _asOnDateLabelFY = $"FY Transactions, from {fromText} to {toText}";
+    }
+
+    // ---------------- Exports ----------------
+    private async Task HandleExportMonthly()
+    {
+        var bytes = ReportService.ExportToExcel(_dataMonthly, _cols, "DigitalTxn_ChannelWise_Monthly");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "DigitalTxn_ChannelWise_Monthly.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private async Task HandleExportFY()
+    {
+        var bytes = ReportService.ExportToExcel(_dataFY, _cols, "DigitalTxn_ChannelWise_FY");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "DigitalTxn_ChannelWise_FY.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    // ---------------- Query builder (GROUP BY fixed) ----------------
+    private enum Level { Grand, Zone, Region, Branch }
+
+    private string BuildFinalQuery(bool isFY)
+    {
+        string table = isFY ? "Digital_Transactions_ChannelWise_FYReport A"
+                              : "Digital_Transactions_ChannelWise_Report A";
+        string fromJoin = $"{table} JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+        string where = " region_solid <> '00000' and region_solid <> ' ' ";
+        string orderBy = " ORDER BY zone_name_eng, region_name, Branch_Name";
+
+        string sums =
+            "Sum(A.Credit_ATM_Txns) Credit_ATM_Txns, Sum(A.Credit_ATM_TRAN_AMT) Credit_ATM_TRAN_AMT, " +
+            "Sum(A.Debit_ATM_Txns) Debit_ATM_Txns,   Sum(A.Debit_ATM_TRAN_AMT) Debit_ATM_TRAN_AMT, " +
+            (isFY ? "Sum(CAST(A.Credit_UPI_Txns AS BIGINT)) Credit_UPI_Txns, " : "Sum(A.Credit_UPI_Txns) Credit_UPI_Txns, ") +
+            "Sum(A.Credit_UPI_TRAN_AMT) Credit_UPI_TRAN_AMT, " +
+            (isFY ? "Sum(CAST(A.Debit_UPI_Txns AS BIGINT)) Debit_UPI_Txns, " : "Sum(A.Debit_UPI_Txns) Debit_UPI_Txns, ") +
+            "Sum(A.Debit_UPI_TRAN_AMT) Debit_UPI_TRAN_AMT, " +
+            "Sum(A.Credit_POS_Txns) Credit_POS_Txns, Sum(A.Credit_POS_TRAN_AMT) Credit_POS_TRAN_AMT, " +
+            "Sum(A.Debit_POS_Txns)  Debit_POS_Txns,  Sum(A.Debit_POS_TRAN_AMT)  Debit_POS_TRAN_AMT, " +
+            "Sum(A.Credit_MOB_Txns) Credit_MOB_Txns, Sum(A.Credit_MOB_TRAN_AMT) Credit_MOB_TRAN_AMT, " +
+            "Sum(A.Debit_MOB_Txns)  Debit_MOB_Txns,  Sum(A.Debit_MOB_TRAN_AMT)  Debit_MOB_TRAN_AMT, " +
+            "Sum(A.Credit_IBK_Txns) Credit_IBK_Txns, Sum(A.Credit_IBK_TRAN_AMT) Credit_IBK_TRAN_AMT, " +
+            "Sum(A.Debit_IBK_Txns)  Debit_IBK_Txns,  Sum(A.Debit_IBK_TRAN_AMT)  Debit_IBK_TRAN_AMT, " +
+            "Sum(A.Credit_IMPS_Txns) Credit_IMPS_Txns, Sum(A.Credit_IMPS_TRAN_AMT) Credit_IMPS_TRAN_AMT, " +
+            "Sum(A.Debit_IMPS_Txns)  Debit_IMPS_Txns,  Sum(A.Debit_IMPS_TRAN_AMT)  Debit_IMPS_TRAN_AMT, " +
+            "Sum(A.Credit_NEFT_Txns) Credit_NEFT_Txns, Sum(A.Credit_NEFT_TRAN_AMT) Credit_NEFT_TRAN_AMT, " +
+            "Sum(A.Debit_NEFT_Txns)  Debit_NEFT_Txns,  Sum(A.Debit_NEFT_TRAN_AMT)  Debit_NEFT_TRAN_AMT, " +
+            "Sum(A.Credit_AEPS_Txns) Credit_AEPS_Txns, Sum(A.Credit_AEPS_TRAN_AMT) Credit_AEPS_TRAN_AMT, " +
+            "Sum(A.Debit_AEPS_Txns)  Debit_AEPS_Txns,  Sum(A.Debit_AEPS_TRAN_AMT)  Debit_AEPS_TRAN_AMT, " +
+            "Sum(A.Credit_ETXN_Txns) Credit_ETXN_Txns, Sum(A.Credit_ETXN_TRAN_AMT) Credit_ETXN_TRAN_AMT, " +
+            "Sum(A.Debit_ETXN_Txns)  Debit_ETXN_Txns,  Sum(A.Debit_ETXN_TRAN_AMT)  Debit_ETXN_TRAN_AMT, " +
+            "Sum(A.Credit_RTGS_Txns) Credit_RTGS_Txns, Sum(A.Credit_RTGS_TRAN_AMT) Credit_RTGS_TRAN_AMT, " +
+            "Sum(A.Debit_RTGS_Txns)  Debit_RTGS_Txns,  Sum(A.Debit_RTGS_TRAN_AMT)  Debit_RTGS_TRAN_AMT";
+
+        // Label columns by level (constants for Grand → no GROUP BY)
+        static string KeyCols(Level level) => level switch
+        {
+            Level.Grand => "'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId",
+            Level.Zone => "'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId",
+            Level.Region => "'All' AS Branch_Name, region_name, zone_name_eng, region_SolId AS SolId",
+            Level.Branch => "Branch_Name, region_name, zone_name_eng, Sol_Id AS SolId",
+            _ => throw new ArgumentOutOfRangeException(nameof(level))
+        };
+
+        // GROUP BY keys that match the non-aggregates at each level
+        static string GroupByKeys(Level level) => level switch
+        {
+            Level.Grand => "",
+            Level.Zone => " GROUP BY zone_name_eng, Zone_SolId",
+            Level.Region => " GROUP BY region_name, region_SolId, zone_name_eng",
+            Level.Branch => " GROUP BY zone_name_eng, region_name, Branch_Name, Sol_Id",
+            _ => throw new ArgumentOutOfRangeException(nameof(level))
+        };
+
+        // Helpers
+        void AddBranchFilter(ref string w, string? value)
+        {
+            if (int.TryParse(value, out var sol)) w += $" and Sol_Id = {sol}";
+            else w += $" and Sol_Id = '{value}'";
+        }
+        string Select(Level level) => $"SELECT {sums}, {KeyCols(level)} FROM {fromJoin} WHERE {where}{GroupByKeys(level)}{orderBy}";
+
+        string zone = (_selectedZone ?? "1").ToLowerInvariant();
+        string reg = (_selectedRegion ?? "1").ToLowerInvariant();
+        string br = (_selectedBranch ?? "1").ToLowerInvariant();
+
+        // ---------------- Privilege logic (CO / ZONE / REGION / BRANCH) ----------------
+        if (_userPrivilege == "CO")
+        {
+            if (zone == "1") return Select(Level.Grand);
+            else if (zone == "all")
+            {
+                if (reg == "1") return Select(Level.Zone);
+                else if (reg == "all")
+                {
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+                else
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+            }
+            else
+            {
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (reg == "1") return Select(Level.Zone);
+                else if (reg == "all")
+                {
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+                else
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userZoneSolid}'";
+            if (reg == "1") return Select(Level.Zone);
+            else if (reg == "all")
+            {
+                if (br == "1") return Select(Level.Region);
+                else if (br == "all") return Select(Level.Branch);
+                else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+            }
+            else
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (br == "1") return Select(Level.Region);
+                else if (br == "all") return Select(Level.Branch);
+                else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userRegionSolid}'";
+            if (br == "1") return Select(Level.Region);
+            else if (br == "all") return Select(Level.Branch);
+            else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+        }
+        else // BRANCH
+        {
+            AddBranchFilter(ref where, _userBranchSolid);
+            return Select(Level.Branch);
+        }
+    }
+
+    private async Task<(string fromDate, string toDate)> GetHeaderDatesAsync(bool isFY)
+    {
+        string table = isFY
+            ? "Digital_Transactions_ChannelWise_FYReport A"
+            : "Digital_Transactions_ChannelWise_Report A";
+
+        string sql = $"SELECT Convert(nvarchar, Max(FromDate), 103) AS FromDate, " +
+                     $"       Convert(nvarchar, Max(ToDate),   103) AS ToDate " +
+                     $"  FROM {table} JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+
+        var rows = await ReportService.ExecuteRawQueryAsync(sql);
+        if (rows.Count > 0)
+        {
+            var r = rows[0];
+            string fd = r.TryGetValue("FromDate", out var v1) ? v1?.ToString() ?? "" : "";
+            string td = r.TryGetValue("ToDate", out var v2) ? v2?.ToString() ?? "" : "";
+            return (fd, td);
+        }
+        var today = AppTime.Now.ToString("dd/MM/yyyy");
+        return (today, today);
+    }
+}

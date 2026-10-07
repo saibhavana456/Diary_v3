@@ -1,0 +1,351 @@
+@page "/reports/SBCARbiObservations"
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using System.Text
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  SelectedStatus="@_selectedStatus"
+                   ShowStatusFilter=true
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery] [Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _selectedStatus = "Sel"; 
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    private ReportConfig _activeConfig = new()
+    {
+        Title = "Dashboard - RBI Observations in CD Accounts",
+        Columns = new List<ColumnConfig>() // 
+    };
+
+    // Privilege defaults � wire these from claims if available
+    private string _userPrivilege  = "CO";     // CO | ZONE | REGION | BRANCH
+    private string _userZoneCode   = "00000";  // zone_code
+    private string _userRegionCode = "00000";  // region_code
+    private string _userBranchCode = "00000";  // branch_code
+
+    // Summary columns (zone/region/branch totals)
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new ColumnConfig { Header = "RBI Observations", PropertyName = "rbi_obs_desc", Width = "30%" },
+        new ColumnConfig { Header = "Zone",             PropertyName = "zone_name",    Width = "15%" },
+        new ColumnConfig { Header = "Region",           PropertyName = "region_name",  Width = "15%" },
+        new ColumnConfig { Header = "Branch",           PropertyName = "Branch_Name",  Width = "20%" },
+        new ColumnConfig { Header = "Total No of Deficiencies - As Per RBI (31.3.21)", PropertyName = "total_def",     IsNumeric = true, Format = "N0", Width = "10%" },
+        new ColumnConfig { Header = "Total No of Deficiencies - Rectified",            PropertyName = "rectified_def",  IsNumeric = true, Format = "N0", Width = "10%" },
+        // Derived: Pending = total_def - rectified_def
+        new ColumnConfig { Header = "Total No of Deficiencies - Pending for Action",   PropertyName = "pending_def",    IsNumeric = true, Format = "N0", Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneCode = __scope.ZoneCode;
+            _userRegionCode = __scope.RegionCode;
+            _userBranchCode = __scope.BranchCode;
+        }
+        _activeConfig.Title = Title ?? "Dashboard - RBI Observations in CD Accounts";
+        _activeConfig.Columns = _summaryCols; // default
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task OnStatusChanged(ChangeEventArgs _)
+    {
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where   = "1=1";     
+        string groupBy = "";
+        bool showSummaryGrid = true; 
+
+        try
+        {
+            // Apply account status only when selected
+            if (!string.IsNullOrWhiteSpace(_selectedStatus) && _selectedStatus != "Sel")
+            {
+                where += $" AND acct_status = '{_selectedStatus}'";
+            }
+
+            string totalExpr     = "COUNT(*) AS total_def";
+            string rectifiedExpr = "SUM(CASE WHEN (ISNULL(Rectified,'N')='Y' OR ISNULL(ClsFlg,'N')='Y') THEN 1 ELSE 0 END) AS rectified_def";
+
+        
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1")
+                {
+                    // Global summary (All)
+                    columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name, 'All' AS branch_code";
+                    groupBy = " GROUP BY rbi_obs_desc";
+                }
+                else if (_selectedZone == "all")
+                { 
+                    // Zone-wise summary
+                   
+                    if (_selectedRegion == "1")
+                    {
+                        columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, 'All' AS region_name, zone_name, zone_code AS branch_code";
+                        groupBy = " GROUP BY zone_code, zone_name, rbi_obs_desc";
+                    }
+                    // Region-wise summary
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1") 
+                        {
+                            columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, region_name, zone_name, region_code AS branch_code";
+                            groupBy = " GROUP BY region_name, region_code, zone_name, rbi_obs_desc";
+                        }
+                        else // Branchwise (detail aggregation)
+                        {
+                            columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                            groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+                        }
+                    }
+                    // Specific region selected
+                    else
+                    {
+                        where += $" AND region_code = '{_selectedRegion}'";
+                        if (_selectedBranch == "1")
+                        {
+                            columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, region_name, zone_name, region_code AS branch_code";
+                            groupBy = " GROUP BY region_name, region_code, zone_name, rbi_obs_desc";
+                        }
+                        else
+                        {
+                            if (_selectedBranch != "all")
+                                where += $" AND branch_code = '{_selectedBranch}'";
+                            columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                            groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+                        }
+                    }
+                }
+                // Specific zone selected
+                else 
+                {
+                    where += $" AND zone_code = '{_selectedZone}'";
+                    if (_selectedRegion == "1")
+                    {
+                        columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, 'All' AS region_name, zone_name, zone_code AS branch_code";
+                        groupBy = " GROUP BY zone_code, zone_name, rbi_obs_desc";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1")
+                        {
+                            columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, region_name, zone_name, region_code AS branch_code";
+                            groupBy = " GROUP BY region_name, region_code, zone_name, rbi_obs_desc";
+                        }
+                        else
+                        {
+                            if (_selectedBranch != "all")
+                                where += $" AND branch_code = '{_selectedBranch}'";
+                            columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                            groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+                        }
+                    }
+                    // Specific region within specific zone
+                    else 
+                    {
+                        where += $" AND region_code = '{_selectedRegion}'";
+                        if (_selectedBranch == "1")
+                        {
+                            columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, region_name, zone_name, region_code AS branch_code";
+                            groupBy = " GROUP BY region_name, region_code, zone_name, rbi_obs_desc";
+                        }
+                        else
+                        {
+                            if (_selectedBranch != "all")
+                                where += $" AND branch_code = '{_selectedBranch}'";
+                            columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                            groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND zone_code = '{_userZoneCode}'";
+                if (_selectedRegion == "1")
+                {
+                    columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, 'All' AS region_name, zone_name, zone_code";
+                    groupBy = " GROUP BY zone_name, zone_code, rbi_obs_desc";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, region_name, zone_name, region_code AS branch_code";
+                        groupBy = " GROUP BY region_name, region_code, zone_name, rbi_obs_desc";
+                    }
+                    else
+                    {
+                        if (_selectedBranch != "all")
+                            where += $" AND branch_code = '{_selectedBranch}'";
+                        columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                        groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+                    }
+                }
+                else
+                {
+                    where += $" AND region_code = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, region_name, zone_name, region_code AS branch_code";
+                        groupBy = " GROUP BY region_name, region_code, zone_name, rbi_obs_desc";
+                    }
+                    else
+                    {
+                        if (_selectedBranch != "all")
+                            where += $" AND branch_code = '{_selectedBranch}'";
+                        columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                        groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND region_code = '{_userRegionCode}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = $"rbi_obs_desc, {totalExpr}, {rectifiedExpr}, 'All' AS Branch_Name, region_name, zone_name, region_code AS branch_code";
+                    groupBy = " GROUP BY region_name, region_code, zone_name, rbi_obs_desc";
+                }
+                else
+                {
+                    if (_selectedBranch != "all")
+                        where += $" AND branch_code = '{_selectedBranch}'";
+                    columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                    groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                where += $" AND branch_code = '{_userBranchCode}'";
+                columns = $"zone_name, region_name, BRANCH_NAME AS Branch_Name, {totalExpr}, {rectifiedExpr}, rbi_obs_desc";
+                groupBy = " GROUP BY zone_name, region_name, BRANCH_NAME, rbi_obs_desc";
+            }
+
+            if (string.IsNullOrWhiteSpace(columns))
+                throw new InvalidOperationException("SBCA RBI Observations: Columns not set for current filter path.");
+
+            string finalQuery =
+                $"SELECT {columns} " +
+                $"FROM sbca_rbi_observations_data " +
+                $"WHERE {where}{groupBy}";
+
+            // Console.WriteLine("[SBCA] " + finalQuery);
+            // Data query and as-on-date are independent - run in parallel
+            var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            var dateTask = ReportService.GetAsOnDateAsync("sbca_rbi_observations_data");
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+
+            // Add Pending = total_def - rectified_def
+            foreach (var row in _data)
+            {
+                var total = ToInt(row, "total_def");
+                var rect  = ToInt(row, "rectified_def");
+                row["pending_def"] = total - rect;
+            }
+
+            var asOn = dateTask.Result;
+            _asOnDateLabel = $"Data As On - {asOn}";
+           
+            _activeConfig.Columns = _summaryCols;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, ex.ToString());
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static int ToInt(Dictionary<string, object> row, string key)
+        => row.TryGetValue(key, out var v) && v != null && int.TryParse(v.ToString(), out var n) ? n : 0;
+
+    // Export to pipe-separated text like your WebForms ExportGridToText
+    private async Task HandleExport()
+    {
+        if (_data == null || _data.Count == 0)
+        {
+            await JS.InvokeVoidAsync("alert", "No data to export.");
+            return;
+        }
+
+        var headers = _activeConfig.Columns.Select(c => c.Header).ToList();
+        var sb = new StringBuilder();
+
+        // Header (skip S.No. since we aren't adding it in this grid)
+        for (int i = 0; i < headers.Count; i++)
+        {
+            sb.Append(headers[i]);
+            sb.Append('|');
+        }
+        sb.AppendLine();
+
+        // Rows
+        foreach (var row in _data)
+        {
+            foreach (var col in _activeConfig.Columns)
+            {
+                row.TryGetValue(col.PropertyName, out var v);
+                sb.Append(v?.ToString());
+                sb.Append('|');
+            }
+            sb.AppendLine();
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "CAObservations.txt",
+            "text/plain",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

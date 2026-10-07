@@ -1,0 +1,353 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/SUD_SPDetails"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>SUD SP Details — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "REGION";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Column configurations with fixed widths
+    private List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "10%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name", Width = "10%" },
+        new ColumnConfig { Header = "Sol ID", PropertyName = "SolId", Width = "20%" },
+        new ColumnConfig { Header = "No of Branches with SPs", PropertyName = "NoofBranches", IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Total No of SPs", PropertyName = "NoofSPs", IsNumeric = true, Width = "20%" }
+    };
+
+    private List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "10%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "BRANCH_NAME", Width = "10%" },
+        new ColumnConfig { Header = "Solid", PropertyName = "SolID", Width = "3%" },
+        new ColumnConfig { Header = "SP Status", PropertyName = "SPStatus", Width = "5%" },
+        new ColumnConfig { Header = "Number of SPs", PropertyName = "NoofSPs", Width = "10%" },
+        new ColumnConfig { Header = "SP Name 1", PropertyName = "SPName_01", Width = "8%" },
+        new ColumnConfig { Header = "SP PF No 1", PropertyName = "SPPFCode_01", IsDate = true, Width = "10%" },
+        new ColumnConfig { Header = "SP Name 2", PropertyName = "SPName_02", IsNumeric = true, Width = "10%" },
+        new ColumnConfig { Header = "SP PF No 2", PropertyName = "SPPFCode_02", IsNumeric = true, Width = "10%" },
+        new ColumnConfig { Header = "SP Name 3", PropertyName = "SPName_03", IsNumeric = true, Width = "10%" },
+        new ColumnConfig { Header = "SP PF No 3", PropertyName = "SPPFCode_03", IsNumeric = true, Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "SUD_SPDetails";
+
+        // Load User Context
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "region_solid <> '' ";
+        string groupBy = "";
+        bool isSummary = true;
+
+        // EXACT Logic from ListSundryData.aspx.cs
+        if (_userPrivilege == "CO")
+        {
+
+            if (_selectedZone == "1") // All(Summary)
+            {
+                where += $" and region_solid <> '00000' and NoofSPs > 0";
+                columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,'All' As region_name,'All' As zone_name_eng,'All' As SolID";
+                isSummary = true;
+            }
+            else if (_selectedZone == "all") // All(Zonewise)
+            {
+                where += $" and region_solid <> '00000'";
+                if (_selectedRegion == "1")
+                {
+                    where += $" and NoofSPs > 0";
+                    columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,'All' As region_name,'All' As zone_name_eng,'All' As SolID";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                    isSummary = true;
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+
+                        columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,region_name,zone_name_eng,'All' As SolID";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else if (_selectedBranch == "all")
+                    {
+
+                        columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Branchwise Detailed
+                    {
+                        where += $" and b.sol_id = '{_userBranchSolid}'";
+                        isSummary = false;
+                        columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    }
+                }
+                else // Specific Region Selected
+                {
+
+                    if (_selectedBranch == "1")
+                    {
+                        where += $" and region_solid = '{_selectedRegion}' and NoofSPs > 0";
+                        columns = "count(TranAmount) as TranCount, sum(diff)/100000 as Outstanding, 'All' As BRANCH_NAME, b.region_name, zone_name_eng, region_SolId As SolID";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else if (_selectedBranch == "all")
+                    {
+                        where += $" and region_solid = '{_selectedRegion}'";
+                        columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    }
+                }
+            }
+            else // Specific Zone Selected
+            {
+                where += $" and region_solid <> '00000' and zone_solid = '{_selectedZone}' ";
+                if (_selectedRegion == "1")
+                {
+                    where += $" and NoofSPs > 0 ";
+                    columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,'All' As region_name,zone_name_eng,'All' As SolID";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        //where += $" and region_solid <> '00000' and zone_solid = '{_selectedZone}' and NoofSPs > 0 ";
+                        where += $" and NoofSPs > 0 ";
+                        columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,region_name,zone_name_eng,'All' As SolID";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else if (_selectedBranch == "all")
+                    {
+                        columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        //where += $" and region_solid <> '00000' and zone_solid = '{_selectedZone}'";
+                        isSummary = false;
+                        columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    }
+                }
+                else // Particular Region selected in Particular Zone
+                {
+                   
+                    if (_selectedBranch == "1")
+                    {
+                        where += $" and region_solid = '{_selectedRegion}' and  NoofSPs > 0 ";
+                        columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,region_name,zone_name_eng,'All' As SolID";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else if (_selectedBranch == "all")
+                    {
+                        where += $" and region_solid = '{_selectedRegion}'";
+                        columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and  b.sol_id = '{_selectedBranch}'";
+                        columns = "DISTINCT SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                        //groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                }
+            }
+        }
+
+
+
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and region_solid <> '00000' and Zone_solid = '{_userZoneSolid}'";
+            if (_selectedRegion == "1")
+            {
+                where += $"and NoofSPs > 0";
+                columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,region_name,zone_name_eng,'All' As SolID";
+                groupBy = " Group By zone_name_eng,Zone_SolId,Region_Name,Region_SolID";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1")//Regionwise Summary
+                {
+                    where += $"and NoofSPs > 0";
+                    columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,region_name,zone_name_eng,'All' As SolID";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else if (_selectedBranch == "all")
+                {
+                    columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    //groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+            }
+            else // Specific Region
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,region_name,zone_name_eng,'All' As SolID";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else if (_selectedBranch=="all")
+                {
+                    where += $" and NoofSPs > 0 ";
+                    columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid <> '00000' and region_solid = '{_userRegionSolid}'";
+            
+            //Region Summary
+            if (_selectedBranch == "1")
+            {
+                where += $" and NoofSPs > 0";
+                columns = "Sum(NoofSPs) As NoofSPs, Count(NoofSPs) As NoofBranches,'All' As BRANCH_NAME,region_name,zone_name_eng,'All' As SolID";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+            //Branchwise Data of the Region
+            else if (_selectedBranch == "all")
+            {
+                columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+            //Selected Branch Data
+            else
+            {
+                isSummary = false;
+                if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" and b.sol_id = '{_userBranchSolid}'";
+            columns = "SPStatus,NoofSPs,SPName_01,SPPFCode_01,SPName_02,SPPFCode_02,SPName_03,SPPFCode_03,BRANCH_NAME,region_name,zone_name_eng,sol_id As SolID";
+;
+        }
+
+        // Data query and as-on-date are independent - run in parallel
+        string finalQuery = $"SELECT {columns} FROM SUDData A JOIN Branch_Master B On A.branchcode = B.Branch_Code WHERE {where} {groupBy}";
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("Sundry_OAP_Agewise");
+        try
+        {
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+        }
+         catch(Exception ex)
+        {
+             AppLogger.LogError(ex, "[SUD_SPDetails] Error: " + ex.Message);
+            _data = dataTask.IsCompletedSuccessfully ? dataTask.Result : new();
+        }
+
+        // Footer and Config Logic
+        string date = dateTask.IsCompletedSuccessfully ? dateTask.Result : AppTime.Now.ToString("dd/MM/yyyy");
+        if (isSummary)
+        {
+            _activeConfig.Columns = _summaryCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+        }
+        else
+        {
+            _activeConfig.Columns = _detailedCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Actuals)";
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "SUD_SPDetails");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "SUD_SPDetails.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

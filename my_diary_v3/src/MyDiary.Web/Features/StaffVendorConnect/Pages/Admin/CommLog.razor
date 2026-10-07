@@ -1,0 +1,96 @@
+@page "/svc/admin/comm-log"
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject ISvcCommunicationService CommService
+
+<PageTitle>Sent Communications - Staff and Vendor Connect</PageTitle>
+
+<AppAdminOnly>
+
+<PageHeader Title="Sent Communications" Subtitle="Email/SMS/WhatsApp notifications sent to Staff or Vendor recipients." Crumbs="_crumbs" PageKey="svc-comm-log" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="@_entries" Hover="true" Dense="true" Bordered="true" RowsPerPage="20">
+        <HeaderContent>
+            <MudTh>Sent</MudTh>
+            <MudTh>Target</MudTh>
+            <MudTh>Channel</MudTh>
+            <MudTh>Subject / Template</MudTh>
+            <MudTh>Scope</MudTh>
+            <MudTh>Recipients</MudTh>
+            <MudTh>Sent By</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.SentAt.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+            <MudTd>@context.TargetModule</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small">@context.Channel</MudChip></MudTd>
+            <MudTd>@(context.Subject ?? context.TemplateName)</MudTd>
+            <MudTd>@context.RecipientScope</MudTd>
+            <MudTd>@context.RecipientCount</MudTd>
+            <MudTd>@context.SentBy</MudTd>
+            <MudTd><MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => ViewDetail(context.CommId))">View</MudButton></MudTd>
+        </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 20, 50, 100 }" /></PagerContent>
+    </MudTable>
+}
+
+<MudDialog @bind-Visible="_detailOpen" Options="_dialogOptions">
+    <TitleContent>Recipient Status</TitleContent>
+    <DialogContent>
+        @if (_detailAttachments.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Attachments</MudText>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                @foreach (var a in _detailAttachments)
+                {
+                    <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Filled.AttachFile">@a.FileName</MudChip>
+                }
+            </div>
+        }
+        <MudTable Items="@_detail" Dense="true" Bordered="true">
+            <HeaderContent>
+                <MudTh>Name</MudTh><MudTh>Address</MudTh><MudTh>Status</MudTh><MudTh>Error</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.RecipientName</MudTd>
+                <MudTd>@context.RecipientAddress</MudTd>
+                <MudTd><MudChip T="string" Size="Size.Small" Color="@(context.SendStatus == "FAILED" ? Color.Error : Color.Success)">@context.SendStatus</MudChip></MudTd>
+                <MudTd>@context.ErrorMessage</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _detailOpen = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+</AppAdminOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"), new("Sent Communications") };
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true };
+    private bool _loading = true, _detailOpen;
+    private List<SvcCommLogEntry> _entries = new();
+    private List<SvcCommRecipientResult> _detail = new();
+    private List<SvcCommAttachmentInfo> _detailAttachments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _entries = await CommService.GetCommLogAsync(null);
+        _loading = false;
+    }
+
+    private async Task ViewDetail(long commId)
+    {
+        _detail = await CommService.GetCommRecipientsAsync(commId);
+        _detailAttachments = await CommService.GetCommAttachmentsAsync(commId);
+        _detailOpen = true;
+    }
+}

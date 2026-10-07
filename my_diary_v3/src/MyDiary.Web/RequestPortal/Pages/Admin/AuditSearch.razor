@@ -1,0 +1,181 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/audit"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@inject IAuditRepo AuditRepo
+@inject IAuditService AuditSvc
+@inject IUserRepo UserRepo
+@inject ISnackbar Snackbar
+
+<PageTitle>Audit Search</PageTitle>
+
+<PageHeader PageKey="admin-audit-search" Title="Audit Search"
+            Subtitle="Look up the tamper-evident audit trail for any record by entity type and ID."
+            Crumbs="_crumbs" />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudPaper Class="pa-4 mb-3" Elevation="1">
+    @* All controls use Outlined + Dense so they share the same 40-px height *@
+    <div class="d-flex flex-wrap gap-3 align-center">
+        <div style="flex:2; min-width:220px;">
+            <MudSelect T="string" @bind-Value="_entity" Label="Entity type"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" AnchorOrigin="Origin.BottomLeft">
+                @foreach (var e in AuditEntityNames.SetupEntities)
+                {
+                    <MudSelectItem T="string" Value="@e">@e</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+        <div style="width:160px;">
+            <MudNumericField T="long?" @bind-Value="_entityId" Label="Entity ID"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             HideSpinButtons="true" />
+        </div>
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="Search" Disabled="@(!CanSearch)"
+                       Style="height:40px;">Search</MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.VerifiedUser"
+                       OnClick="VerifyChain"
+                       Style="height:40px;">Verify chain</MudButton>
+        </div>
+    </div>
+    @if (string.IsNullOrWhiteSpace(_entity) || !_entityId.HasValue)
+    {
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+            Select an entity type and enter the record ID to view its audit history.
+        </MudText>
+    }
+</MudPaper>
+
+@if (_results is not null)
+{
+    <MudPaper Elevation="1">
+        @if (_results.Count == 0)
+        {
+            <div class="pa-4">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    No audit records found for <strong>@_entity</strong> ID <strong>@_entityId</strong>.
+                </MudAlert>
+            </div>
+        }
+        else
+        {
+            <div class="d-flex align-center pa-3 pb-0">
+                <MudText Typo="Typo.subtitle2" Style="color:var(--rp-navy)">
+                    <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Small" Class="mr-1" />
+                    @_results.Count audit @(_results.Count == 1 ? "entry" : "entries") —
+                    <code style="font-size:13px">@_entity #@_entityId</code>
+                </MudText>
+            </div>
+            <MudTable Items="@_results" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>When</MudTh>
+                    <MudTh>Action</MudTh>
+                    <MudTh>Actor (ID)</MudTh>
+                    <MudTh>Before</MudTh>
+                    <MudTh>After</MudTh>
+                    <MudTh>Hash (short)</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@AppTime.ToIndia(context.ActedAt).ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small" Color="@ActionColor(context.Action)">
+                            @context.Action
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>@(_actorNames.TryGetValue(context.ActorEmpCode ?? "", out var n) ? n : (context.ActorEmpCode ?? "—"))</MudTd>
+                    <MudTd>
+                        @if (!string.IsNullOrEmpty(context.OldJson))
+                        {
+                            <MudTooltip Text="@context.OldJson" Placement="Placement.Left">
+                                <code style="font-size:11px; color:#C62828; cursor:help">@Trunc(context.OldJson)</code>
+                            </MudTooltip>
+                        }
+                        else { <span style="color:#ccc">—</span> }
+                    </MudTd>
+                    <MudTd>
+                        @if (!string.IsNullOrEmpty(context.NewJson))
+                        {
+                            <MudTooltip Text="@context.NewJson" Placement="Placement.Left">
+                                <code style="font-size:11px; color:#1a7f37; cursor:help">@Trunc(context.NewJson)</code>
+                            </MudTooltip>
+                        }
+                        else { <span style="color:#ccc">—</span> }
+                    </MudTd>
+                    <MudTd>
+                        <code style="font-family:monospace; font-size:11px; color:#59636e">
+                            @(context.HashCurr.Length > 12 ? context.HashCurr[..12] : context.HashCurr)…
+                        </code>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin Portal"),
+        new("Audit Search"),
+    };
+
+    private string? _entity;
+    private long?   _entityId;
+    private IReadOnlyList<AuditLog>? _results;
+    private Dictionary<string, string> _actorNames = new();
+
+    private bool CanSearch => !string.IsNullOrWhiteSpace(_entity) && _entityId.HasValue;
+
+    private async Task Search()
+    {
+        if (!CanSearch) return;
+        _results = await AuditRepo.ListByEntityAsync(_entity!, _entityId!.Value);
+
+        // Resolve actor display names (batch lookup)
+        var empCodes = _results.Where(r => !string.IsNullOrEmpty(r.ActorEmpCode))
+                               .Select(r => r.ActorEmpCode!).Distinct().ToList();
+        _actorNames = new(StringComparer.OrdinalIgnoreCase);
+        if (empCodes.Count > 0)
+        {
+            var users = await UserRepo.GetByEmpCodesAsync(empCodes);
+            foreach (var u in users)
+                _actorNames[u.EmpCode] = $"{u.Name} ({u.AdSamAccountName})";
+            foreach (var ec in empCodes.Where(c => !_actorNames.ContainsKey(c)))
+                _actorNames[ec] = ec;
+        }
+    }
+
+    private async Task VerifyChain()
+    {
+        var ok = await AuditSvc.VerifyChainAsync();
+        Snackbar.Add(
+            ok ? "✔ Audit chain intact — no tampering detected."
+               : "⚠ AUDIT CHAIN MISMATCH — investigate immediately.",
+            ok ? Severity.Success : Severity.Error);
+    }
+
+    private static string Trunc(string s) => s.Length <= 55 ? s : s[..52] + "...";
+
+    private static Color ActionColor(string a) => a switch
+    {
+        AuditEntityNames.ActionCreate     => Color.Success,
+        AuditEntityNames.ActionUpdate     => Color.Info,
+        AuditEntityNames.ActionDelete     => Color.Error,
+        AuditEntityNames.ActionDeactivate => Color.Warning,
+        AuditEntityNames.ActionActivate   => Color.Success,
+        _                                 => Color.Default,
+    };
+}

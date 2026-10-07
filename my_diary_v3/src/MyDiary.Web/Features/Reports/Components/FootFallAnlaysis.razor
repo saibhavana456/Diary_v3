@@ -1,0 +1,972 @@
+﻿@page "/reports/FootfallAnalysis"
+@using Microsoft.JSInterop
+@using System.Linq
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Models
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>FootFall Analysis — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        width: 100%;
+        table-layout: auto !important;
+        border-collapse: collapse;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+        max-height: 600px;
+        overflow-y: auto;
+    }
+
+    .thead-dark {
+        background-color: #2a2f5b;
+        color: white;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+        .thead-dark th {
+            border-right: 1px solid #d0d0d0;
+            text-align: center;
+            font-weight: 700;
+            border-bottom: 1px solid #d0d0d0;
+            white-space: nowrap;
+            padding: 8px 6px;
+        }
+
+    .col-sno {
+        width: 60px !important;
+        min-width: 50px !important;
+        text-align: center !important;
+    }
+
+    .col-zone {
+        width: 150px !important;
+        min-width: 140px !important;
+        max-width: 180px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-region {
+        width: 150px !important;
+        min-width: 140px !important;
+        max-width: 180px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-branch {
+        width: 200px !important;
+        min-width: 180px !important;
+        max-width: 250px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-solid {
+        width: 90px !important;
+        min-width: 80px !important;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    .col-cat {
+        width: 120px !important;
+        min-width: 110px !important;
+        text-align: left;
+    }
+
+    .col-num {
+        width: 120px !important;
+        min-width: 110px !important;
+        text-align: right !important;
+        white-space: nowrap !important;
+        padding-right: 10px;
+    }
+
+    .td-left {
+        text-align: left;
+    }
+
+    .td-right {
+        text-align: right;
+    }
+
+    .td-center {
+        text-align: center;
+    }
+
+    .fixed-table td {
+        border-bottom: 1px solid #eee;
+        padding: 6px 6px;
+        vertical-align: middle;
+    }
+
+    .filter-section {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        padding: 8px 16px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        margin: 0 16px 16px 16px;
+    }
+
+    .filter-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        font-style: italic;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255,255,255,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .no-data {
+        text-align: center;
+        padding: 4rem;
+        color: #c8102e;
+        font-weight: bold;
+    }
+
+    .pagination-wrapper {
+        padding: 16px 32px 24px 32px;
+        border-top: 1px solid #e0e0e0;
+        margin-top: 8px;
+    }
+
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .pagination-info {
+        color: #666;
+        font-size: 0.875rem;
+    }
+
+    .rows-per-page-area {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    @@media (max-width: 992px) {
+        .col-num {
+            width: 100px !important;
+            min-width: 90px !important;
+        }
+    }
+</style>
+
+<!-- ================== FOOTFALL ANALYSIS REPORT ================== -->
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#fff; position: relative;">
+
+
+            <!-- LOCATION FILTERS (ZONE/REGION/BRANCH) -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Zone"
+                               Value="_selectedZone" ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                        @if (_userPrivilege == "CO")
+                        {
+                            <MudSelectItem Value="@("00000")">CENTRAL OFFICE</MudSelectItem>
+                        }
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">@z["zone_name_eng"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Region"
+                               Value="_selectedRegion" ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedZone == "1" || (_selectedZone == "all" && _regions.Count == 0))">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">@r["region_name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Branch"
+                               Value="_selectedBranch" ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedRegion == "1" || (_selectedRegion == "all" && _branches.Count == 0))">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["SOL_ID"].ToString()">@b["Branch_Name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color:#000066; color:#fff;"
+                               OnClick="OnExport" Disabled="@(!_data.Any())">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- AS ON DATE HEADER -->
+            <div class="px-4 pb-2 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color:#666;">
+                    @_asOnDateLabel
+                </MudText>
+            </div>
+
+            <!-- COLUMN VISIBILITY TOGGLES -->
+            <div class="filter-section">
+                <div class="filter-checkbox">
+                    <MudCheckBox T="bool"
+                                 Value="_showCASA"
+                                 ValueChanged="OnCASAChanged"
+                                 ValueExpression="@(()=> _showCASA)"
+                                 Color="Color.Primary" Size="Size.Small" />
+                    <span>Show Accounts Opened &amp; Closed</span>
+                </div>
+                <div class="filter-checkbox">
+                    <MudCheckBox T="bool"
+                                 Value="_showChqLocDD"
+                                 ValueChanged="OnChqLocDDChanged"
+                                 ValueExpression="@(()=> _showChqLocDD)"
+                                 Color="Color.Primary" Size="Size.Small" />
+                    <span>Show PBP/Locker/Nomination/Debit Card/ReKYC/15GH Details</span>
+                </div>
+                <div class="filter-checkbox">
+                    <MudCheckBox T="bool"
+                                 Value="_showCRCP"
+                                 ValueChanged="OnCRCPChanged"
+                                 ValueExpression="@(()=> _showCRCP)"
+                                 Color="Color.Primary" Size="Size.Small" />
+                    <span>Show Cash Deposit/Withdrawal Details</span>
+                </div>
+            </div>
+
+            <!-- ================== TABLE ================== -->
+            <div class="mud-table-container px-4" style="position: relative;">
+                @if (_loading)
+                {
+                    <div class="loading-overlay">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
+                    </div>
+                }
+                @if (!_loading && _data.Count == 0)
+                {
+                    <div class="no-data">No Data Found!</div>
+                }
+                else if (_data.Count > 0)
+                {
+                    <table class="mud-table fixed-table">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th class="col-sno">S No.</th>
+                                <th class="col-zone">Zone</th>
+                                <th class="col-region">Region</th>
+                                <th class="col-branch">Branch</th>
+                                @if (_userPrivilege == "BRANCH")
+                                {
+                                    <th class="col-solid">SolID</th>
+                                }
+                                <th class="col-cat">Branch Category</th>
+
+                                @if (_showCASA)
+                                {
+                                    <th class="col-num">ACs Opened</th>
+                                    <th class="col-num">ACs Closed</th>
+                                }
+                                @if (_showCRCP)
+                                {
+                                    <th class="col-num">Cash Deposit Txns</th>
+                                    <th class="col-num">Cash Withdrawal Txns</th>
+                                }
+                                @if (_showChqLocDD)
+                                {
+                                    <th class="col-num">PB/Stmt Printed</th>
+                                    <th class="col-num">Re-KYC</th>
+                                    <th class="col-num">Debit Cards Issued</th>
+                                    <th class="col-num">PPF ACs Opened</th>
+                                    <th class="col-num">SSA ACs Opened</th>
+                                    <th class="col-num">SCSS ACs Opened</th>
+                                    <th class="col-num">KVP ACs Opened</th>
+                                    <th class="col-num">MSSC ACs Opened</th>
+                                    <th class="col-num">Form 15G/H</th>
+                                    <th class="col-num">Locker Operated</th>
+                                    <th class="col-num">Nomination Updated</th>
+                                }
+
+                                <th class="col-num">Total Transactions</th>
+                                <th class="col-num">Avg. Footfall</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                var pagedData = _data.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
+                                int startSno = (_currentPage - 1) * _pageSize + 1;
+
+                                foreach (var row in pagedData)
+                                {
+                                    <tr>
+                                        <td class="td-center">@(startSno++)</td>
+                                        <td class="td-left">@GetValue(row, "zone_name_eng")</td>
+                                        <td class="td-left">@GetValue(row, "region_name")</td>
+                                        <td class="td-left">@GetValue(row, "BRANCH_NAME")</td>
+
+                                        @if (_userPrivilege == "BRANCH")
+                                        {
+                                            <td class="td-left">@GetValue(row, "branchsol")</td>
+                                        }
+
+                                        <td class="td-left">@GetValue(row, "BRANCH_CAT")</td>
+
+                                        @if (_showCASA)
+                                        {
+                                            <td class="td-right">@FormatNumber(row, "ACCS_OPENED")</td>
+                                            <td class="td-right">@FormatNumber(row, "ACCS_CLOSED")</td>
+                                        }
+                                        @if (_showCRCP)
+                                        {
+                                            <td class="td-right">@FormatNumber(row, "CASH_DEPOSIT_TXNS")</td>
+                                            <td class="td-right">@FormatNumber(row, "CASH_WITHDRAWAL_TXNS")</td>
+                                        }
+                                        @if (_showChqLocDD)
+                                        {
+                                            <td class="td-right">@FormatNumber(row, "PB_STMT_PRINTED")</td>
+                                            <td class="td-right">@FormatNumber(row, "REKYC")</td>
+                                            <td class="td-right">@FormatNumber(row, "DEBIT_CARD_ISSUED")</td>
+                                            <td class="td-right">@FormatNumber(row, "PPF_ACCS_OPENED")</td>
+                                            <td class="td-right">@FormatNumber(row, "SSA_ACCS_OPENED")</td>
+                                            <td class="td-right">@FormatNumber(row, "SCSS_ACCS_OPENED")</td>
+                                            <td class="td-right">@FormatNumber(row, "KVP_ACCS_OPENED")</td>
+                                            <td class="td-right">@FormatNumber(row, "MSSC_ACCS_OPENED")</td>
+                                            <td class="td-right">@FormatNumber(row, "FORM_15G_15H")</td>
+                                            <td class="td-right">@FormatNumber(row, "LOCKER_OPERATED")</td>
+                                            <td class="td-right">@FormatNumber(row, "NOMINATION_UPDATED")</td>
+                                        }
+
+                                        <td class="td-right">@FormatNumber(row, "TOTAL_TRANSACTIONS")</td>
+                                        <td class="td-right">@FormatNumber(row, "AVG_FOOTFALL")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            @if (_data.Count > 0)
+            {
+                <div class="pagination-wrapper">
+                    <div class="pagination-container">
+                        <div class="pagination-info">
+                            @if (TotalPages > 1)
+                            {
+                                <text>Showing @StartItem to @EndItem of @_data.Count entries</text>
+                            }
+                            else
+                            {
+                                <text>Showing all @_data.Count entries</text>
+                            }
+                        </div>
+
+                        <div class="rows-per-page-area">
+                            <MudText Typo="Typo.caption">Rows per page:</MudText>
+                            <MudSelect T="int" Dense="true" Style="width:80px"
+                                       Value="_pageSize" ValueChanged="OnPageSizeChanged">
+                                <MudSelectItem Value="10">10</MudSelectItem>
+                                <MudSelectItem Value="25">25</MudSelectItem>
+                                <MudSelectItem Value="50">50</MudSelectItem>
+                                <MudSelectItem Value="100">100</MudSelectItem>
+                            </MudSelect>
+                        </div>
+
+                        <MudPagination Dense="true"
+                                       Count="TotalPages"
+                                       Selected="_currentPage"
+                                       SelectedChanged="OnPageChanged" />
+                    </div>
+                </div>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // Pagination properties
+    private int _currentPage = 1;
+    private int _pageSize = 25;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_data.Count / (double)_pageSize));
+    private int StartItem => _data.Count == 0 ? 0 : ((_currentPage - 1) * _pageSize + 1);
+    private int EndItem => _data.Count == 0 ? 0 : Math.Min(_currentPage * _pageSize, _data.Count);
+
+    // Filters
+    private string _selectedZone { get; set; } = "1";
+    private string _selectedRegion { get; set; } = "1";
+    private string _selectedBranch { get; set; } = "1";
+
+    // Column visibility toggles
+    private bool _showCASA = false;
+    private bool _showChqLocDD = false;
+    private bool _showCRCP = false;
+
+    // Lookup data
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+
+    // Main data
+    private List<Dictionary<string, object>> _data = new();
+
+    // UI state
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    // Privilege (replace with actual auth service)
+    private string _userPrivilege = "CO"; // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // Pagination handlers
+    private void OnPageChanged(int page)
+    {
+        if (_data.Count == 0) { _currentPage = 1; return; }
+        if (page < 1) page = 1;
+        if (page > TotalPages) page = TotalPages;
+        if (_currentPage != page)
+        {
+            _currentPage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void OnPageSizeChanged(int newSize)
+    {
+        if (newSize <= 0) return;
+        _pageSize = newSize;
+        _currentPage = 1;
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        // LoadZones and LoadReport are independent — run in parallel
+        await Task.WhenAll(LoadZones(), LoadReport());
+
+        _showCASA = false;
+        _showChqLocDD = false;
+        _showCRCP = false;
+    }
+
+    private async Task LoadZones()
+    {
+        _zones = await ReportService.GetLookupDataAsync("zone_master", "*", "status='A'", "zone_name_eng");
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        _selectedZone = value;
+        _selectedRegion = "1";
+        _selectedBranch = "1";
+
+        if (value != "1" && value != "all" && value != "00000")
+        {
+            _regions = await ReportService.GetLookupDataAsync("region_master", "*", $"zone_solid='{value}'", "region_name");
+        }
+        else if (value == "00000")
+        {
+            _regions = new List<Dictionary<string, object>>
+            {
+                new() { ["region_solid"] = "00000", ["region_name"] = "CENTRAL OFFICE" }
+            };
+        }
+        else
+        {
+            _regions.Clear();
+        }
+
+        _branches.Clear();
+        await LoadReport();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        _selectedRegion = value;
+        _selectedBranch = "1";
+
+        if (value != "1" && value != "all" && value != "00000")
+        {
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "CONCAT(UPPER(branch_name), '  (', branch_code, ')') As Branch_Name, SOL_ID",
+                $"region_solid='{value}'",
+                "BRANCH_NAME");
+        }
+        else
+        {
+            _branches.Clear();
+        }
+
+        await LoadReport();
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        _selectedBranch = value;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        _data.Clear();
+        _currentPage = 1;
+        StateHasChanged();
+
+        try
+        {
+            string selectList = "";
+            string join = "FROM Footfall_New A JOIN Branch_Master B ON A.SOL_ID = B.SOL_ID";
+            string where = BuildWhereClause();
+            string groupBy = "";
+            string orderBy = GetOrderByClause();
+
+            bool isSummaryMode = IsSummaryMode();
+
+            if (isSummaryMode)
+            {
+                selectList = GetSummaryColumns();
+                groupBy = GetGroupByClause();
+            }
+            else
+            {
+                selectList = @"
+                    zone_name_eng,
+                    b.region_name,
+                    b.BRANCH_NAME,
+                    b.sol_id as branchsol,
+                    BRANCH_CAT,
+                    ACCS_OPENED,
+                    ACCS_CLOSED,
+                    CASH_DEPOSIT_TXNS,
+                    CASH_WITHDRAWAL_TXNS,
+                    PB_STMT_PRINTED,
+                    REKYC,
+                    DEBIT_CARD_ISSUED,
+                    PPF_ACCS_OPENED,
+                    SSA_ACCS_OPENED,
+                    SCSS_ACCS_OPENED,
+                    KVP_ACCS_OPENED,
+                    MSSC_ACCS_OPENED,
+                    FORM_15G_15H,
+                    LOCKER_OPERATED,
+                    NOMINATION_UPDATED,
+                    TOTAL_TRANSACTIONS,
+                    AVG_FOOTFALL";
+            }
+
+            string query = $"SELECT {selectList} {join} WHERE {where} {groupBy} {orderBy}";
+            AppLogger.LogInfo($"Executing query: {query}");
+
+            // Data query and as-on-date are independent - run in parallel
+            var dataTask = ReportService.ExecuteRawQueryAsync(query);
+            var dateTask = GetAsOnDateAsync();
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+
+            string date = dateTask.Result;
+            _asOnDateLabel = string.IsNullOrEmpty(date) ? "" : $"Data As On - {date}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Error loading data: {ex.Message}");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+            _data = new List<Dictionary<string, object>>();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetSummaryColumns()
+    {
+        if (_selectedZone == "1")
+        {
+            return @"
+                BRANCH_CAT,
+                SUM(ACCS_OPENED) AS ACCS_OPENED,
+                SUM(ACCS_CLOSED) AS ACCS_CLOSED,
+                SUM(CASH_DEPOSIT_TXNS) AS CASH_DEPOSIT_TXNS,
+                SUM(CASH_WITHDRAWAL_TXNS) AS CASH_WITHDRAWAL_TXNS,
+                SUM(PB_STMT_PRINTED) AS PB_STMT_PRINTED,
+                SUM(REKYC) AS REKYC,
+                SUM(DEBIT_CARD_ISSUED) AS DEBIT_CARD_ISSUED,
+                SUM(PPF_ACCS_OPENED) AS PPF_ACCS_OPENED,
+                SUM(SSA_ACCS_OPENED) AS SSA_ACCS_OPENED,
+                SUM(SCSS_ACCS_OPENED) AS SCSS_ACCS_OPENED,
+                SUM(KVP_ACCS_OPENED) AS KVP_ACCS_OPENED,
+                SUM(MSSC_ACCS_OPENED) AS MSSC_ACCS_OPENED,
+                SUM(FORM_15G_15H) AS FORM_15G_15H,
+                SUM(LOCKER_OPERATED) AS LOCKER_OPERATED,
+                SUM(NOMINATION_UPDATED) AS NOMINATION_UPDATED,
+                SUM(TOTAL_TRANSACTIONS) AS TOTAL_TRANSACTIONS,
+                SUM(AVG_FOOTFALL) AS AVG_FOOTFALL,
+                'All' AS Branch_Name,
+                'All' AS region_name,
+                'All' AS zone_name_eng,
+                'All' AS branchsol";
+        }
+        else if (_selectedZone == "all" && _selectedRegion == "1")
+        {
+            return @"
+                BRANCH_CAT,
+                SUM(ACCS_OPENED) AS ACCS_OPENED,
+                SUM(ACCS_CLOSED) AS ACCS_CLOSED,
+                SUM(CASH_DEPOSIT_TXNS) AS CASH_DEPOSIT_TXNS,
+                SUM(CASH_WITHDRAWAL_TXNS) AS CASH_WITHDRAWAL_TXNS,
+                SUM(PB_STMT_PRINTED) AS PB_STMT_PRINTED,
+                SUM(REKYC) AS REKYC,
+                SUM(DEBIT_CARD_ISSUED) AS DEBIT_CARD_ISSUED,
+                SUM(PPF_ACCS_OPENED) AS PPF_ACCS_OPENED,
+                SUM(SSA_ACCS_OPENED) AS SSA_ACCS_OPENED,
+                SUM(SCSS_ACCS_OPENED) AS SCSS_ACCS_OPENED,
+                SUM(KVP_ACCS_OPENED) AS KVP_ACCS_OPENED,
+                SUM(MSSC_ACCS_OPENED) AS MSSC_ACCS_OPENED,
+                SUM(FORM_15G_15H) AS FORM_15G_15H,
+                SUM(LOCKER_OPERATED) AS LOCKER_OPERATED,
+                SUM(NOMINATION_UPDATED) AS NOMINATION_UPDATED,
+                SUM(TOTAL_TRANSACTIONS) AS TOTAL_TRANSACTIONS,
+                SUM(AVG_FOOTFALL) AS AVG_FOOTFALL,
+                'All' AS Branch_Name,
+                'All' AS region_name,
+                zone_name_eng,
+                Zone_SolId AS branchsol";
+        }
+        else if (_selectedZone == "all" && _selectedRegion == "all" && _selectedBranch == "1")
+        {
+            return @"
+                BRANCH_CAT,
+                SUM(ACCS_OPENED) AS ACCS_OPENED,
+                SUM(ACCS_CLOSED) AS ACCS_CLOSED,
+                SUM(CASH_DEPOSIT_TXNS) AS CASH_DEPOSIT_TXNS,
+                SUM(CASH_WITHDRAWAL_TXNS) AS CASH_WITHDRAWAL_TXNS,
+                SUM(PB_STMT_PRINTED) AS PB_STMT_PRINTED,
+                SUM(REKYC) AS REKYC,
+                SUM(DEBIT_CARD_ISSUED) AS DEBIT_CARD_ISSUED,
+                SUM(PPF_ACCS_OPENED) AS PPF_ACCS_OPENED,
+                SUM(SSA_ACCS_OPENED) AS SSA_ACCS_OPENED,
+                SUM(SCSS_ACCS_OPENED) AS SCSS_ACCS_OPENED,
+                SUM(KVP_ACCS_OPENED) AS KVP_ACCS_OPENED,
+                SUM(MSSC_ACCS_OPENED) AS MSSC_ACCS_OPENED,
+                SUM(FORM_15G_15H) AS FORM_15G_15H,
+                SUM(LOCKER_OPERATED) AS LOCKER_OPERATED,
+                SUM(NOMINATION_UPDATED) AS NOMINATION_UPDATED,
+                SUM(TOTAL_TRANSACTIONS) AS TOTAL_TRANSACTIONS,
+                SUM(AVG_FOOTFALL) AS AVG_FOOTFALL,
+                'All' AS Branch_Name,
+                b.region_name,
+                zone_name_eng,
+                region_solid AS branchsol";
+        }
+        else
+        {
+            return @"
+                zone_name_eng,
+                b.region_name,
+                b.BRANCH_NAME,
+                b.sol_id as branchsol,
+                BRANCH_CAT,
+                ACCS_OPENED,
+                ACCS_CLOSED,
+                CASH_DEPOSIT_TXNS,
+                CASH_WITHDRAWAL_TXNS,
+                PB_STMT_PRINTED,
+                REKYC,
+                DEBIT_CARD_ISSUED,
+                PPF_ACCS_OPENED,
+                SSA_ACCS_OPENED,
+                SCSS_ACCS_OPENED,
+                KVP_ACCS_OPENED,
+                MSSC_ACCS_OPENED,
+                FORM_15G_15H,
+                LOCKER_OPERATED,
+                NOMINATION_UPDATED,
+                TOTAL_TRANSACTIONS,
+                AVG_FOOTFALL";
+        }
+    }
+
+    private string GetGroupByClause()
+    {
+        if (_selectedZone == "1")
+            return "GROUP BY BRANCH_CAT";
+        else if (_selectedZone == "all" && _selectedRegion == "1")
+            return "GROUP BY Zone_SolId, zone_name_eng, BRANCH_CAT";
+        else if (_selectedZone == "all" && _selectedRegion == "all" && _selectedBranch == "1")
+            return "GROUP BY b.region_name, region_solid, zone_name_eng, BRANCH_CAT";
+        // else if (_selectedZone != "1" && _selectedZone != "all" && _selectedRegion == "1")
+        //     return "GROUP BY Zone_SolId, zone_name_eng, BRANCH_CAT";
+        // else if (_selectedZone != "1" && _selectedZone != "all" && _selectedRegion == "all" && _selectedBranch == "1")
+        //     return "GROUP BY b.region_name, region_solid, zone_name_eng, BRANCH_CAT";
+        // else if (_selectedRegion != "1" && _selectedRegion != "all" && _selectedBranch == "1")
+        //     return "GROUP BY b.region_name, region_solid, zone_name_eng, BRANCH_CAT";
+        else
+            return "";
+    }
+
+    private string BuildWhereClause()
+    {
+        var conditions = new List<string>();
+
+        conditions.Add("B.region_solid <> '00000' AND B.region_solid <> ' '");
+
+        if (_userPrivilege == "ZONE" && !string.IsNullOrEmpty(_userZoneSolid))
+            conditions.Add($"B.Zone_SolId = '{_userZoneSolid}'");
+        else if (_userPrivilege == "REGION" && !string.IsNullOrEmpty(_userRegionSolid))
+            conditions.Add($"B.region_SolId = '{_userRegionSolid}'");
+        else if (_userPrivilege == "BRANCH" && !string.IsNullOrEmpty(_userBranchSolid))
+            conditions.Add($"B.sol_id = '{_userBranchSolid}'");
+
+        if (_selectedZone != "1" && _selectedZone != "all")
+        {
+            if (_selectedZone == "00000")
+                conditions.Add($"B.Zone_SolId = '00000'");
+            else
+                conditions.Add($"B.Zone_SolId = '{_selectedZone}'");
+        }
+
+        if (_selectedRegion != "1" && _selectedRegion != "all" && _selectedRegion != "00000")
+            conditions.Add($"B.region_SolId = '{_selectedRegion}'");
+
+        if (_selectedBranch != "1" && _selectedBranch != "all")
+            conditions.Add($"B.sol_id = '{_selectedBranch}'");
+
+        return string.Join(" AND ", conditions);
+    }
+
+    private string GetOrderByClause()
+    {
+        if (_selectedZone == "1")
+            return "ORDER BY BRANCH_CAT";
+        else if (_selectedZone == "all" && _selectedRegion == "1")
+            return "ORDER BY zone_name_eng";
+        else if (_selectedRegion == "1" || _selectedRegion == "all")
+            return "ORDER BY zone_name_eng, region_name";
+        else
+            return "ORDER BY zone_name_eng, region_name, BRANCH_NAME";
+    }
+
+    private bool IsSummaryMode()
+    {
+        return _selectedZone == "1" ||
+               (_selectedZone == "all" && _selectedRegion == "1") ||
+               (_selectedZone == "all" && _selectedRegion == "all" && _selectedBranch == "1") ||
+               (_selectedZone != "1" && _selectedZone != "all" && _selectedRegion == "1") ||
+               (_selectedZone != "1" && _selectedZone != "all" && _selectedRegion == "all" && _selectedBranch == "1") ||
+               (_selectedRegion != "1" && _selectedRegion != "all" && _selectedBranch == "1");
+    }
+
+    private async Task<string> GetAsOnDateAsync()
+    {
+        try
+        {
+            var dateQuery = "SELECT CONVERT(varchar, MAX(DataAson), 103) as AsOnDate FROM Footfall_New WHERE 1=1";
+            var result = await ReportService.ExecuteRawQueryAsync(dateQuery);
+
+            if (result.Any() && result[0].ContainsKey("AsOnDate") && result[0]["AsOnDate"] != null)
+            {
+                return result[0]["AsOnDate"]?.ToString() ?? "";
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Error getting as on date: {ex.Message}");
+        }
+
+        return "";
+    }
+
+    private async Task OnExport()
+    {
+        try
+        {
+            var exportData = new List<Dictionary<string, object>>();
+            int sno = 1;
+
+            foreach (var row in _data)
+            {
+                var exportRow = new Dictionary<string, object>(row);
+                exportRow["SerialNo"] = sno.ToString();
+                exportData.Add(exportRow);
+                sno++;
+            }
+
+            var fileName = $"FootfallAnalysis_{AppTime.Now:yyyyMMddHHmmss}.xlsx";
+            var bytes = ReportService.ExportToExcel(exportData, GetExportColumns(), fileName);
+
+            await JS.InvokeVoidAsync("BlazorDownloadFile", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+
+            Snackbar.Add("Export completed successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Export error: {ex.Message}");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    // ===== Checkbox handlers (both bool and bool? signatures for safety) =====
+    private void OnCASAChanged(bool value)
+    {
+        _showCASA = value;
+        StateHasChanged();
+        // If you want to reload data on toggle, uncomment:
+        // _ = LoadReport();
+    }
+    private void OnCASAChanged(bool? value) => OnCASAChanged(value ?? false);
+
+    private void OnChqLocDDChanged(bool value)
+    {
+        _showChqLocDD = value;
+        StateHasChanged();
+        // _ = LoadReport();
+    }
+    private void OnChqLocDDChanged(bool? value) => OnChqLocDDChanged(value ?? false);
+
+    private void OnCRCPChanged(bool value)
+    {
+        _showCRCP = value;
+        StateHasChanged();
+        // _ = LoadReport();
+    }
+    private void OnCRCPChanged(bool? value) => OnCRCPChanged(value ?? false);
+    // ========================================================================
+
+    // Export columns configuration - dynamically built based on visible columns
+    private List<ColumnConfig> GetExportColumns()
+    {
+        var cols = new List<ColumnConfig>
+        {
+            new ColumnConfig { Header = "S No.", PropertyName = "SerialNo" },
+            new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng" },
+            new ColumnConfig { Header = "Region", PropertyName = "region_name" },
+            new ColumnConfig { Header = "Branch", PropertyName = "BRANCH_NAME" }
+        };
+
+        if (_userPrivilege == "BRANCH")
+        {
+            cols.Add(new ColumnConfig { Header = "SolID", PropertyName = "branchsol" });
+        }
+
+        cols.Add(new ColumnConfig { Header = "Branch Category", PropertyName = "BRANCH_CAT" });
+
+        if (_showCASA)
+        {
+            cols.Add(new ColumnConfig { Header = "ACs Opened", PropertyName = "ACCS_OPENED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "ACs Closed", PropertyName = "ACCS_CLOSED", IsNumeric = true, Format = "N0" });
+        }
+
+        if (_showCRCP)
+        {
+            cols.Add(new ColumnConfig { Header = "Cash Deposit Txns", PropertyName = "CASH_DEPOSIT_TXNS", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "Cash Withdrawal Txns", PropertyName = "CASH_WITHDRAWAL_TXNS", IsNumeric = true, Format = "N0" });
+        }
+
+        if (_showChqLocDD)
+        {
+            cols.Add(new ColumnConfig { Header = "PB/Stmt Printed", PropertyName = "PB_STMT_PRINTED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "Re-KYC", PropertyName = "REKYC", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "Debit Cards Issued", PropertyName = "DEBIT_CARD_ISSUED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "PPF ACs Opened", PropertyName = "PPF_ACCS_OPENED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "SSA ACs Opened", PropertyName = "SSA_ACCS_OPENED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "SCSS ACs Opened", PropertyName = "SCSS_ACCS_OPENED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "KVP ACs Opened", PropertyName = "KVP_ACCS_OPENED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "MSSC ACs Opened", PropertyName = "MSSC_ACCS_OPENED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "Form 15G/H", PropertyName = "FORM_15G_15H", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "Locker Operated", PropertyName = "LOCKER_OPERATED", IsNumeric = true, Format = "N0" });
+            cols.Add(new ColumnConfig { Header = "Nomination Updated", PropertyName = "NOMINATION_UPDATED", IsNumeric = true, Format = "N0" });
+        }
+
+        cols.Add(new ColumnConfig { Header = "Total Transactions", PropertyName = "TOTAL_TRANSACTIONS", IsNumeric = true, Format = "N0" });
+        cols.Add(new ColumnConfig { Header = "Avg. Footfall", PropertyName = "AVG_FOOTFALL", IsNumeric = true, Format = "N0" });
+
+        return cols;
+    }
+
+    // Helper methods
+    private string GetValue(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var v) && v != null && v != DBNull.Value)
+            return v.ToString()!;
+        return "-";
+    }
+
+    private string FormatNumber(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var v) || v == null || v == DBNull.Value)
+            return "-";
+
+        if (decimal.TryParse(v.ToString(), out var d))
+            return d.ToString("N0");
+
+        return v.ToString()!;
+    }
+}

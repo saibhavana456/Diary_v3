@@ -1,0 +1,143 @@
+@page "/branch-visit-dashboard"
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@using Microsoft.JSInterop
+@inject IRoVisitRepo RoVisitRepo
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>RAH: Branch Visit Tracking</PageTitle>
+<PageHeader PageKey="branch-visit-dashboard" Title="RAH: Branch Visit Tracking"
+            Subtitle="Zone/Region/Branch-wise visibility of RAH Branch Visit Reports — saved (draft) vs submitted."
+            Crumbs="_crumbs" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="3">
+            <MudTextField T="string" Label="Zone" @bind-Value="_filter.ZoneName" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudTextField T="string" Label="Branch (SOL ID)" @bind-Value="_filter.RegionSolId" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudDatePicker Label="From (Date of Visit)" @bind-Date="_filter.FromDate" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudDatePicker Label="To (Date of Visit)" @bind-Date="_filter.ToDate" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" Class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="ApplyFilterAsync">Apply</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="ClearFilterAsync">Clear</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6">
+        <MudPaper Class="pa-4 rovisit-stat" Style="cursor:pointer;" @onclick="@(() => ShowList(false))" Elevation="@(_showSubmitted == false ? 4 : 1)">
+            <MudText Typo="Typo.h4" Color="Color.Warning">@_counts.TotalDraft</MudText>
+            <MudText Typo="Typo.body2">Saved (Draft) Reports</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudPaper Class="pa-4 rovisit-stat" Style="cursor:pointer;" @onclick="@(() => ShowList(true))" Elevation="@(_showSubmitted == true ? 4 : 1)">
+            <MudText Typo="Typo.h4" Color="Color.Success">@_counts.TotalSubmitted</MudText>
+            <MudText Typo="Typo.body2">Submitted Reports</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_showSubmitted.HasValue)
+{
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2">@(_showSubmitted == true ? "Submitted" : "Saved (Draft)") Reports</MudText>
+        @if (_list.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No reports match this filter.</MudAlert>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <MudTable Items="_list" Dense="true" Hover="true" Bordered="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Branch</MudTh><MudTh>Zone</MudTh><MudTh>Visiting Official</MudTh>
+                        <MudTh>Date of Visit</MudTh><MudTh>Status</MudTh><MudTh>@(_showSubmitted == true ? "Submitted At" : "Last Saved")</MudTh><MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.RegionName (@context.RegionSolId)</MudTd>
+                        <MudTd>@context.ZoneName</MudTd>
+                        <MudTd>@context.VisitingOfficialName</MudTd>
+                        <MudTd>@(context.DateOfVisit?.ToString("dd-MMM-yyyy"))</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small" Color="@(context.IsSubmitted ? Color.Success : Color.Warning)">
+                                @(context.IsSubmitted ? "Submitted" : "Draft")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>@((context.IsSubmitted ? context.SubmittedAt : context.SavedAt)?.ToString("dd-MMM-yyyy HH:mm"))</MudTd>
+                        <MudTd>
+                            @if (context.IsSubmitted)
+                            {
+                                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                                           OnClick="@(() => DownloadSubmittedPdf(context.SubmittedId!.Value, context.RegionSolId))">PDF</MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Edit"
+                                           OnClick="@(() => Nav.NavigateTo($"branch-visit-report/{context.Id}"))">Open</MudButton>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        }
+    </MudPaper>
+}
+
+<style>
+    .rovisit-stat { text-align: center; transition: box-shadow .15s; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("RAH: Branch Visit Tracking") };
+
+    private RoVisitDashboardFilter _filter = new() { ReportType = "BRANCH_VISIT" };
+    private RoVisitDashboardCounts _counts = new();
+    private List<RoVisitSummary> _list = new();
+    private bool? _showSubmitted;
+
+    protected override async Task OnInitializedAsync() => await ApplyFilterAsync();
+
+    private async Task ApplyFilterAsync()
+    {
+        _counts = await RoVisitRepo.GetDashboardCountsAsync(_filter);
+        if (_showSubmitted.HasValue) await ReloadListAsync();
+    }
+
+    private async Task ClearFilterAsync()
+    {
+        _filter = new RoVisitDashboardFilter { ReportType = "BRANCH_VISIT" };
+        await ApplyFilterAsync();
+    }
+
+    private async Task ShowList(bool submitted)
+    {
+        _showSubmitted = submitted;
+        await ReloadListAsync();
+    }
+
+    private async Task ReloadListAsync()
+        => _list = (await RoVisitRepo.ListDashboardAsync(_filter, _showSubmitted)).ToList();
+
+    private async Task DownloadSubmittedPdf(long submittedId, string branchSolId)
+    {
+        var bytes = await RoVisitRepo.GetSubmittedPdfAsync(submittedId);
+        if (bytes is null) { Snackbar.Add("PDF not found for this submission.", Severity.Warning); return; }
+
+        using var stream = new MemoryStream(bytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        await JS.InvokeVoidAsync("focus360DownloadStream", $"Branch_Visit_Report_{branchSolId}.pdf", streamRef);
+    }
+}

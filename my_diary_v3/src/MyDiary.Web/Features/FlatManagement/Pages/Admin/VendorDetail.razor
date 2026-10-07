@@ -1,0 +1,221 @@
+@page "/flatmgmt/admin/vendor-detail"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminVendorDetailService VendorDetailService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Add Vendor - Flat Management System</PageTitle>
+
+<div class="avd-page">
+    <a href="flatmgmt/admin/users" class="avd-back">&laquo; Back to Admin Management</a>
+
+    <PageHeader Title="Add Vendor" Crumbs="_crumbs" PageKey="flatmgmt-admin-vendor-detail" />
+
+    @if (loadError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">@loadError</MudAlert>
+    }
+    else
+    {
+        <MudCard Class="avd-card mt-4" Elevation="2">
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="vendorName" Label="Vendor Name*" Variant="Variant.Outlined" MaxLength="200" Required="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="spocName" Label="SPOC Name*" Variant="Variant.Outlined" MaxLength="100" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="vendorMobile" Label="Vendor Mobile Number*" Variant="Variant.Outlined" MaxLength="100" Required="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="spocMobile" Label="SPOC Mobile No*" Variant="Variant.Outlined" MaxLength="100" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="vendorEmail" Label="Vendor Email Id*" Variant="Variant.Outlined" MaxLength="100" Required="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="spocEmail" Label="SPOC Email Id*" Variant="Variant.Outlined" MaxLength="100" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="vendorGst" Label="Vendor GST Code*" Variant="Variant.Outlined" MaxLength="100" Required="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" @bind-Value="status" Label="Status*" Variant="Variant.Outlined" Required="true">
+                            <MudSelectItem Value="@("Active")">Active</MudSelectItem>
+                            <MudSelectItem Value="@("Inactive")">Inactive</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="vendorAddress" Label="Address" Variant="Variant.Outlined" Lines="3" MaxLength="500" />
+                    </MudItem>
+                </MudGrid>
+
+                <div class="avd-actions">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isSaving" OnClick="HandleSave">
+                        @(isSaving ? "Saving..." : "Save Vendor")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Class="ml-2" Disabled="@isSaving" OnClick="HandleReset">
+                        Reset
+                    </MudButton>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="avd-modal-overlay" @onclick="() => message = null">
+            <div class="avd-modal @(isError ? "avd-modal-error" : "avd-modal-success")" @onclick:stopPropagation="true">
+                <div class="avd-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="avd-modal-text">@message</p>
+                <button type="button" class="avd-btn @(isError ? "avd-btn-secondary" : "avd-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Add Vendor") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery(Name = "vendorId")]
+    public string? VendorId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "type")]
+    public string? Type { get; set; }
+
+    private string adminPfNo = "";
+    private string? loadError;
+    private string? currentVendorId;
+
+    private string vendorName = "";
+    private string vendorMobile = "";
+    private string vendorAddress = "";
+    private string vendorEmail = "";
+    private string vendorGst = "";
+    private string spocName = "";
+    private string spocMobile = "";
+    private string spocEmail = "";
+    private string status = "Active";
+
+    private bool isSaving;
+    private string? message;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        if (!string.Equals(Type, "vendor", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(VendorId))
+        {
+            loadError = "Vendor Not Found.";
+            return;
+        }
+
+        var vendor = await VendorDetailService.GetVendorByIdAsync(VendorId.Trim());
+        if (vendor is not null)
+        {
+            currentVendorId = vendor.VendorId;
+            vendorName = vendor.VendorName ?? "";
+            vendorMobile = vendor.VendorMobile ?? "";
+            vendorAddress = vendor.VendorAddress ?? "";
+            vendorEmail = vendor.VendorEmail ?? "";
+            vendorGst = vendor.VendorGst ?? "";
+            spocName = vendor.SpocName ?? "";
+            spocMobile = vendor.SpocMobile ?? "";
+            spocEmail = vendor.SpocEmail ?? "";
+            status = vendor.Status ?? "Active";
+        }
+            }
+
+    private async Task HandleSave()
+    {
+        message = null;
+
+        if (string.IsNullOrWhiteSpace(vendorName)) { ShowError("Enter Vendor Name"); return; }
+        if (string.IsNullOrWhiteSpace(vendorMobile)) { ShowError("Enter Vendor Mobile"); return; }
+        if (System.Text.RegularExpressions.Regex.Replace(vendorMobile, @"\D", "").Length < 10) { ShowError("Enter a valid Vendor Mobile"); return; }
+        if (string.IsNullOrWhiteSpace(vendorEmail)) { ShowError("Enter Vendor Email"); return; }
+        if (!IsLikelyEmail(vendorEmail)) { ShowError("Enter a valid Vendor Email"); return; }
+        if (string.IsNullOrWhiteSpace(vendorGst)) { ShowError("Enter Vendor GST Code"); return; }
+        if (string.IsNullOrWhiteSpace(spocName)) { ShowError("Enter SPOC Name"); return; }
+        if (string.IsNullOrWhiteSpace(spocMobile)) { ShowError("Enter SPOC Mobile"); return; }
+        if (System.Text.RegularExpressions.Regex.Replace(spocMobile, @"\D", "").Length < 10) { ShowError("Enter a valid SPOC Mobile"); return; }
+        if (string.IsNullOrWhiteSpace(spocEmail)) { ShowError("Enter SPOC Email"); return; }
+        if (!IsLikelyEmail(spocEmail)) { ShowError("Enter a valid SPOC Email"); return; }
+        if (string.IsNullOrWhiteSpace(status)) { ShowError("Select Status"); return; }
+
+        if (vendorName.Length > 200) { ShowError("Vendor Name max 200 chars."); return; }
+        if ((vendorAddress ?? "").Length > 500) { ShowError("Address max 500 chars."); return; }
+        if (vendorMobile.Length > 200) { ShowError("Vendor Mobile max 200 chars."); return; }
+        if (vendorGst.Length > 200) { ShowError("GSTIN max 200 chars."); return; }
+        if (vendorEmail.Length > 200) { ShowError("Vendor Email max 200 chars."); return; }
+        if (spocName.Length > 200) { ShowError("SPOC Name max 200 chars."); return; }
+        if (spocMobile.Length > 200) { ShowError("SPOC Mobile max 200 chars."); return; }
+        if (spocEmail.Length > 200) { ShowError("SPOC Email max 200 chars."); return; }
+
+        isSaving = true;
+        try
+        {
+            var request = new AdminVendorSaveRequest(
+                VendorId: currentVendorId,
+                VendorName: vendorName.Trim(),
+                VendorMobile: vendorMobile.Trim(),
+                VendorAddress: string.IsNullOrWhiteSpace(vendorAddress) ? null : vendorAddress.Trim(),
+                VendorGst: vendorGst.Trim(),
+                VendorEmail: vendorEmail.Trim(),
+                SpocName: spocName.Trim(),
+                SpocMobile: spocMobile.Trim(),
+                SpocEmail: spocEmail.Trim(),
+                Status: status,
+                EnteredBy: adminPfNo);
+
+            var result = await VendorDetailService.SaveVendorAsync(request);
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Error while saving vendor.");
+                return;
+            }
+            ShowSuccess("Vendor saved successfully.");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void HandleReset()
+    {
+        vendorName = "";
+        vendorMobile = "";
+        vendorAddress = "";
+        vendorEmail = "";
+        vendorGst = "";
+        spocName = "";
+        spocMobile = "";
+        spocEmail = "";
+        status = "Active";
+    }
+
+    private static bool IsLikelyEmail(string email) =>
+        System.Text.RegularExpressions.Regex.IsMatch(email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

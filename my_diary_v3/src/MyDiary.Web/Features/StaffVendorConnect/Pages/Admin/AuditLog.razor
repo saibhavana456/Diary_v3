@@ -1,0 +1,88 @@
+@page "/svc/admin/audit"
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject IStaffVendorConnectService SvcService
+
+<PageTitle>Change Audit Log - Staff and Vendor Connect</PageTitle>
+
+<AppAdminOnly>
+
+<PageHeader Title="Change Audit Log" Subtitle="Who created or changed which vendor category, and what changed." Crumbs="_crumbs" PageKey="svc-audit-log" />
+
+@if (_loadingCategories)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudGrid>
+            <MudItem xs="12" sm="4" md="3">
+                <MudSelect T="string" @bind-Value="_categoryCode" Label="Category" Variant="Variant.Outlined" @bind-Value:after="ReloadAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var c in _categories)
+                    {
+                        <MudSelectItem T="string" Value="@c.CategoryCode">@c.CategoryName</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudTable Items="@_entries" Hover="true" Dense="true" Bordered="true" RowsPerPage="25">
+        <HeaderContent>
+            <MudTh>When</MudTh>
+            <MudTh>Category</MudTh>
+            <MudTh>Record</MudTh>
+            <MudTh>Action</MudTh>
+            <MudTh>Field</MudTh>
+            <MudTh>Old Value</MudTh>
+            <MudTh>New Value</MudTh>
+            <MudTh>Changed By</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.ChangedAt.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+            <MudTd>@context.CategoryCode</MudTd>
+            <MudTd>#@context.RecordId</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="@ActionColor(context.ActionType)">@context.ActionType</MudChip></MudTd>
+            <MudTd>@context.FieldKey</MudTd>
+            <MudTd>@context.OldValue</MudTd>
+            <MudTd>@context.NewValue</MudTd>
+            <MudTd>@context.ChangedBy</MudTd>
+        </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" /></PagerContent>
+    </MudTable>
+}
+
+</AppAdminOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"), new("Change Audit Log") };
+    private bool _loadingCategories = true;
+    private List<SvcCategory> _categories = new();
+    private List<SvcAuditEntry> _entries = new();
+    private string? _categoryCode;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await SvcService.GetCategoriesAsync("EXTERNAL");
+        _loadingCategories = false;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _entries = await SvcService.GetAuditLogAsync(_categoryCode, null, null);
+        StateHasChanged();
+    }
+
+    private static Color ActionColor(string action) => action switch
+    {
+        "CREATE" => Color.Success,
+        "UPDATE" => Color.Info,
+        "DEACTIVATE" => Color.Error,
+        "REACTIVATE" => Color.Success,
+        _ => Color.Default
+    };
+}

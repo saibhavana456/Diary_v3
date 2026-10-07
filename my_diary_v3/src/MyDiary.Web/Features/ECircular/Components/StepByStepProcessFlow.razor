@@ -1,0 +1,144 @@
+@page "/knowledge-hub/process-flow"
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@layout MyDiary.Web.Components.Layout.MainLayout
+
+<PageTitle>Step by Step Process Flow — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    .kh-container { padding: 20px 24px 40px; }
+
+    .kh-flow-search { max-width: 380px; }
+
+    .kh-flow-card {
+        border-radius: 14px !important;
+        border: 1px solid #eef0f4 !important;
+        box-shadow: 0 2px 8px rgba(17,24,39,0.06) !important;
+        transition: box-shadow .2s ease, border-color .2s ease;
+    }
+
+        .kh-flow-card:hover {
+            border-color: rgba(30,58,138,0.25) !important;
+            box-shadow: 0 10px 24px rgba(17,24,39,0.10) !important;
+        }
+
+    .kh-step-num {
+        width: 34px; height: 34px; border-radius: 50%;
+        background: var(--rp-grad, linear-gradient(135deg,#1E3A8A,#EF4444));
+        color: #fff; font-weight: 800; font-size: 14px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+</style>
+
+@* <div class="kh-container"> *@
+    <PageHeader Title="Step by Step Process Flow"
+                Subtitle="Guided, numbered walkthroughs for common banking operations and internal processes"
+                PageKey="knowledge-hub-process-flow"
+                Crumbs="_crumbs" />
+
+    <MudPaper Elevation="0" Class="pa-4 mt-4 mb-4" Style="border-radius:12px; border:1px solid #eef0f4;">
+        <MudTextField @bind-Value="_search" Placeholder="Search process flows..."
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Class="kh-flow-search" />
+    </MudPaper>
+
+    <MudGrid Spacing="3">
+        @foreach (var flow in FilteredFlows)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard Class="kh-flow-card" Elevation="0">
+                    <MudCardContent>
+                        <div class="d-flex align-center gap-2 mb-2">
+                            <MudIcon Icon="@flow.Icon" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6" Style="font-weight:700;">@flow.Title</MudText>
+                            <MudSpacer />
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">@flow.Category</MudChip>
+                        </div>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">@flow.Description</MudText>
+
+                        <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mt-2">
+                            @for (var i = 0; i < flow.Steps.Count; i++)
+                            {
+                                var idx = i;
+                                <MudTimelineItem Color="Color.Primary" Variant="Variant.Filled">
+                                    <ItemContent>
+                                        <div class="d-flex align-start gap-3">
+                                            <div class="kh-step-num">@(idx + 1)</div>
+                                            <MudText Typo="Typo.body2">@flow.Steps[idx]</MudText>
+                                        </div>
+                                    </ItemContent>
+                                </MudTimelineItem>
+                            }
+                        </MudTimeline>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+
+    @if (!FilteredFlows.Any())
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">No process flows match your search.</MudAlert>
+    }
+@* </div> *@
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Knowledge Hub"),
+        new("Step by Step Process Flow"),
+    };
+
+    private string _search = "";
+
+    private sealed record FlowItem(string Title, string Category, string Description, string Icon, List<string> Steps);
+
+    // Sample/placeholder content — replace with real DB-driven content when available.
+    private readonly List<FlowItem> _flows = new()
+    {
+        new("New Account Opening", "Operations", "End-to-end steps for opening a new savings/current account at the branch.",
+            Icons.Material.Filled.AccountBalance,
+            new() {
+                "Collect and verify customer KYC documents (ID, address proof, photograph).",
+                "Complete the account opening form (physical or digital) with customer details.",
+                "Run the customer through CKYC / AML screening in Finacle.",
+                "Capture biometric/e-signature and initial deposit.",
+                "Generate account number, welcome kit and activate net/mobile banking on request."
+            }),
+        new("Cheque Book Issuance", "Operations", "Process to issue a new cheque book against a customer request.",
+            Icons.Material.Filled.Book,
+            new() {
+                "Receive request via branch, ATM, net banking or IVR.",
+                "Validate account status (active, no freeze/lien) in Finacle.",
+                "Route the request to the chequebook printing vendor via CBO/SFTP.",
+                "Track dispatch status and update Chequebook Tracking report.",
+                "Confirm delivery / acknowledge collection at the branch."
+            }),
+        new("Locker Allotment", "Branch Info", "Standard workflow to allot a bank locker to an eligible customer.",
+            Icons.Material.Filled.Lock,
+            new() {
+                "Check locker vacancy for the branch (Lockers Vacancy report).",
+                "Verify customer eligibility and collect locker agreement + nomination.",
+                "Collect applicable rent/security deposit.",
+                "Allot locker number and issue keys / update the locker register.",
+                "Update the core system and file the signed agreement."
+            }),
+        new("Grievance Escalation", "Complaints", "How a customer complaint moves from branch to zonal resolution.",
+            Icons.Material.Filled.ReportProblem,
+            new() {
+                "Log the complaint at the branch / call centre / ZOHO CRM.",
+                "Branch attempts first-level resolution within SLA.",
+                "If unresolved, auto-escalate to the Regional Office contact.",
+                "RO reviews and either resolves or escalates further to Zonal Office.",
+                "Closure communicated to customer with resolution summary."
+            }),
+    };
+
+    private IEnumerable<FlowItem> FilteredFlows => _flows
+        .Where(f => string.IsNullOrWhiteSpace(_search)
+                 || f.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                 || f.Category.Contains(_search, StringComparison.OrdinalIgnoreCase));
+}

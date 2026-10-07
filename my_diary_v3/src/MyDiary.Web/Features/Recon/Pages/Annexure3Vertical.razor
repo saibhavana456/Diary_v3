@@ -1,0 +1,182 @@
+@page "/recon/annexure3/vertical"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using System.Globalization
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@using MyDiary.Web.Features.Recon.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IReconAnnexure3Service ReconService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Annexure 3 — Vertical Monthly Report</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudText Typo="Typo.h5" Class="mb-1">Annexure 3 — Monthly Report</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+        Reporting Month: @_entry.ReportYear - @_entry.ReportMonth
+    </MudText>
+
+    @if (_alreadySubmitted)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-3">
+            Data has already been submitted for the month @_entry.ReportYear - @_entry.ReportMonth. Entry is not allowed.
+        </MudAlert>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                   Disabled="_downloading" OnClick="DownloadPdf">
+            @(_downloading ? "Generating..." : "Download PDF")
+        </MudButton>
+    }
+    else
+    {
+        @foreach (var g in _groups)
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="1">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">@g.Title (Rs. in lakhs)</MudText>
+                <MudGrid>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.Upto3MEntries" Label="Upto 3M — Entries" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.Upto3MAmount" Label="Upto 3M — Amount" Format="N3" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.Three6MEntries" Label="3-6M — Entries" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.Three6MAmount" Label="3-6M — Amount" Format="N3" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.Over6MEntries" Label="Over 6M — Entries" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.Over6MAmount" Label="Over 6M — Amount" Format="N3" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.NewOver6MEntries" Label="New Over 6M — Entries" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="g.NewOver6MAmount" Label="New Over 6M — Amount" Format="N3" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="g.Reason" Label="Reason" Lines="2" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="g.Efforts" Label="Efforts Taken" Lines="2" Variant="Variant.Outlined" /></MudItem>
+                </MudGrid>
+            </MudPaper>
+        }
+
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="_submitting" OnClick="Submit">
+            @(_submitting ? "Submitting..." : "Submit")
+        </MudButton>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private bool _submitting;
+    private bool _downloading;
+    private bool _alreadySubmitted;
+    private string _empId = "", _vertical = "";
+    private ReconAnnexure3 _entry = new();
+
+    private sealed class FieldGroup
+    {
+        public string Title { get; set; } = "";
+        public long? Upto3MEntries { get; set; }
+        public decimal? Upto3MAmount { get; set; }
+        public long? Three6MEntries { get; set; }
+        public decimal? Three6MAmount { get; set; }
+        public long? Over6MEntries { get; set; }
+        public decimal? Over6MAmount { get; set; }
+        public long? NewOver6MEntries { get; set; }
+        public decimal? NewOver6MAmount { get; set; }
+        public string? Reason { get; set; }
+        public string? Efforts { get; set; }
+    }
+
+    private List<FieldGroup> _groups = new()
+    {
+        new() { Title = "Sundry" }, new() { Title = "Suspense" }, new() { Title = "POB" }, new() { Title = "Inter-Bank (IBK)" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _empId = user.FindFirst("emplid")?.Value ?? "";
+        // Vertical/CO code — mirrors the source app's userDetails.location_code (the CO employee's own
+        // organisational-unit code, resolved server-side the same way branch_solid is for branch staff).
+        _vertical = user.FindFirst("branch_solid")?.Value ?? "";
+
+        _entry.ReportMonth = DateTime.Now.AddMonths(-1).ToString("MMMM", CultureInfo.InvariantCulture);
+        _entry.ReportYear = DateTime.Now.AddMonths(-1).ToString("yyyy", CultureInfo.InvariantCulture);
+        _entry.Vertical = _vertical;
+
+        _alreadySubmitted = await ReconService.IsAlreadySubmittedAsync(_empId, _vertical, _entry.ReportMonth, _entry.ReportYear);
+        _loading = false;
+    }
+
+    private void ApplyGroupsBack()
+    {
+        var sun = _groups[0]; var sus = _groups[1]; var pob = _groups[2]; var ibk = _groups[3];
+
+        _entry.SunUpto3MEntries = sun.Upto3MEntries; _entry.SunUpto3MAmount = sun.Upto3MAmount;
+        _entry.SunThree6MEntries = sun.Three6MEntries; _entry.SunThree6MAmount = sun.Three6MAmount;
+        _entry.SunOver6MEntries = sun.Over6MEntries; _entry.SunOver6MAmount = sun.Over6MAmount;
+        _entry.SunNewOver6MEntries = sun.NewOver6MEntries; _entry.SunNewOver6MAmount = sun.NewOver6MAmount;
+        _entry.SunReason = sun.Reason; _entry.SunEfforts = sun.Efforts;
+
+        _entry.SusUpto3MEntries = sus.Upto3MEntries; _entry.SusUpto3MAmount = sus.Upto3MAmount;
+        _entry.SusThree6MEntries = sus.Three6MEntries; _entry.SusThree6MAmount = sus.Three6MAmount;
+        _entry.SusOver6MEntries = sus.Over6MEntries; _entry.SusOver6MAmount = sus.Over6MAmount;
+        _entry.SusNewOver6MEntries = sus.NewOver6MEntries; _entry.SusNewOver6MAmount = sus.NewOver6MAmount;
+        _entry.SusReason = sus.Reason; _entry.SusEfforts = sus.Efforts;
+
+        _entry.PobUpto3MEntries = pob.Upto3MEntries; _entry.PobUpto3MAmount = pob.Upto3MAmount;
+        _entry.PobThree6MEntries = pob.Three6MEntries; _entry.PobThree6MAmount = pob.Three6MAmount;
+        _entry.PobOver6MEntries = pob.Over6MEntries; _entry.PobOver6MAmount = pob.Over6MAmount;
+        _entry.PobNewOver6MEntries = pob.NewOver6MEntries; _entry.PobNewOver6MAmount = pob.NewOver6MAmount;
+        _entry.PobReason = pob.Reason; _entry.PobEfforts = pob.Efforts;
+
+        _entry.IbkUpto3MEntries = ibk.Upto3MEntries; _entry.IbkUpto3MAmount = ibk.Upto3MAmount;
+        _entry.IbkThree6MEntries = ibk.Three6MEntries; _entry.IbkThree6MAmount = ibk.Three6MAmount;
+        _entry.IbkOver6MEntries = ibk.Over6MEntries; _entry.IbkOver6MAmount = ibk.Over6MAmount;
+        _entry.IbkNewOver6MEntries = ibk.NewOver6MEntries; _entry.IbkNewOver6MAmount = ibk.NewOver6MAmount;
+        _entry.IbkReason = ibk.Reason; _entry.IbkEfforts = ibk.Efforts;
+    }
+
+    private async Task Submit()
+    {
+        ApplyGroupsBack();
+        _submitting = true;
+        try
+        {
+            await ReconService.SubmitAsync(_empId, _entry);
+            Snackbar.Add("Submitted successfully!", Severity.Success);
+            _alreadySubmitted = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Submission failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task DownloadPdf()
+    {
+        _downloading = true;
+        try
+        {
+            var submitted = await ReconService.GetSubmittedAsync(_empId, _vertical, _entry.ReportMonth, _entry.ReportYear);
+            if (submitted is null)
+            {
+                Snackbar.Add("No submitted record found.", Severity.Warning);
+                return;
+            }
+            var bytes = ReconPdfExportService.GenerateAnnexure3Pdf(submitted, _vertical);
+            var fileName = $"Annexure3_{_vertical}_{_entry.ReportMonth}{_entry.ReportYear}.pdf";
+            await JS.InvokeVoidAsync("appDownloadFile", fileName, Convert.ToBase64String(bytes), "application/pdf");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"PDF generation failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _downloading = false;
+        }
+    }
+}

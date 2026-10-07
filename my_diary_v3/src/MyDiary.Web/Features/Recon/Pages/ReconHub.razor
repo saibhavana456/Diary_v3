@@ -1,0 +1,133 @@
+@page "/recon/hub"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using global::RequestPortal.Core.Abstractions
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IReconRbacService ReconRbacService
+
+<PageTitle>Recon Certificates - My Diary</PageTitle>
+
+<PageHeader Title="Recon Certificates" Subtitle="Reconciliation certificates — Annexure 3/4/5/6 — Branch to RO to ZO to Vertical (CO)." Crumbs="_crumbs" PageKey="recon-hub" />
+
+@if (_loading)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+else
+{
+    @if (_isBranch)
+    {
+        <div class="recon-hub-section-heading">BRANCH</div>
+        <div class="recon-hub-grid mb-6">
+            <div class="recon-hub-card" @onclick="@(() => Nav.NavigateTo("recon/annexure4/branch"))">
+                <MudIcon Icon="@Icons.Material.Filled.NoteAdd" Class="recon-hub-card-icon" />
+                <div class="recon-hub-card-title">Annexure 4 — Branch Entry</div>
+                <div class="recon-hub-card-desc">Inter-Branch / Sundry / Suspense / POB reconciliation certificate.</div>
+            </div>
+        </div>
+    }
+
+    @if (_isRo)
+    {
+        <div class="recon-hub-section-heading">REGIONAL OFFICE</div>
+        <div class="recon-hub-grid mb-6">
+            <div class="recon-hub-card" @onclick="@(() => Nav.NavigateTo("recon/annexure4/ro"))">
+                <MudIcon Icon="@Icons.Material.Filled.Inbox" Class="recon-hub-card-icon" />
+                <div class="recon-hub-card-title">Annexure 4 — RO Consolidation</div>
+                <div class="recon-hub-card-desc">Review branch submissions and forward the consolidated certificate to the RO Checker.</div>
+            </div>
+            <div class="recon-hub-card" @onclick="@(() => Nav.NavigateTo("recon/annexure4/ro-checker"))">
+                <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="recon-hub-card-icon" />
+                <div class="recon-hub-card-title">Annexure 4 — RO Checker</div>
+                <div class="recon-hub-card-desc">Verify the consolidated certificate and forward it to ZO Operations.</div>
+            </div>
+        </div>
+    }
+
+    @if (_isZo)
+    {
+        <div class="recon-hub-section-heading">ZONAL OFFICE</div>
+        <div class="recon-hub-grid mb-6">
+            <div class="recon-hub-card" @onclick="@(() => Nav.NavigateTo("recon/annexure4/zo"))">
+                <MudIcon Icon="@Icons.Material.Filled.Inbox" Class="recon-hub-card-icon" />
+                <div class="recon-hub-card-title">Annexure 4 — ZO Consolidation</div>
+                <div class="recon-hub-card-desc">Review RO submissions and forward the zone-consolidated certificate to the ZO Checker.</div>
+            </div>
+            <div class="recon-hub-card" @onclick="@(() => Nav.NavigateTo("recon/annexure4/zo-checker"))">
+                <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="recon-hub-card-icon" />
+                <div class="recon-hub-card-title">Annexure 4 — ZO Checker</div>
+                <div class="recon-hub-card-desc">Verify the zone-consolidated certificate and forward it to Recon (final).</div>
+            </div>
+        </div>
+    }
+
+    @if (_isVertical)
+    {
+        <div class="recon-hub-section-heading">VERTICAL (CO)</div>
+        <div class="recon-hub-grid mb-6">
+            <div class="recon-hub-card" @onclick="@(() => Nav.NavigateTo("recon/annexure3/vertical"))">
+                <MudIcon Icon="@Icons.Material.Filled.NoteAdd" Class="recon-hub-card-icon" />
+                <div class="recon-hub-card-title">Annexure 3 — Monthly Report</div>
+                <div class="recon-hub-card-desc">Sundry / Suspense / POB / Inter-bank ageing certificate — one submission per month.</div>
+            </div>
+        </div>
+    }
+
+    <AuthorizeView Policy="AppAdmin">
+        <Authorized>
+            <MudDivider Class="mb-6" />
+            <div class="recon-hub-section-heading recon-hub-section-admin">
+                <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" Class="mr-1" />
+                ADMINISTRATION
+            </div>
+            <div class="recon-hub-grid">
+                <div class="recon-hub-card recon-hub-card-admin" @onclick="@(() => Nav.NavigateTo("recon/admin/recon-admins"))">
+                    <MudIcon Icon="@Icons.Material.Filled.ManageAccounts" Class="recon-hub-card-icon" />
+                    <div class="recon-hub-card-title">Recon Admin Allocation</div>
+                    <div class="recon-hub-card-desc">Assign/revoke the Recon Vertical User desk role and the Recon Admin.</div>
+                </div>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+}
+
+<style>
+    .recon-hub-section-admin { color: var(--rp-navy, #1E3A8A); display: flex; align-items: center; }
+    .recon-hub-card-admin { border-left: 3px solid var(--rp-navy, #1E3A8A); }
+    .recon-hub-section-heading { font-size: .8rem; font-weight: 700; letter-spacing: .06em; color: var(--mud-palette-text-secondary); margin-bottom: 12px; }
+    .recon-hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .recon-hub-card { cursor: pointer; border-radius: 12px; padding: 20px; background: #fff; border: 1px solid rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s; }
+    .recon-hub-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .mud-theme-dark .recon-hub-card, .cc-dark .recon-hub-card { background: #1c1f24; border-color: #2a2e35; }
+    .recon-hub-card-icon { font-size: 2rem; color: var(--mud-palette-primary); margin-bottom: 8px; }
+    .recon-hub-card-title { font-weight: 600; font-size: 1rem; margin-bottom: 4px; }
+    .recon-hub-card-desc { font-size: .82rem; opacity: .75; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Recon Certificates") };
+    private bool _loading = true;
+    private bool _isBranch, _isRo, _isZo, _isVertical;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        var roles = user.FindAll("rp_role").Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        _isBranch = roles.Contains("BranchUser") || roles.Contains("BranchHead");
+        _isRo = roles.Contains("RoUser") || roles.Contains("RoHead");
+        _isZo = roles.Contains("ZoUser") || roles.Contains("ZoHead");
+
+        var empId = user.FindFirst("emplid")?.Value ?? "";
+        _isVertical = !string.IsNullOrWhiteSpace(empId) && await ReconRbacService.IsReconVerticalUserAsync(empId);
+
+        // Fall back: if none of the attribute-derived roles matched (e.g. a Developer-Bypass test user
+        // with no HRMS row), show the Branch card so the feature is still reachable for a smoke test —
+        // same convention as BackDatedDepositsHub.
+        if (!_isBranch && !_isRo && !_isZo && !_isVertical) _isBranch = true;
+
+        _loading = false;
+    }
+}

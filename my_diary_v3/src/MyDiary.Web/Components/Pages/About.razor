@@ -1,0 +1,1091 @@
+﻿@page "/about"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@layout MyDiary.Web.Components.Layout.LandingLayout
+
+<PageTitle>About Us — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        --primary-color: #1E3A8A;
+        --secondary-color: #EF4444;
+    }
+
+    /* Standard Background Container matching Departments and Documents */
+    .main-content-container {
+        padding: 25px;
+        background: rgba(255,255,255,0.95);
+        min-height: 85vh;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+    }
+
+    /* Tab Navigation Styling from AboutUs.aspx */
+    .tabs-wrapper {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 12px;
+        padding: 12px 0;
+        margin-bottom: 30px;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tab-btn {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.08);
+        color: #1f2937;
+        padding: 10px 22px;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.25s ease;
+        flex-shrink: 0;
+    }
+
+        .tab-btn.active {
+            background: var(--primary-gradient);
+            color: #fff;
+            box-shadow: 0 10px 26px rgba(30,58,138,0.45);
+        }
+
+    /* Main Content Card */
+    .about-card {
+        background: white;
+        border-radius: 24px;
+        padding: 40px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+        animation: fadeIn 0.35s ease-in-out;
+    }
+    /* Three-column logo row with left, center, right alignment */
+    /* Three-column logo row with per-item caption */
+.logo-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr; /* 3 equal columns */
+    align-items: start;
+    gap: 0; /* adjust if you want spacing between the three */
+}
+
+.logo-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;     /* center the image within its column */
+    justify-content: start;
+}
+
+.logo-img {
+    height: 100px;           /* match your current inline style */
+    width: 300px;            /* match your current inline style */
+    object-fit: contain;
+}
+
+.logo-caption {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1f2937;          /* neutral dark */
+    text-align: center;
+}
+
+/* Responsive: stack vertically on narrow screens */
+@@media (max-width: 768px) {
+    .logo-row {
+        grid-template-columns: 1fr;
+        row-gap: 12px;
+        justify-items: center;
+    }
+}
+
+    .section-title {
+        font-size: 1.8rem;
+        font-weight: 700;
+        margin-bottom: 25px;
+        color: #111827;
+        padding-left: 16px;
+        position: relative;
+    }
+
+        .section-title::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 6px;
+            height: 70%;
+            width: 5px;
+            background: var(--primary-gradient);
+            border-radius: 6px;
+        }
+
+    /* Corporate Vision Styles */
+    .vision-card {
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 16px 30px rgba(0,0,0,0.12);
+        border: 1px solid #e5e7eb;
+    }
+
+    .vision-wrapper {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 35px;
+        align-items: center;
+    }
+    /* Vision quote styling */
+    /* Container remains the same from earlier */
+    .vision-quote-card {
+        position: relative;
+        background: #ffffff;
+        border-radius: 24px;
+        padding: 32px 36px; /* space inside the card */
+        box-shadow: 0 16px 34px rgba(0,0,0,0.12);
+        border: 1px solid #e5e7eb;
+    }
+
+    /* The paragraph itself is inline-block so ::after sits at true end */
+    .vision-quote {
+        display: inline-block; /* ensures ::after is at the end of last line */
+        margin: 0;
+        font-style: italic;
+        font-weight: 700;
+        font-size: clamp(1.4rem, 2.4vw + 0.6rem, 2.1rem);
+        line-height: 1.7;
+        color: #0f172a; /* slate-900 */
+        letter-spacing: 0.2px;
+        /* add breathing room so quotes don't collide with text */
+        padding: 0 0.1em;
+    }
+
+    /* Gradient accent on selected words */
+    .vision-quote-accent {
+        background: var(--primary-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    /* Decorative opening and closing quotes injected inline */
+    .vision-quote::before,
+    .vision-quote::after {
+        font-family: inherit;
+        font-weight: 800;
+        line-height: 1; /* crisp bounding box */
+        color: #ef5350; /* red accent close to your gradient */
+        /* Optional: gradient quotes – uncomment if you want gradient fill on the quotes too
+        background: var(--primary-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        */
+    }
+
+    /* Opening quote before the first character of the first line */
+    .vision-quote::before {
+        content: "“";
+        font-size: 1.4em; /* bigger than text for emphasis */
+        margin-right: 0.25em; /* spacing between quote and first word */
+        vertical-align: baseline; /* sits on the first line baseline */
+    }
+
+    /* Closing quote after the last character of the last line */
+    .vision-quote::after {
+        content: "”";
+        font-size: 1.4em;
+        margin-left: 0.25em; /* spacing between text and quote */
+        vertical-align: baseline; /* sits on the last line baseline */
+    }
+
+    /* Optional subtle bottom accent bar on the card */
+    .vision-quote-card::after {
+        content: "";
+        position: absolute;
+        left: 32px;
+        right: 32px;
+        bottom: 18px;
+        height: 4px;
+        background: linear-gradient(90deg, rgba(30,58,138,0.15) 0%, rgba(239,68,68,0.25) 100%);
+        border-radius: 999px;
+    }
+
+    /* Responsive padding (Razor: use @@media) */
+    @@media (max-width: 768px) {
+        .vision-quote-card {
+            padding: 24px 22px;
+            border-radius: 20px;
+        }
+    }
+
+    .vision-text {
+        font-size: 1.15rem;
+        line-height: 1.9;
+        color: #1f2937;
+        font-weight: 500;
+        position: relative;
+        padding-left: 30px;
+    }
+
+
+    .vision-image {
+        display: flex;
+        justify-content: flex-end; /* pushes image to right edge */
+    }
+
+
+        .vision-text::before {
+            position: absolute;
+            left: 0;
+            top: -8px;
+            font-size: 3.2rem;
+            color: var(--secondary-color);
+            font-weight: 700;
+        }
+
+    /* Award Styles */
+    .awards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 26px;
+    }
+
+    .award-card {
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 26px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 14px 30px rgba(0,0,0,0.12);
+        position: relative;
+        transition: transform 0.25s ease;
+    }
+
+        .award-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .award-card::before {
+            content: "🏆";
+            position: absolute;
+            top: -16px;
+            right: 22px;
+            font-size: 1.6rem;
+            background: #fff;
+            padding: 6px 10px;
+            border-radius: 50%;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.15);
+        }
+
+    .award-label {
+        font-size: 0.85rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--primary-color);
+        margin-bottom: 6px;
+    }
+
+    .award-text {
+        font-size: 0.98rem;
+        font-weight: 500;
+        color: #1f2937;
+        margin-bottom: 14px;
+    }
+
+    .award-list {
+        padding-left: 18px;
+        margin-bottom: 14px;
+        font-size: 0.95rem;
+        color: #374151;
+        line-height: 1.55;
+    }
+
+    /* Director Styles */
+    .wtd-item {
+        background: var(--primary-gradient);
+        border-radius: 18px;
+        padding: 18px 26px;
+        margin-bottom: 18px;
+        color: #fff;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 14px 32px rgba(30,58,138,0.35);
+    }
+
+    .wtd-name {
+        font-size: 1.05rem;
+        font-weight: 700;
+    }
+
+    .wtd-role {
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+
+    .wtd-content {
+        margin-top: 22px;
+        background: #ffffff;
+        border-radius: 18px;
+        padding: 26px;
+        color: #1f2937;
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        gap: 26px;
+        animation: fadeIn 0.35s ease-in-out;
+    }
+
+    .wtd-photo img {
+        width: 100%;
+        border-radius: 14px;
+        box-shadow: 0 10px 22px rgba(0,0,0,0.2);
+    }
+
+    @@keyframes fadeIn {
+        from
+
+    {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    }
+
+    @@media (max-width: 991px) {
+        .vision-wrapper, .wtd-content
+
+    {
+        grid-template-columns: 1fr;
+    }
+
+    }
+</style>
+
+<div class="main-content-container">
+    <div class="tabs-wrapper" role="tablist" aria-label="About Us sections">
+        @foreach (var tab in tabItems)
+        {
+            <button type="button" class="tab-btn @(activeTab == tab.Id ? "active" : "")" data-i18n="@($"TAB_{tab.Id.ToUpper()}")"
+                    role="tab"
+                    aria-selected="@(activeTab == tab.Id ? "true" : "false")"
+                    @onclick="() => SetActiveTab(tab.Id)">
+                @tab.Label
+            </button>
+        }
+    </div>
+
+    <div class="about-card">
+        @if (activeTab == "overview")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_OVERVIEW_TITLE"></div>
+
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height: 1.8;"
+                         data-i18n="ABOUT_OVERVIEW_PARA1">
+                </MudText>
+
+
+                    <br /><br />
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height: 1.8;"
+                         data-i18n="ABOUT_OVERVIEW_PARA2">
+                </MudText>
+                    <br /><br />
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height: 1.8;"
+                         data-i18n="ABOUT_OVERVIEW_PARA3">
+                </MudText>
+                    <br /><br />
+
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height: 1.8;"
+                         data-i18n="ABOUT_CORPORATE_OFFICE">
+                </MudText>
+
+
+                    <br /><br />
+
+                    <div class="section-title" style="font-size:1.25rem; margin-top:20px;" data-i18n="ABOUT_HISTORY_TITLE"></div>
+
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height:1.8;"
+                         data-i18n="ABOUT_HISTORY_CONTENT">
+                    
+                </MudText>
+
+
+                    <br /><br />
+
+                    <div class="section-title" style="font-size:1.25rem; margin-top:20px;" data-i18n="ABOUT_LOGO_TITLE">Logo</div>
+                    <div class="logo-row py-1">
+    <!-- Left: Post Amalgamation -->
+    <div class="logo-item">
+        <MudImage Src="images/UBI_Logo.png"
+                  Alt="Union Bank of India Logo - Post Amalgamation"
+                  Elevation="0"
+                  Class="logo-img"
+                  ObjectFit="ObjectFit.Contain" />
+                            <MudText Typo="Typo.caption" Class="logo-caption" data-i18n="LOGO_POST_AMALGAMATION">
+            Union Bank of India Logo - Post Amalgamation
+        </MudText>
+    </div>
+
+    <!-- Center: Current Logo (generic) -->
+                    <div class="logo-item">
+                        <MudImage Src="images/UBI_Logo.jpg"
+                                  Alt="Union Bank of India - Logo"
+                                  Elevation="0"
+                                  Class="logo-img"
+                                  ObjectFit="ObjectFit.Contain" />
+                        <MudText Typo="Typo.caption"
+                                 Class="logo-caption"
+                                 data-i18n="LOGO_CURRENT">
+                            Union Bank of India - Logo
+                        </MudText>
+                    </div>
+                    <div class="logo-item">
+                        <MudImage Src="images/ubi3logo.jpg"
+                                  Alt="Union Bank of India - Oldest Logo"
+                                  Elevation="0"
+                                  Class="logo-img"
+                                  ObjectFit="ObjectFit.Contain" />
+                        <MudText Typo="Typo.caption"
+                                 Class="logo-caption"
+                                 data-i18n="LOGO_OLDEST">
+                            Union Bank of India - Oldest Logo
+                        </MudText>
+                    </div>
+</div>
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height:1.8;"
+                         data-i18n="ABOUT_LOGO_DESC">
+                    
+                </MudText>
+
+                    <br /><br />
+
+                <MudText Typo="Typo.body1"
+                         data-i18n="ABOUT_TAGLINE">
+                    <b>Tagline:</b> “Good people to bank with”
+                </MudText>
+
+                    <br /><br />
+
+                <div class="section-title"
+                     style="font-size:1.25rem; margin-top:20px;"
+                     data-i18n="ABOUT_DIDYOUKNOW_TITLE">
+                </div>
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height:1.8;"
+                         data-i18n="ABOUT_DIDYOUKNOW_CONTENT">
+                </MudText>
+
+                    <br /><br />
+
+                    <div class="section-title" style="font-size:1.25rem; margin-top:20px;" data-i18n="ABOUT_AMALGAMATION_TITLE">Amalgamation</div>
+
+                <MudText Typo="Typo.body1"
+                         Style="line-height:1.8;"
+                         data-i18n="ABOUT_AMALGAMATION_CONTENT">
+                </MudText>
+
+            </section>
+        }
+        else if (activeTab == "vision")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_VISION_TITLE">Corporate Vision</div>
+
+    <div class="vision-card">
+        <div class="vision-wrapper">
+            <!-- LEFT column: enhanced quote -->
+            <div class="vision-quote-card">
+                            <p class="vision-quote" data-i18n="ABOUT_VISION_QUOTE">
+                    
+                </p>
+            </div>
+
+            <!-- RIGHT column: image (unchanged) -->
+            <div class="vision-image">
+                <img src="images/about/CorporateVisionBuild.png" alt="Corporate Vision" style="max-width: 100%; border-radius: 12px;" />
+            </div>
+        </div>
+    </div>
+</section>
+        }
+        else if (activeTab == "mission")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_MISSION_TITLE">Corporate Mission</div>
+                <div style="text-align: center; background: #f8fafc; border-radius: 26px; padding: 40px; border: 1px solid #e5e7eb;">
+                    <img src="images/about/CorporateMission.png" alt="Corporate Mission" style="max-width: 100%; border-radius: 12px; box-shadow: 0 10px 22px rgba(0,0,0,0.18);" />
+                </div>
+            </section>
+        }
+        else if (activeTab == "orgchart")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_ORGCHART_TITLE">Organization Chart</div>
+                <div style="text-align: center; background: #f1f5f9; border-radius: 26px; padding: 45px; border: 1px solid #e5e7eb;">
+                    <img src="images/about/OrganisationChart.png" alt="Organisation Chart" style="max-width: 100%; border-radius: 12px; box-shadow: 0 12px 26px rgba(0,0,0,0.18);" />
+                </div>
+            </section>
+        }
+        else if (activeTab == "awards")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_AWARDS_TITLE">Awards</div>
+                <div class="awards-grid">
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">IBA</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>2nd Runner Up: EASE 7.0 FY 2024-2025 & Theme Wise Performance</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>1st Position in Theme 1: Banking Towards Viksit Bharat</li>
+                            <li>1st Runner Up in Theme 4: Effective Risk/Fraud Management, Collection and Recovery</li>
+                            <li>1st Runner Up in Theme 5: Developing employees for emerging banking priorities</li>
+                            <li>2nd Runner up in EASE 7.0 FY 2024-25</li>                            
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">TransUnion CIBIL Limited (Credit Information Company)</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>PSU GM IT/MIS Awards Conference 2025</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Enhancement Accuracy of Product Type for Consumer & Commercial</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">CRIF High Mark Credit Information Services Pvt Ltd(Credit Information Company)</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>CRIF Data Excellence Awards</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Consumer Data Submission Acceptance - Nationalised Bank Category</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">IBA</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>2nd Runner Up: EASE 6.0 FY 2024 & Theme Wise Performance</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>1st Runner Up: Delivering Excellence in customer service with digital enablement</li>
+                            <li>1st Runner up: Digital analytics-driven business improvement</li>                            
+                            <li>1st Runner Up: Tech and Data enabled capability building</li>
+                            <li>1st Runner up: Developing people and enhancing human resources operations</li>
+                            <li>2nd Runner Up: EASE 6.0 FY2024</li>                            
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">IBA</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>IBA Technologies Conference, Expo and Awards 2021-22</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Winner - Best Technology Bank, Best IT Risk Management, Best Technology Telent</li>
+                            <li>Runner Up - Best AI & ML Bank, Best Financial Inclusion</li>
+                            <li>Special Prize - Best Fintech Collaboration</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">NAB (National Association for the Blind)</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>NAB Sarojini Trilok Nath National Award 2022</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Best CSR Impact</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">BAI (the international Bank Administration Institute)</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>Winner at BAI Global Innovation Awards 2022</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Innovation in HR Transformation for Union Prerna</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">NCPEDP-Mindtree</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>HELEN Keller Awards 2022 Category C Role Model Campanies</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Promoting equal employment opportunites for people with disabilities</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">PFRDA NPS Diwas</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>NPS Diwas Recognition Performance Programme Award</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Third rank for Best PSU Bank</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">World HRD Congress</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>Global Citation & Award</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>CEO with HR Orientation</li>
+                            <li>Sustainable HR Leadership</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">Knowledge Management Leadership Awards</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>Use of Best Training Methods for Knowledge Management</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Best Training Methods for Knowledge Management</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">ET Now "Stars of the Industry Awards"</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>Excellence in Training & Development Award: An Overall Award for Best Result Based Training</li>
+                            <li>Best Training Initiative for Banking Sector</li>
+                            <li>Training Provider of the Year</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Excellence in Training & Development</li>
+                        </ul>
+                    </div>
+
+                    <div class="award-card">
+                        <div class="award-label">Awarded By</div>
+                        <div class="award-text">IBA</div>
+                        <div class="award-label">Awards</div>
+                        <ul class="award-list">
+                            <li>Runner Up: EASE 5.0 FY 2022-23 & Theme wise Performance</li>
+                        </ul>
+                        <div class="award-label">Awarded For</div>
+                        <ul class="award-list">
+                            <li>Winner - Digitally Enabled Customer Offerings</li>
+                            <li>Winner: Modern Technology Capibilities</li>
+                            <li>Winner: Employee Development and Governance</li>
+                            <li>Runner Up: EASE 5.0 FY 2022-23</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        }
+        else if (activeTab == "wholetime")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_WTD_TITLE">Whole Time Directors</div>
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(1)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 1 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(1); })">
+                    <div class="wtd-name" data-i18n="NAME_ASHEESH_PANDEY">
+                        Shri Asheesh Pandey
+                    </div>
+                    <div class="wtd-role" data-i18n="ROLE_MD_CEO"></div>
+                    @if (expandedDirectorId == 1)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/AsheeshPandey.jpg" alt="Shri Asheesh Pandey" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight: 700;">Shri Asheesh Pandey</MudText>
+                                <MudText Typo="Typo.body2" Class="mt-2" data-i18n="BIO_ASHEESH_PANDEY">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(2)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 2 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(2); })">
+                    <div class="wtd-name" data-i18n="NAME_NITESH_RANJAN">
+                        Shri Nitesh Ranjan
+                    </div>
+                    <div class="wtd-role" data-i18n="ROLE_EXEC_DIR">
+                        Executive Director
+                    </div>
+                    @if (expandedDirectorId == 2)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/NiteshRanjan.jpg" alt="Shri Nitesh Ranjan" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight: 700;">Shri Nitesh Ranjan</MudText>
+
+                                <MudText Typo="Typo.body2"
+                                         Class="mt-2"
+                                         data-i18n="BIO_NITESH_RANJAN">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(3)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 3 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(3); })">
+                    <div class="wtd-name" data-i18n="NAME_RAMASUBRAMANIAN">
+                        Shri Ramasubramanian S
+                    </div>
+
+                    <div class="wtd-role" data-i18n="ROLE_EXEC_DIR">
+                        Executive Director
+                    </div>
+
+                    @if (expandedDirectorId == 3)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/Ramasubramanian.jpg" alt="Shri Ramasubramanian S" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight: 700;">Shri Ramasubramanian S</MudText>
+
+                                <MudText Typo="Typo.body2"
+                                         Class="mt-2"
+                                         data-i18n="BIO_RAMASUBRAMANIAN">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+@*                  <div class="wtd-item" @onclick="() => ToggleDirector(4)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 4 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(4); })">
+                    <div class="wtd-name" data-i18n="NAME_SANJAY_RUDRA">
+                        Shri Sanjay Rudra
+                    </div>
+
+                    <div class="wtd-role" data-i18n="ROLE_EXEC_DIR">
+                        Executive Director
+                    </div>
+
+                    @if (expandedDirectorId == 4)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/SanjayRudra.jpg" alt="Shri Sanjay Rudra" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight: 700;">Shri Sanjay Rudra</MudText>
+
+                                <MudText Typo="Typo.body2"
+                                         Class="mt-2"
+                                         data-i18n="BIO_SANJAY_RUDRA">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div> *@
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(4)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 4 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(4); })">
+                    <div class="wtd-name" data-i18n="NAME_AMRESH_PRASAD">
+                        Shri Amresh Prasad
+                    </div>
+
+                    <div class="wtd-role" data-i18n="ROLE_EXEC_DIR">
+                        Director
+                    </div>
+
+                    @if (expandedDirectorId == 4)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/AmreshPrasad.jpg" alt="Shri Amresh Prasad" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight: 700;">Shri Amresh Prasad</MudText>
+
+                                <MudText Typo="Typo.body2"
+                                         Class="mt-2"
+                                         data-i18n="BIO_AMRESH_PRASAD">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+        else if (activeTab == "nonexec")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_NONEXEC_TITLE">Non Executive Directors</div>
+
+                                        <div class="wtd-item" @onclick="() => ToggleDirector(1)"
+                             role="button" tabindex="0"
+                             aria-expanded="@(expandedDirectorId == 1 ? "true" : "false")"
+                             @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(1); })">
+                            <div class="wtd-name" data-i18n="NAME_ROHAN_THAKUR">
+                                Shri Rohan Chand Thakur
+                            </div>
+                            <div class="wtd-role" data-i18n="ROLE_GOVT_NOMINEE">
+                                Government Nominee Director
+                            </div>
+
+                            @if (expandedDirectorId == 1)
+                            {
+                                <div class="wtd-content">
+                                    <div class="wtd-photo">
+                                        <img src="images/about/RohanChandThakur.jpg" alt="Shri Rohan Chand Thakur" />
+                                    </div>
+                                    <div class="wtd-bio">
+                                        <MudText Typo="Typo.h6" Style="font-weight:700;" data-i18n="NAME_ROHAN_THAKUR">
+                                            Shri Rohan Chand Thakur
+                                        </MudText>
+                                        <MudText Typo="Typo.body2" Class="mt-2" data-i18n="BIO_ROHAN_THAKUR">
+                                        </MudText>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(2)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 2 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(2); })">
+                    <div class="wtd-name" data-i18n="NAME_PRAKASH_BALIARSINGH">
+                        Shri Prakash Baliarsingh
+                    </div>
+                    <div class="wtd-role" data-i18n="ROLE_RBI_NOMINEE">
+                        RBI Nominee Director
+                    </div>
+
+                    @if (expandedDirectorId == 2)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/PrakashBaliarsingh.jpg" alt="Shri Prakash Baliarsingh" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight:700;" data-i18n="NAME_PRAKASH_BALIARSINGH">
+                                    Shri Prakash Baliarsingh
+                                </MudText>
+                                <MudText Typo="Typo.body2" Class="mt-2" data-i18n="BIO_PRAKASH_BALIARSINGH">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(3)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 3 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(3); })">
+                    <div class="wtd-name" data-i18n="NAME_SURAJ_SRIVASTAVA">
+                        Shri Suraj Srivastava
+                    </div>
+                    <div class="wtd-role" data-i18n="ROLE_PARTTIME_NONOFFICIAL">
+                        Part-time Non-Official Director
+                    </div>
+
+                    @if (expandedDirectorId == 3)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/SurajSrivastava.jpeg" alt="Shri Suraj Srivastava" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight:700;" data-i18n="NAME_SURAJ_SRIVASTAVA">
+                                    Shri Suraj Srivastava
+                                </MudText>
+                                <MudText Typo="Typo.body2" Class="mt-2" data-i18n="BIO_SURAJ_SRIVASTAVA">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(4)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 4 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(4); })">
+                    <div class="wtd-name" data-i18n="NAME_PRITI_RAO">
+                        Smt. Priti Jay Rao
+                    </div>
+                    <div class="wtd-role" data-i18n="ROLE_SHAREHOLDER_DIR">
+                        Shareholder Director
+                    </div>
+
+                    @if (expandedDirectorId == 4)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/PritiJayRao.jpg" alt="Smt. Priti Jay Rao" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight:700;" data-i18n="NAME_PRITI_RAO">
+                                    Smt. Priti Jay Rao
+                                </MudText>
+                                <MudText Typo="Typo.body2" Class="mt-2" data-i18n="BIO_PRITI_RAO">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="wtd-item" @onclick="() => ToggleDirector(5)"
+                     role="button" tabindex="0"
+                     aria-expanded="@(expandedDirectorId == 5 ? "true" : "false")"
+                     @onkeydown="@((e) => { if (e.Key == "Enter" || e.Key == " ") ToggleDirector(5); })">
+                    <div class="wtd-name" data-i18n="NAME_PRAKASH_KANDPAL">
+                        Shri Prakash Chandra Kandpal
+                    </div>
+                    <div class="wtd-role" data-i18n="ROLE_SHAREHOLDER_DIR">
+                        Shareholder Director
+                    </div>
+
+                    @if (expandedDirectorId == 5)
+                    {
+                        <div class="wtd-content">
+                            <div class="wtd-photo">
+                                <img src="images/about/ChandraKandpal.jpg" alt="Shri Prakash Chandra Kandpal" />
+                            </div>
+                            <div class="wtd-bio">
+                                <MudText Typo="Typo.h6" Style="font-weight:700;" data-i18n="NAME_PRAKASH_KANDPAL">
+                                    Shri Prakash Chandra Kandpal
+                                </MudText>
+                                <MudText Typo="Typo.body2" Class="mt-2" data-i18n="BIO_PRAKASH_KANDPAL">
+                                </MudText>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+        else if (activeTab == "history")
+        {
+            <section class="about-section">
+                <div class="section-title" data-i18n="ABOUT_HISTORYBOOK_TITLE">History Book</div>
+
+                <!-- Simple text link -->
+                    <a href="download/Union%20Bank%20History%20Book%202017.pdf" target="_blank" data-i18n="HISTORY_BOOK_LINK" rel="noopener" class="download-btn" style="text-decoration:none;">
+                        Union Bank History Book 2017
+                    </a>
+
+                <!-- If you prefer auto-download instead of opening in a new tab, use this instead:
+                <MudText Typo="Typo.body1" Class="mt-2">
+                    <a href="/download/a.pdf" download class="download-btn" style="text-decoration:none;">
+                        Download History Book (PDF)
+                    </a>
+                </MudText>
+                -->
+            </section>
+        }
+        else
+        {
+            <section class="about-section">
+                <div class="section-title">@tabItems.First(t => t.Id == activeTab).Label</div>
+                <MudText Typo="Typo.body1" Style="color: #64748b; font-style: italic;">
+                    Content for this section is currently being updated.
+                </MudText>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    private string activeTab = "overview";
+    private int expandedDirectorId = 0;
+
+    private class TabItem { public string Id { get; set; } = ""; public string Label { get; set; } = ""; }
+
+    private List<TabItem> tabItems = new()
+    {
+        new TabItem { Id = "overview", Label = "Overview" },
+        new TabItem { Id = "vision", Label = "Corporate Vision" },
+        new TabItem { Id = "mission", Label = "Corporate Mission" },
+        new TabItem { Id = "orgchart", Label = "Organization Chart" },
+        // new TabItem { Id = "cov", Label = "CO Verticals" },
+        new TabItem { Id = "awards", Label = "Awards" },
+        new TabItem { Id = "wholetime", Label = "Whole Time Directors" },
+        new TabItem { Id = "nonexec", Label = "Non Executive Directors" },
+        // new TabItem { Id = "related", Label = "Related Parties" },
+        new TabItem { Id = "history", Label = "History Book" }
+    };
+
+    private void SetActiveTab(string tabId)
+    {
+        activeTab = tabId;
+        expandedDirectorId = 0; // Reset director accordion when switching tabs
+    }
+
+    private void ToggleDirector(int id)
+    {
+        expandedDirectorId = (expandedDirectorId == id) ? 0 : id;
+    }
+}

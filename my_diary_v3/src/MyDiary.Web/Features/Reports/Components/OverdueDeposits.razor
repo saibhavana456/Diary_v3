@@ -1,0 +1,296 @@
+@page "/reports/OverdueDeposits"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Overdue Deposits — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // TODO: Map these from your auth/claims provider as needed
+    private string _userPrivilege = "CO"; // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Summary columns (must match SQL aliases)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",                 PropertyName = "zone_name_eng",   Width = "22%" },
+        new ColumnConfig { Header = "Region",               PropertyName = "region_name",     Width = "22%" },
+        new ColumnConfig { Header = "Branch",               PropertyName = "Branch_Name",     Width = "22%" },
+        new ColumnConfig { Header = "Total Accounts",       PropertyName = "Total_Accounts",  IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Total Maturity Amount",PropertyName = "MaturityAmount",  IsNumeric = true, Format = "N2", Width = "19%" }
+    };
+
+    // Detailed columns (must match SQL aliases)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",              PropertyName = "zone_name_eng",  Width = "12%" },
+        new ColumnConfig { Header = "Region",            PropertyName = "region_name",    Width = "12%" },
+        new ColumnConfig { Header = "Branch",            PropertyName = "BRANCH_NAME",    Width = "16%" },
+        new ColumnConfig { Header = "Solid",             PropertyName = "branchsol",      Width = "10%" },
+        new ColumnConfig { Header = "Account Number",    PropertyName = "AccountNo",      Width = "14%" },
+        new ColumnConfig { Header = "Customer Name",     PropertyName = "CustomerName",   Width = "16%" },
+        new ColumnConfig { Header = "Maturity Amount",   PropertyName = "MaturityAmount", IsNumeric = true, Format = "N2", Width = "10%" },
+        new ColumnConfig { Header = "Maturity Date",     PropertyName = "MaturityDate",   IsDate = true, Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Overdue Deposits";
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) f)
+    {
+        _selectedZone = f.zone;
+        _selectedRegion = f.region;
+        _selectedBranch = f.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "1=1";
+        string groupBy = "";
+        bool isSummary = true;
+
+        // Robust join to avoid whitespace-padded mismatches on keys
+        string join =
+            "FROM OverdueDeposits A " +
+            "JOIN Branch_Master B ON LTRIM(RTRIM(A.SolID)) = LTRIM(RTRIM(B.SOL_ID)) ";
+
+        // Projections (aliases aligned with legacy renderer)
+        string DetailedColumns() =>
+            "zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id branchsol, " +
+            "A.AccountNo, A.CustomerName, CONVERT(decimal(18,2), A.[MaturityAmount]) as MaturityAmount, " +
+            "CONVERT(varchar, (A.MaturityDate), 103) as MaturityDate";
+
+        string SummaryAll() =>
+            "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+            "'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As SolId";
+
+        // =========================
+        // Privilege-based branching
+        // =========================
+
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = SummaryAll();
+            }
+            else if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_selectedRegion == "1") // Zonewise Summary
+                {
+                    columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                              "'All' As Branch_Name, 'All' As region_name, zone_name_eng, B.Zone_SolId As SolId";
+                    groupBy = " GROUP BY B.Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1") // Regionwise Summary across all zones
+                    {
+                        columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                                  "'All' As Branch_Name, B.region_name, zone_name_eng, B.region_SolId As SolId";
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, zone_name_eng";
+                    }
+                    else // Detailed across all
+                    {
+                        isSummary = false;
+                        columns = DetailedColumns();
+                    }
+                }
+                else // Specific Region across all zones
+                {
+                    where += $" AND B.region_SolId = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                                  "'All' As Branch_Name, B.region_name, zone_name_eng, B.region_SolId As SolId";
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                            where += $" AND B.sol_id = '{_selectedBranch}'";
+                        columns = DetailedColumns();
+                    }
+                }
+            }
+            else // Specific Zone selected
+            {
+                where += $" AND B.Zone_SolId = '{_selectedZone}'";
+                if (_selectedRegion == "1") // Zone summary
+                {
+                    columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                              "'All' As Branch_Name, 'All' As region_name, zone_name_eng, B.Zone_SolId As SolId";
+                    groupBy = " GROUP BY B.Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1") // Regionwise summary within selected zone
+                    {
+                        columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                                  "'All' As Branch_Name, B.region_name, zone_name_eng, B.region_SolId As SolId";
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, zone_name_eng";
+                    }
+                    else // Detailed for zone
+                    {
+                        isSummary = false;
+                        columns = DetailedColumns();
+                    }
+                }
+                else // Specific Region in specific zone
+                {
+                    where += $" AND B.region_SolId = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                                  "'All' As Branch_Name, B.region_name, zone_name_eng, B.region_SolId As SolId";
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                            where += $" AND B.sol_id = '{_selectedBranch}'";
+                        columns = DetailedColumns();
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" AND B.Zone_SolId = '{_userZoneSolid}'";
+            if (_selectedRegion == "1")
+            {
+                columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                          "'All' As Branch_Name, 'All' As region_name, zone_name_eng, B.Zone_SolId";
+                groupBy = " GROUP BY zone_name_eng, B.Zone_SolId";
+            }
+            else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_selectedBranch == "1")
+                {
+                    columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                              "'All' As Branch_Name, B.region_name, zone_name_eng, B.region_SolId As SolId";
+                    groupBy = " GROUP BY B.region_name, B.region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        where += $" AND B.sol_id = '{_selectedBranch}'";
+                    columns = DetailedColumns();
+                }
+            }
+            else
+            {
+                where += $" AND B.region_SolId = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                              "'All' As Branch_Name, B.region_name, zone_name_eng, B.region_SolId As SolId";
+                    groupBy = " GROUP BY B.region_name, B.region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        where += $" AND B.sol_id = '{_selectedBranch}'";
+                    columns = DetailedColumns();
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" AND B.region_SolId = '{_userRegionSolid}'";
+            if (_selectedBranch == "1")
+            {
+                columns = "COUNT(AccountNo) as Total_Accounts, CONVERT(decimal(18,2), (SUM(MaturityAmount)/10000000)) as MaturityAmount, " +
+                          "'All' As Branch_Name, B.region_name, zone_name_eng, B.region_SolId As SolId";
+                groupBy = " GROUP BY B.region_name, B.region_SolId, zone_name_eng";
+            }
+            else
+            {
+                isSummary = false;
+                if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    where += $" AND B.sol_id = '{_selectedBranch}'";
+                columns = DetailedColumns();
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" AND B.sol_id = '{_userBranchSolid}'";
+            columns = DetailedColumns();
+        }
+
+        // Final SQL (no logs, no mock)
+        string finalQuery = $"SELECT {columns} {join} WHERE {where}{groupBy}";
+
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("OverdueDeposits");
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+        string date = dateTask.Result;
+        if (isSummary)
+        {
+            _activeConfig.Columns = _summaryCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Crores)";
+        }
+        else
+        {
+            _activeConfig.Columns = _detailedCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Actuals)";
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "OverdueDeposits");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "OverdueDeposits.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

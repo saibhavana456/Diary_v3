@@ -1,0 +1,437 @@
+﻿@using Microsoft.AspNetCore.Components.Web
+@using MyDiary.Web.Core.Extensions
+@page "/reports/Accountsopenddata"
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Forms
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+<ReportBreadcrumb />
+
+<PageTitle>Accounts Opened — My Diary</PageTitle>
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .active-tab-btn,
+    .active-tab-btn.mud-button-outlined,
+    .active-tab-btn:hover,
+    .active-tab-btn:focus {
+        background: var(--primary-gradient) !important;
+        color: white !important;
+        box-shadow: 0 10px 26px rgba(30,58,138,0.45) !important;
+        border: none !important;
+    }
+
+    .tab-btn-base {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.08);
+        color: #1f2937;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: none !important;
+    }
+</style>
+
+@* --- Single container: header + tabs + dashboard all in one block --- *@
+<div style="background: #fff; border-radius: 10px; overflow: hidden;">
+    <div class="d-flex flex-wrap gap-2 pa-4" style="border-bottom: 1px solid #f1f5f9; align-items:center;">
+        <MudButton Variant="Variant.Outlined"
+                   Size="Size.Small"
+                   Class="@(_activeView == VIEW_CASA ? "rounded-pill active-tab-btn px-4" : "rounded-pill tab-btn-base px-4")"
+                   OnClick="@(() => SwitchView(VIEW_CASA))"
+                   UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = _activeView == VIEW_CASA ? "true" : "false" })">
+            CASA
+        </MudButton>
+        <MudButton Variant="Variant.Outlined"
+                   Size="Size.Small"
+                   Class="@(_activeView == VIEW_MSME ? "rounded-pill active-tab-btn px-4" : "rounded-pill tab-btn-base px-4")"
+                   OnClick="@(() => SwitchView(VIEW_MSME))"
+                   UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = _activeView == VIEW_MSME ? "true" : "false" })">
+            MSME, Mudra &amp; Agri
+        </MudButton>
+        <MudButton Variant="Variant.Outlined"
+                   Size="Size.Small"
+                   Class="@(_activeView == VIEW_RETAIL ? "rounded-pill active-tab-btn px-4" : "rounded-pill tab-btn-base px-4")"
+                   OnClick="@(() => SwitchView(VIEW_RETAIL))"
+                   UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = _activeView == VIEW_RETAIL ? "true" : "false" })">
+            Retail Advances
+        </MudButton>
+    </div>
+</div>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private const string VIEW_CASA = "CASA";
+    private const string VIEW_MSME = "MSME";
+    private const string VIEW_RETAIL = "RETAIL";
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    private string _activeView = VIEW_CASA;
+
+    private static readonly List<ColumnConfig> CasaCols = new()
+    {
+        new ColumnConfig { Header = "Zone",   PropertyName = "Zone_Name_Eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "Region_Name",   Width = "10%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name",   Width = "18%" },
+        new ColumnConfig { Header = "SolID",  PropertyName = "SolID",         Width = "6%"  },
+        new ColumnConfig { Header = "SB No (FY)",   PropertyName = "SBACountFY",   Width = "7%"  },
+        new ColumnConfig { Header = "SB Amt (FY)",  PropertyName = "SBABalanceFY", Width = "8%"  },
+        new ColumnConfig { Header = "CA No (FY)",   PropertyName = "CAACountFY",   Width = "7%"  },
+        new ColumnConfig { Header = "CA Amt (FY)",  PropertyName = "CAABalanceFY", Width = "8%"  },
+        new ColumnConfig { Header = "SB No (Prev Day)",   PropertyName = "SBACountT1",   Width = "7%"  },
+        new ColumnConfig { Header = "SB Amt (Prev Day)",  PropertyName = "SBABalanceT1", Width = "8%"  },
+        new ColumnConfig { Header = "CA No (Prev Day)",   PropertyName = "CAACountT1",   Width = "7%"  },
+        new ColumnConfig { Header = "CA Amt (Prev Day)",  PropertyName = "CAABalanceT1", Width = "8%"  }
+    };
+
+    private static readonly List<ColumnConfig> MsmeCols = new()
+    {
+        new ColumnConfig { Header = "Zone",   PropertyName = "Zone_Name_Eng", Width = "9%"  },
+        new ColumnConfig { Header = "Region", PropertyName = "Region_Name",   Width = "9%"  },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name",   Width = "16%" },
+        new ColumnConfig { Header = "SolID",  PropertyName = "SolID",         Width = "6%"  },
+        new ColumnConfig { Header = "MSME No (FY)",     PropertyName = "MSMECountFY",     Width = "7%" },
+        new ColumnConfig { Header = "MSME Amt (FY)",    PropertyName = "MSMEBalanceFY",   Width = "8%" },
+        new ColumnConfig { Header = "Mudra No (FY)",    PropertyName = "MudraCountFY",    Width = "7%" },
+        new ColumnConfig { Header = "Mudra Amt (FY)",   PropertyName = "MudraBalanceFY",  Width = "8%" },
+        new ColumnConfig { Header = "Agri No (FY)",     PropertyName = "AgriCountFY",     Width = "7%" },
+        new ColumnConfig { Header = "Agri Amt (FY)",    PropertyName = "AgriBalanceFY",   Width = "8%" },
+        new ColumnConfig { Header = "Agri-GL No (FY)",  PropertyName = "AgriGLCountFY",   Width = "7%" },
+        new ColumnConfig { Header = "Agri-GL Amt (FY)", PropertyName = "AgriGLBalanceFY", Width = "8%" },
+        new ColumnConfig { Header = "MSME No (Prev Day)",     PropertyName = "MSMECountT1",     Width = "7%" },
+        new ColumnConfig { Header = "MSME Amt (Prev Day)",    PropertyName = "MSMEBalanceT1",   Width = "8%" },
+        new ColumnConfig { Header = "Mudra No (Prev Day)",    PropertyName = "MudraCountT1",    Width = "7%" },
+        new ColumnConfig { Header = "Mudra Amt (Prev Day)",   PropertyName = "MudraBalanceT1",  Width = "8%" },
+        new ColumnConfig { Header = "Agri No (Prev Day)",     PropertyName = "AgriCountT1",     Width = "7%" },
+        new ColumnConfig { Header = "Agri Amt (Prev Day)",    PropertyName = "AgriBalanceT1",   Width = "8%" },
+        new ColumnConfig { Header = "Agri-GL No (Prev Day)",  PropertyName = "AgriGLCountT1",   Width = "7%" },
+        new ColumnConfig { Header = "Agri-GL Amt (Prev Day)", PropertyName = "AgriGLBalanceT1", Width = "8%" }
+    };
+
+    private static readonly List<ColumnConfig> RetailCols = new()
+    {
+        new ColumnConfig { Header = "Zone",   PropertyName = "Zone_Name_Eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "Region_Name",   Width = "10%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name",   Width = "16%" },
+        new ColumnConfig { Header = "SolID",  PropertyName = "SolID",         Width = "6%"  },
+        new ColumnConfig { Header = "Retail No (FY)",  PropertyName = "RetailCountFY",        Width = "7%" },
+        new ColumnConfig { Header = "Retail Amt (FY)", PropertyName = "RetailBalanceFY",      Width = "8%" },
+        new ColumnConfig { Header = "HL No (FY)",      PropertyName = "RetailHLCountFY",      Width = "7%" },
+        new ColumnConfig { Header = "HL Amt (FY)",     PropertyName = "RetailHLBalanceFY",    Width = "8%" },
+        new ColumnConfig { Header = "Miles No (FY)",   PropertyName = "RetailMilesCountFY",   Width = "7%" },
+        new ColumnConfig { Header = "Miles Amt (FY)",  PropertyName = "RetailMilesBalanceFY", Width = "8%" },
+        new ColumnConfig { Header = "Retail No (Prev Day)",  PropertyName = "RetailCountT1",        Width = "7%" },
+        new ColumnConfig { Header = "Retail Amt (Prev Day)", PropertyName = "RetailBalanceT1",      Width = "8%" },
+        new ColumnConfig { Header = "HL No (Prev Day)",      PropertyName = "RetailHLCountT1",      Width = "7%" },
+        new ColumnConfig { Header = "HL Amt (Prev Day)",     PropertyName = "RetailHLBalanceT1",    Width = "8%" },
+        new ColumnConfig { Header = "Miles No (Prev Day)",   PropertyName = "RetailMilesCountT1",   Width = "7%" },
+        new ColumnConfig { Header = "Miles Amt (Prev Day)",  PropertyName = "RetailMilesBalanceT1", Width = "8%" }
+    };
+
+    private void ApplyActiveColumns()
+    {
+        _activeConfig = new ReportConfig
+        {
+            Title = _activeConfig.Title,
+            Columns = _activeView switch
+            {
+                VIEW_MSME   => MsmeCols,
+                VIEW_RETAIL => RetailCols,
+                _           => CasaCols
+            }
+        };
+    }
+
+    protected override void OnInitialized()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig = new ReportConfig
+        {
+            Title = Title ?? "Accounts Opened",
+            Columns = CasaCols
+        };
+    }
+
+    private async Task SwitchView(string viewId)
+    {
+        if (_activeView == viewId) return;
+        _activeView = viewId;
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone   = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _activeConfig.Title = "Accounts Opened";
+        ApplyActiveColumns();
+
+        var (whereCondtn, groupByCondtn, summaryCondtn, selectCondtn) = BuildSpParams();
+
+        static string esc(string s) => (s ?? string.Empty).Replace("'", "''");
+        string finalQuery = $@"
+    EXEC uspGetAccountsOpenData_New2
+    @WhereCondtn   = '{esc(whereCondtn)}',
+    @GroupByCondtn = '{esc(groupByCondtn)}',
+    @SummaryCondtn = '{esc(summaryCondtn)}',
+    @SelectCondtn  = '{esc(selectCondtn)}'
+";
+        try
+        {
+            var dbTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            if (await Task.WhenAny(dbTask, Task.Delay(5000)) == dbTask)
+                _data = await dbTask;
+            else
+                _data = new();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[AccountsOpenedData] Unhandled error: " + ex.Message);
+            _data = new();
+        }
+
+        _asOnDateLabel = "(Balance in the Accounts is in Lakhs)";
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private (string whereCondtn, string groupByCondtn, string summaryCondtn, string selectCondtn) BuildSpParams()
+    {
+        bool zoneIsSummary  = string.Equals(_selectedZone,   "1",   StringComparison.OrdinalIgnoreCase);
+        bool zoneIsAllWise  = string.Equals(_selectedZone,   "all", StringComparison.OrdinalIgnoreCase);
+        bool regionIsSummary = string.Equals(_selectedRegion, "1",   StringComparison.OrdinalIgnoreCase);
+        bool regionIsAllWise = string.Equals(_selectedRegion, "all", StringComparison.OrdinalIgnoreCase);
+        bool branchIsSummary = string.Equals(_selectedBranch, "1",   StringComparison.OrdinalIgnoreCase);
+        bool branchIsAllWise = string.Equals(_selectedBranch, "all", StringComparison.OrdinalIgnoreCase);
+
+        string whereCondtn = string.Empty, groupByCondtn = string.Empty,
+               summaryCondtn = string.Empty, selectCondtn = string.Empty;
+
+        string priv = (_userPrivilege ?? "CO").ToUpperInvariant();
+
+        if (priv == "CO")
+        {
+            if (zoneIsSummary || _selectedZone == null || _selectedZone == "-1")
+            {
+                whereCondtn = "1=1"; groupByCondtn = ""; summaryCondtn = "SUM";
+                selectCondtn = "'All' As Zone_Name_Eng, 'All' As Region_Name, 'All' As Branch_Name,'All' As SolId";
+            }
+            else if (zoneIsAllWise)
+            {
+                if (regionIsSummary)
+                {
+                    whereCondtn = "1=1 and zone_solid<>'00000'"; groupByCondtn = "Zone_Name_Eng, Zone_SolId"; summaryCondtn = "SUM";
+                    selectCondtn = "Zone_Name_Eng, 'All' As Region_Name, 'All' As Branch_Name,'All' As SolId";
+                }
+                else if (regionIsAllWise)
+                {
+                    if (branchIsSummary)
+                    {
+                        whereCondtn = "1=1 and zone_solid <> '00000' and region_solid <> '00000' and region_solid <> ''";
+                        groupByCondtn = "Zone_Name_Eng, Region_Name, Region_SolId"; summaryCondtn = "SUM";
+                        selectCondtn = "Zone_Name_Eng, Region_Name, 'All' As Branch_Name,'All' As SolId";
+                    }
+                    else if (branchIsAllWise)
+                    {
+                        whereCondtn = "1=1 and zone_solid <> '00000' and region_solid <> '00000' and region_solid <> ''";
+                        groupByCondtn = ""; summaryCondtn = "ALL";
+                        selectCondtn = "Zone_Name_Eng, Region_Name, Branch_Name,Sol_ID As SolID";
+                    }
+                    else
+                    {
+                        whereCondtn = $"Sol_ID = '{_selectedBranch}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                        selectCondtn = "Zone_Name_Eng, Region_Name, Branch_Name,Sol_ID As SolID";
+                    }
+                }
+                else
+                {
+                    if (branchIsSummary)
+                    {
+                        whereCondtn = $"Region_SolId = '{_selectedRegion}'"; groupByCondtn = "Zone_Name_Eng, Region_Name, Region_SolId"; summaryCondtn = "SUM";
+                        selectCondtn = "Zone_Name_Eng, Region_Name, 'All' As Branch_Name,'All' As SolId";
+                    }
+                    else if (branchIsAllWise)
+                    {
+                        whereCondtn = $"Region_SolId = '{_selectedRegion}'"; groupByCondtn = ""; summaryCondtn = "SUM";
+                        selectCondtn = "Zone_Name_Eng, Region_Name, Branch_Name,Sol_ID As SolID";
+                    }
+                    else
+                    {
+                        whereCondtn = $"Sol_ID = '{_selectedBranch}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                        selectCondtn = "Zone_Name_Eng, Region_Name, Branch_Name,Sol_ID As SolID";
+                    }
+                }
+            }
+            else
+            {
+                string zone = _selectedZone;
+                if (regionIsSummary)
+                {
+                    whereCondtn = $"Zone_SolId = '{zone}'"; groupByCondtn = "Zone_Name_Eng, Zone_SolId"; summaryCondtn = "SUM";
+                    selectCondtn = "Zone_Name_Eng, 'All' As Region_Name, 'All' As Branch_Name,'All' As SolId";
+                }
+                else if (regionIsAllWise)
+                {
+                    if (branchIsSummary)
+                    {
+                        whereCondtn = $"Zone_SolId = '{zone}'"; groupByCondtn = "Zone_Name_Eng, Region_SolId, Region_Name"; summaryCondtn = "SUM";
+                        selectCondtn = "Zone_Name_Eng, Region_Name As Region_Name, 'All' As Branch_Name,'All' As SolId";
+                    }
+                    else if (branchIsAllWise)
+                    {
+                        whereCondtn = $"Zone_SolId = '{zone}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                        selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                    }
+                    else
+                    {
+                        whereCondtn = $"Zone_SolId = '{zone}' And Sol_Id = '{_selectedBranch}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                        selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                    }
+                }
+                else
+                {
+                    string region = _selectedRegion;
+                    if (branchIsSummary)
+                    {
+                        whereCondtn = $"Region_SolId = '{region}'"; groupByCondtn = "Zone_Name_Eng, Region_SolId, Region_Name"; summaryCondtn = "SUM";
+                        selectCondtn = "Zone_Name_Eng, Region_Name, 'All' As Branch_Name,'All' As SolId";
+                    }
+                    else if (branchIsAllWise)
+                    {
+                        whereCondtn = $"Region_SolId = '{region}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                        selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                    }
+                    else
+                    {
+                        whereCondtn = $"Sol_Id = '{_selectedBranch}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                        selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                    }
+                }
+            }
+        }
+        else if (priv == "ZONE")
+        {
+            string zone = _userZoneSolid;
+            if (regionIsSummary)
+            {
+                whereCondtn = "1=1"; groupByCondtn = "Zone_Name_Eng,Zone_SolId"; summaryCondtn = "SUM";
+                selectCondtn = "Zone_Name_Eng, 'All' As Region_Name, 'All' As Branch_Name,'All' As SolId";
+            }
+            else if (regionIsAllWise)
+            {
+                if (branchIsSummary)
+                {
+                    whereCondtn = $"Zone_SolId = '{zone}'"; groupByCondtn = "Zone_Name_Eng,Region_Name,Region_SolID"; summaryCondtn = "SUM";
+                    selectCondtn = "Zone_Name_Eng,Region_Name,'All' As Branch_Name,'All' As SolId";
+                }
+                else if (branchIsAllWise)
+                {
+                    whereCondtn = $"Zone_SolId = '{zone}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                    selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                }
+                else
+                {
+                    whereCondtn = $"Sol_Id = '{_selectedBranch}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                    selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                }
+            }
+            else
+            {
+                string region = _selectedRegion;
+                if (branchIsSummary)
+                {
+                    whereCondtn = $"Region_SolId = '{region}'"; groupByCondtn = "Zone_Name_Eng,Region_Name,Region_SolID"; summaryCondtn = "SUM";
+                    selectCondtn = "Zone_Name_Eng,Region_Name,'All' As Branch_Name,'All' As SolId";
+                }
+                else if (branchIsAllWise)
+                {
+                    whereCondtn = $"Region_SolId = '{region}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                    selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                }
+                else
+                {
+                    whereCondtn = $"Sol_Id = '{_selectedBranch}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                    selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+                }
+            }
+        }
+        else if (priv == "REGION")
+        {
+            string region = _userRegionSolid;
+            if (branchIsSummary)
+            {
+                whereCondtn = $"Region_SolId = '{region}'"; groupByCondtn = "Zone_Name_Eng,Region_Name,Region_SolID"; summaryCondtn = "SUM";
+                selectCondtn = "Zone_Name_Eng,Region_Name,'All' As Branch_Name,'All' As SolId";
+            }
+            else if (branchIsAllWise)
+            {
+                whereCondtn = $"Region_SolId = '{region}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+            }
+            else
+            {
+                whereCondtn = $"Sol_Id = '{_selectedBranch}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+                selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+            }
+        }
+        else // BRANCH
+        {
+            whereCondtn = $"Sol_Id = '{_userBranchSolid}'"; groupByCondtn = ""; summaryCondtn = "ALL";
+            selectCondtn = "Zone_Name_Eng,Region_Name,Branch_Name,Sol_ID As SolID";
+        }
+
+        return (whereCondtn, groupByCondtn, summaryCondtn, selectCondtn);
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "AccountsOpened");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "AccountsOpened.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

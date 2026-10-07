@@ -1,0 +1,330 @@
+@page "/flatmgmt/my/submit-grievance"
+@attribute [Authorize]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using MudBlazor
+@inject IUserFlatService FlatService
+@inject IUserGrievanceService GrievanceService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Submit Grievance - Flat Management System</PageTitle>
+
+<div class="sg-page">
+    <PageHeader Title="Submit Service Request" Crumbs="_crumbs" PageKey="flatmgmt-my-submit-grievance" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (flat is null || !flat.HasFlat)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">
+            @(flat?.Error ?? "You are not allotted to any flat.")
+        </MudAlert>
+    }
+    else
+    {
+        <MudCard Class="sg-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Flat Details</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="sg-label">Flat No.</MudText>
+                        <MudText Typo="Typo.body1">@(flat.Flat?.FlatNo ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="sg-label">Type / Area</MudText>
+                        <MudText Typo="Typo.body1">@(flat.Flat?.FlatType ?? "-") / @(flat.Flat?.CarpetArea ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="sg-label">Building Name</MudText>
+                        <MudText Typo="Typo.body1">@(flat.Flat?.BuildingName ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="sg-label">Address</MudText>
+                        <MudText Typo="Typo.body1">@(flat.Flat?.Address ?? "-")</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="sg-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Current Occupant Details</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@occupantRows" Hover="true" Bordered="true" Dense="true" Class="sg-table">
+                    <HeaderContent>
+                        <MudTh>Employee Details</MudTh>
+                        <MudTh>IP-Phone / Mobile / Email</MudTh>
+                        <MudTh>Occupy / Posting / Retirement</MudTh>
+                        <MudTh>Posting / RO / ZO</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee Details">
+                            @context.EmplId<br />
+                            @context.Name<br />
+                            @context.JobDesc
+                        </MudTd>
+                        <MudTd DataLabel="IP-Phone / Mobile / Email">
+                            @context.ContactNo<br />
+                            @context.EmailId
+                        </MudTd>
+                        <MudTd DataLabel="Occupy / Posting / Retirement">
+                            @(context.BeginDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.DeptJoinDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.ExpectedRetirementDate?.ToString("dd-MMM-yyyy") ?? "-")
+                        </MudTd>
+                        <MudTd DataLabel="Posting / RO / ZO">
+                            @context.LocationDesc<br />
+                            @context.RegionName<br />
+                            @context.ZoneName
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No Current Occupant</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="sg-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Service Request Submission</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <EditForm Model="this" FormName="submit-grievance" OnValidSubmit="HandleSave">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="string" @bind-Value="category" Label="Type*" Variant="Variant.Outlined" Required="true">
+                                <MudSelectItem Value="@("Select")">Select Type</MudSelectItem>
+                                <MudSelectItem Value="@("Electrical")">Electrical</MudSelectItem>
+                                <MudSelectItem Value="@("Civil")">Civil</MudSelectItem>
+                                <MudSelectItem Value="@("Plumbing")">Plumbing</MudSelectItem>
+                                <MudSelectItem Value="@("Carpentry")">Carpentry</MudSelectItem>
+                                <MudSelectItem Value="@("Painting")">Painting</MudSelectItem>
+                                <MudSelectItem Value="@("Others")">Others</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+
+                        @if (string.Equals(category, "Others", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="otherCategory" Label="Please specify*" Variant="Variant.Outlined"
+                                              MaxLength="100" Required="true" />
+                            </MudItem>
+                        }
+
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="subject" Label="Subject*" Variant="Variant.Outlined"
+                                          MaxLength="150" Required="true"
+                                          Placeholder="Enter a short subject (e.g., 'Water leakage near Block B')" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="description" Label="Description*" Variant="Variant.Outlined"
+                                          Lines="5" MaxLength="1000" Required="true" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.body2" Class="sg-label mb-1">Attach File</MudText>
+                            <InputFile OnChange="OnFileSelected" />
+                            <MudText Typo="Typo.caption" Class="sg-hint">Allowed: .jpg, .jpeg, .png, .pdf, .docx (max 2 MB)</MudText>
+                            @if (!string.IsNullOrEmpty(selectedFileName))
+                            {
+                                <MudText Typo="Typo.caption" Class="sg-file-chip">Selected: @selectedFileName</MudText>
+                            }
+                        </MudItem>
+
+                        <MudItem xs="12" Class="sg-actions">
+                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Secondary"
+                                       Disabled="@isBusy">
+                                @(isBusy ? "Saving..." : "Save")
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="ml-2"
+                                       Disabled="@isBusy" OnClick="ResetForm">
+                                Reset
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </EditForm>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="sg-modal-overlay" @onclick="() => message = null">
+            <div class="sg-modal @(isError ? "sg-modal-error" : "sg-modal-success")" @onclick:stopPropagation="true">
+                <div class="sg-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="sg-modal-text">@message</p>
+                <button type="button" class="sg-btn @(isError ? "sg-btn-secondary" : "sg-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Submit Service Request") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".pdf", ".docx" };
+    private const long MaxFileSize = 2 * 1024 * 1024;
+
+    private string pfNo = string.Empty;
+    private string displayName = string.Empty;
+
+    private bool isLoading = true;
+    private ViewAllocatedFlatResult? flat;
+    private List<CurrentOccupantDetails> occupantRows = new();
+
+    private string category = "Select";
+    private string? otherCategory;
+    private string subject = string.Empty;
+    private string description = string.Empty;
+
+    private string? selectedFileName;
+    private string? selectedFileContentType;
+    private byte[]? selectedFileBytes;
+
+    private bool isBusy;
+    private string? message;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            pfNo = CurrentUser.EmplId ?? string.Empty;
+            displayName = CurrentUser.Name ?? pfNo;
+        }
+
+        flat = await FlatService.GetAllocatedFlatAsync(pfNo);
+        occupantRows = flat.CurrentOccupant is null
+            ? new List<CurrentOccupantDetails>()
+            : new List<CurrentOccupantDetails> { flat.CurrentOccupant };
+
+        isLoading = false;
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        message = null;
+        var file = e.File;
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+
+        if (Array.IndexOf(AllowedExtensions, ext) < 0)
+        {
+            ShowError("Invalid file type. Allowed: .jpg, .jpeg, .png, .pdf, .docx");
+            selectedFileName = null;
+            selectedFileBytes = null;
+            return;
+        }
+
+        if (file.Size > MaxFileSize)
+        {
+            ShowError("Maximum file size is 2 MB.");
+            selectedFileName = null;
+            selectedFileBytes = null;
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: MaxFileSize);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+
+            selectedFileBytes = buffer.ToArray();
+            selectedFileName = file.Name;
+            selectedFileContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Could not read '{file.Name}': {ex.Message}");
+            selectedFileName = null;
+            selectedFileBytes = null;
+        }
+    }
+
+    private async Task HandleSave()
+    {
+        message = null;
+
+        var effectiveCategory = string.Equals(category, "Others", StringComparison.OrdinalIgnoreCase)
+            ? (otherCategory ?? string.Empty).Trim()
+            : category;
+
+        if (string.Equals(category, "Others", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(otherCategory))
+        {
+            ShowError("Please specify the service request type.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(subject.Trim()))
+        {
+            ShowError("Enter subject.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(description.Trim()))
+        {
+            ShowError("Enter description.");
+            return;
+        }
+
+        isBusy = true;
+        try
+        {
+            var request = new SubmitGrievanceRequest(
+                PfNo: pfNo,
+                CreatedByName: displayName,
+                Category: effectiveCategory,
+                Subject: subject.Trim(),
+                Description: description.Trim(),
+                AttachmentFileName: selectedFileName,
+                AttachmentContentType: selectedFileContentType,
+                AttachmentData: selectedFileBytes);
+
+            var result = await GrievanceService.SubmitGrievanceAsync(request);
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Could not submit your request.");
+                return;
+            }
+
+            ShowSuccess($"Service request submitted successfully. Reference No: {result.RefNo}");
+            ResetForm();
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        category = "Select";
+        otherCategory = null;
+        subject = string.Empty;
+        description = string.Empty;
+        selectedFileName = null;
+        selectedFileContentType = null;
+        selectedFileBytes = null;
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

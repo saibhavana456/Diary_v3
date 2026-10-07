@@ -1,0 +1,1253 @@
+﻿@using MyDiary.Web.Core.Extensions
+@inherits LayoutComponentBase
+
+@* -------------------- USINGs & DI -------------------- *@
+@using Microsoft.Data.SqlClient
+@using MudBlazor
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Net.Http.Json
+@using System.Runtime.CompilerServices
+@using Microsoft.AspNetCore.Components.Web
+@using System.Text.RegularExpressions
+@using MyDiary.Web.Features.Banner.Components
+@using MyDiary.Web.Features.Banner.Services
+@using Oracle.ManagedDataAccess.Client
+@using System.Data
+@using MyDiary.Web.Features.Shared.Components;
+@using MyDiary.Web.Features.Shared.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+@using Microsoft.JSInterop
+@inject LanguageState LangState
+@implements IDisposable
+@inject IDialogService DialogService
+@inject IBannerService BannerService
+
+
+@* Aliases to avoid ApexCharts <-> MudBlazor collisions *@
+@using MColor = MudBlazor.Color
+@using MSize = MudBlazor.Size
+@using MAlign = MudBlazor.Align
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<style>
+
+    /* Visually hidden utility (accessible to screen readers) */
+    .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .landing-wrapper {
+        min-height: 100vh;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* Header Styling */
+    .custom-header {
+        background-color: white;
+        padding: 0 2rem;
+        height: 130px;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        flex-shrink: 0;
+    }
+
+    /* Navigation Link Styling */
+    /* ---------- HEADER NAV BUTTONS ---------- */
+    .mud-nav-link {
+        font-size: 0.95rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.4px;
+        text-transform: none !important;
+        min-height: auto !important;
+        height: auto !important;
+        line-height: 1.2;
+        padding: 8px 14px !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: none;
+        border-bottom: 3px solid transparent !important;
+       /*  border-radius: 0 !important; */
+        cursor: pointer;
+        white-space: nowrap;
+        text-align: center;
+        position: relative;
+       /*  overflow: visible !important;
+        transition: color 0.2s, border-bottom-color 0.2s; */
+    }
+
+        .mud-nav-link:hover {
+            color: #e31e24 !important;
+            border-bottom-color: #e31e24 !important;
+            /* background: none !important; */
+        }
+
+        .mud-nav-link.mud-button-root {
+            min-height: 44px !important;
+            height: auto !important;
+            padding: 8px 14px !important;
+            align-items: center !important;
+            display: inline-flex !important;
+            width: auto !important;
+            flex-shrink: 0;
+          /*   overflow: visible !important;
+            border-radius: 0 !important; */
+        }
+
+        /* Inner label — keep text clean, underline is on the button itself */
+        .mud-nav-link .mud-button-label {
+            line-height: 1.3 !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            white-space: nowrap !important;
+        }
+
+    /* Active state — red underline on the button element */
+    .nav-link-active,
+    .nav-link-active.mud-button-root {
+        color: #e31e24 !important;
+        border-bottom: 3px solid #e31e24 !important;
+        /* border-radius: 0 !important; */
+    }
+
+    .mud-nav-link:hover .mud-button-label {
+        border-bottom-color: #e31e24;
+    }
+
+    /* Notification Bar (Banner) Styling */
+    .notification-bar {
+        background-color: #e9ecef;
+        color: #1565c0;
+        font-size: 1.25rem;
+        text-align: left;
+        padding: 10px 0;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        border-radius: 15px 15px 0 0;
+        margin: 0 2rem;
+        border-bottom: none;
+        flex-shrink: 0;
+        position: relative;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+
+    .my_dairy_logo {
+        width: 15%;
+    }
+
+    .main-content-layout {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* The moving strip */
+    .marquee-track {
+        display: inline-block;
+        padding-left: 100%;
+        animation: marquee-scroll 60s linear infinite;
+        will-change: transform;
+    }
+
+    /* Each item spaced with a divider */
+    .marquee-item {
+        display: inline-block;
+        margin-right: 2rem;
+    }
+
+    /* Optional separator “|” between items */
+    .marquee-sep {
+        color: #9aa4af;
+        margin: 0 1rem;
+    }
+
+    @@keyframes marquee-scroll {
+        0% {
+            transform: translateX(0);
+        }
+
+        100% {
+            transform: translateX(-100%);
+        }
+    }
+
+    /* Pause on hover (optional) */
+    .notification-bar:hover .marquee-track {
+        animation-play-state: paused;
+    }
+
+    .search-bar {
+        width: 200px;
+        flex-shrink: 0;
+    }
+
+    .search-bar ::deep .mud-input-outlined-border {
+        border-radius: 15px !important;
+    }
+
+
+    /* -------- Quick Actions styles -------- */
+    .quick-actions-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #d1d5db;
+        border-radius: 999px;
+        background: #f8fafc;
+        padding: 6px 14px;
+        cursor: pointer;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #334155;
+        transition: background 0.2s, color 0.2s, border-color 0.2s;
+        flex-shrink: 0;
+        text-transform: none;
+    }
+
+    .quick-actions-btn:hover {
+        background: #1E3A8A;
+        color: white;
+        border-color: #1E3A8A;
+    }
+
+    .quick-actions-btn:hover .mud-icon-root {
+        color: white;
+    }
+
+    .qa-popover .mud-popover-paper {
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .qa-card {
+        width: 320px;
+        background: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .qa-header {
+        background: linear-gradient(90deg, #1976d2 0%, #1e88e5 100%);
+        color: #fff;
+        padding: 22px 20px;
+    }
+
+    .qa-title {
+        color: #fff;
+        font-weight: 700;
+        letter-spacing: .3px;
+        margin: 0;
+    }
+
+    .qa-subtitle {
+        color: rgba(255,255,255,.85);
+        margin-top: -2px;
+    }
+
+    .qa-grid {
+        padding: 12px 10px 14px 10px;
+        background: #fff;
+    }
+
+    .qa-item {
+        display: flex;
+        justify-content: center;
+        align-items: stretch;
+        padding: 6px 2px;
+    }
+
+    .qa-tile {
+        width: 86px;
+        height: 86px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: transform .12s ease, box-shadow .12s ease, background-color .2s ease;
+        background: #fafbfc;
+        border: 1px solid rgba(0,0,0,.05);
+        outline: none;
+    }
+
+        .qa-tile:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(0,0,0,.12);
+            background: #ffffff;
+        }
+
+        .qa-tile:focus {
+            box-shadow: 0 0 0 3px rgba(25,118,210,.25);
+            background: #ffffff;
+        }
+
+    .qa-avatar {
+        box-shadow: 0 2px 6px rgba(0,0,0,.12);
+    }
+
+    .qa-label {
+        color: #334155;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 72px;
+        font-weight: 600;
+        letter-spacing: .2px;
+    }
+
+    @@media (max-width: 600px) {
+        .qa-card {
+            width: 280px;
+        }
+
+        .qa-tile {
+            width: 78px;
+            height: 80px;
+        }
+    }
+
+    /* Responsive header adjustments */
+   @@media (max-width: 1600px) {
+    .mud-nav-link {
+        font-size: 0.85rem !important;
+        padding: 6px 7px !important;
+    }
+}
+
+@@media (max-width: 1400px) {
+    .mud-nav-link {
+        font-size: 0.8rem !important;
+        padding: 5px 5px !important;
+    }
+}
+
+    .lang-globe-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #d1d5db;
+        border-radius: 999px;
+        background: #f8fafc;
+        padding: 6px 14px;
+        cursor: pointer;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #334155;
+        transition: background 0.2s, color 0.2s, border-color 0.2s;
+        flex-shrink: 0;
+    }
+
+        .lang-globe-btn:hover {
+            background: #1E3A8A;
+            color: white;
+            border-color: #1E3A8A;
+        }
+
+        .lang-globe-btn:hover svg {
+            stroke: white;
+        }
+</style>
+
+<div class="landing-wrapper" @onclick="HandleWrapperClick">
+    <MudPaper Elevation="0" Class="custom-header d-flex align-center justify-space-between px-4">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="flex-shrink-0" Style="min-width:0; overflow:hidden;">
+            @* <MudImage Src="images/My_Diary_Log-transparent_small.png" Height="90" Alt="My Diary — Union Bank of India" Class="flex-shrink-0" /> *@
+            <MudImage Src="@(_currentLang == "en" ? "images/My_Diary_Log-transparent_small_2.png" : "images/My_Diary_Log-transparent_small_hindi.png")" Height="90" Alt="My Diary — Union Bank of India" Class="flex-shrink-0" />
+
+            <MudStack Row="true" Spacing="3" Class="d-none d-lg-flex align-center" Style="flex-wrap: nowrap; overflow: hidden; gap: 4px;">
+
+                <MudButton Variant="Variant.Text"
+                           OnClick="@(() => SetActive("HOME", ""))"
+                           Class="@GetLinkClass("HOME")"
+                           data-i18n="HOME">
+                    HOME
+                </MudButton>
+
+                <MudButton Variant="Variant.Text"
+                           OnClick="@(() => SetActive("NETWORK", "network"))"
+                           Class="@GetLinkClass("NETWORK")"
+                           data-i18n="NETWORK">
+                    NETWORK
+                </MudButton>
+
+                @* <MudButton Variant="Variant.Text"
+                           OnClick="@(() => SetActive("DOWNLOADS", "downloads"))"
+                           Class="@GetLinkClass("DOWNLOADS")"
+                           data-i18n="DOWNLOADS">
+                    DOWNLOADS
+                </MudButton>
+
+                <MudButton Variant="Variant.Text"
+                           OnClick="@(() => SetActive("DEPARTMENTS", "departments"))"
+                           Class="@GetLinkClass("DEPARTMENTS")"
+                           data-i18n="DEPARTMENTS">
+                    DEPARTMENTS
+                </MudButton> *@
+
+                <MudButton Variant="Variant.Text"
+                           OnClick="@(() => SetActive("APPLICATIONS", "applications"))"
+                           Class="@GetLinkClass("APPLICATIONS")"
+                           data-i18n="APPLICATIONS">
+                    APPLICATIONS
+                </MudButton>
+
+                <MudButton Variant="Variant.Text"
+                           OnClick="@(() => SetActive("RATES & CHARGES", "rates-charges"))"
+                           Class="@GetLinkClass("RATES & CHARGES")"
+                           data-i18n="RATES_CHARGES">
+                    RATES &amp; CHARGES
+                </MudButton>
+
+                 @* <MudButton Variant="Variant.Text"
+                            OnClick="@(() => SetActive("FAQ/SOP", "faq-sop"))"
+                            Class="@GetLinkClass("FAQ/SOP")"
+                            Style="white-space: nowrap;"
+                            data-i18n="FAQ_SOP">
+                     FAQ/SOP
+                 </MudButton> *@
+
+                <MudButton Variant="Variant.Text"
+                           OnClick="@(() => SetActive("ABOUT US", "about"))"
+                           Class="@GetLinkClass("ABOUT US")"
+                           Style="white-space: nowrap;"
+                           data-i18n="ABOUT_US">
+                    ABOUT US
+                </MudButton>
+
+            </MudStack>
+        </MudStack>       
+
+        @* Commented by Kavita for Search *@
+        @* <MudTextField @bind-Value="searchString"
+        Placeholder="Search..."
+        Variant="Variant.Text"
+        Adornment="Adornment.Start"
+        AdornmentIcon="@Icons.Material.Filled.Search"
+        AdornmentColor="MudBlazor.Color.Default"
+        Margin="Margin.None"
+        Class="mt-0 flex-shrink-0"
+        Style="width: 200px; font-style: italic;" /> *@
+
+        @* Commented by Kavita for Search *@
+
+        @* <MudImage Src="images/UBI_Logo.png" Height="70" Alt="Union Bank" Class="flex-shrink-0" /> *@
+
+
+
+        <!-- RIGHT: search + bank logo -->
+        <MudStack Row="true"
+                  AlignItems="AlignItems.Center"
+                  Spacing="2"
+                  Class="flex-shrink-0">
+
+            @* SEARCH *@
+            <div @onclick:stopPropagation="true" style="position:relative;">
+            <MudAutocomplete T="string"
+                             @ref="_auto"
+                             Value="@searchString"
+                             ValueChanged="OnSuggestionPickedByValue"
+                             ValueExpression="() => searchString"
+                             Id="searchBox"
+                             Placeholder="Search..."
+                             data-i18n-placeholder="SEARCH"
+                             Variant="Variant.Outlined"
+                             Adornment="Adornment.Start"
+                             AdornmentIcon="@Icons.Material.Filled.Search"
+                             AdornmentAriaLabel=""
+                             OnAdornmentClick="RunSearchAsync"
+                             Margin="Margin.Dense"
+                             Class="search-bar"
+                             Style="font-style: italic;"
+                             SearchFunc="SuggestAsync"
+                             MinCharacters="1"
+                             DebounceInterval="200"
+                             Clearable="true"
+                             CoerceText="true"
+                             Strict="true"
+                             OnClearButtonClick="ClearSearch"
+                             OnKeyDown="OnAutoKeyDown" />
+            </div>
+
+            @* SEARCH RESULTS POPOVER *@
+@*             <div role="status" aria-live="polite" aria-atomic="true" class="visually-hidden" id="search-results-announcement">
+                @if (_showResults && _results != null)
+                {
+                    @($"{_results.Count} result{(_results.Count == 1 ? "" : "s")} found")
+                }
+            </div> *@
+            <MudPopover Open="_showResults"
+                        AnchorId="searchBox"
+                        OverflowBehavior="OverflowBehavior.FlipAlways"
+                        Elevation="6"
+                        AnchorOrigin="Origin.BottomLeft"
+                        TransformOrigin="Origin.TopLeft">
+                <MudPaper Class="qa-card" @onkeydown="OnQuickActionsKeyDown" @onclick:stopPropagation="true" tabindex="0">
+                    <MudList T="SearchResult" Dense="true">
+                        @if ((_results?.Count ?? 0) == 0)
+                        {
+                            <MudListItem Disabled="true">
+                                <MudText Typo="Typo.caption" Class="px-3 py-2 text-secondary" data-i18n="NO_RESULTS">
+                                    No results
+                                </MudText>
+                            </MudListItem>
+                        }
+                        else
+                        {
+                            @foreach (var r in _results)
+                            {
+                                <MudListItem T="SearchResult" Value="@r" Class="px-3 py-2" @onclick="() => OpenResultAsync(r)">
+                                    <MudStack Spacing="1">
+                                        <MudText Typo="Typo.body2" Style="font-weight:600;">
+                                            @(!string.IsNullOrWhiteSpace(r.name) ? r.name : "(no name)")
+                                        </MudText>
+
+                                        @if (!string.IsNullOrWhiteSpace(r.category) || !string.IsNullOrWhiteSpace(r.subCategory))
+                                        {
+                                            <MudText Typo="Typo.caption" Class="text-secondary">
+                                                @r.category
+                                                @if (!string.IsNullOrWhiteSpace(r.subCategory))
+                                                {
+                                                    <text> / @r.subCategory</text>
+                                                }
+                                            </MudText>
+                                        }
+                                    </MudStack>
+                                </MudListItem>
+                            }
+                        }
+                    </MudList>
+                </MudPaper>
+            </MudPopover>
+
+            @* QUICK ACTIONS BUTTON *@
+            <MudButton Variant="Variant.Text"
+                       Class="quick-actions-btn"
+                       Title="Quick Actions"
+                       OnClick="ToggleQuickActionsWithStop"
+                       Id="quickActionsBtn">
+
+                <MudIcon Icon="@Icons.Material.Filled.GridView"
+                         Style="font-size:28px;" />
+
+                <span class="ml-1" aria-hidden="true" lang="@_currentLang">
+                    @(_currentLang == "en" ? "Quick Links" : "त्वरित लिंक")
+                </span>
+
+            </MudButton>
+
+
+            @* QUICK ACTIONS POPOVER — uses shared QuickLinksPanel component *@
+            <MudPopover @bind-Open="_showQuickActions"
+                        AnchorId="quickActionsBtn"
+                        OverflowBehavior="OverflowBehavior.FlipAlways"
+                        Elevation="8"
+                        AnchorOrigin="Origin.BottomCenter"
+                        TransformOrigin="Origin.TopCenter"
+                        Class="qa-popover">
+                <QuickLinksPanel OnClose="CloseQuickActions" />
+            </MudPopover>
+
+            <MudButton Variant="Variant.Text"
+                       Class="lang-globe-btn"
+                       OnClick="ToggleLanguage"                     
+                       UserAttributes="@(new Dictionary<string, object>
+                               {
+                                   ["title"] = _currentLang == "en" ? "हिंदी में देखें" : "View in English",
+                                   ["aria-label"] = _currentLang == "en" ? "Hindi" : "English"
+                               })">
+
+
+                <svg xmlns="http://www.w3.org/2000/svg"
+                     viewBox="0 0 24 24"
+                     width="20"
+                     height="20"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="1.8"
+                     stroke-linecap="round"
+                     stroke-linejoin="round"
+                     aria-hidden="true"
+                     focusable="false">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="2" y1="12" x2="22" y2="12" />
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10
+                 15.3 15.3 0 0 1-4 10
+                 15.3 15.3 0 0 1-4-10
+                 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+
+                <span class="ml-1" aria-hidden="true" lang="@(_currentLang == "en" ? "hi" : "en")">
+                    @(_currentLang == "en" ? "हिंदी" : "English")
+                </span>
+
+            </MudButton>
+
+
+            @* Bank logo — far right *@
+            <MudImage Src="images/UBI_Logo.png" Height="50" Alt="Union Bank of India" Class="flex-shrink-0" />
+        </MudStack>
+    </MudPaper>
+
+    <div class="notification-bar">
+        @if (_marqueeLoading)
+        {
+            <span class="px-3" data-i18n="LOADING">Loading announcements…</span>
+        }
+        else if (!string.IsNullOrWhiteSpace(_marqueeError))
+        {
+            <span class="px-3">@_marqueeError</span>
+        }
+        else if (_marqueeItems?.Count > 0)
+        {
+            <div class="marquee-track">
+                @* Repeat twice for continuous scrolling *@
+                @for (int repeat = 0; repeat < 2; repeat++)
+                {
+                    @foreach (var item in _marqueeItems)
+                    {
+                        <span class="marquee-item">
+                            @(_currentLang == "hi" ? item.Hi : item.En)
+                        </span>
+
+                        <span class="marquee-sep">|</span>
+                    }
+                }
+            </div>
+        }
+        else
+        {
+            <span class="marquee-item px-3" data-i18n="NO_ANNOUNCEMENTS">No active announcements at this time.</span>
+        }
+    </div>
+
+    <MudLayout Class="main-content-layout">
+        <ErrorBoundary @ref="_landingErrorBoundary">
+            <ChildContent>
+                @Body
+            </ChildContent>
+            <ErrorContent>
+                <MudContainer MaxWidth="MaxWidth.Small" Class="mt-8 text-center">
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">
+                        An error occurred while loading this page.
+                    </MudAlert>
+                    <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary"
+                               Class="rounded-pill"
+                               OnClick="RecoverLandingError">
+                        Try Again
+                    </MudButton>
+                </MudContainer>
+            </ErrorContent>
+        </ErrorBoundary>
+    </MudLayout>
+
+</div>
+
+@code {
+    private ErrorBoundary? _landingErrorBoundary;
+    private string searchString = "";
+    private string ActiveLink = "HOME";
+    private bool _isExpanded = false;
+    private string _query = string.Empty;
+    private int _take = 15;
+    private bool _loading = false;
+    private string? _error;
+    private List<SearchResult> _results = new();
+    private bool _showResults = false;
+    private MudAutocomplete<string>? _auto;
+    private string ConnStr() => Configuration.GetConnectionString("MyDiaryDBConnection") ?? "";
+    private string SqlConnStr() => Configuration.GetConnectionString("SQLServerConnection") ?? "";
+
+    private List<(string En, string Hi)> _marqueeItems = new();
+    private bool _marqueeLoading = true;
+    private string? _marqueeError;
+    private string _currentLang = "en";
+
+    private void RecoverLandingError()
+    {
+        _landingErrorBoundary?.Recover();
+    }
+
+    /* Quick Actions state & model */
+    private bool _showQuickActions = false; 
+    private void GoToAllApplications()
+    {
+        _showQuickActions = false;
+        Nav.NavigateTo("applications");
+    }
+
+    private async Task OnLanguageToggle(string lang)
+    {
+        _currentLang = lang;
+        await JS.InvokeVoidAsync("applyLanguage", lang);
+
+        StateHasChanged();
+    }
+
+    public sealed class QuickAction
+    {
+        public string Label { get; set; } = "";
+        public string? Url { get; set; }
+        public string? Route { get; set; }   // for internal routes if needed
+        public MColor Color { get; set; } = MColor.Primary;
+        public string Icon { get; set; } = Icons.Material.Filled.Link;
+        public bool External { get; set; } = true;
+
+    }
+    private void OnQuickActionsKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _showQuickActions = false;
+            StateHasChanged();
+        }
+    }
+
+
+    private readonly List<QuickAction> _quickActions = new()
+    {
+        new QuickAction { Label="Finacle", Url="https://finacle.ubi.com/SSO/ui/SSOLogin.jsp", Icon=Icons.Material.Filled.AccountBalance, Color=MColor.Error },
+        new QuickAction { Label="Parivaar", Url="https://unionparivar.unionbankofindia.co.in/psp/pshrprd/?cmd=login", Icon=Icons.Material.Filled.Groups, Color=MColor.Warning },
+        new QuickAction { Label="LAS", Url="https://las.example.com", Icon=Icons.Material.Filled.TableChart, Color=MColor.Info },
+        new QuickAction { Label="IT Konnect", Url="https://ubiitsm-dwp.unionbankofindia.co.in/", Icon=Icons.Material.Filled.Public, Color=MColor.Success },
+        new QuickAction { Label="CRM Edge", Url="https://ucrm.unionbankofindia.co.in/", Icon=Icons.Material.Filled.SupportAgent, Color=MColor.Secondary },
+        new QuickAction { Label="Circular & Policies", Url="https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/Circular.jsp", Icon=Icons.Material.Filled.Description, Color=MColor.Primary },
+    };
+
+    private void ToggleQuickActionsWithStop(MouseEventArgs e)
+    {
+        _showQuickActions = !_showQuickActions;
+    }
+
+    private void StopPropagation(MouseEventArgs e)
+    {
+        // This method exists solely to stop event propagation - By handling the click here, it won't bubble up to the wrapper
+    }
+
+    private void HandleWrapperClick()
+    {
+        // Close popover when clicking anywhere on the page
+        if (_showQuickActions)
+        {
+            _showQuickActions = false;
+        }
+
+        // Close search results when clicking outside
+        if (_showResults)
+        {
+            _showResults = false;
+            _results.Clear();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OpenQuickActionAsync(QuickAction qa)
+    {
+        _showQuickActions = false;
+
+        if (!string.IsNullOrWhiteSpace(qa.Url))
+        {
+            if (qa.External)
+            {
+                await JS.InvokeVoidAsync("window.open", qa.Url, "_blank", "noopener,noreferrer");
+            }
+            else
+            {
+                Nav.NavigateTo(qa.Url, forceLoad: false);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(qa.Route))
+        {
+            Nav.NavigateTo(qa.Route, forceLoad: false);
+        }
+    }
+
+    private async Task OnTileKeyDown(KeyboardEventArgs e, QuickAction qa)
+    {
+        if (e.Key is "Enter" or " ")
+            await OpenQuickActionAsync(qa);
+    }
+
+    /* Lifecycle */
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        _ = LoadActiveMarqueesAsync();   // fire-and-forget — page renders immediately while marquee loads in background
+    }
+
+    private bool _bannerShown = false;
+
+    private async Task ShowBannerIfActiveAsync()
+    {
+        try
+        {
+            var banner = await BannerService.GetActiveBannerAsync();
+            if (banner == null) return;
+
+            var options = new DialogOptions
+                {
+                    MaxWidth = MaxWidth.Large,
+                    FullWidth = true,
+                    CloseButton = false,
+                    NoHeader = true,
+                    BackdropClick = true
+                };
+
+            var parameters = new DialogParameters<BannerDialog>
+            {
+                { x => x.Banner, banner }
+            };
+
+            await DialogService.ShowAsync<BannerDialog>(null, parameters, options);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[LandingLayout] Failed to show banner dialog.");
+        }
+    }
+
+    private Task CloseQuickActions()
+    {
+        _showQuickActions = false;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    /* Marquee */
+    private async Task LoadActiveMarqueesAsync(CancellationToken ct = default)
+    {
+        _marqueeLoading = true;
+        _marqueeError = null;
+        _marqueeItems.Clear();
+
+        try
+        {
+            const string sql = @"
+    SELECT [Text], [Text_HI]
+    FROM dbo.MarqueeAnnouncements
+    WHERE IsActive = 1
+      AND GETDATE() BETWEEN StartDate AND EndDate
+    ORDER BY DisplayOrder, StartDate DESC;";
+
+            using var con = new SqlConnection(SqlConnStr());
+            await con.OpenAsync(ct);
+
+            using var cmd = new SqlCommand(sql, con);
+            cmd.CommandType = CommandType.Text;
+            cmd.CommandTimeout = 5; // bounded timeout — slow/unreachable DB won't hang the background load
+
+            var list = new List<(string En, string Hi)>();
+
+            using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+            {
+                var en = r.IsDBNull(0) ? string.Empty : r.GetString(0);
+                var hi = r.IsDBNull(1) ? en : r.GetString(1); // fallback to EN if HI missing
+                list.Add((en, hi));
+            }
+
+            _marqueeItems = list;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[LandingLayout] Unhandled error: " + ex.Message);
+            _marqueeError = "Failed to load announcements.";
+        }
+        finally
+        {
+            _marqueeLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshMarqueeAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await LoadActiveMarqueesAsync(cts.Token);
+    }
+
+    /* Nav active tab */
+    private string GetLinkClass(string linkName)
+    {
+        var baseClass = "mud-nav-link";
+        return ActiveLink == linkName ? $"{baseClass} nav-link-active" : baseClass;
+    }
+
+    private void SetActive(string linkName, string route)
+    {
+        ActiveLink = linkName;
+        _showQuickActions = false;           // ⬅ close popover when moving via header
+        Nav.NavigateTo(route);
+    }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Nav.LocationChanged += OnLocationChanged;
+        UpdateActiveFromUri(Nav.Uri);
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        try
+        {
+            // Auto-recover from error boundary on navigation
+            _landingErrorBoundary?.Recover();
+
+            UpdateActiveFromUri(e.Location);
+            await InvokeAsync(StateHasChanged);
+
+            await JS.InvokeVoidAsync("loadLanguage");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"LandingLayout: OnLocationChanged failed — {ex.Message}");
+        }
+    }
+
+    private void UpdateActiveFromUri(string uri)
+    {
+        // Normalize path
+        var baseUri = new Uri(Nav.BaseUri);
+        var full = new Uri(uri, UriKind.Absolute);
+        var path = full.AbsolutePath;
+
+        if (baseUri.AbsolutePath != "/" && path.StartsWith(baseUri.AbsolutePath, StringComparison.OrdinalIgnoreCase))
+            path = path.Substring(baseUri.AbsolutePath.Length);
+
+        path = path.Trim('/').ToLowerInvariant();
+
+        // Read querystring (?source=downloads|departments)
+        var query = QueryHelpers.ParseQuery(full.Query);
+        var source = query.TryGetValue("source", out var srcVals) ? srcVals.ToString().ToLowerInvariant() : null;
+
+        // Decide active tab
+        ActiveLink = path switch
+        {
+            "" => "HOME",
+            "my_diary_v2" => "HOME",
+            "network" => "NETWORK",
+            "downloads" => "DOWNLOADS",
+            "departments" => "DEPARTMENTS",
+            "applications" => "APPLICATIONS",
+            "rates-charges" => "RATES & CHARGES",
+            "faq-sop" => "FAQ/SOP",
+            "about" => "ABOUT US",
+            _ when path.StartsWith("ip-directory") => "NETWORK",
+            _ when path.StartsWith("documents") => source switch
+            {
+                "downloads" => "DOWNLOADS",
+                "departments" => "DEPARTMENTS",
+                _ => ActiveLink
+            },
+            _ => ActiveLink
+        };
+    }
+
+    // good hygiene: unsubscribe
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+
+    static string BuildOracleTextQuery(string q)
+    {
+        var tokens = Regex.Matches(q ?? string.Empty, @"[\p{L}\p{N}]+")
+                          .Select(m => m.Value)
+                          .Where(s => !string.IsNullOrWhiteSpace(s))
+                          .Distinct(StringComparer.OrdinalIgnoreCase)
+                          .ToArray();
+
+        if (tokens.Length == 0) return string.Empty;
+
+        var andGroup = string.Join(" & ", tokens.Select(t => $"({t} | {t}%)"));
+        var fuzzies = string.Join(" | ", tokens.Select(t => $"fuzzy({t}, 70, 200, weight)"));
+        return $"{andGroup} | {fuzzies}";
+    }
+
+    private void NavigateToLogin() => Nav.NavigateTo("login");
+
+    /* Search handlers */
+    private async Task OnSuggestionPickedByValue(string picked)
+    {
+        if (string.IsNullOrWhiteSpace(picked)) return;
+        searchString = picked.Trim();
+        await RunSearchAsync();
+    }
+
+    private async Task OpenResultAsync(SearchResult r)
+    {
+        if (!string.IsNullOrWhiteSpace(r.url))
+        {
+            // Close search popup before navigating
+            _showResults = false;
+            searchString = string.Empty;
+            _results.Clear();
+            StateHasChanged();
+
+            await JS.InvokeVoidAsync("window.open", r.url, "_blank", "noopener,noreferrer");
+        }
+    }
+
+    private void SetResultsVisibility()
+    {
+        var hasText = !string.IsNullOrWhiteSpace(searchString);
+        _showResults = hasText && (_results?.Count > 0);
+    }
+
+    private async Task OnAutoKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _results.Clear();
+            _showResults = false;
+            StateHasChanged();
+            return;
+        }
+
+        if (e.Key == "Enter")
+            await RunSearchAsync();
+    }
+
+    private void ClearSearch()
+    {
+        searchString = string.Empty;
+        _results.Clear();
+        _showResults = false;
+        StateHasChanged();
+    }
+
+    private async Task<IEnumerable<string>> SuggestAsync(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            _results.Clear();
+            _showResults = false;
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // NOTE: In Oracle, avoid bind variable in FETCH FIRST; use ROWNUM <= :take
+            const string sql = @"
+    SELECT term FROM (
+        SELECT DISTINCT t.term
+        FROM mydiarydb.mydiary_suggest_terms t
+        JOIN mydiarydb.mydiary_landing_sitemap s ON t.link_id = s.id
+        WHERE UPPER(t.term) LIKE UPPER(:pfx)||'%'
+          AND t.page_type='landing'
+          AND s.SHOW_BEFORE_LOGIN = 'Y'
+        ORDER BY t.term
+    )
+    WHERE ROWNUM <= :take";
+
+            using var con = new OracleConnection(ConnStr());
+            await con.OpenAsync(ct);
+
+            using var cmd = new OracleCommand(sql, con) { BindByName = true };
+            cmd.Parameters.Add("pfx", value);
+            cmd.Parameters.Add("take", 8);
+
+            var list = new List<string>();
+            using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+                list.Add(r.GetString(0));
+
+            // Let MudAutocomplete show its own dropdown.
+            // We do not show our popover for suggestions to avoid duplication.
+            _results.Clear();
+            _showResults = false;
+
+            return list;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[LandingLayout] Unhandled error: " + ex.Message);
+            _results.Clear();
+            _showResults = false;
+            return Array.Empty<string>();
+        }
+    }
+
+    private async Task RunSearchAsync()
+    {
+        _error = null;
+        _loading = true;
+        _results.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var textQuery = BuildOracleTextQuery(searchString);
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append(@"
+    SELECT
+        l.id, l.name, l.url, l.category, l.sub_category, l.description, l.keywords,
+        ( NVL(SCORE(1),0) * 5
+          + CASE WHEN UPPER(l.name)     LIKE UPPER(:pfx)||'%' THEN 200 ELSE 0 END
+          + CASE WHEN UPPER(l.keywords) LIKE UPPER(:pfx)||'%' THEN 100 ELSE 0 END
+        ) AS rank_score
+    FROM mydiarydb.mydiary_landing_sitemap l
+    WHERE l.SHOW_BEFORE_LOGIN = 'Y' AND (");
+
+            if (!string.IsNullOrWhiteSpace(textQuery))
+            {
+                sb.Append(" CONTAINS(l.keywords, :textQuery, 1) > 0 OR ");
+            }
+
+            sb.Append(@" UPPER(l.name)      LIKE UPPER(:pfx)||'%'
+             OR UPPER(l.keywords) LIKE UPPER(:pfx)||'%' )
+    ORDER BY rank_score DESC, l.name ASC");
+
+            using var con = new OracleConnection(ConnStr());
+            await con.OpenAsync();
+
+            using var cmd = new OracleCommand(sb.ToString(), con) { BindByName = true };
+            cmd.Parameters.Add("pfx", searchString ?? "");
+
+            if (!string.IsNullOrWhiteSpace(textQuery))
+                cmd.Parameters.Add("textQuery", textQuery);
+
+            var list = new List<SearchResult>();
+            using (var r = await cmd.ExecuteReaderAsync())
+            {
+                while (await r.ReadAsync())
+                {
+                    list.Add(new SearchResult
+                        {
+                            id = r.GetInt32(0),
+                            name = r.IsDBNull(1) ? string.Empty : r.GetString(1),
+                            url = r.IsDBNull(2) ? string.Empty : r.GetString(2),
+                            category = r.IsDBNull(3) ? null : r.GetString(3),
+                            subCategory = r.IsDBNull(4) ? null : r.GetString(4),
+                            description = r.IsDBNull(5) ? null : r.GetString(5),
+                            keywords = r.IsDBNull(6) ? null : r.GetString(6),
+                            score = r.IsDBNull(7) ? 0 : Convert.ToDecimal(r.GetValue(7))
+                        });
+                }
+            }
+
+            _results = list;
+            SetResultsVisibility();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[LandingLayout] Error: " + ex.Message);
+            _error = UserFacingError.Generic;
+            _results.Clear();
+            _showResults = false;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    public sealed class SearchResult
+    {
+        public int id { get; set; }
+        public string? name { get; set; }
+        public string? url { get; set; }
+        public string? category { get; set; }
+        public string? subCategory { get; set; }
+        public string? description { get; set; }
+        public string? keywords { get; set; }
+        public decimal score { get; set; }
+    }
+
+    private async Task SyncLanguageAsync()
+    {
+        try
+        {
+            _currentLang = await JS.InvokeAsync<string>(
+                "localStorage.getItem",
+                "lang"
+            ) ?? "en";
+        }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+        catch (TaskCanceledException) { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await SyncLanguageAsync();
+            await JS.InvokeVoidAsync("loadLanguage");
+
+            if (firstRender)
+            {
+                // Hide the decorative search adornment button from screen readers and tab order.
+                // It is a non-interactive visual indicator — the actual search is triggered by typing.
+                await JS.InvokeVoidAsync("eval", @"
+                    (function() {
+                        var btn = document.querySelector('#searchBox')
+                            ?.closest('.mud-input-control')
+                            ?.querySelector('.mud-input-adornment-start button');
+                        if (btn) {
+                            btn.setAttribute('aria-hidden', 'true');
+                            btn.setAttribute('tabindex', '-1');
+                        }
+                    })();
+                ");
+
+                // Show promotional banner popup if one is active
+                if (!_bannerShown)
+                {
+                    _bannerShown = true;
+                    await ShowBannerIfActiveAsync();
+                }
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+        catch (TaskCanceledException) { }
+    }
+
+
+    private async Task ToggleLanguage()
+    {
+        var current = await JS.InvokeAsync<string>("localStorage.getItem", "lang");
+        var next = current == "hi" ? "en" : "hi";
+
+        await JS.InvokeVoidAsync("applyLanguage", next);
+
+        _currentLang = next;
+        LangState.SetLanguage(next);
+        StateHasChanged();
+    }
+}

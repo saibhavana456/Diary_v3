@@ -1,0 +1,12 @@
+.tg-title {
+    color: #0b4498;
+    font-weight: 700;
+}
+
+::deep .tg-card {
+    border-radius: 12px;
+}
+
+::deep .tg-table td {
+    line-height: 1.5;
+}

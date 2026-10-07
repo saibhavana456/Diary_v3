@@ -1,0 +1,632 @@
+﻿@page "/reports/cash-transaction-report"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Cash Transactions — My Diary</PageTitle>
+
+<!-- ===================== OTC (Monthly) � existing ===================== -->
+<DynamicDashboard Config="_configMonthly"
+                  Data="_dataMonthly"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabelMonthly"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExportMonthly" />
+
+<!-- ===================== OTC (FY) � existing ===================== -->
+
+<DynamicDashboard Config="_configFY"
+                  Data="_dataFY"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabelFY"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExportFY" />
+
+<!-- ===================== Digital (Monthly) � NEW ===================== -->
+<DynamicDashboard Config="_configDigiMonthly"
+                  Data="_dataDigiMonthly"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabelDigiMonthly"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExportDigiMonthly" />
+
+<!-- ===================== Digital (FY) � NEW ===================== -->
+<DynamicDashboard Config="_configDigiFY"
+                  Data="_dataDigiFY"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabelDigiFY"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExportDigiFY" />
+
+@code {
+    // Optional page title
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    // Shared Filters ("1"=All(Summary), "all"=All(Levelwise))
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+
+    // Shared state
+    private bool _loading = true;
+
+    // OTC datasets (Monthly & FY) � existing
+    private List<Dictionary<string, object>> _dataMonthly = new();
+    private List<Dictionary<string, object>> _dataFY = new();
+
+    // Digital datasets (Monthly & FY) � NEW
+    private List<Dictionary<string, object>> _dataDigiMonthly = new();
+    private List<Dictionary<string, object>> _dataDigiFY = new();
+
+    // Labels
+    private string _asOnDateLabelMonthly = "";
+    private string _asOnDateLabelFY = "";
+    private string _asOnDateLabelDigiMonthly = ""; // NEW
+    private string _asOnDateLabelDigiFY = "";      // NEW
+
+    // Dashboard configs
+    private ReportConfig _configMonthly = new();
+    private ReportConfig _configFY = new();
+    private ReportConfig _configDigiMonthly = new(); // NEW
+    private ReportConfig _configDigiFY = new();      // NEW
+
+    // User context (wire to claims/session)
+    // CO | ZONE | REGION | BRANCH
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ---------------- Columns (OTC Monthly: OTC_*, FY: FY_OTC_*) � existing ----------------
+    private readonly List<ColumnConfig> _colsMonthly = new()
+    {
+        new ColumnConfig { Header = "Zone",   PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name",   Width = "12%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name",   Width = "18%" },
+        new ColumnConfig { Header = "SolID",  PropertyName = "SolId",         Width = "8%"  },
+
+        // Receipts - With Debit Card
+        new ColumnConfig { Header = "R WDC <=10K",   PropertyName = "OTC_R_WDCARD_10K",   IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "R WDC 10-25K",    PropertyName = "OTC_R_WDCARD_1025K", IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "R WDC >25K",    PropertyName = "OTC_R_WDCARD_25K",   IsNumeric = true, Width="6%" },
+
+        // Receipts - Without Debit Card
+        new ColumnConfig { Header = "R WODC <=10K",  PropertyName = "OTC_R_WODCARD_10K",  IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "R WODC 10-25K",   PropertyName = "OTC_R_WODCARD_1025K",IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "R WODC >25K",   PropertyName = "OTC_R_WODCARD_25K",  IsNumeric = true, Width="6%" },
+
+        // Payments - With Debit Card
+        new ColumnConfig { Header = "P WDC <=10K",   PropertyName = "OTC_P_WDCARD_10K",   IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "P WDC 10-25K",    PropertyName = "OTC_P_WDCARD_1025K", IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "P WDC >25K",    PropertyName = "OTC_P_WDCARD_25K",   IsNumeric = true, Width="6%" },
+
+        // Payments - Without Debit Card
+        new ColumnConfig { Header = "P WODC <=10K",  PropertyName = "OTC_P_WODCARD_10K",  IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "P WODC 10-25K",   PropertyName = "OTC_P_WODCARD_1025K",IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "P WODC >25K",   PropertyName = "OTC_P_WODCARD_25K",  IsNumeric = true, Width="6%" },
+    };
+
+    private readonly List<ColumnConfig> _colsFY = new()
+    {
+        new ColumnConfig { Header = "Zone",   PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name",   Width = "12%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name",   Width = "18%" },
+        new ColumnConfig { Header = "SolID",  PropertyName = "SolId",         Width = "8%"  },
+
+        // FY Receipts - With Debit Card
+        new ColumnConfig { Header = "FY R WDC <=10K",   PropertyName = "FY_OTC_R_WDCARD_10K",   IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY R WDC 10-25K",    PropertyName = "FY_OTC_R_WDCARD_1025K", IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY R WDC >25K",    PropertyName = "FY_OTC_R_WDCARD_25K",   IsNumeric = true, Width="6%" },
+
+        // FY Receipts - Without Debit Card
+        new ColumnConfig { Header = "FY R WODC <=10K",  PropertyName = "FY_OTC_R_WODCARD_10K",  IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY R WODC 10-25K",   PropertyName = "FY_OTC_R_WODCARD_1025K",IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY R WODC >25K",   PropertyName = "FY_OTC_R_WODCARD_25K",  IsNumeric = true, Width="6%" },
+
+        // FY Payments - With Debit Card
+        new ColumnConfig { Header = "FY P WDC <=10K",   PropertyName = "FY_OTC_P_WDCARD_10K",   IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY P WDC 10-25K",    PropertyName = "FY_OTC_P_WDCARD_1025K", IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY P WDC >25K",    PropertyName = "FY_OTC_P_WDCARD_25K",   IsNumeric = true, Width="6%" },
+
+        // FY Payments - Without Debit Card
+        new ColumnConfig { Header = "FY P WODC <=10K",  PropertyName = "FY_OTC_P_WODCARD_10K",  IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY P WODC 10-25K",   PropertyName = "FY_OTC_P_WODCARD_1025K",IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "FY P WODC >25K",   PropertyName = "FY_OTC_P_WODCARD_25K",  IsNumeric = true, Width="6%" },
+    };
+
+    // ---------------- Columns (Digital Monthly & FY share) � NEW ----------------
+    private readonly List<ColumnConfig> _colsDigi = new()
+    {
+        new ColumnConfig { Header = "Zone",   PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name",   Width = "12%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name",   Width = "18%" },
+        new ColumnConfig { Header = "SolID",  PropertyName = "SolId",         Width = "8%"  },
+
+        // ATM Payment (Our Bank)
+        new ColumnConfig { Header = "ATM P (B) <=10K",   PropertyName = "ATM_P_B_10K",    IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "ATM P (B) 10-25K",    PropertyName = "ATM_P_B_1025K",  IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "ATM P (B) >25K",    PropertyName = "ATM_P_B_25K",    IsNumeric = true, Width="6%" },
+
+        // ATM Payment (Other Bank)
+        new ColumnConfig { Header = "ATM P (NB) <=10K",  PropertyName = "ATM_P_NB_10K",   IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "ATM P (NB) 10-25K",   PropertyName = "ATM_P_NB_1025K", IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "ATM P (NB) >25K",   PropertyName = "ATM_P_NB_25K",   IsNumeric = true, Width="6%" },
+
+        // CRM Payment (Our Bank)
+        new ColumnConfig { Header = "CRM P (B) <=10K",   PropertyName = "CRM_P_B_10K",    IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "CRM P (B) 10-25K",    PropertyName = "CRM_P_B_1025K",  IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "CRM P (B) >25K",    PropertyName = "CRM_P_B_25K",    IsNumeric = true, Width="6%" },
+
+        // CRM Payment (Other Bank)
+        new ColumnConfig { Header = "CRM P (NB) <=10K",  PropertyName = "CRM_P_NB_10K",   IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "CRM P (NB) 10-25K",   PropertyName = "CRM_P_NB_1025K", IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "CRM P (NB) >25K",   PropertyName = "CRM_P_NB_25K",   IsNumeric = true, Width="6%" },
+
+        // CRM Receipts
+        new ColumnConfig { Header = "CRM R <=10K",       PropertyName = "CRM_R_B_10K",    IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "CRM R 10-25K",        PropertyName = "CRM_R_B_1025K",  IsNumeric = true, Width="6%" },
+        new ColumnConfig { Header = "CRM R >25K",        PropertyName = "CRM_R_B_25K",    IsNumeric = true, Width="6%" },
+    };
+
+    // ---------------- Lifecycle ----------------
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        // Titles � keep existing OTC titles
+
+        _configMonthly.Title = "Cash Transactions-OTC (Monthly)";
+        _configFY.Title = "Cash Transactions-OTC (FY)";
+
+
+        // Digital titles � NEW
+        _configDigiMonthly.Title = "Digital Transactions (Monthly)";
+        _configDigiFY.Title = "Digital Transactions (FY)";
+
+        // Columns binding
+
+        _configMonthly.Columns = _colsMonthly;
+        _configFY.Columns = _colsFY;
+
+        _configDigiMonthly.Columns = _colsDigi;   // NEW
+        _configDigiFY.Columns = _colsDigi;   // NEW
+
+        await LoadAll(); // load OTC + Digital (Monthly & FY)
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadAll();
+    }
+
+    // ---------------- Loaders ----------------
+    private async Task LoadAll()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // All 4 report loads are independent — run in parallel
+        await Task.WhenAll(LoadMonthly(), LoadFY(), LoadDigiMonthly(), LoadDigiFY());
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadMonthly()
+    {
+        string sql = BuildFinalQuery(isFY: false);
+        _dataMonthly = await ReportService.ExecuteRawQueryAsync(sql);
+
+        var tranDate = await GetTranDateAsync();
+        _asOnDateLabelMonthly = $"No of Transactions On {tranDate}";
+    }
+
+    private async Task LoadFY()
+    {
+        string sql = BuildFinalQuery(isFY: true);
+        _dataFY = await ReportService.ExecuteRawQueryAsync(sql);
+
+        var (fromText, toText) = await GetHeaderDatesAsync();
+        _asOnDateLabelFY = $"FY Transactions, from {fromText} To {toText}";
+    }
+
+    // -------- Digital (NEW) --------
+    private async Task LoadDigiMonthly()
+    {
+        string sql = BuildDigitalQuery(isFY: false);
+        _dataDigiMonthly = await ReportService.ExecuteRawQueryAsync(sql);
+
+        var tran = await GetDigitalTranDateAsync(); // FIX: plain string (no tuple)
+        _asOnDateLabelDigiMonthly = $"No of Transactions On {tran}";
+    }
+
+    private async Task LoadDigiFY()
+    {
+        string sql = BuildDigitalQuery(isFY: true);
+        _dataDigiFY = await ReportService.ExecuteRawQueryAsync(sql);
+
+        var (fromText, toText) = await GetDigitalHeaderDatesAsync();
+        _asOnDateLabelDigiFY = $"FY Transactions, from {fromText} To {toText}";
+    }
+
+    // ---------------- Exports (keep OTC, add Digital) ----------------
+    private async Task HandleExportMonthly()
+    {
+        var bytes = ReportService.ExportToExcel(_dataMonthly, _colsMonthly, "CashTxn_OTC_Monthly");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "CashTxn_OTC_Monthly.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private async Task HandleExportFY()
+    {
+        var bytes = ReportService.ExportToExcel(_dataFY, _colsFY, "CashTxn_OTC_FY");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "CashTxn_OTC_FY.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    // NEW: Digital exports in same flat style
+    private async Task HandleExportDigiMonthly()
+    {
+        var bytes = ReportService.ExportToExcel(_dataDigiMonthly, _colsDigi, "DigitalTxn_Monthly");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "DigitalTxn_Monthly.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private async Task HandleExportDigiFY()
+    {
+        var bytes = ReportService.ExportToExcel(_dataDigiFY, _colsDigi, "DigitalTxn_FY");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "DigitalTxn_FY.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    // ---------------- Query builder (GROUP BY fixed) � existing OTC ----------------
+    private enum Level { Grand, Zone, Region, Branch }
+
+    private string BuildFinalQuery(bool isFY)
+    {
+        string table = isFY ? "CashTxnDataFYReport A" : "CashTxnDataReport A";
+
+        string fromJoin = $"{table} JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+        string where = " region_solid <> '00000' and region_solid <> ' ' ";
+        string orderBy = " ORDER BY zone_name_eng, region_name, Branch_Name";
+
+        string sumsMonthly =
+            "Sum(A.OTC_R_WDCARD_10K) OTC_R_WDCARD_10K, " +
+            "Sum(A.OTC_R_WDCARD_1025K) OTC_R_WDCARD_1025K, " +
+            "Sum(A.OTC_R_WDCARD_25K) OTC_R_WDCARD_25K, " +
+            "Sum(A.OTC_R_WODCARD_10K) OTC_R_WODCARD_10K, " +
+            "Sum(A.OTC_R_WODCARD_1025K) OTC_R_WODCARD_1025K, " +
+            "Sum(A.OTC_R_WODCARD_25K) OTC_R_WODCARD_25K, " +
+            "Sum(A.OTC_P_WDCARD_10K) OTC_P_WDCARD_10K, " +
+            "Sum(A.OTC_P_WDCARD_1025K) OTC_P_WDCARD_1025K, " +
+            "Sum(A.OTC_P_WDCARD_25K) OTC_P_WDCARD_25K, " +
+            "Sum(A.OTC_P_WODCARD_10K) OTC_P_WODCARD_10K, " +
+            "Sum(A.OTC_P_WODCARD_1025K) OTC_P_WODCARD_1025K, " +
+            "Sum(A.OTC_P_WODCARD_25K) OTC_P_WODCARD_25K";
+
+        string sumsFY =
+            "Sum(A.OTC_R_WDCARD_10K) FY_OTC_R_WDCARD_10K, " +
+            "Sum(A.OTC_R_WDCARD_1025K) FY_OTC_R_WDCARD_1025K, " +
+            "Sum(A.OTC_R_WDCARD_25K) FY_OTC_R_WDCARD_25K, " +
+            "Sum(A.OTC_R_WODCARD_10K) FY_OTC_R_WODCARD_10K, " +
+            "Sum(A.OTC_R_WODCARD_1025K) FY_OTC_R_WODCARD_1025K, " +
+            "Sum(A.OTC_R_WODCARD_25K) FY_OTC_R_WODCARD_25K, " +
+            "Sum(A.OTC_P_WDCARD_10K) FY_OTC_P_WDCARD_10K, " +
+            "Sum(A.OTC_P_WDCARD_1025K) FY_OTC_P_WDCARD_1025K, " +
+            "Sum(A.OTC_P_WDCARD_25K) FY_OTC_P_WDCARD_25K, " +
+            "Sum(A.OTC_P_WODCARD_10K) FY_OTC_P_WODCARD_10K, " +
+            "Sum(A.OTC_P_WODCARD_1025K) FY_OTC_P_WODCARD_1025K, " +
+            "Sum(A.OTC_P_WODCARD_25K) FY_OTC_P_WODCARD_25K";
+
+        string sums = isFY ? sumsFY : sumsMonthly;
+
+        static string KeyCols(Level level) => level switch
+        {
+            Level.Grand => "'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId",
+            Level.Zone => "'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId",
+            Level.Region => "'All' AS Branch_Name, region_name, zone_name_eng, region_SolId AS SolId",
+            Level.Branch => "Branch_Name, region_name, zone_name_eng, Sol_Id AS SolId",
+            _ => throw new ArgumentOutOfRangeException(nameof(level))
+        };
+
+        static string GroupByKeys(Level level) => level switch
+        {
+            Level.Grand => "",
+            Level.Zone => " GROUP BY zone_name_eng, Zone_SolId",
+            Level.Region => " GROUP BY region_name, region_SolId, zone_name_eng",
+            Level.Branch => " GROUP BY zone_name_eng, region_name, Branch_Name, Sol_Id",
+            _ => throw new ArgumentOutOfRangeException(nameof(level))
+        };
+
+        static void AddBranchFilter(ref string w, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            if (int.TryParse(value, out var sol)) w += $" and Sol_Id = {sol}";
+            else w += $" and Sol_Id = '{value}'";
+        }
+        string Select(Level level) => $"SELECT {sums}, {KeyCols(level)} FROM {fromJoin} WHERE {where}{GroupByKeys(level)}{orderBy}";
+
+        string zone = (_selectedZone ?? "1").ToLowerInvariant();
+        string reg = (_selectedRegion ?? "1").ToLowerInvariant();
+        string br = (_selectedBranch ?? "1").ToLowerInvariant();
+
+        if (_userPrivilege == "CO")
+        {
+            if (zone == "1") return Select(Level.Grand);
+            else if (zone == "all")
+            {
+                if (reg == "1") return Select(Level.Zone);
+                else if (reg == "all")
+                {
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+                else
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+            }
+            else
+            {
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (reg == "1") return Select(Level.Zone);
+                else if (reg == "all")
+                {
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+                else
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userZoneSolid}'";
+            if (reg == "1") return Select(Level.Zone);
+            else if (reg == "all")
+            {
+                if (br == "1") return Select(Level.Region);
+                else if (br == "all") return Select(Level.Branch);
+                else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+            }
+            else
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (br == "1") return Select(Level.Region);
+                else if (br == "all") return Select(Level.Branch);
+                else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userRegionSolid}'";
+            if (br == "1") return Select(Level.Region);
+            else if (br == "all") return Select(Level.Branch);
+            else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+        }
+        else // BRANCH
+        {
+            AddBranchFilter(ref where, _userBranchSolid);
+            return Select(Level.Branch);
+        }
+    }
+
+    // ---------------- Digital Query builder � NEW ----------------
+    private string BuildDigitalQuery(bool isFY)
+    {
+        string table = isFY ? "CashTxnDigitalDataNewFYReport A" : "CashTxnDigitalDataNewReport A";
+        string join = $"{table} JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+        string where = " region_solid <> '00000' AND region_solid <> ' ' ";
+        string orderBy = " ORDER BY zone_name_eng, region_name, Branch_Name";
+
+        string sums =
+            "Sum(A.ATM_P_B_10K) ATM_P_B_10K, Sum(A.ATM_P_B_1025K) ATM_P_B_1025K, Sum(A.ATM_P_B_25K) ATM_P_B_25K, " +
+            "Sum(A.ATM_P_NB_10K) ATM_P_NB_10K, Sum(A.ATM_P_NB_1025K) ATM_P_NB_1025K, Sum(A.ATM_P_NB_25K) ATM_P_NB_25K, " +
+            "Sum(A.CRM_P_B_10K) CRM_P_B_10K, Sum(A.CRM_P_B_1025K) CRM_P_B_1025K, Sum(A.CRM_P_B_25K) CRM_P_B_25K, " +
+            "Sum(A.CRM_P_NB_10K) CRM_P_NB_10K, Sum(A.CRM_P_NB_1025K) CRM_P_NB_1025K, Sum(A.CRM_P_NB_25K) CRM_P_NB_25K, " +
+            "Sum(A.CRM_R_B_10K) CRM_R_B_10K, Sum(A.CRM_R_B_1025K) CRM_R_B_1025K, Sum(A.CRM_R_B_25K) CRM_R_B_25K";
+
+        static string KeyCols(Level level) => level switch
+        {
+            Level.Grand => "'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId",
+            Level.Zone => "'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId",
+            Level.Region => "'All' AS Branch_Name, region_name, zone_name_eng, region_SolId AS SolId",
+            Level.Branch => "Branch_Name, region_name, zone_name_eng, Sol_Id AS SolId",
+            _ => throw new ArgumentOutOfRangeException()
+        };
+
+        static string GroupByKeys(Level level) => level switch
+        {
+            Level.Grand => "",
+            Level.Zone => " GROUP BY zone_name_eng, Zone_SolId",
+            Level.Region => " GROUP BY region_name, region_SolId, zone_name_eng",
+            Level.Branch => " GROUP BY zone_name_eng, region_name, Branch_Name, Sol_Id",
+            _ => throw new ArgumentOutOfRangeException()
+        };
+
+        static void AddBranchFilter(ref string w, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            if (int.TryParse(value, out var sol)) w += $" AND Sol_Id = {sol}";
+            else w += $" AND Sol_Id = '{value}'";
+        }
+
+        string zone = (_selectedZone ?? "1").ToLowerInvariant();
+        string reg = (_selectedRegion ?? "1").ToLowerInvariant();
+        string br = (_selectedBranch ?? "1").ToLowerInvariant();
+
+        string Select(Level level) =>
+            $"SELECT {sums}, {KeyCols(level)} FROM {join} WHERE {where}{GroupByKeys(level)}{orderBy}";
+
+        if (_userPrivilege == "CO")
+        {
+            if (zone == "1") return Select(Level.Grand);
+            else if (zone == "all")
+            {
+                if (reg == "1") return Select(Level.Zone);
+                else if (reg == "all")
+                {
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+                else
+                {
+                    where += $" AND region_solid = '{_selectedRegion}'";
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+            }
+            else
+            {
+                where += $" AND zone_solid = '{_selectedZone}'";
+                if (reg == "1") return Select(Level.Zone);
+                else if (reg == "all")
+                {
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+                else
+                {
+                    where += $" AND region_solid = '{_selectedRegion}'";
+                    if (br == "1") return Select(Level.Region);
+                    else if (br == "all") return Select(Level.Branch);
+                    else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" AND zone_solid = '{_userZoneSolid}'";
+            if (reg == "1") return Select(Level.Zone);
+            else if (reg == "all")
+            {
+                if (br == "1") return Select(Level.Region);
+                else if (br == "all") return Select(Level.Branch);
+                else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+            }
+            else
+            {
+                where += $" AND region_solid = '{_selectedRegion}'";
+                if (br == "1") return Select(Level.Region);
+                else if (br == "all") return Select(Level.Branch);
+                else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" AND region_solid = '{_userRegionSolid}'";
+            if (br == "1") return Select(Level.Region);
+            else if (br == "all") return Select(Level.Branch);
+            else { AddBranchFilter(ref where, _selectedBranch); return Select(Level.Branch); }
+        }
+        else // BRANCH
+        {
+            AddBranchFilter(ref where, _userBranchSolid);
+            return Select(Level.Branch);
+        }
+    }
+
+    // ---------------- Header helpers ----------------
+    private async Task<string> GetTranDateAsync()
+    {
+        string sql =
+            "SELECT Convert(nvarchar, Max(TranDate), 103) TranDate " +
+            "  FROM CashTxnDataReport A JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+        var rows = await ReportService.ExecuteRawQueryAsync(sql);
+        return (rows.Count > 0 && rows[0].TryGetValue("TranDate", out var v) ? v?.ToString() : "") ?? "";
+    }
+
+    private async Task<(string fromDate, string toDate)> GetHeaderDatesAsync()
+    {
+        string sql =
+            "SELECT Convert(nvarchar, Max(FromDate), 103) AS FromDate, " +
+            "       Convert(nvarchar, Max(ToDate),   103) AS ToDate " +
+            "  FROM CashTxnDataFYReport A JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+        var rows = await ReportService.ExecuteRawQueryAsync(sql);
+        if (rows.Count > 0)
+        {
+            var r = rows[0];
+            string fd = r.TryGetValue("FromDate", out var v1) ? v1?.ToString() ?? "" : "";
+            string td = r.TryGetValue("ToDate", out var v2) ? v2?.ToString() ?? "" : "";
+            return (fd, td);
+        }
+        var today = AppTime.Now.ToString("dd/MM/yyyy");
+        return (today, today);
+    }
+
+    // NEW: Digital labels
+    private async Task<string> GetDigitalTranDateAsync() // FIX: return plain string (no single-element tuple)
+    {
+        string sql =
+            "SELECT Convert(nvarchar, Max(TranDate), 103) TranDate " +
+            "  FROM CashTxnDigitalDataNewReport A JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+        var rows = await ReportService.ExecuteRawQueryAsync(sql);
+        return (rows.Count > 0 && rows[0].TryGetValue("TranDate", out var v) ? v?.ToString() : "") ?? "";
+    }
+
+    private async Task<(string fromDate, string toDate)> GetDigitalHeaderDatesAsync()
+    {
+        string sql =
+            "SELECT Convert(nvarchar, Max(FromDate), 103) AS FromDate, " +
+            "       Convert(nvarchar, Max(ToDate),   103) AS ToDate " +
+            "  FROM CashTxnDigitalDataNewFYReport A JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+        var rows = await ReportService.ExecuteRawQueryAsync(sql);
+        if (rows.Count > 0)
+        {
+            var r = rows[0];
+            string fd = r.TryGetValue("FromDate", out var v1) ? v1?.ToString() ?? "" : "";
+            string td = r.TryGetValue("ToDate", out var v2) ? v2?.ToString() ?? "" : "";
+            return (fd, td);
+        }
+        var today = AppTime.Now.ToString("dd/MM/yyyy");
+        return (today, today);
+    }
+}

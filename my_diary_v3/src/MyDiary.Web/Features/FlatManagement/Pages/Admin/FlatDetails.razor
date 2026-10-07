@@ -1,0 +1,129 @@
+@page "/flatmgmt/admin/flat-details"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using MudBlazor
+@inject IUserFlatService FlatService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Flat Details - Flat Management System</PageTitle>
+
+<div class="fd-page">
+    <a href="flatmgmt/admin/home" class="fd-back">&laquo; Back to All Flats</a>
+
+    <PageHeader Title="@PageTitleText" Crumbs="_crumbs" PageKey="flatmgmt-admin-flat-details" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (string.IsNullOrWhiteSpace(Username))
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">Invalid request.</MudAlert>
+    }
+    else if (result is null || !result.HasFlat)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">
+            @(result?.Error ?? "This employee has not been allotted to any flat.")
+        </MudAlert>
+    }
+    else
+    {
+        <MudCard Class="fd-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Flat Details</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="fd-label">Flat No.</MudText>
+                        <MudText Typo="Typo.body1">@(result.Flat?.FlatNo ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="fd-label">Type / Area</MudText>
+                        <MudText Typo="Typo.body1">@(result.Flat?.FlatType ?? "-") / @(result.Flat?.CarpetArea ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="fd-label">Location</MudText>
+                        <MudText Typo="Typo.body1">@(result.Flat?.BuildingName ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="fd-label">Address</MudText>
+                        <MudText Typo="Typo.body1">@(result.Flat?.Address ?? "-")</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="fd-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Current Occupant Details</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@occupantRows" Hover="true" Bordered="true" Dense="true" Class="fd-table">
+                    <HeaderContent>
+                        <MudTh>Employee Details</MudTh>
+                        <MudTh>IP-Phone / Mobile / Email</MudTh>
+                        <MudTh>Occupy / Posting / Retirement</MudTh>
+                        <MudTh>Posting / RO / ZO</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee Details">
+                            @context.EmplId<br />
+                            @context.Name<br />
+                            @context.JobDesc
+                        </MudTd>
+                        <MudTd DataLabel="IP-Phone / Mobile / Email">
+                            @context.ContactNo<br />
+                            @context.EmailId
+                        </MudTd>
+                        <MudTd DataLabel="Occupy / Posting / Retirement">
+                            @(context.BeginDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.DeptJoinDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.ExpectedRetirementDate?.ToString("dd-MMM-yyyy") ?? "-")
+                        </MudTd>
+                        <MudTd DataLabel="Posting / RO / ZO">
+                            @context.LocationDesc<br />
+                            @context.RegionName<br />
+                            @context.ZoneName
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No Current Occupant</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "username")]
+    public string? Username { get; set; }
+
+    private string PageTitleText => "Flat Details" + (string.IsNullOrWhiteSpace(Username) ? "" : $" — {Username}");
+    private List<PageHeader.Crumb> _crumbs => new() { new("Flat Management", "flatmgmt/my"), new(PageTitleText) };
+
+    private bool isLoading = true;
+    private ViewAllocatedFlatResult? result;
+    private List<CurrentOccupantDetails> occupantRows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Username))
+        {
+            result = await FlatService.GetAllocatedFlatAsync(Username);
+            occupantRows = result.CurrentOccupant is null
+                ? new List<CurrentOccupantDetails>()
+                : new List<CurrentOccupantDetails> { result.CurrentOccupant };
+        }
+
+        isLoading = false;
+    }
+}

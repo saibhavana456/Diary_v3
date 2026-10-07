@@ -1,0 +1,61 @@
+@namespace RequestPortal.Web.Pages.Admin.Dialogs
+@* Unit edit — Code/Name/UnitType/(optional) ParentUnit/(optional) HolidayCal/IsActive *@
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudSelect T="long?" Label="Unit type" @bind-Value="UnitTypeId" Required="true">
+                    @foreach (var ut in UnitTypes)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)ut.Id)">@ut.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="long?" Label="Parent unit (optional)" @bind-Value="ParentUnitId" Clearable="true">
+                    @foreach (var u in Units.Where(x => x.Id != EditingId))
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="Code" Label="Code" MaxLength="50" Required="true" Counter="50" />
+            </MudItem>
+            <MudItem xs="12" md="8">
+                <MudTextField @bind-Value="Name" Label="Name" MaxLength="200" Required="true" Counter="200" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSwitch T="bool" @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(!IsValid)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<RequestPortal.Core.Models.UnitType> UnitTypes { get; set; } = Array.Empty<RequestPortal.Core.Models.UnitType>();
+    [Parameter] public IReadOnlyList<RequestPortal.Core.Models.Unit> Units { get; set; } = Array.Empty<RequestPortal.Core.Models.Unit>();
+
+    [Parameter] public long EditingId { get; set; }
+    [Parameter] public long? UnitTypeId { get; set; }
+    [Parameter] public long? ParentUnitId { get; set; }
+    [Parameter] public string Code { get; set; } = "";
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public bool IsActive { get; set; } = true;
+
+    private bool IsValid =>
+        UnitTypeId.HasValue && !string.IsNullOrWhiteSpace(Code) && !string.IsNullOrWhiteSpace(Name);
+
+    private void Save() => Dialog.Close(DialogResult.Ok(new UnitFormResult(
+        UnitTypeId!.Value, ParentUnitId, Code.Trim(), Name.Trim(), IsActive)));
+    private void Cancel() => Dialog.Cancel();
+
+    public sealed record UnitFormResult(long UnitTypeId, long? ParentUnitId, string Code, string Name, bool IsActive);
+}

@@ -1,0 +1,582 @@
+@page "/sjv/admin"
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.SubsidiaryJv.Components
+@using MyDiary.Web.Features.SubsidiaryJv.Models
+@using MyDiary.Web.Features.SubsidiaryJv.Services
+@inject ISubsidiaryJvService Svc
+@inject IAuthorizationService Authz
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>JV / Subsidiary Admin - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="JV / Subsidiary Admin" Subtitle="Define entities (Super Admin), then maintain each entity's data by form or Excel upload." Crumbs="_crumbs" PageKey="sjv-admin" />
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else if (!_isAdmin)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">Only the JV / Subsidiary Admin (or an App Admin) can open this page.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Elevation="1" Class="pa-3 mb-3">
+            <MudGrid Class="align-center">
+                <MudItem xs="12" sm="6" md="5">
+                    <MudSelect T="string" Label="Entity" Variant="Variant.Outlined" Dense="true" Value="_code" ValueChanged="OnEntityChanged" HelperText="Choose the subsidiary / JV to maintain. Entities are defined by the Super Admin (Entity Master tab).">
+                        @foreach (var e in _all)
+                        {
+                            <MudSelectItem T="string" Value="@e.EntityCode">@e.EntityName @(e.IsActive ? "" : "(inactive)")</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="7" Class="d-flex flex-wrap gap-2 justify-end">
+                    @if (_d is not null)
+                    {
+                        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Visibility" OnClick="@(() => Nav.NavigateTo($"sjv/entity/{_code}"))">View entity page</MudButton>
+                    }
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Home" OnClick="@(() => Nav.NavigateTo("sjv"))">Landing page</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" @bind-ActivePanelIndex="_tab">
+            @if (_isSuper)
+            {
+                <MudTabPanel Text="Entity Master" Icon="@Icons.Material.Filled.ListAlt">
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">Super Admin defines which Subsidiaries / JVs / associates exist. JV admins can then pick them from the Entity dropdown and fill in the details.</MudAlert>
+                    <div class="d-flex mb-2"><MudSpacer /><MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewEntity">Add Entity</MudButton></div>
+                    <MudTable Items="@_all" Dense="true" Hover="true" Bordered="true">
+                        <HeaderContent><MudTh>Logo</MudTh><MudTh>Order</MudTh><MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Short name</MudTh><MudTh>Type</MudTh><MudTh>Active</MudTh><MudTh>Entered</MudTh><MudTh>Last updated</MudTh><MudTh></MudTh></HeaderContent>
+                        <RowTemplate>
+                            <MudTd>
+                                @if (context.HasLogo)
+                                {
+                                    <img src="@($"{Nav.BaseUri}sjv/logo/{context.EntityCode}")" alt="" style="max-height:28px;max-width:56px;object-fit:contain;display:block" />
+                                }
+                                else { <MudText Typo="Typo.caption" Color="Color.Secondary">-</MudText> }
+                            </MudTd>
+                            <MudTd>@context.DisplayOrder</MudTd><MudTd>@context.EntityCode</MudTd><MudTd>@context.EntityName</MudTd><MudTd>@context.ShortName</MudTd>
+                            <MudTd>@context.TypeLabel</MudTd><MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                            <MudTd>
+                                <MudText Typo="Typo.caption">@context.EntryBy</MudText><br />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.EntryAt?.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                            </MudTd>
+                            <MudTd>
+                                <MudText Typo="Typo.caption">@context.UpdatedBy</MudText><br />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.UpdatedAt?.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                            </MudTd>
+                            <MudTd>
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEditEntity(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteEntityAsync(context))" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                    <MudDivider Class="my-4" />
+                    <MudText Typo="Typo.h6" Class="mb-2">JV / Subsidiary admins</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-2">App Admins always have access. Add employee codes of people who should maintain entity data.</MudText>
+                    <div class="d-flex gap-2 mb-2">
+                        <MudTextField @bind-Value="_newAdmin" Label="Employee code" Variant="Variant.Outlined" Dense="true" MaxLength="20" Style="max-width:240px" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddAdminAsync">Add admin</MudButton>
+                    </div>
+                    <MudTable Items="@_admins" Dense="true" Bordered="true">
+                        <HeaderContent><MudTh>Employee</MudTh><MudTh>Added by</MudTh><MudTh>Added at</MudTh><MudTh></MudTh></HeaderContent>
+                        <RowTemplate><MudTd>@context.EmpCode</MudTd><MudTd>@context.AddedBy</MudTd><MudTd>@context.AddedAt.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                            <MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveAdminAsync(context.EmpCode))" /></MudTd></RowTemplate>
+                        <NoRecordsContent><MudText>No additional admins.</MudText></NoRecordsContent>
+                    </MudTable>
+                </MudTabPanel>
+            }
+
+            <MudTabPanel Text="Overview &amp; Profile" Icon="@Icons.Material.Filled.Info">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    <MudGrid>
+                        <MudItem xs="12"><MudTextField @bind-Value="_ov.Tagline" Label="Tagline" Variant="Variant.Outlined" Dense="true" MaxLength="300" /></MudItem>
+                        <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_ov.YearOfIncorp" Label="Year of incorporation" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                        <MudItem xs="6" md="3"><MudNumericField T="decimal?" @bind-Value="_ov.OwnershipPct" Label="Ownership %" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                        <MudItem xs="12" md="6"><MudTextField @bind-Value="_ov.OwnershipNote" Label="Ownership note" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="6" md="3"><MudNumericField T="decimal?" @bind-Value="_ov.PaidupCapitalCr" Label="Paid-up capital (Rs Cr)" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                        <MudItem xs="6" md="3"><MudTextField @bind-Value="_ov.PaidupAsOn" Label="Paid-up as on (e.g. 31 Mar 2024)" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_ov.Branches" Label="Branches" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                        <MudItem xs="6" md="3"><MudTextField @bind-Value="_ov.BranchesNote" Label="Branches note" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_ov.Employees" Label="Employees" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                        <MudItem xs="6" md="3"><MudTextField @bind-Value="_ov.EmployeesAsOn" Label="Employees as on" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="12" md="6"><MudTextField @bind-Value="_ov.CeoName" Label="CEO (shown on landing card)" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="12"><MudTextField @bind-Value="_ov.Description" Label="Company profile / description" Variant="Variant.Outlined" Lines="4" /></MudItem>
+                        <MudItem xs="12"><MudTextField @bind-Value="_ov.RegisteredOffice" Label="Registered office" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="12" md="3"><MudTextField @bind-Value="_ov.Cin" Label="CIN" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="12" md="3"><MudTextField @bind-Value="_ov.Website" Label="Website" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="12" md="3"><MudTextField @bind-Value="_ov.Email" Label="Email" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                        <MudItem xs="12" md="3"><MudTextField @bind-Value="_ov.Phone" Label="Phone" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                    </MudGrid>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="SaveOverviewAsync">Save overview</MudButton>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Office Presence" Icon="@Icons.Material.Filled.Apartment">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    @foreach (var o in _offices)
+                    {
+                        <MudGrid Class="align-center">
+                            <MudItem xs="7"><MudTextField @bind-Value="o.Type" Label="Location type" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="3"><MudNumericField T="int" @bind-Value="o.Number" Label="Number" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="2"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _offices.Remove(o))" /></MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _offices.Add(new EOffice()))">Add row</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveOfficesAsync">Save office presence</MudButton>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Shareholding" Icon="@Icons.Material.Filled.PieChart">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    <MudGrid>
+                        <MudItem xs="12" md="8">
+                            @foreach (var h in _holders)
+                            {
+                                <MudGrid Class="align-center">
+                                    <MudItem xs="7"><MudTextField @bind-Value="h.Name" Label="Shareholder" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                                    <MudItem xs="3"><MudNumericField T="decimal" @bind-Value="h.Pct" Label="%" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                                    <MudItem xs="2"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _holders.Remove(h))" /></MudItem>
+                                </MudGrid>
+                            }
+                            <MudText Typo="Typo.body2" Color="@(Math.Abs(_holders.Sum(x => x.Pct) - 100m) > 0.01m ? Color.Warning : Color.Success)">Total: @_holders.Sum(x => x.Pct).ToString("0.##")% (should be 100%)</MudText>
+                            <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _holders.Add(new EHolder()))">Add row</MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveHoldersAsync">Save shareholding</MudButton>
+                        </MudItem>
+                        <MudItem xs="12" md="4"><MudText Typo="Typo.caption">Preview</MudText><SjvDonut Data="@(_holders.Where(x => x.Name.Length > 0).Select(x => new SjvHolder(x.Name, x.Pct)).ToList())" /></MudItem>
+                    </MudGrid>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Key Activities" Icon="@Icons.Material.Filled.Checklist">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    @foreach (var a in _acts)
+                    {
+                        <MudGrid Class="align-center">
+                            <MudItem xs="10"><MudTextField @bind-Value="a.Text" Label="Activity" Variant="Variant.Outlined" Dense="true" MaxLength="300" /></MudItem>
+                            <MudItem xs="2"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _acts.Remove(a))" /></MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _acts.Add(new EAct()))">Add activity</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveActsAsync">Save activities</MudButton>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Board of Directors" Icon="@Icons.Material.Filled.Gavel">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    @foreach (var b in _board)
+                    {
+                        <MudGrid Class="align-center">
+                            <MudItem xs="12" md="3"><MudTextField @bind-Value="b.Name" Label="Name" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudTextField @bind-Value="b.Designation" Label="Designation" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudTextField @bind-Value="b.Category" Label="Director category" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudTextField @bind-Value="b.Representing" Label="Representing" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="5" md="2"><MudDatePicker @bind-Date="b.Date" Label="Appointed on" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd MMM yyyy" /></MudItem>
+                            <MudItem xs="1"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _board.Remove(b))" /></MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _board.Add(new EDirector()))">Add director</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveBoardAsync">Save board</MudButton>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Key Managerial Personnel" Icon="@Icons.Material.Filled.Badge">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    @foreach (var k in _kmp)
+                    {
+                        <MudGrid Class="align-center">
+                            <MudItem xs="12" md="4"><MudTextField @bind-Value="k.Name" Label="Name" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="12" md="3"><MudTextField @bind-Value="k.Designation" Label="Designation" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="10" md="4"><MudTextField @bind-Value="k.Email" Label="Email" Variant="Variant.Outlined" Dense="true" /></MudItem>
+                            <MudItem xs="2" md="1"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _kmp.Remove(k))" /></MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _kmp.Add(new EKmp()))">Add person</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveKmpAsync">Save KMP</MudButton>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Financials" Icon="@Icons.Material.Filled.Insights">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mb-2">One row per financial year, amounts in Rs crore (negative values are allowed, e.g. a loss of -600). Key Financials, growth % and the trend chart are calculated from these rows; the latest year is used on the landing card. Quarter-wise figures are optional and are entered in the Quarterly tab.</MudText>
+                    @foreach (var f in _fins)
+                    {
+                        <MudGrid Class="align-center">
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="string" @bind-Value="f.Fy" Label="Financial year" Variant="Variant.Outlined" Dense="true">
+                                    @foreach (var y in FyOptions) { <MudSelectItem T="string" Value="@y">@y</MudSelectItem> }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="f.TotalIncome" Label="Total income" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="f.NetProfit" Label="Net profit" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="f.NetWorth" Label="Net worth" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="f.TotalAssets" Label="Total assets" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="12" md="2"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _fins.Remove(f))" /></MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddFin">Add financial year</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveFinsAsync">Save financials</MudButton>
+                    <MudText Typo="Typo.caption" Class="d-block mt-3">Chart preview</MudText>
+                    <SjvFinancialChart Data="@(_fins.Where(x => !string.IsNullOrEmpty(x.Fy)).OrderBy(x => x.Fy).Select(x => new SjvFinancial(x.Fy, x.TotalIncome, x.NetProfit, x.NetWorth, x.TotalAssets)).ToList())" />
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Quarterly (optional)" Icon="@Icons.Material.Filled.CalendarViewMonth">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mb-2">Optional quarter-wise figures within a financial year (Q1 = Apr-Jun, Q2 = Jul-Sep, Q3 = Oct-Dec, Q4 = Jan-Mar), amounts in Rs crore. Negative values are allowed. Leave a field empty if it is not available. Quarters are shown on the entity page below the yearly figures; the yearly Financials are not affected.</MudText>
+                    @foreach (var q in _qtrs)
+                    {
+                        <MudGrid Class="align-center">
+                            <MudItem xs="6" md="2">
+                                <MudSelect T="string" @bind-Value="q.Fy" Label="Financial year" Variant="Variant.Outlined" Dense="true">
+                                    @foreach (var y in FyOptions) { <MudSelectItem T="string" Value="@y">@y</MudSelectItem> }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="6" md="1">
+                                <MudSelect T="string" @bind-Value="q.Quarter" Label="Quarter" Variant="Variant.Outlined" Dense="true">
+                                    @foreach (var n in SjvQuarterly.Quarters) { <MudSelectItem T="string" Value="@n">@n (@SjvQuarterly.Months(n))</MudSelectItem> }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="q.TotalIncome" Label="Total income" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="q.NetProfit" Label="Net profit / (loss)" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="q.NetWorth" Label="Net worth" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="6" md="2"><MudNumericField T="decimal?" @bind-Value="q.TotalAssets" Label="Total assets" Variant="Variant.Outlined" Dense="true" HideSpinButtons="true" /></MudItem>
+                            <MudItem xs="12" md="1"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _qtrs.Remove(q))" /></MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddQtr">Add quarter</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveQtrsAsync">Save quarterly</MudButton>
+                    <MudText Typo="Typo.caption" Class="d-block mt-3">Chart preview</MudText>
+                    <SjvFinancialChart Data="@(_qtrs.Where(x => !string.IsNullOrEmpty(x.Fy)).OrderBy(x => x.Fy).ThenBy(x => x.Quarter).Select(x => new SjvQuarterly(x.Fy, x.Quarter, x.TotalIncome, x.NetProfit, x.NetWorth, x.TotalAssets).AsFinancial()).ToList())" />
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Strategic Updates" Icon="@Icons.Material.Filled.Bolt">
+                @if (_d is null) { <MudAlert Severity="Severity.Info">Select an entity above.</MudAlert> }
+                else
+                {
+                    @foreach (var u in _upds)
+                    {
+                        <MudGrid Class="align-center">
+                            <MudItem xs="12" md="8"><MudTextField @bind-Value="u.Text" Label="Update" Variant="Variant.Outlined" Dense="true" MaxLength="1000" /></MudItem>
+                            <MudItem xs="8" md="3"><MudDatePicker @bind-Date="u.Date" Label="As on / date" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd MMM yyyy" /></MudItem>
+                            <MudItem xs="4" md="1"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _upds.Remove(u))" /></MudItem>
+                        </MudGrid>
+                    }
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _upds.Add(new EUpd { Date = DateTime.Today }))">Add update</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="ml-2" OnClick="SaveUpdsAsync">Save updates</MudButton>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Excel Upload" Icon="@Icons.Material.Filled.UploadFile">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+                    Bulk-load or bulk-edit any number of entities from one Excel file. <b>Download the template</b> (sheet 1 = Entity, sheet 2 = Instructions with the description of every column), or <b>export the current data</b>, edit it and upload it back.
+                    Rows are replaced per entity and section. @(_isSuper ? "" : "New entities can only be created by the Super Admin (Entity Master tab).")
+                </MudAlert>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadTemplate">Download blank template</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="@(() => ExportAsync(null))">Export all current data</MudButton>
+                    @if (_d is not null)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="@(() => ExportAsync(_code))">Export selected entity</MudButton>
+                    }
+                </div>
+                <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Accept=".xlsx">
+                    <ActivatorContent><MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.UploadFile">Choose Excel file and validate</MudButton></ActivatorContent>
+                </MudFileUpload>
+
+                @if (_result is not null)
+                {
+                    <div class="mt-3">
+                        @if (_result.Applied)
+                        {
+                            <MudAlert Severity="Severity.Success" Variant="Variant.Filled">Saved. @_result.TotalRows rows written for @_result.Entities entity row(s).</MudAlert>
+                        }
+                        else if (_result.IsValid)
+                        {
+                            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">Validation passed - nothing has been saved yet.</MudAlert>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_result.Errors.Count error(s) - fix the file and upload again.</MudAlert>
+                        }
+                        <MudSimpleTable Dense="true" Class="my-2" Style="max-width:520px">
+                            <tbody>
+                                <tr><td>Entity rows</td><td>@_result.Entities</td></tr><tr><td>Office presence</td><td>@_result.Offices</td></tr>
+                                <tr><td>Shareholding</td><td>@_result.Holders</td></tr><tr><td>Activities</td><td>@_result.Activities</td></tr>
+                                <tr><td>Board</td><td>@_result.Board</td></tr><tr><td>KMP</td><td>@_result.Kmp</td></tr>
+                                <tr><td>Financials</td><td>@_result.Financials</td></tr><tr><td>Quarterly</td><td>@_result.Quarterly</td></tr><tr><td>Updates</td><td>@_result.Updates</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                        @if (_result.Errors.Count > 0) { <ul class="sjv-err">@foreach (var er in _result.Errors.Take(200)) { <li>@er</li> }</ul> }
+                        @if (_result.Warnings.Count > 0) { <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="my-2"><ul class="mb-0">@foreach (var w in _result.Warnings) { <li>@w</li> }</ul></MudAlert> }
+                        @if (_result.IsValid && !_result.Applied)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check" OnClick="ApplyUploadAsync" Disabled="_busy">Confirm and save</MudButton>
+                        }
+                    </div>
+                }
+            </MudTabPanel>
+        </MudTabs>
+
+        <MudDialog @bind-Visible="_entityDialog" Options="_dlgOptions">
+            <TitleContent>@(_editEntityIsNew ? "Add Entity" : "Edit Entity")</TitleContent>
+            <DialogContent>
+                <MudTextField @bind-Value="_me.EntityCode" Label="Entity code (A-Z, 0-9, _)" Variant="Variant.Outlined" Class="mb-3" Disabled="@(!_editEntityIsNew)" MaxLength="30" />
+                <MudTextField @bind-Value="_me.EntityName" Label="Entity name" Variant="Variant.Outlined" Class="mb-3" />
+                <MudTextField @bind-Value="_me.ShortName" Label="Short name" Variant="Variant.Outlined" Class="mb-3" />
+                <MudSelect T="string" @bind-Value="_me.EntityType" Label="Type" Variant="Variant.Outlined" Class="mb-3">
+                    <MudSelectItem T="string" Value="@("SUBSIDIARY")">Subsidiary</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("JOINT_VENTURE")">Joint Venture</MudSelectItem>
+                    <MudSelectItem Value="@("ASSOCIATE")">Associate</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("OTHER")">Others</MudSelectItem>
+                </MudSelect>
+                <MudNumericField T="int" @bind-Value="_me.DisplayOrder" Label="Display order" Variant="Variant.Outlined" Class="mb-3" />
+                <MudCheckBox T="bool" @bind-Value="_me.IsActive" Label="Active (visible on the landing page)" Class="mb-3" />
+
+                <MudText Typo="Typo.body2" Class="mb-1">Logo</MudText>
+                <div class="d-flex align-center gap-3 mb-2">
+                    @if (_logoPreviewUrl is not null)
+                    {
+                        <img src="@_logoPreviewUrl" alt="" style="max-height:56px;max-width:120px;object-fit:contain;border:1px solid rgba(0,0,0,.12);border-radius:6px;padding:4px" />
+                    }
+                    else if (_me.HasLogo)
+                    {
+                        <img src="@($"{Nav.BaseUri}sjv/logo/{_me.EntityCode}")" alt="" style="max-height:56px;max-width:120px;object-fit:contain;border:1px solid rgba(0,0,0,.12);border-radius:6px;padding:4px" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">No logo uploaded yet</MudText>
+                    }
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnLogoSelected" Accept=".png,.jpg,.jpeg,.svg,.webp">
+                        <ActivatorContent><MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Upload">Choose logo</MudButton></ActivatorContent>
+                    </MudFileUpload>
+                </div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">PNG, JPG, SVG or WEBP. Shown small on the landing card, the entity page and the exported PDF — a plain logo on a transparent or white background fits best.</MudText>
+                @if (!_editEntityIsNew)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                        Entered by @(_me.EntryBy ?? "-") @(_me.EntryAt is null ? "" : $"on {_me.EntryAt:dd-MMM-yyyy HH:mm}")
+                        &nbsp;|&nbsp; Last updated by @(_me.UpdatedBy ?? "-") @(_me.UpdatedAt is null ? "" : $"on {_me.UpdatedAt:dd-MMM-yyyy HH:mm}")
+                    </MudText>
+                }
+            </DialogContent>
+            <DialogActions>
+                <MudButton OnClick="@(() => _entityDialog = false)">Cancel</MudButton>
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveEntityMasterAsync">Save</MudButton>
+            </DialogActions>
+        </MudDialog>
+    }
+</AuthenticatedOnly>
+
+<style> .sjv-err { color: #b91c1c; font-size: .85rem; } </style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "entity")] public string? EntityQuery { get; set; }
+
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Subsidiaries and JV Corner", "sjv"), new("Admin") };
+    private DialogOptions _dlgOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+    private bool _loading = true, _isAdmin, _isSuper, _busy, _entityDialog, _editEntityIsNew;
+    private int _tab;
+    private string _actor = "", _code = "", _newAdmin = "";
+    private List<SjvEntity> _all = new();
+    private List<(string EmpCode, string AddedBy, DateTime AddedAt)> _admins = new();
+    private SjvEntityDetail? _d;
+    private SjvEntity _ov = new(), _me = new();
+    private SjvUploadResult? _result;
+    private byte[]? _fileBytes; private string _fileName = "";
+
+    // editable rows
+    private sealed class EOffice { public string Type = ""; public int Number; }
+    private sealed class EHolder { public string Name = ""; public decimal Pct; }
+    private sealed class EAct { public string Text = ""; }
+    private sealed class EDirector { public string Name = "", Designation = "", Category = "", Representing = ""; public DateTime? Date; }
+    private sealed class EKmp { public string Name = "", Designation = "", Email = ""; }
+    private sealed class EFin { public string Fy = ""; public decimal? TotalIncome, NetProfit, NetWorth, TotalAssets; }
+    private sealed class EQtr { public string Fy = "", Quarter = "Q1"; public decimal? TotalIncome, NetProfit, NetWorth, TotalAssets; }
+    private List<EQtr> _qtrs = new();
+    private sealed class EUpd { public string Text = ""; public DateTime? Date; }
+    private List<EOffice> _offices = new(); private List<EHolder> _holders = new(); private List<EAct> _acts = new();
+    private List<EDirector> _board = new(); private List<EKmp> _kmp = new(); private List<EFin> _fins = new(); private List<EUpd> _upds = new();
+
+    private static readonly List<string> FyOptions = Enumerable.Range(2012, DateTime.Today.Year - 2012 + 2).Reverse().Select(y => $"FY {y}-{(y + 1) % 100:00}").ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _actor = state.User.FindFirst("emplid")?.Value ?? "";
+        _isSuper = (await Authz.AuthorizeAsync(state.User, "AppAdmin")).Succeeded;
+        _isAdmin = await Svc.IsAdminAsync(state.User);
+        if (_isAdmin)
+        {
+            _all = await Svc.GetEntitiesAsync(activeOnly: false);
+            if (_isSuper) _admins = await Svc.ListAdminsAsync();
+            _code = _all.FirstOrDefault(e => e.EntityCode.Equals(EntityQuery, StringComparison.OrdinalIgnoreCase))?.EntityCode ?? "";
+            if (_code.Length > 0) await LoadAsync();
+            _tab = _isSuper && _code.Length == 0 ? 0 : (_isSuper ? 1 : 0);
+        }
+        _loading = false;
+    }
+
+    private async Task OnEntityChanged(string code) { _code = code; await LoadAsync(); }
+
+    // Pull the current data (the same data the entity page shows) into the editors.
+    private async Task LoadAsync()
+    {
+        _d = _code.Length == 0 ? null : await Svc.GetDetailAsync(_code);
+        if (_d is null) return;
+        var e = _d.Entity;
+        _ov = new SjvEntity { EntityId = e.EntityId, Tagline = e.Tagline, YearOfIncorp = e.YearOfIncorp, OwnershipPct = e.OwnershipPct, OwnershipNote = e.OwnershipNote,
+            PaidupCapitalCr = e.PaidupCapitalCr, PaidupAsOn = e.PaidupAsOn, Branches = e.Branches, BranchesNote = e.BranchesNote, Employees = e.Employees, EmployeesAsOn = e.EmployeesAsOn,
+            CeoName = e.CeoName, Description = e.Description, RegisteredOffice = e.RegisteredOffice, Cin = e.Cin, Website = e.Website, Email = e.Email, Phone = e.Phone };
+        _offices = _d.Offices.Select(o => new EOffice { Type = o.LocationType, Number = o.Number }).ToList();
+        _holders = _d.Shareholding.Select(h => new EHolder { Name = h.HolderName, Pct = h.Pct }).ToList();
+        _acts = _d.Activities.Select(a => new EAct { Text = a }).ToList();
+        _board = _d.Board.Select(b => new EDirector { Name = b.Name, Designation = b.Designation ?? "", Category = b.Category ?? "", Representing = b.Representing ?? "", Date = b.AppointedOn }).ToList();
+        _kmp = _d.Kmp.Select(k => new EKmp { Name = k.Name, Designation = k.Designation ?? "", Email = k.Email ?? "" }).ToList();
+        _fins = _d.Financials.Select(f => new EFin { Fy = f.FinYear, TotalIncome = f.TotalIncome, NetProfit = f.NetProfit, NetWorth = f.NetWorth, TotalAssets = f.TotalAssets }).ToList();
+        _qtrs = _d.Quarterly.Select(q => new EQtr { Fy = q.FinYear, Quarter = q.Quarter, TotalIncome = q.TotalIncome, NetProfit = q.NetProfit, NetWorth = q.NetWorth, TotalAssets = q.TotalAssets }).ToList();
+        _upds = _d.Updates.Select(u => new EUpd { Text = u.Text, Date = u.Date }).ToList();
+    }
+
+    private async Task Guard(Func<Task> action, string ok)
+    {
+        try { await action(); Snackbar.Add(ok, Severity.Success); await LoadAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private Task SaveOverviewAsync() => Guard(() => Svc.SaveOverviewAsync(_ov, _actor), "Overview saved.");
+    private Task SaveOfficesAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "offices", new SjvEntityDetail { Offices = _offices.Select(o => new SjvOffice(o.Type, o.Number)).ToList() }, _actor), "Office presence saved.");
+    private Task SaveHoldersAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "shareholding", new SjvEntityDetail { Shareholding = _holders.Select(h => new SjvHolder(h.Name, h.Pct)).ToList() }, _actor), "Shareholding saved.");
+    private Task SaveActsAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "activities", new SjvEntityDetail { Activities = _acts.Select(a => a.Text).ToList() }, _actor), "Activities saved.");
+    private Task SaveBoardAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "board", new SjvEntityDetail { Board = _board.Select(b => new SjvDirector(b.Name, b.Designation, b.Category, b.Representing, b.Date)).ToList() }, _actor), "Board saved.");
+    private Task SaveKmpAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "kmp", new SjvEntityDetail { Kmp = _kmp.Select(k => new SjvKmp(k.Name, k.Designation, k.Email)).ToList() }, _actor), "KMP saved.");
+    private Task SaveFinsAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "financials", new SjvEntityDetail { Financials = _fins.Where(f => !string.IsNullOrEmpty(f.Fy)).OrderBy(f => f.Fy).Select(f => new SjvFinancial(f.Fy, f.TotalIncome, f.NetProfit, f.NetWorth, f.TotalAssets)).ToList() }, _actor), "Financials saved.");
+    private Task SaveQtrsAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "quarterly", new SjvEntityDetail { Quarterly = _qtrs.Where(q => !string.IsNullOrEmpty(q.Fy)).OrderBy(q => q.Fy).ThenBy(q => q.Quarter).Select(q => new SjvQuarterly(q.Fy, q.Quarter, q.TotalIncome, q.NetProfit, q.NetWorth, q.TotalAssets)).ToList() }, _actor), "Quarterly figures saved.");
+    private void AddQtr()
+    {
+        var used = _qtrs.Select(q => (q.Fy, q.Quarter)).ToHashSet();
+        foreach (var fy in FyOptions.Take(4))
+            foreach (var n in SjvQuarterly.Quarters)
+                if (!used.Contains((fy, n))) { _qtrs.Add(new EQtr { Fy = fy, Quarter = n }); return; }
+        _qtrs.Add(new EQtr { Fy = FyOptions.FirstOrDefault() ?? "" });
+    }
+
+    private Task SaveUpdsAsync() => Guard(() => Svc.SaveSectionAsync(_d!.Entity.EntityId, "updates", new SjvEntityDetail { Updates = _upds.Select(u => new SjvUpdate(u.Text, u.Date)).ToList() }, _actor), "Updates saved.");
+
+    private void AddFin()
+    {
+        var used = _fins.Select(f => f.Fy).ToHashSet();
+        _fins.Add(new EFin { Fy = FyOptions.FirstOrDefault(y => !used.Contains(y)) ?? "" });
+    }
+
+    // ---- entity master (Super Admin) ----
+    private byte[]? _logoBytes;
+    private string? _logoContentType;
+    private string? _logoFileName;
+    private string? _logoPreviewUrl;
+    private const long MaxLogoBytes = 2 * 1024 * 1024;
+
+    private void OpenNewEntity() { _me = new SjvEntity { EntityType = "SUBSIDIARY", DisplayOrder = (_all.Count + 1), IsActive = true }; _editEntityIsNew = true; ClearLogoSelection(); _entityDialog = true; }
+    private void OpenEditEntity(SjvEntity e) { _me = new SjvEntity { EntityCode = e.EntityCode, EntityName = e.EntityName, ShortName = e.ShortName, EntityType = e.EntityType, DisplayOrder = e.DisplayOrder, IsActive = e.IsActive, HasLogo = e.HasLogo, EntryBy = e.EntryBy, EntryAt = e.EntryAt, UpdatedBy = e.UpdatedBy, UpdatedAt = e.UpdatedAt }; _editEntityIsNew = false; ClearLogoSelection(); _entityDialog = true; }
+    private void ClearLogoSelection() { _logoBytes = null; _logoContentType = null; _logoFileName = null; _logoPreviewUrl = null; }
+
+    private async Task OnLogoSelected(IBrowserFile file)
+    {
+        if (file.Size > MaxLogoBytes) { Snackbar.Add("Logo must be 2 MB or smaller.", Severity.Warning); return; }
+        using var ms = new MemoryStream();
+        await using (var s = file.OpenReadStream(MaxLogoBytes)) await s.CopyToAsync(ms);
+        _logoBytes = ms.ToArray();
+        _logoContentType = file.ContentType;
+        _logoFileName = file.Name;
+        _logoPreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(_logoBytes)}";
+    }
+
+    private async Task SaveEntityMasterAsync()
+    {
+        try
+        {
+            await Svc.SaveEntityMasterAsync(_me, _actor);
+            if (_logoBytes is not null)
+                await Svc.SaveLogoAsync(_me.EntityCode, _logoBytes, _logoContentType!, _logoFileName!, _actor);
+            _entityDialog = false;
+            _all = await Svc.GetEntitiesAsync(activeOnly: false);
+            Snackbar.Add("Entity saved.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteEntityAsync(SjvEntity e)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete '{e.EntityName}' permanently? This removes ALL its data (profile, office presence, shareholding, board, KMP, financials, updates, logo) and cannot be undone."))
+            return;
+        try
+        {
+            await Svc.DeleteEntityAsync(e.EntityCode);
+            _all = await Svc.GetEntitiesAsync(activeOnly: false);
+            if (_code == e.EntityCode) { _code = ""; _d = null; }
+            Snackbar.Add("Entity deleted.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+    private async Task AddAdminAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newAdmin)) return;
+        await Svc.AddAdminAsync(_newAdmin, _actor); _newAdmin = ""; _admins = await Svc.ListAdminsAsync();
+    }
+    private async Task RemoveAdminAsync(string emp) { await Svc.RemoveAdminAsync(emp); _admins = await Svc.ListAdminsAsync(); }
+
+    // ---- Excel ----
+    private async Task DownloadTemplate() => await Download(Svc.GenerateTemplate(), "SubsidiaryJV_Template.xlsx");
+    private async Task ExportAsync(string? code) => await Download(await Svc.ExportAsync(code), $"SubsidiaryJV_{(code ?? "All")}_{DateTime.Now:yyyyMMdd}.xlsx");
+    private async Task Download(byte[] bytes, string name) =>
+        await JS.InvokeVoidAsync("appDownloadFile", name, Convert.ToBase64String(bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+    private async Task OnFileSelected(IBrowserFile file)
+    {
+        await using var s = file.OpenReadStream(10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await s.CopyToAsync(ms);
+        _fileBytes = ms.ToArray(); _fileName = file.Name;
+        using var v = new MemoryStream(_fileBytes);
+        _result = await Svc.ProcessUploadAsync(v, _fileName, _actor, apply: false, canCreateEntities: _isSuper);
+    }
+
+    private async Task ApplyUploadAsync()
+    {
+        if (_fileBytes is null) return;
+        _busy = true;
+        try
+        {
+            using var v = new MemoryStream(_fileBytes);
+            _result = await Svc.ProcessUploadAsync(v, _fileName, _actor, apply: true, canCreateEntities: _isSuper);
+            if (_result.Applied) { _all = await Svc.GetEntitiesAsync(activeOnly: false); await LoadAsync(); }
+        }
+        finally { _busy = false; }
+    }
+}

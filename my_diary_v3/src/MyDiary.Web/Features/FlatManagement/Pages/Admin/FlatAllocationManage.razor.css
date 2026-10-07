@@ -1,0 +1,136 @@
+.fam-back {
+    display: inline-block;
+    color: #1E3A8A;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-decoration: none;
+    margin-bottom: 10px;
+}
+
+.fam-back:hover {
+    text-decoration: underline;
+}
+
+.fam-title {
+    color: #1E3A8A;
+    font-weight: 700;
+}
+
+.fam-section-title {
+    color: #1E3A8A;
+    font-weight: 700;
+}
+
+::deep .fam-card {
+    border-radius: 12px;
+}
+
+.fam-label {
+    color: #6b7280;
+}
+
+::deep .fam-table td {
+    line-height: 1.5;
+}
+
+::deep .fam-tabs .mud-tab.mud-tab-active {
+    color: #1E3A8A;
+}
+
+::deep .fam-tabs .mud-tabs-tabbar-inner .mud-tab-slider {
+    background-color: #1E3A8A;
+}
+
+.fam-actions {
+    display: flex;
+    align-items: center;
+    margin-top: 16px;
+}
+
+.fam-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 24, 40, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1300;
+    animation: fam-fade-in 0.15s ease-out;
+}
+
+.fam-modal {
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px 26px 22px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 12px 32px rgba(16, 24, 40, 0.25);
+    animation: fam-pop-in 0.18s ease-out;
+}
+
+.fam-modal-icon {
+    width: 48px;
+    height: 48px;
+    line-height: 48px;
+    border-radius: 50%;
+    margin: 0 auto 14px;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.fam-modal-success .fam-modal-icon {
+    background: #1c8a4b;
+}
+
+.fam-modal-error .fam-modal-icon {
+    background: #d32f2f;
+}
+
+.fam-modal-text {
+    font-size: 0.94rem;
+    color: #1c2126;
+    line-height: 1.5;
+    margin: 0 0 18px;
+    word-break: break-word;
+}
+
+.fam-btn {
+    min-height: 42px;
+    padding: 0 22px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.88rem;
+    cursor: pointer;
+    border: none;
+    min-width: 110px;
+}
+
+.fam-btn-primary {
+    background: linear-gradient(135deg, #3B5BC4 0%, #1E3A8A 55%, #15296b 100%);
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(30, 58, 138, 0.25);
+}
+
+.fam-btn-secondary {
+    background: #fff;
+    border: 1.5px solid #d7dce3;
+    color: #1c2126;
+}
+
+.fam-btn-secondary:hover {
+    border-color: #1E3A8A;
+    color: #1E3A8A;
+}
+
+@keyframes fam-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes fam-pop-in {
+    from { opacity: 0; transform: scale(0.92) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}

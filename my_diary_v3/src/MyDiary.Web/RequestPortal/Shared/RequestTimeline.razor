@@ -1,0 +1,54 @@
+@namespace RequestPortal.Web.Shared
+@inject IRequestService Requests
+
+<MudTimeline TimelinePosition="TimelinePosition.Start">
+    @if (_events is null)
+    {
+        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+    }
+    else if (_events.Count == 0)
+    {
+        <MudText>No actions yet.</MudText>
+    }
+    else
+    {
+        @foreach (var e in _events)
+        {
+            <MudTimelineItem Color="@ColorFor(e.Action)" Variant="Variant.Filled">
+                <ItemContent>
+                    <MudText Typo="Typo.body1"><b>L@(e.LevelNo) · @e.Action</b></MudText>
+                    @if (!string.IsNullOrWhiteSpace(e.Remarks))
+                    {
+                        <MudText Typo="Typo.body2">@e.Remarks</MudText>
+                    }
+                    <MudText Class="timeline-actor">@e.ActorName · @AppTime.ToIndia(e.At).ToString("g")</MudText>
+                </ItemContent>
+            </MudTimelineItem>
+        }
+    }
+</MudTimeline>
+
+@code {
+    [Parameter] public long RequestId { get; set; }
+
+    private IReadOnlyList<TimelineEvent>? _events;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _events = await Requests.GetTimelineAsync(RequestId);
+    }
+
+    private Color ColorFor(string action) => action switch
+    {
+        "Created" => Color.Info,
+        "Forwarded" => Color.Primary,
+        "Escalated" => Color.Warning,
+        "Resolved" => Color.Success,
+        "Closed" => Color.Dark,
+        "Cancelled" => Color.Error,
+        "Reopened" => Color.Tertiary,
+        "ClarificationSought" => Color.Secondary,
+        "ClarificationProvided" => Color.Secondary,
+        _ => Color.Default
+    };
+}

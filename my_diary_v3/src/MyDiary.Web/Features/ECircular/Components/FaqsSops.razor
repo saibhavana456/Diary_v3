@@ -1,0 +1,115 @@
+@page "/knowledge-hub/faqs-sops"
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@layout MyDiary.Web.Components.Layout.MainLayout
+
+<PageTitle>FAQs/SOPs — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    .kh-container { padding: 20px 24px 40px; }
+
+    .kh-faq-search { max-width: 380px; }
+
+    .kh-faq-panel {
+        border-radius: 12px !important;
+        border: 1px solid #eef0f4 !important;
+        margin-bottom: 10px;
+        overflow: hidden;
+    }
+
+    .kh-sop-chip {
+        font-weight: 700 !important;
+        font-size: 10px !important;
+        letter-spacing: .4px;
+    }
+</style>
+
+@* <div class="kh-container"> *@
+    <PageHeader Title="FAQs/SOPs"
+                Subtitle="Frequently asked questions and standard operating procedures for day-to-day operations"
+                PageKey="knowledge-hub-faqs-sops"
+                Crumbs="_crumbs" />
+
+    <MudPaper Elevation="0" Class="pa-4 mt-4 mb-4" Style="border-radius:12px; border:1px solid #eef0f4;">
+        <div class="d-flex flex-wrap align-center gap-3">
+            <MudTextField @bind-Value="_search" Placeholder="Search FAQs and SOPs..."
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" Class="kh-faq-search" />
+
+            <div class="d-flex gap-2">
+                <MudButton Variant="@(_showFaq ? Variant.Filled : Variant.Outlined)"
+                           Size="Size.Small" Color="Color.Info" Class="rounded-pill px-4"
+                           OnClick="@(() => _showFaq = !_showFaq)">FAQ</MudButton>
+                <MudButton Variant="@(_showSop ? Variant.Filled : Variant.Outlined)"
+                           Size="Size.Small" Color="Color.Warning" Class="rounded-pill px-4"
+                           OnClick="@(() => _showSop = !_showSop)">SOP</MudButton>
+            </div>
+        </div>
+    </MudPaper>
+
+    <MudExpansionPanels Class="mt-2">
+        @foreach (var item in FilteredItems)
+        {
+            <MudExpansionPanel Class="kh-faq-panel">
+                <TitleContent>
+                    <div class="d-flex align-center gap-2">
+                        <MudChip T="string" Size="Size.Small" Class="kh-sop-chip"
+                                 Color="@(item.Type == "SOP" ? Color.Warning : Color.Info)">@item.Type</MudChip>
+                        <MudText Style="font-weight:600;">@item.Question</MudText>
+                    </div>
+                </TitleContent>
+                <ChildContent>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@item.Answer</MudText>
+                    @if (!string.IsNullOrWhiteSpace(item.Category))
+                    {
+                        <MudChip T="string" Size="Size.Small" Class="mt-2" Color="Color.Default">@item.Category</MudChip>
+                    }
+                </ChildContent>
+            </MudExpansionPanel>
+        }
+    </MudExpansionPanels>
+
+    @if (!FilteredItems.Any())
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">No FAQs/SOPs match your search.</MudAlert>
+    }
+@* </div> *@
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Knowledge Hub"),
+        new("FAQs/SOPs"),
+    };
+
+    private string _search = "";
+    private bool _showFaq = true;
+    private bool _showSop = true;
+
+    private sealed record QaItem(string Type, string Category, string Question, string Answer);
+
+    // Sample/placeholder content — replace with real DB-driven content when available.
+    private readonly List<QaItem> _items = new()
+    {
+        new("FAQ", "Accounts", "How long does it take to activate net banking after account opening?",
+            "Net banking is typically activated within 24 hours of account opening, provided the customer's mobile number and email are verified in Finacle."),
+        new("FAQ", "Cards", "What should a customer do if a debit card transaction fails but the amount is debited?",
+            "Advise the customer that failed transactions are usually auto-reversed within T+1 to T+5 working days. If not reversed, log a dispute via the Debit Card Tracking process."),
+        new("SOP", "Lockers", "SOP for handling a locker key breakage.",
+            "1) Inform the branch manager immediately. 2) Raise a request with the locker vendor for duplicate/master key access. 3) Open the locker only in the presence of the customer and two bank officials. 4) Document the incident and get customer acknowledgement."),
+        new("SOP", "Cash", "SOP for end-of-day cash balancing at the branch.",
+            "1) Reconcile physical cash against the system-generated cash book. 2) Investigate and document any discrepancy immediately. 3) Get joint custodian sign-off. 4) Lock the vault and update the Cash Holding register."),
+        new("FAQ", "Complaints", "What is the maximum SLA for resolving a customer complaint?",
+            "Standard SLA is 7 working days for branch-level complaints and up to 21 days for complex/escalated cases routed through the Regional or Zonal Office."),
+        new("SOP", "KYC", "SOP for Re-KYC of a dormant account.",
+            "1) Identify dormant accounts due for Re-KYC via the Dormant Accounts report. 2) Contact the customer for updated documents. 3) Verify and update KYC in Finacle. 4) Reactivate the account once verification is complete."),
+    };
+
+    private IEnumerable<QaItem> FilteredItems => _items
+        .Where(i => (i.Type == "FAQ" && _showFaq) || (i.Type == "SOP" && _showSop))
+        .Where(i => string.IsNullOrWhiteSpace(_search)
+                 || i.Question.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                 || i.Category.Contains(_search, StringComparison.OrdinalIgnoreCase));
+}

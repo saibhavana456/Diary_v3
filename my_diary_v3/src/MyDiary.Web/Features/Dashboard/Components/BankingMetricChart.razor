@@ -1,0 +1,142 @@
+﻿@using ApexCharts
+@using MudBlazor
+
+<MudPaper Elevation="0" Class="mb-3 pa-2" Style="background-color: transparent;">
+    <div class="d-flex justify-space-between align-center px-1">
+        <MudText Typo="Typo.subtitle2" Class="fw-bold">@Title</MudText>
+        <MudText Typo="Typo.caption" Color="@GetGrowthColor()">
+            @GetGrowth()
+        </MudText>
+    </div>
+
+    <div style="height: 80px; margin-top: -10px;">
+        <ApexChart TItem="MetricData"
+                   Options="@options"
+                   Height="80">
+
+            <ApexPointSeries TItem="MetricData"
+                             Items="data"
+                             Name="Actual"
+                             SeriesType="SeriesType.Bar"
+                             XValue="@(e => e.Label)"
+                             YValue="@(e => e.Value)"
+                             Color="@GetBarColor()" />
+        </ApexChart>
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public double BaseValue { get; set; }
+    [Parameter] public double TargetValue { get; set; }
+    [Parameter] public double ActualValue { get; set; }
+
+    private ApexChartOptions<MetricData> options = new();
+    private List<MetricData> data = new();
+
+    // Simple data container for the chart
+    public class MetricData
+    {
+        public string Label { get; set; }
+        public decimal Value { get; set; }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // 1. Prepare Data
+        data = new List<MetricData>
+        {
+            new MetricData { Label = Title, Value = (decimal)ActualValue }
+        };
+
+        // 2. Configure Chart Options
+        options = new ApexChartOptions<MetricData>
+        {
+            Chart = new Chart
+            {
+                Type = ApexCharts.ChartType.Bar,
+                Toolbar = new Toolbar { Show = false },
+                Sparkline = new ChartSparkline { Enabled = true } // Hides axes and grids
+            },
+            PlotOptions = new PlotOptions
+            {
+                Bar = new PlotOptionsBar
+                {
+                    Horizontal = true,
+                    BarHeight = "50%", // Increased slightly for better visibility
+                    BorderRadius = 2
+                }
+            },
+            Tooltip = new Tooltip
+            {
+                Enabled = true,
+                Theme = Mode.Dark,
+                Y = new TooltipY
+                {
+                    Formatter = @"function(val) { return val.toLocaleString('en-IN', { maximumFractionDigits: 2 }); }"
+                }
+            },
+            // 3. Add Lines for Base and Target (Annotations)
+            Annotations = new Annotations
+            {
+                Xaxis = new List<AnnotationsXAxis>
+                {
+                    // Base Marker (Grey Line)
+                    new AnnotationsXAxis
+                    {
+                        X = (decimal)BaseValue,
+                        StrokeDashArray = 0,
+                        BorderColor = "#555",
+                        BorderWidth = 2,
+                        Label = new Label
+                        {
+                            Text = $"Base: {BaseValue/10000000:N2} Cr", // Formatted for readability
+                            Style = new Style { Background = "#555", Color = "#fff", FontSize="10px" },
+                            OffsetY = 0 // Default is usually top
+                        }
+                    },
+                    // Target Marker (Red Dashed Line)
+                    new AnnotationsXAxis
+                    {
+                        X = (decimal)TargetValue,
+                        StrokeDashArray = 4,
+                        BorderColor = "#e91e63",
+                        BorderWidth = 2,
+                        Label = new Label
+                        {
+                            Text = $"Target: {TargetValue/10000000:N2} Cr",
+                            Style = new Style { Background = "#e91e63", Color = "#fff", FontSize="10px" },
+                            OffsetY = 15 // Push it down slightly to avoid overlap with Base label
+                        }
+                    }
+                }
+            },
+            // Ensure the X-axis range covers all values
+            Xaxis = new XAxis
+            {
+                Min = 0,
+                Max = (decimal)(Math.Max(ActualValue, Math.Max(TargetValue, BaseValue)) * 1.2) // 20% buffer
+            }
+        };
+    }
+
+    // Helper: Determine Bar Color based on performance
+    private string GetBarColor()
+    {
+        return ActualValue >= TargetValue ? "#33b76b" : "#435ebe"; // Green if met, Blue otherwise
+    }
+
+    // Helper: Calculate Growth Text
+    private string GetGrowth()
+    {
+        if (BaseValue == 0) return "";
+        var growth = ((ActualValue - BaseValue) / BaseValue) * 100;
+        return $"{growth:+#,0.0;-#,0.0}%";
+    }
+
+    private MudBlazor.Color GetGrowthColor()
+    {
+        if (BaseValue == 0) return MudBlazor.Color.Default;
+        return ActualValue >= BaseValue ? MudBlazor.Color.Success : MudBlazor.Color.Error;
+    }
+}

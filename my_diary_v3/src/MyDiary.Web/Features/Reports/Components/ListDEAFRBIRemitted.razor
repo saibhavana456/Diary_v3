@@ -1,0 +1,366 @@
+@page "/reports/ListDEAFRBIRemitted"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>DEA Fund Remitted to RBI — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // Defaults; set from claims if you already do this on other pages
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // ================= Columns =================
+
+    // Summary columns (zone/region totals)
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new ColumnConfig { Header = "Zone",                    PropertyName = "zone_name_eng", Width = "20%" },
+        new ColumnConfig { Header = "Region",                  PropertyName = "region_name",   Width = "20%" },
+        new ColumnConfig { Header = "Branch",                  PropertyName = "branch_name",   Width = "20%" },
+        new ColumnConfig { Header = "No. of Remitted (Count)", PropertyName = "DeafCount",     IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Total Amount (Rs.)",      PropertyName = "TRAN_AMT",      IsNumeric = true, Format = "N2", Width = "15%" }
+    };
+
+    // Transaction-level detail columns
+    private readonly List<ColumnConfig> _detailCols = new()
+    {
+        new ColumnConfig { Header = "CIF ID",         PropertyName = "CIF_ID",       Width = "10%" },
+        new ColumnConfig { Header = "Account No",     PropertyName = "ACC_NO",       Width = "14%" },
+        new ColumnConfig { Header = "Type",           PropertyName = "ACC_TYPE",     Width = "8%"  },
+        new ColumnConfig { Header = "Subtype",        PropertyName = "ACC_SUBTYPE",  Width = "8%"  },
+        new ColumnConfig { Header = "Tran ID",        PropertyName = "TRAN_ID",      Width = "10%" },
+        new ColumnConfig { Header = "Tran Date",      PropertyName = "TRAN_DATE",    Width = "10%" },
+        new ColumnConfig { Header = "Tran Amount",    PropertyName = "TRAN_AMT",     IsNumeric = true, Format = "N2", Width = "12%" },
+        new ColumnConfig { Header = "IB/NIB",         PropertyName = "IB_NIB",       Width = "8%"  },
+        new ColumnConfig { Header = "Branch",         PropertyName = "Branch_Name",  Width = "18%" },
+        new ColumnConfig { Header = "Region",         PropertyName = "region_name",  Width = "12%" },
+        new ColumnConfig { Header = "Zone",           PropertyName = "zone_name_eng",Width = "12%" },
+        new ColumnConfig { Header = "SOL ID",         PropertyName = "SolId",        Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "DEAF Remitted to RBI";
+        // (Optional) set user privilege/solids from auth claims like your other pages
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "LTRIM(RTRIM(B.region_solid)) <> ''";
+        string groupBy = "";
+        bool isSummary = true; // summary vs transaction detail
+
+        try
+        {
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1")
+                {
+                    // Global summary
+                    columns = "COUNT(CIF_ID) AS DeafCount, " +
+                              "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                              "'All' AS branch_name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId";
+                }
+                else if (_selectedZone == "all")
+                {
+                    if (_selectedRegion == "1")
+                    {
+                        // Zone-wise summary across MANY zones
+                        columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                  "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                  "'All' AS branch_name, 'All' AS region_name, " +
+                                  "B.zone_name_eng, B.Zone_SolId AS SolId";
+                        groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1")
+                        {
+                            // Region-wise summary across MANY regions
+                            columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                      "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId";
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Transaction-level detail (across all)
+                            isSummary = false;
+                            columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                                      "B.Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                    else // specific region selected
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1")
+                        {
+                            // Single region summary
+                            columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                      "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId";
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Transaction detail in region (optionally branch-specific)
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                                      "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                }
+                else // specific zone selected
+                {
+                    where += $" AND B.zone_solid = '{_selectedZone}'";
+
+                    if (_selectedRegion == "1")
+                    {
+                        // Single zone summary
+                        columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                  "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                  "'All' AS branch_name, 'All' AS region_name, B.zone_name_eng, B.Zone_SolId AS SolId";
+                        groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1")
+                        {
+                            // Region-wise summary in selected zone
+                            columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                      "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId";
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Transaction detail in selected zone
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                                      "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                    else // specific region within zone
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1")
+                        {
+                            columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                      "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId";
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Transaction detail for region (+ optional branch)
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                                      "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND B.zone_solid = '{_userZoneSolid}'";
+
+                if (_selectedRegion == "1")
+                {
+                    // Zone summary (user's zone)
+                    columns = "COUNT(CIF_ID) AS DeafCount, " +
+                              "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                              "'All' AS branch_name, 'All' AS region_name, B.zone_name_eng, B.Zone_SolId AS SolId";
+                    groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        // Region-wise summary in user's zone
+                        columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                  "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                  "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId";
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    }
+                    else
+                    {
+                        // Transaction detail in zone
+                        isSummary = false;
+
+                        if (_selectedBranch != "all")
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                                  "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                    }
+                }
+                else // specific region
+                {
+                    where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "COUNT(CIF_ID) AS DeafCount, " +
+                                  "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                                  "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId";
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    }
+                    else
+                    {
+                        // Transaction detail region (+ optional branch)
+                        isSummary = false;
+
+                        if (_selectedBranch != "all")
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                                  "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND B.region_solid = '{_userRegionSolid}'";
+
+                if (_selectedBranch == "1")
+                {
+                    // Region summary (user's region)
+                    columns = "COUNT(CIF_ID) AS DeafCount, " +
+                              "SUM(TRAN_AMT) AS TRAN_AMT, " +
+                              "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId";
+                    groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                }
+                else
+                {
+                    // Transaction detail in region
+                    isSummary = false;
+
+                    if (_selectedBranch != "all")
+                        where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                    columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                              "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                // Single branch detail
+                isSummary = false;
+                where += $" AND B.SOL_ID = '{_userBranchSolid}'";
+
+                columns = "CIF_ID, ACC_NO, ACC_TYPE, ACC_SUBTYPE, TRAN_ID, TRAN_DATE, TRAN_AMT, IB_NIB, " +
+                          "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+            }
+
+            
+            string finalQuery =
+                $"SELECT {columns} " +
+                $"FROM DEAF_REMITTED_RBI A " +
+                $"JOIN Branch_Master B ON A.SOL_ID = B.SOL_ID " +
+                $"WHERE {where}{groupBy}";
+
+            // Data query and as-on-date are independent - run in parallel
+            var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            var dateTask = ReportService.GetAsOnDateAsync("DEAF_REMITTED_RBI");
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+            string date = dateTask.Result;
+            _activeConfig.Columns = isSummary ? _summaryCols : _detailCols;
+            _asOnDateLabel = $"Data As On - {date}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "DeafRemittedToRBI");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "DeafRemittedToRBI.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

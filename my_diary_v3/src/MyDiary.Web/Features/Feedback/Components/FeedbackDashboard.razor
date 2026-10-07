@@ -1,0 +1,116 @@
+@page "/feedback-dashboard"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "FeedbackAdmin")]
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IFeedbackRepo FeedbackRepo
+
+<PageTitle>Feedback Dashboard</PageTitle>
+<PageHeader PageKey="feedback-dashboard" Title="Feedback Dashboard" Subtitle="Status and trend overview of all Feedback tickets." Crumbs="_crumbs" />
+
+@if (_stats is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="2">
+                <MudText Typo="Typo.subtitle2">Open</MudText>
+                <MudText Typo="Typo.h3">@_stats.Open</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="2">
+                <MudText Typo="Typo.subtitle2">In Progress</MudText>
+                <MudText Typo="Typo.h3" Style="color:#ed6c02;">@_stats.InProgress</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="2">
+                <MudText Typo="Typo.subtitle2">Closed</MudText>
+                <MudText Typo="Typo.h3" Style="color:#2e7d32;">@_stats.Closed</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="2">
+                <MudText Typo="Typo.subtitle2">Avg. Rating</MudText>
+                @if (_stats.AverageRating is not null)
+                {
+                    <MudText Typo="Typo.h3" Style="color:#7b1fa2;">@_stats.AverageRating.Value.ToString("0.0")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">from @_stats.RatedCount rating(s)</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.h3" Color="Color.Secondary">—</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-2">By Category</MudText>
+                <MudTable Items="@_stats.ByCategory" Dense="true">
+                    <HeaderContent><MudTh>Category</MudTh><MudTh>Count</MudTh></HeaderContent>
+                    <RowTemplate><MudTd>@CategoryLabel(context.Category)</MudTd><MudTd>@context.Count</MudTd></RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-2">By Severity</MudText>
+                @if (_stats.BySeverity.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">No tickets triaged yet.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_stats.BySeverity" Dense="true">
+                        <HeaderContent><MudTh>Severity</MudTh><MudTh>Count</MudTh></HeaderContent>
+                        <RowTemplate><MudTd>@context.Severity</MudTd><MudTd>@context.Count</MudTd></RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-2">Open Tickets by Level</MudText>
+                @if (_stats.ByLevel.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">Nothing open right now.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_stats.ByLevel" Dense="true">
+                        <HeaderContent><MudTh>Level</MudTh><MudTh>Count</MudTh></HeaderContent>
+                        <RowTemplate><MudTd>L@(context.Level)</MudTd><MudTd>@context.Count</MudTd></RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("MIS", "MIS"), new("Feedback Dashboard") };
+    private FeedbackDashboardStats? _stats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stats = await FeedbackRepo.GetDashboardStatsAsync();
+    }
+
+    private static string CategoryLabel(string c) => c switch
+    {
+        "FunctionalDefects" => "Functional Defects",
+        "PerformanceIssues" => "Performance Issues",
+        "UiUxImprovements" => "UI/UX Improvements",
+        "NewFeatureRequests" => "New Feature Requests",
+        "DataIssues" => "Data Issues",
+        _ => c
+    };
+}

@@ -1,0 +1,1132 @@
+﻿@page "/reports/VendorsData"
+@using System.Globalization;
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Vendors Data Report — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b !important;
+    }
+</style>
+
+<MudGrid Spacing="3">
+
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#ffffff;">
+
+            <!-- Filters -->
+
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Zone"
+                               Value="SelectedZone"
+                               ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">
+                                @z["zone_name_eng"]
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">
+                                @r["region_name"]
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Branch"
+                               Value="SelectedBranch"
+                               ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["sol_id"].ToString()">
+                                @b["branch_name"]
+                            </MudSelectItem>
+                        }
+
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+
+                    @if (_canAdd && _userPrivilege != "BRANCH")
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Style="background-color:green;color:white;font-size:11px;margin-right:10px;"
+                                   OnClick="ShowAdd">
+                            Add New
+                        </MudButton>
+                    }
+
+                    <MudButton Variant="Variant.Filled"
+                               Style="background-color:#000066;color:white;font-size:11px;"
+                               OnClick="OnExportInternal">
+                        Export
+                    </MudButton>
+
+                </MudItem>
+
+            </MudGrid>
+
+            @if (_showAdd)
+            {
+                <MudPaper Class="pa-4 mx-4 mt-2 mb-2">
+
+                    <MudGrid Spacing="2">
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Vendor Name"
+                                          @bind-Value="_vendorName"
+                                          Validation="ValidateVendorName"
+                                          Required
+                                          ReadOnly="_isEdit"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Nature Of Service"
+                                          @bind-Value="_natureOfService"
+                                          Validation="ValidateNatureOfService"
+                                          Required
+                                          ReadOnly="_isEdit"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Contact Number"
+                                          @bind-Value="_contactNumber"
+                                          ReadOnly="_isEdit"
+                                          Validation="ValidateContactNumber"
+                                          Required
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Sol Id"
+                                          Value="_branchCode"
+                                          ReadOnly="_isEdit"
+                                          Validation="ValidateBranchCode"
+                                          ValueChanged="@(async(string value) => await OnBranchChanged(value))"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Credit Account Status"
+                                          @bind-Value="_creditAccountStatus"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Branch Name"
+                                          @bind-Value="_branchName"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Region"
+                                          @bind-Value="_region"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Zone"
+                                          @bind-Value="_zone"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        
+
+                        <!-- Account Status -->
+
+                        <MudItem xs="12" sm="3">
+                            <MudSelect T="string"
+                                       Label="Account Status"
+                                       Value="_accountStatus"
+                                       ValueChanged="AccountStatusChanged"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true">
+
+                                <MudSelectItem Value="@("Opened")">
+                                    Opened
+                                </MudSelectItem>
+
+                                <MudSelectItem Value="@("Not Available")">
+                                    Not Available
+                                </MudSelectItem>
+
+                            </MudSelect>
+                        </MudItem>
+
+                        @if (_accountStatus == "Opened")
+                        {
+                            <MudItem xs="12" sm="3">
+                                <MudTextField Label="Account Number"
+                                              @bind-Value="_accountNumber"
+                                              InputType="InputType.Number"
+                                              MaxLength="15"
+                                      Validation="ValidateAccountNumber"
+                                              Immediate="true"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Dense="true" />
+                            </MudItem>
+                        }
+
+                        @if (_accountStatus == "Not Available")
+                        {
+                            <MudItem xs="12" sm="3">
+                                <MudSelect T="string"
+                                           Label="In Progress"
+                                           Value="_inProgressStatus"
+                                           ValueChanged="InProgressChanged"
+                                           Validation="ValidateInProgress"
+                                           Required="true"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Dense="true">
+
+                                    <MudSelectItem Value="@("Yes")">
+                                        Yes
+                                    </MudSelectItem>
+
+                                    <MudSelectItem Value="@("No")">
+                                        No
+                                    </MudSelectItem>
+
+                                </MudSelect>
+                            </MudItem>
+                        }
+
+                        @if (_inProgressStatus == "Yes")
+                        {
+                            <MudItem xs="12" sm="3">
+                                <MudDatePicker Label="Expected Timeline"
+                                               @bind-Date="_expectedDate"
+                                               Variant="Variant.Outlined"
+                                               Required="true"
+                                               Validation="ValidateExpectedTimeline"
+                                               MinDate="@AppTime.Today"
+                                               Margin="Margin.Dense"
+                                               Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6">
+                                <MudTextField Label="Remarks"
+                                              @bind-Value="_remarks"
+                                              Validation="ValidateRemarks"
+                                              Required
+                                              Lines="3"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Dense="true" />
+                            </MudItem>
+                        }
+
+                        <!-- Feasibility -->
+                        @if (_accountStatus == "Not Available"
+                       && _inProgressStatus == "No")
+                        {
+                            <MudItem xs="12" sm="3">
+                                <MudTextField Label="Feasibility"
+                                              Value='_feasibility'
+                                              ReadOnly="true"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Dense="true" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="9">
+                                <MudTextField Label="Remarks"
+                                              @bind-Value="_remarks"
+                                              Lines="3"
+                                              Validation="ValidateRemarks"
+                                              Required
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Dense="true" />
+                            </MudItem>
+                        }
+
+                        <MudItem xs="12">
+
+                            <MudButton Color="Color.Success"
+                                       Variant="Variant.Filled"
+                                       OnClick="SaveRow">
+                                @(_isEdit ? "Update" : "Save")
+                            </MudButton>
+
+                            <MudButton Color="Color.Error"
+                                       Variant="Variant.Filled"
+                                       Class="ml-2"
+                                       OnClick="CancelAdd">
+                                Cancel
+                            </MudButton>
+
+                        </MudItem>
+
+                    </MudGrid>
+
+                </MudPaper>
+            }
+            <!-- TABLE -->
+
+            <MudItem xs="12" Class="pa-4">
+
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+
+                    <HeaderContent>
+
+                        <MudTh Style="width:100px;background-color:#2a2f5b;color:white;">Vendor</MudTh>
+                        <MudTh Style="width:100px;background-color:#2a2f5b;color:white;">Service</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Contact</MudTh>
+                        <MudTh Style="width:100px;background-color:#2a2f5b;color:white;">Sol Id</MudTh>
+                        <MudTh Style="width:100px;background-color:#2a2f5b;color:white;">Branch</MudTh>
+                        <MudTh Style="width:100px;background-color:#2a2f5b;color:white;">Region</MudTh>
+                        <MudTh Style="width:100px;background-color:#2a2f5b;color:white;">Zone</MudTh>
+                        <MudTh Style="width:100px;background-color:#2a2f5b;color:white;">Credit Status</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Account Status</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Account No</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">In Process</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Expected Timeline</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Not Feasible</MudTh>
+                        <MudTh Style="background-color:#2a2f5b;color:white;">Remarks</MudTh>
+                        @if (_userPrivilege != "BRANCH")
+                        {
+                            <MudTh Style="background-color:#2a2f5b;color:white;">Action</MudTh>
+                        }
+
+                    </HeaderContent>
+
+                    <RowTemplate>
+
+                        <MudTd Style="width:100px">@context["VendorName"]</MudTd>
+                        <MudTd Style="width:100px">@context["NatureOfService"]</MudTd>
+                        <MudTd>@context["ContactNumber"]</MudTd>
+                        <MudTd Style="width:100px">@context["BranchCode"]</MudTd>
+                        <MudTd Style="width:100px">@context["branch_name"]</MudTd>
+                        <MudTd Style="width:100px">@context["region_name"]</MudTd>
+                        <MudTd Style="width:100px">@context["zone_name_eng"]</MudTd>
+                        <MudTd Style="width:100px">@context["Credit_Account_Status"]</MudTd>
+
+                        <MudTd>@context["A/c Opened/Already Available_"]</MudTd>
+                        <MudTd>@context["Account Number"]</MudTd>
+                        <MudTd>@context["In Process_"]</MudTd>
+                        <MudTd>@context["Expected Timeline"]</MudTd>
+                        <MudTd>
+                            @{
+                                var accountStatus = context["A/c Opened/Already Available_"]?.ToString() ?? "";
+                                var inProcess = context["In Process_"]?.ToString() ?? "";
+                                var notFeasible = context["Not Feasible"]?.ToString() ?? "0";
+
+                                string displayValue = "";
+
+                                if (accountStatus == "Not Available" && inProcess == "No")
+                                {
+                                    displayValue = notFeasible == "1"
+                                    ? "Not Feasible"
+                                    : "Feasible";
+                                }
+                            }
+
+                            @displayValue
+                        </MudTd>
+
+                        <MudTd>@context["Remarks"]</MudTd>
+                        @if (_userPrivilege != "BRANCH")
+                        {
+                            <MudTd>
+                                <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       OnClick="@(() => EditRow(context))">
+                                    Edit
+                                </MudButton>
+                            </MudTd>
+                        }
+                        
+
+                    </RowTemplate>
+
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10,25,50,100}" />
+                    </PagerContent>
+
+                </MudTable>
+
+            </MudItem>
+
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
+@code{
+    private bool _loading = true;
+    private bool _showAdd = false;
+    private bool _canAdd = true;
+    private bool _isEdit = false;
+    private int _editId;
+    private string SelectedZone = "All";
+    private string SelectedRegion = "All";
+    private string SelectedBranch = "All";
+    private DateTime? _expectedDate;
+
+    private bool _accountNumberError;
+    private string _accountNumberErrorText = "";
+
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+    private List<Dictionary<string, object>> _data = new();
+    private string _userPrivilege = "CO";
+    private string _vendorName = "";
+    private string _natureOfService = "";
+    private string _contactNumber = "";
+    private string _branchCode = "";
+    private string _branchName = "";
+    private string _region = "";
+    private string _zone = "";
+    private string _creditAccountStatus = "";
+    private string _accountStatus = "";
+    private string _accountNumber = "";
+    private string _inProgressStatus = "";
+    private string _feasibility = "Feasible";
+    private string _expectedTimeline = "";
+    private string _remarks = "";
+
+    private string ValidateExpectedTimeline()
+    {
+        if (_inProgressStatus == "Yes" && !_expectedDate.HasValue)
+            return "Expected Timeline is required";
+
+        return null;
+    }
+
+    private string ValidateInProgress(string value)
+    {
+        if (_accountStatus == "Not Available" &&
+            string.IsNullOrWhiteSpace(value))
+        {
+            return "In Progress is required";
+        }
+
+        return null;
+    }
+
+    private string ValidateVendorName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Vendor Name is required";
+
+        return null;
+    }
+
+    private string ValidateNatureOfService(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Nature Of Service is required";
+
+        return null;
+    }
+
+    private string ValidateContactNumber(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Contact Number is required";
+
+        return null;
+    }
+
+    private string ValidateBranchCode(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Sol ID is required";
+
+        var code = value.Trim();
+
+        if (code.Length == 4)
+            code = "0" + code;
+
+        if (code.Length != 5)
+            return "Sol ID must be 5 digits";
+
+        if (!code.All(char.IsDigit))
+            return "Sol Id must contain only digits";
+
+        return null;
+    }
+
+
+    private string ValidateRemarks(string value)
+    {
+        if ((_inProgressStatus == "Yes" ||
+             (_accountStatus == "Not Available" && _inProgressStatus == "No"))
+            && string.IsNullOrWhiteSpace(value))
+        {
+            return "Remarks is required";
+        }
+
+        return null;
+    }
+
+    private string ValidateAccountNumber(string value)
+    {
+        if (_accountStatus != "Opened")
+            return null;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return "Account Number is required";
+
+        if (value.Length != 15)
+            return "Account Number must be exactly 15 digits";
+
+        return null;
+    }
+
+    private Task FeasibilityChanged(string value)
+    {
+        _feasibility = value;
+
+        if (value != "Not Feasible")
+        {
+            _remarks = "";
+        }
+
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+
+    private Task InProgressChanged(string value)
+    {
+        _inProgressStatus = value;
+
+        if (value == "Yes")
+        {
+            _feasibility = "Feasible";
+            _remarks = "";
+        }
+        else
+        {
+            _expectedTimeline = "";
+            _feasibility = "Not Feasible";
+        }
+
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task AccountStatusChanged(string value)
+    {
+        _accountStatus = value;
+
+        if (value == "Opened")
+        {
+            _inProgressStatus = "";
+            _expectedTimeline = "";
+            _feasibility = "Feasible";
+            _remarks = "";
+        }
+        else
+        {
+            _accountNumber = "";
+        }
+
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void AccountNumberChanged(string value)
+    {
+        value = new string(value.Where(char.IsDigit).ToArray());
+
+        if (value.Length > 15)
+            value = value.Substring(0, 15);
+
+        _accountNumber = value;
+    }
+
+    private void EditRow(Dictionary<string, object> row)
+{
+    _isEdit = true;
+
+    _editId = Convert.ToInt32(row["VendorId"]);
+
+    _vendorName = row["VendorName"]?.ToString() ?? "";
+    _natureOfService = row["NatureOfService"]?.ToString() ?? "";
+    _contactNumber = row["ContactNumber"]?.ToString() ?? "";
+    _branchCode = row["BranchCode"]?.ToString() ?? "";
+
+    _creditAccountStatus = row["Credit_Account_Status"]?.ToString() ?? "";
+
+    _accountStatus = row["A/c Opened/Already Available_"]?.ToString() ?? "";
+
+    _accountNumber = row["Account Number"]?.ToString() ?? "";
+
+    _inProgressStatus = row["In Process_"]?.ToString() ?? "";
+
+    _expectedTimeline = row["Expected Timeline"]?.ToString() ?? "";
+        if (DateTime.TryParse(_expectedTimeline, out var dt))
+        {
+            _expectedDate = dt;
+        }
+
+        if (_accountStatus == "Not Available" &&
+        _inProgressStatus == "No")
+        {
+            var notFeasible = row["Not Feasible"]?.ToString() ?? "0";
+
+            _feasibility = notFeasible == "1"
+                ? "Not Feasible"
+                : "Feasible";
+        }
+        else
+        {
+            _feasibility = "";
+        }
+
+    _remarks = row["Remarks"]?.ToString() ?? "";
+        _branchName = row["branch_name"]?.ToString() ?? "";
+        _region = row["region_name"]?.ToString() ?? "";
+        _zone = row["zone_name_eng"]?.ToString() ?? "";
+
+    _showAdd = true;
+}
+
+
+    private async Task OnBranchChanged(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && value.Length == 4)
+            value = "0" + value;
+
+        _branchCode = value;
+
+        string query = $@"
+    SELECT
+        branch_name,
+        region_name,
+        zone_name_eng
+    FROM branch_master
+    WHERE sol_id = '{value}'";
+
+        var result = await ReportService.ExecuteRawQueryAsync(query);
+
+        if (result.Count > 0)
+        {
+            _branchName = result[0]["branch_name"]?.ToString() ?? "";
+            _region = result[0]["region_name"]?.ToString() ?? "";
+            _zone = result[0]["zone_name_eng"]?.ToString() ?? "";
+        }
+        else
+        {
+            _branchName = "";
+            _region = "";
+            _zone = "";
+        }
+    }
+    private async Task SaveRow()
+    {
+        string branchCode = _branchCode;
+        _expectedTimeline = _expectedDate?.ToString("dd.MM.yyyy") ?? "";
+
+        var timelineError = ValidateExpectedTimeline();
+
+        if (!string.IsNullOrWhiteSpace(timelineError))
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                timelineError);
+
+            return;
+        }
+
+        var inProgressError =
+    ValidateInProgress(_inProgressStatus);
+
+        if (!string.IsNullOrWhiteSpace(inProgressError))
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                inProgressError);
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_vendorName))
+        {
+            await JS.InvokeVoidAsync("alert", "Vendor Name is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_natureOfService))
+        {
+            await JS.InvokeVoidAsync("alert", "Nature Of Service is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_contactNumber))
+        {
+            await JS.InvokeVoidAsync("alert", "Contact Number is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(branchCode))
+        {
+            await JS.InvokeVoidAsync("alert",
+                "Sol ID is required.");
+            return;
+        }
+
+        if (branchCode.Length == 4)
+        {
+            branchCode = "0" + branchCode;
+        }
+
+        if (branchCode.Length != 5 ||
+            !branchCode.All(char.IsDigit))
+        {
+            await JS.InvokeVoidAsync("alert",
+                "Sol Id must contain exactly 5 digits.");
+            return;
+        }
+
+        if ((_inProgressStatus == "Yes" ||
+    (_accountStatus == "Not Available" && _inProgressStatus == "No"))
+    && string.IsNullOrWhiteSpace(_remarks))
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Remarks is required.");
+
+            return;
+        }
+
+        if (_accountStatus == "Opened")
+        {
+            if (string.IsNullOrWhiteSpace(_accountNumber) ||
+                _accountNumber.Length != 15 ||
+                !long.TryParse(_accountNumber, out _))
+            {
+                return;
+            }
+        }
+        string query;
+        if (!string.IsNullOrWhiteSpace(branchCode) &&
+            branchCode.Length == 4)
+        {
+            branchCode = "0" + branchCode;
+        }
+        int notFeasible =
+            _feasibility == "Not Feasible" ? 1 : 0;
+
+        if (_isEdit)
+        {
+            query = $@"
+    UPDATE VendorsData
+    SET
+        VendorName = '{_vendorName}',
+        NatureOfService = '{_natureOfService}',
+        ContactNumber = '{_contactNumber}',
+        BranchCode = '{branchCode}',
+        Credit_Account_Status = '{_creditAccountStatus}',
+        [A/c Opened/Already Available_] = '{_accountStatus}',
+        [Account Number] = '{_accountNumber}',
+        [In Process_] = '{_inProgressStatus}',
+        [Expected Timeline] = '{_expectedTimeline}',
+        [Not Feasible] = {notFeasible},
+        Remarks = '{_remarks}'
+    WHERE VendorId = {_editId}";
+        }
+
+        else
+        {
+            query = $@"
+    INSERT INTO VendorsData
+    (
+        VendorName,
+        NatureOfService,
+        ContactNumber,
+        BranchCode,
+        Credit_Account_Status,
+        [A/c Opened/Already Available_],
+        [Account Number],
+        [In Process_],
+        [Expected Timeline],
+        [Not Feasible],
+        Remarks
+    )
+    VALUES
+    (
+        '{_vendorName}',
+        '{_natureOfService}',
+        '{_contactNumber}',
+        '{branchCode}',
+        '{_creditAccountStatus}',
+        '{_accountStatus}',
+        '{_accountNumber}',
+        '{_inProgressStatus}',
+        '{_expectedTimeline}',
+    {notFeasible},
+        '{_remarks}'
+    )";
+        }
+
+        await ReportService.ExecuteRawQueryAsync(query);
+
+        if (_isEdit)
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Vendor record updated successfully.");
+        }
+        else
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Vendor record added successfully.");
+        }
+
+        _vendorName = "";
+        _natureOfService = "";
+        _contactNumber = "";
+        _branchCode = "";
+        _branchName = "";
+        _region = "";
+        _zone = "";
+        _creditAccountStatus = "";
+
+        _accountStatus = "";
+        _accountNumber = "";
+
+        _inProgressStatus = "";
+        _expectedDate = null;
+
+        _feasibility = "Not Feasible";
+        _remarks = "";
+
+        _showAdd = false;
+
+
+        _isEdit = false;
+        _showAdd = false;
+
+        await LoadData();
+
+    }
+
+    private async Task LoadData()
+{
+    _loading = true;
+
+    string where = "1=1";
+
+    if (SelectedZone != "All")
+        where += $" AND bm.zone_solid='{SelectedZone}'";
+
+    if (SelectedRegion != "All")
+        where += $" AND bm.region_solid='{SelectedRegion}'";
+
+    if (SelectedBranch != "All")
+        where += $" AND bm.sol_id='{SelectedBranch}'";
+
+    // RBAC: clamp to the logged-in user's own scope for non-CO users (fail-closed to BRANCH).
+    // The page previously read the privilege claim only for Add/Edit button visibility, not for
+    // the data query, so a branch user could see all vendors bank-wide.
+    {
+        var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+        if (__scope.IsZone) where += $" AND bm.zone_solid = '{__scope.ZoneSolid}'";
+        else if (__scope.IsRegion) where += $" AND bm.region_solid = '{__scope.RegionSolid}'";
+        else if (__scope.IsBranch) where += $" AND bm.sol_id = '{__scope.BranchSolid}'";
+    }
+
+        string query = $@"
+SELECT
+    v.*,
+    bm.branch_name,
+    bm.region_name,
+    bm.zone_name_eng
+FROM VendorsData v
+LEFT JOIN Branch_Master bm
+    ON v.BranchCode = bm.sol_id
+WHERE {where}
+ORDER BY v.VendorName";
+
+    _data = await ReportService.ExecuteRawQueryAsync(query);
+
+    _loading = false;
+}
+
+
+
+    private readonly List<ColumnConfig> _exportCols = new()
+{
+    new() { Header="Vendor Name", PropertyName="VendorName" },
+    new() { Header="Nature Of Service", PropertyName="NatureOfService" },
+    new() { Header="Contact Number", PropertyName="ContactNumber" },
+    new() { Header="Sol Id", PropertyName="BranchCode" },
+    new() { Header="Branch Name", PropertyName="branch_name" },
+new() { Header="Region", PropertyName="region_name" },
+new() { Header="Zone", PropertyName="zone_name_eng" },
+
+    new() { Header="Credit Account Status", PropertyName="Credit_Account_Status" },
+
+    new() { Header="A/c Opened/Already Available", PropertyName="A/c Opened/Already Available_" },
+    new() { Header="Account Number", PropertyName="Account Number" },
+    new() { Header="In Process", PropertyName="In Process_" },
+    new() { Header="Expected Timeline", PropertyName="Expected Timeline" },
+    new() { Header="Feasibility", PropertyName="FeasibilityDisplay" },
+
+    new() { Header="Remarks", PropertyName="Remarks" }
+};
+
+    private async Task OnExportInternal()
+    {
+        var exportData = _data.Select(row =>
+    {
+    var newRow = new Dictionary<string, object>(row);
+
+    if (newRow.ContainsKey("BranchCode"))
+    {
+        var solId = newRow["BranchCode"]?.ToString() ?? "";
+
+        newRow["BranchCode"] = solId.PadLeft(5, '0');
+    }
+
+    var accountStatus = row["A/c Opened/Already Available_"]?.ToString() ?? "";
+    var inProcess = row["In Process_"]?.ToString() ?? "";
+    var notFeasible = row["Not Feasible"]?.ToString() ?? "0";
+
+    string feasibility = "";
+
+    if (accountStatus == "Not Available" && inProcess == "No")
+    {
+        feasibility = notFeasible == "1"
+            ? "Not Feasible"
+            : "Feasible";
+    }
+
+    newRow["FeasibilityDisplay"] = feasibility;
+
+    return newRow;
+    }).ToList();
+
+        var bytes = ReportService.ExportToExcel(
+            exportData,
+            _exportCols,
+            "VendorsData");
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "VendorsData.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private async Task HandleZoneChanged(string val)
+    {
+        SelectedZone = val;
+
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        if (val == "All")
+        {
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                "1=1",
+                "region_name");
+        }
+        else
+        {
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"zone_solid='{val}'",
+                "region_name");
+        }
+
+        _branches.Clear();
+
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string val)
+    {
+        SelectedRegion = val;
+
+        SelectedBranch = "All";
+
+        if (val == "All")
+        {
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                "1=1",
+                "branch_name");
+        }
+        else
+        {
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                $"region_solid='{val}'",
+                "branch_name");
+        }
+
+        await LoadData();
+    }
+
+    private async Task HandleBranchChanged(string val)
+    {
+        SelectedBranch = val;
+        await LoadData();
+    }
+
+    private void ShowAdd()
+    {
+        _vendorName = "";
+        _natureOfService = "";
+        _contactNumber = "";
+        _branchCode = "";
+        _branchName = "";
+        _region = "";
+        _zone = "";
+        _creditAccountStatus = "";
+
+        _accountStatus = "";
+        _accountNumber = "";
+
+        _inProgressStatus = "";
+        _expectedDate = null;
+
+        _feasibility = "Not Feasible";
+        _remarks = "";
+
+        _showAdd = true;
+        _isEdit = false;
+    }
+
+    private void CancelAdd()
+    {
+        _showAdd = false;
+        _isEdit = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        _userPrivilege = authState.User
+            .FindFirst("privilege")?.Value?
+            .ToUpper() ?? "CO";
+
+        _zones = await ReportService.GetLookupDataAsync(
+            "zone_master",
+            "zone_name_eng, zone_solid",
+            "1=1",
+            "zone_name_eng");
+
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            "1=1",
+            "region_name");
+
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "branch_name, sol_id",
+            "1=1",
+            "branch_name");
+
+        await LoadData();
+    }
+}

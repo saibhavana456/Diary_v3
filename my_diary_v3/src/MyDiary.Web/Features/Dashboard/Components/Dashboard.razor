@@ -1,0 +1,310 @@
+﻿@page "/dashboard"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Dashboard.Services
+@using MyDiary.Web.Features.Dashboard.Models
+@using System.Security.Claims
+@using MyDiary.Web.Features.Shared.Services
+@inject IDashboardService DashboardService
+@inject DynamicReportService ReportService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4" Style="position: relative;">
+    <MudOverlay Visible="@_isLoading" DarkBackground="true" Absolute="true" ZIndex="9999">
+        <MudProgressCircular Color="Color.Secondary" Indeterminate="true" Size="Size.Large" />
+    </MudOverlay>
+    <MudGrid>
+        <MudItem xs="12">
+            <MudPaper Elevation="3" Class="pa-4 mb-4">
+                <MudGrid Spacing="2" AlignItems="AlignItems.Center">
+                    <MudItem xs="12" sm="3">
+                        <MudText Typo="Typo.h6" Color="Color.Primary" Class="fw-bold">KPI Dashboard</MudText>
+                    </MudItem>
+                    
+                    @if (_showZone)
+                    {
+                        <MudItem xs="12" sm="3">
+                            <MudSelect T="string" Label="Zone" Value="_selectedZone" ValueChanged="OnZoneChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                <MudSelectItem Value="@("ALL")">All</MudSelectItem>
+                                @foreach (var z in _zones)
+                                {
+                                    <MudSelectItem Value="@z.ZoneSolid">@z.ZoneName</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    }
+
+                    @if (_showRegion)
+                    {
+                        <MudItem xs="12" sm="3">
+                            <MudSelect T="string" Label="Region" Value="_selectedRegion" ValueChanged="OnRegionChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(_selectedZone == "ALL" && _userPrivilege == "CO")">
+                                <MudSelectItem Value="@("ALL")">All</MudSelectItem>
+                                @foreach (var r in _regions)
+                                {
+                                    <MudSelectItem Value="@r.RegionSolid">@r.RegionName</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    }
+
+                    @if (_showBranch)
+                    {
+                        <MudItem xs="12" sm="3">
+                            <MudSelect T="string" Label="Branch" Value="_selectedBranch" ValueChanged="OnBranchChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(_selectedRegion == "ALL" && _userPrivilege != "BRANCH")">
+                                <MudSelectItem Value="@("ALL")">All</MudSelectItem>
+                                @foreach (var b in _branches)
+                                {
+                                    <MudSelectItem Value="@b.SolId">@b.BranchName</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    }
+                </MudGrid>
+
+               @*  <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled" StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 12px;"
+                               OnClick="HandleExport">Export To Excel</MudButton>
+                </MudItem> *@
+
+                <MudStack Row="true" Class="mt-2 justify-end">
+                     <MudText Typo="Typo.caption" Class="mud-text-secondary pt-2">@_asOnDateLabel</MudText>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudTable Items="@_kpiData" Hover="true" Striped="true" Bordered="true" Dense="true" Elevation="2" Loading="@_isLoading">
+                <HeaderContent>
+                    <MudTh Style="background-color:#2a2f5b; color:white;">S.No.</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white;">Parameter</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Actuals As On <br/> @_headerLastToLastFY</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Actuals As On <br/> @_headerLastFY</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Actuals Last Qtr <br/> @_headerLastQtr</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">As On Date <br/> @_headerAsOnDate</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Target This Qtr <br/> @_headerTargetQtr</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Target This FY <br/> @_headerTargetFY</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Growth over Mar'26</MudTh>
+                    <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">Gap to FY Target</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@(_kpiData.IndexOf(context) + 1)</MudTd>
+                    <MudTd Class="fw-bold">@context.ParameterName</MudTd>
+                    
+                    <MudTd Style="text-align:right;">@FormatCrores(context.ActualLastToLastFY)</MudTd>
+                    <MudTd Style="text-align:right;">@FormatCrores(context.ActualLastFY)</MudTd>
+                    <MudTd Style="text-align:right;">@FormatCrores(context.ActualLastQtr)</MudTd>
+                    
+                    <MudTd Style="text-align:right;" Class="fw-bold">@FormatCrores(context.ActualAsOnDate)</MudTd>
+                    
+                    <MudTd Style="text-align:right;">@FormatCrores(context.TargetNextQtr)</MudTd>
+                    <MudTd Style="text-align:right;">@FormatCrores(context.TargetNextMar)</MudTd>
+                    
+                    @{
+                        var growth = (context.ActualAsOnDate - context.ActualLastFY);
+                        var growthColor = (growth < 0 && context.ParameterName != "GROSS NPA") ? "color:red; font-weight:bold;" : "";
+                        // Logic inverted for NPA? Usually lower NPA is better, but your ASPX code had specific logic.
+                        if(context.ParameterName == "GROSS NPA") { growthColor = "color:red; font-weight:bold;"; } 
+                    }
+                    <MudTd Style="@($"text-align:right; {growthColor}")">@FormatCrores(growth)</MudTd>
+                    
+                    @{
+                        // Gap to FY Target = FY Target − Actuals (as of current date)
+                        var gap = (context.TargetNextMar - context.ActualAsOnDate);
+                        var gapColor = (gap > 0 && context.ParameterName != "GROSS NPA") ? "color:red; font-weight:bold;" : "";
+                    }
+                    <MudTd Style="@($"text-align:right; {gapColor}")">@FormatCrores(gap)</MudTd>
+
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
+            </MudTable>
+            
+            @if(!_kpiData.Any() && !_isLoading)
+            {
+                <MudAlert Severity="Severity.Info" Class="mt-2">No Data Found for the selected criteria.</MudAlert>
+            }
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    // Data Lists
+    private List<Zone> _zones = new();
+    private List<Region> _regions = new();
+    private List<Branch> _branches = new();
+    private List<KpiItem> _kpiData = new();
+
+    // Selections
+    private string _selectedZone = "ALL";
+    private string _selectedRegion = "ALL";
+    private string _selectedBranch = "ALL";
+
+    // User Context
+    private string _userPrivilege = "CO"; // Default fallback
+    private string _userSolid = "00000";
+
+    // Visibility Flags
+    private bool _showZone = true;
+    private bool _showRegion = true;
+    private bool _showBranch = true;
+    private bool _isLoading = false;
+
+    // Dynamic Headers
+    private string _headerLastToLastFY = "";
+    private string _headerLastFY = "";
+    private string _headerLastQtr = "";
+    private string _headerAsOnDate = "";
+    private string _headerTargetQtr = "";
+    private string _headerTargetFY = "";
+    private string _asOnDateLabel = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserClaims();
+        await InitializeFilters();
+        await LoadKpiData(); // Initial Load
+    }
+
+    private async Task LoadUserClaims()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            // Assuming you have these claims. If not, replace with your claim names.
+            _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+            
+            // Map specific solid claims based on privilege
+            if (_userPrivilege == "ZONE") _userSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+            else if (_userPrivilege == "REGION") _userSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+            else if (_userPrivilege == "BRANCH") _userSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        }
+    }
+
+    private async Task InitializeFilters()
+    {
+        // Logic mirroring Page_Load in ASPX
+        if (_userPrivilege == "CO")
+        {
+            _zones = await DashboardService.GetZonesAsync();
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            _showZone = false;
+            _selectedZone = _userSolid; // Implicitly selected
+            _regions = await DashboardService.GetRegionsAsync(_userSolid);
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            _showZone = false;
+            _showRegion = false;
+            _selectedRegion = _userSolid;
+            _branches = await DashboardService.GetBranchesAsync(_userSolid);
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            _showZone = false;
+            _showRegion = false;
+            _showBranch = false;
+            _selectedBranch = _userSolid;
+        }
+    }
+
+    private async Task OnZoneChanged(string newZone)
+    {
+        _selectedZone = newZone;
+        _selectedRegion = "ALL";
+        _selectedBranch = "ALL";
+        _regions.Clear();
+        _branches.Clear();
+
+        if (newZone != "ALL")
+        {
+            _regions = await DashboardService.GetRegionsAsync(newZone);
+        }
+        await LoadKpiData();
+    }
+
+    private async Task OnRegionChanged(string newRegion)
+    {
+        _selectedRegion = newRegion;
+        _selectedBranch = "ALL";
+        _branches.Clear();
+
+        if (newRegion != "ALL")
+        {
+            _branches = await DashboardService.GetBranchesAsync(newRegion);
+        }
+        await LoadKpiData();
+    }
+
+    private async Task OnBranchChanged(string newBranch)
+    {
+        _selectedBranch = newBranch;
+        await LoadKpiData();
+    }
+
+    private async Task LoadKpiData()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        await Task.Delay(1);
+        string solIdToFetch = "00000";
+
+        // Determine which SolID to send to SP based on selection hierarchy
+        if (_selectedBranch != "ALL") solIdToFetch = _selectedBranch;
+        else if (_selectedRegion != "ALL") solIdToFetch = _selectedRegion;
+        else if (_selectedZone != "ALL") solIdToFetch = _selectedZone;
+        
+        // If logged in as specific user, ensure we don't fetch "00000" if not allowed
+        if (_userPrivilege == "ZONE" && solIdToFetch == "00000") solIdToFetch = _userSolid;
+        if (_userPrivilege == "REGION" && solIdToFetch == "00000") solIdToFetch = _userSolid;
+        if (_userPrivilege == "BRANCH") solIdToFetch = _userSolid;
+
+        try
+        {
+            _kpiData = await DashboardService.GetKpiDataAsync(solIdToFetch);
+            
+            // Extract Headers from the first row if data exists
+            if (_kpiData.Count > 0)
+            {
+                var first = _kpiData.First();
+                _headerLastToLastFY = first.LastToLastFYDt.ToString("MMM-yyyy");
+                _headerLastFY = first.LastFYDt.ToString("MMM-yyyy");
+                _headerLastQtr = first.LastFYDt.ToString("MMM-yyyy"); // Note: Check SP logic for LastQtrDt vs LastFYDt
+                _headerAsOnDate = first.KPIDate.ToString("dd-MM-yyyy");
+                _headerTargetQtr = first.NextQtrDt.ToString("MMM-yyyy");
+                _headerTargetFY = first.NextFYDt.ToString("MMM-yyyy");
+                _asOnDateLabel = "(Rs. in Crores)";
+            }
+        }
+        catch(Exception ex)
+        {
+            AppLogger.LogError(ex, "Dashboard: error loading data");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private string FormatCrores(decimal value)
+    {
+        if (value == 0) return "—";
+        // Divide by 1 Crore (10,000,000) and format
+        return (value / 10000000m).ToString("N2");
+    }
+
+    // private async Task HandleExport()
+    // {
+    //     var bytes = ReportService.ExportToExcel(_kpiData, _activeConfig.Columns, "KPI");
+    //     await JS.InvokeVoidAsync("BlazorDownloadFile", "SundryReport.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    // }
+}

@@ -1,0 +1,992 @@
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Services
+@using MudBlazor
+@inherits MudComponentBase
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IProjectMasterService ProjectService
+@inject IJSRuntime JS
+@inject ProjectBudgetService BudgetSvc
+@inject IDialogService DialogService
+
+
+<MudDialog DisableSidePadding="true">
+    <DialogContent>
+        @* This outer wrapper maintains the overall dialog height *@
+        <div style="height: 80vh; display: flex; flex-direction: column; overflow: hidden;">
+            
+        
+
+        
+            <MudTabs Elevation="2" 
+                     Rounded="true" 
+                     Color="Color.Primary" 
+                     ApplyEffectsToContainer="true" 
+                     PanelClass="fixed-dialog-panel px-4 py-4" 
+                     Style="flex-grow: 1;">
+
+              
+
+
+                        @* TAB 1: GENERAL & OWNERSHIP *@
+                <MudTabPanel Text="Basic Details" Icon="@Icons.Material.Filled.Info">
+                    <MudGrid Spacing="3" Class="mt-2">
+
+                                @* --- PROJECT IDENTITY & NATURE (Split into 2 parts) --- *@
+                        @* --- BUDGET ALLOCATION (read only) --- *@
+                       
+
+                                <MudItem xs="12" md="6" Class="mb-4">
+                                    <MudPaper Elevation="2" Class="pa-3" Style="background-color: #f9f9f9; border-left: 4px solid #594ae2; height: 100%;">
+                                        <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>Project Identity - Part B</b></MudText>
+                                        <MudSimpleTable Dense="true" Hover="true" Bordered="true">
+                                            <tbody>
+                                                <tr><td style="width:40%"><b>Benefits Bank</b></td><td>@Projects?.ProjectBenefitsBank</td></tr>
+                                                <tr><td><b> Type</b></td><td>@Projects?.ProjectType</td></tr>
+                                                <tr><td><b> Category</b></td><td>@Projects?.ProjectCategory</td></tr>
+                                                <tr><td><b> Nature</b></td><td>@Projects?.ProjectNature</td></tr>
+                                                <tr><td><b>IS IT and Business Same</b></td><td>@Projects?.IS_IT_BUSINESS_SAME</td></tr>
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudPaper>
+                                </MudItem>
+
+                                @* --- OWNERSHIP SECTION (3 Tables in 1 Row) --- *@
+                                @* Ownership - Business *@
+                                <MudItem xs="12" md="4" Class="mb-4">
+                                    <MudPaper Elevation="2" Class="pa-3" Style="background-color: #f0f4ff; border-top: 3px solid #2196f3; height: 100%;">
+                                        <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>Ownership - Business</b></MudText>
+                                        <MudSimpleTable Dense="true" Hover="true" Bordered="true">
+                                            <tbody>
+                                                <tr><td><b>Dept</b></td><td>@Projects?.BUSINESS_OWNER_DEPT_NAME</td></tr>
+                                                <tr><td><b>Section</b></td><td>@Projects?.BUSINESS_OWNER_SEC_NAME</td></tr>
+                                                <tr><td><b>Owner</b></td><td>@Projects?.BUSINESS_OWNER_NAME</td></tr>
+                                                <tr><td><b>Designation</b></td><td>@Projects?.BUSINESS_OWNER_DESIG</td></tr>
+                                                <tr><td><b>IP No</b></td><td>@Projects?.BUSINESS_OWNER_IP_NO</td></tr>
+                                                <tr><td><b>Mobile</b></td><td>@Projects?.BUSINESS_OWNER_MOBILE</td></tr>
+                                                <tr><td><b>Email</b></td><td>@Projects?.BUSINESS_OWNER_EMAIL</td></tr>
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudPaper>
+                                </MudItem>
+
+                                @* Ownership - IT *@
+                                <MudItem xs="12" md="4" Class="mb-4">
+                                    <MudPaper Elevation="2" Class="pa-3" Style="background-color: #f0f4ff; border-top: 3px solid #2196f3; height: 100%;">
+                                        <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>Ownership - IT</b></MudText>
+                                        <MudSimpleTable Dense="true" Hover="true" Bordered="true">
+                                            <tbody>
+                                                <tr><td><b>Dept</b></td><td>@Projects?.IT_OWNER_DEPT_NAME</td></tr>
+                                                <tr><td><b>Section</b></td><td>@Projects?.IT_OWNER_SEC_NAME</td></tr>
+                                                <tr><td><b>Owner</b></td><td>@Projects?.IT_OWNER_NAME</td></tr>
+                                                    <tr><td><b>Designation</b></td><td>@Projects?.IT_OWNER_DESIG</td></tr>
+                                                <tr><td><b>IP No</b></td><td>@Projects?.IT_OWNER_IP_NO</td></tr>
+                                                <tr><td><b>Mobile</b></td><td>@Projects?.IT_OWNER_MOBILE</td></tr>
+                                                <tr><td><b>Email</b></td><td>@Projects?.IT_OWNER_EMAIL</td></tr>
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudPaper>
+                                </MudItem>
+
+                                @* Supporting Owner Details *@
+                                <MudItem xs="12" md="4" Class="mb-4">
+                                    <MudPaper Elevation="2" Class="pa-3" Style="background-color: #f0f4ff; border-top: 3px solid #2196f3; height: 100%;">
+                                        <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>Supporting Owner</b></MudText>
+                                        <MudSimpleTable Dense="true" Hover="true" Bordered="true">
+                                            <tbody>
+                                                <tr><td><b>Dept</b></td><td>@Projects?.SupportingOwnerDeptName</td></tr>
+                                                <tr><td><b>Section</b></td><td>@Projects?.SupportingOwnerSecName</td></tr>
+                                                <tr><td><b>Owner</b></td><td>@Projects?.SupportingOwnerName</td></tr>
+                                                    <tr><td><b>Designation</b></td><td>@Projects?.SupportingOwnerDesig</td></tr>
+                                                <tr><td><b>IP No</b></td><td>@Projects?.SupportingOwnerIpNo</td></tr>
+                                                <tr><td><b>Mobile</b></td><td>@Projects?.SupportingOwnerMobile</td></tr>
+                                                <tr><td><b>Email</b></td><td>@Projects?.SupportingOwnerEmail</td></tr>
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudPaper>
+                                </MudItem>
+
+                              
+                                @* --- ADMINISTRATIVE & SUMMARY SECTION (Grid Layout) --- *@
+                                <MudItem xs="12" Class="mb-4">
+                                    <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #ff9800; background-color: #fffcf5;">
+                                        <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>ADMIN APPROVAL DETAILS</b></MudText>
+                                        <MudTable Items="@(new List<ProjectsMaster> { Projects ?? new() })" Dense="true" Bordered="true" Elevation="0">
+                                            <HeaderContent>
+                                                <MudTh>Authority</MudTh>
+                                                <MudTh>Approval Date</MudTh>
+                                                
+                                            </HeaderContent>
+                                            <RowTemplate>
+                                                <MudTd>@context.AdminApprovalAuthority</MudTd>
+                                                <MudTd>@context.AdminApprovalDate?.ToShortDateString()</MudTd>
+                                              
+                                            </RowTemplate>
+                                        </MudTable>
+                                    </MudPaper>
+                                </MudItem>
+
+                                    @* --- TIMELINE DETAILS (STACKED GRID FORMAT) --- *@
+                                    <MudItem xs="12" Class="mb-4">
+                                        <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #4caf50; background-color: #fafffa;">
+                                            <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>TIMELINE DETAILS</b></MudText>
+
+                                            <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;">
+                                                <thead>
+                                                    @* ROW 1: PLANNED LABELS *@
+                                                    <tr style="background-color: rgba(0,0,0,0.03);">
+                                                        <th style="font-size:0.75rem; width: 33.33%;"><b>Start Date (Planned)</b></th>
+                                                        <th style="font-size:0.75rem; width: 33.33%;"><b>End Date (Planned)</b></th>
+                                                        <th style="font-size:0.75rem; width: 33.33%;"><b>Baseline Timeline</b></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @* ROW 2: PLANNED DATA *@
+                                                    <tr>
+                                                        <td style="font-size:0.8rem;">@(Projects?.ProjectStartDate?.ToShortDateString() ?? "N/A")</td>
+                                                        <td style="font-size:0.8rem;">@(Projects?.ProjectEndDate?.ToShortDateString() ?? "N/A")</td>
+                                                        <td style="font-size:0.8rem;">@(Projects?.BaselineTimeline?.ToShortDateString() ?? "N/A")</td>
+                                                    </tr>
+
+                                                    @* ROW 3: ACTUAL/REVISED LABELS *@
+                                                    <tr style="background-color: rgba(0,0,0,0.03);">
+                                                        <th style="font-size:0.75rem;"><b>Actual Start Date</b></th>
+                                                        <th style="font-size:0.75rem;"><b>Actual End Date</b></th>
+                                                        <th style="font-size:0.75rem;"><b>Revised Timeline</b></th>
+                                                    </tr>
+
+                                                    @* ROW 4: ACTUAL/REVISED DATA *@
+                                                    <tr>
+                                                        <td style="font-size:0.8rem;">@(Projects?.ActualStartDate?.ToShortDateString() ?? "N/A")</td>
+                                                        <td style="font-size:0.8rem;">@(Projects?.ActualEndDate?.ToShortDateString() ?? "N/A")</td>
+                                                        <td style="font-size:0.8rem;">@(Projects?.RevisedTimeline?.ToShortDateString() ?? "N/A")</td>
+                                                    </tr>
+                                                </tbody>
+                                            </MudSimpleTable>
+                                        </MudPaper>
+                                    </MudItem>
+
+
+
+                                    @* --- PRESENT STATE (STACKED GRID FORMAT) --- *@
+                                    <MudItem xs="12" Class="mb-4">
+                                        <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #f44336; background-color: #fffafa;">
+                                            <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>PRESENT STATE</b></MudText>
+
+                                            <MudSimpleTable Dense="true" Bordered="true" Elevation="0">
+                                                <thead>
+                                                    @* ROW 1: LABELS FOR PHASE, COMP %, AND STATUS *@
+                                                    <tr style="background-color: rgba(0,0,0,0.03);">
+                                                        <th style="font-size:0.75rem; width: 33%;"><b>Current Phase</b></th>
+                                                        <th style="font-size:0.75rem; width: 33%;"><b>Completion %</b></th>
+                                                        <th style="font-size:0.75rem; width: 34%;"><b>Overall Status</b></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @* ROW 2: DATA FOR PHASE, COMP %, AND STATUS *@
+                                                    <tr>
+                                                        <td style="font-size:0.8rem;">@(Projects?.CurrentPhase ?? "N/A")</td>
+                                                        <td style="font-size:0.8rem;"><b>@(Projects?.CompletePerc?.ToString() ?? "0")%</b></td>
+                                                        <td style="font-size:0.8rem;">
+                                                            <MudChip T="string" Color="@GetStatusColor(Projects?.OverallStatus)" Size="Size.Small">
+                                                                @(Projects?.OverallStatus ?? "N/A")
+                                                            </MudChip>
+                                                        </td>
+                                                    </tr>
+
+                                                    @* ROW 3: LABELS FOR LAST REVIEW AND REMARKS *@
+                                                    <tr style="background-color: rgba(0,0,0,0.03);">
+                                                        <th style="font-size:0.75rem;"><b>Last Review Date</b></th>
+                                                        <th colspan="2" style="font-size:0.75rem;"><b>Remarks</b></th>
+                                                    </tr>
+
+                                                    @* ROW 4: DATA FOR LAST REVIEW AND REMARKS *@
+                                                    <tr>
+                                                        <td style="font-size:0.8rem;">@(Projects?.LastReviewDate?.ToShortDateString() ?? "N/A")</td>
+                                                        <td colspan="2" style="font-size:0.8rem; white-space: pre-wrap;">@Projects?.Remarks</td>
+                                                    </tr>
+                                                </tbody>
+                                            </MudSimpleTable>
+                                        </MudPaper>
+                                    </MudItem>
+                            </MudGrid>
+                        </MudTabPanel>
+
+
+                @* TAB 2: RFP & PROCUREMENT DETAILS *@
+                <MudTabPanel Text="Procurement & Financials" Icon="@Icons.Material.Filled.ShoppingCart">
+                    <MudGrid Spacing="3" Class="mt-2">
+
+                        @* --- SECTION 1: RFP DETAILS (3 Fields per Row) --- *@
+                        @* --- SECTION 1: RFP DETAILS (Split into 2 parts side-by-side) --- *@
+                        <MudItem xs="12" md="6" Class="mb-4">
+                            <MudPaper Elevation="2" Class="pa-3" Style="background-color: #f9f9f9; border-left: 4px solid #594ae2; height: 100%;">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>RFP Details - Part A</b></MudText>
+                                <MudSimpleTable Dense="true" Hover="true" Bordered="true">
+                                    <tbody>
+                                        <tr><td style="width:40%"><b>Procure Type</b></td><td>@(Projects?.ProjectProcureType ?? "N/A")</td></tr>
+                                        <tr><td><b>RFP Name</b></td><td>@(Projects?.RfpName ?? "N/A")</td></tr>
+                                        <tr><td><b>Ref No.</b></td><td>@(Projects?.RfpRefNo ?? "N/A")</td></tr>
+                                        <tr><td><b>App. Date</b></td><td>@(Projects?.RfpApprovedDate?.ToShortDateString() ?? "N/A")</td></tr>
+                                        <tr><td><b>Publish Date</b></td><td>@(Projects?.RfpPublishDate?.ToShortDateString() ?? "N/A")</td></tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="12" md="6" Class="mb-4">
+                            <MudPaper Elevation="2" Class="pa-3" Style="background-color: #f9f9f9; border-left: 4px solid #594ae2; height: 100%;">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>RFP Details - Part B</b></MudText>
+                                <MudSimpleTable Dense="true" Hover="true" Bordered="true">
+                                    <tbody>
+                                        <tr><td style="width:40%"><b>Pre-Bid Date</b></td><td>@(Projects?.PreBidMeetingDate?.ToShortDateString() ?? "N/A")</td></tr>
+                                        <tr><td><b>Sub. Date</b></td><td>@(Projects?.RfpSubmissionDate?.ToShortDateString() ?? "N/A")</td></tr>
+                                        <tr><td><b>Comp. Date</b></td><td>@(Projects?.RfpCompletionDate?.ToShortDateString() ?? "N/A")</td></tr>
+                                        <tr><td><b>Status</b></td><td>@(Projects?.RfpStatus ?? "N/A")</td></tr>
+                                        @* Added an empty row so both Part A and Part B have exactly 5 rows and perfectly matching heights *@
+                                        <tr><td>&nbsp;</td><td>&nbsp;</td></tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudPaper>
+                        </MudItem>
+
+                        @* --- SECTION 2: FINANCIAL DETAILS (4 Fields in 1 Row) --- *@
+                        <MudItem xs="12" Class="mb-4">
+                            <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #2196f3; background-color: #f0f4ff;">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>Financial Details</b></MudText>
+
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 25%;"><b>Authority</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>App. Date</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>Additional App.</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>Est. Cost</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.FinApprovalAuthority ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.FinApprovalDate?.ToShortDateString() ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.IsAdditionalAppvalAvailable ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.EstimatedCostProject?.ToString("C") ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudPaper>
+                        </MudItem>
+
+                        @* --- SECTION 3: PO DETAILS (4 Fields in 1 Row) --- *@
+                        <MudItem xs="12" Class="mb-4">
+                            <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #ff9800; background-color: #fff9f0;">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>PO Details</b></MudText>
+
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 25%;"><b>PO Issued</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>PO Date</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>Add. PO Issued</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>Acceptance Date</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.IsPoIssued ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.PoDate?.ToShortDateString() ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.IsAdditionalPoIssued ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.PoAcceptanceDate?.ToShortDateString() ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudPaper>
+                        </MudItem>
+
+                    </MudGrid>
+                </MudTabPanel>
+
+
+                @* --- TAB 3: SERVICE PROVIDER (VIEW MODE) --- *@
+                <MudTabPanel Text="Vendor Details" Icon="@Icons.Material.Filled.Business">
+                    <MudGrid Spacing="3" Class="mt-2">
+
+                        @* --- SECTION 1: SERVICE PROVIDER DETAILS --- *@
+                        <MudItem xs="12" Class="mb-4">
+                            <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #594ae2; background-color: #f9f9f9;">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>Service Provider Details</b></MudText>
+
+                                @* 1. SP Basic Info (3 in 1 row) *@
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;" Class="mb-3">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>SP Name</b></th>
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>SP Type</b></th>
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>Address</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpName ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpType ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpAddress ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+
+                                @* 2. Statutory IDs (4 in 1 row) *@
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 25%;"><b>PAN No</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>GST/TIN No</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>CIN No</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>DIN No</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.PanNo ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.TinGstNo ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.CinNo ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.DinNo ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudPaper>
+                        </MudItem>
+
+                        @* --- SECTION 2: CONTACT PERSONNEL --- *@
+                        <MudItem xs="12" Class="mb-4">
+                            <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #2196f3; background-color: #f0f4ff;">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>Contact Personnel</b></MudText>
+
+                                @* 3. PM Details (4 in 1 row) *@
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;" Class="mb-3">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 25%;"><b>PM Name</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>PM Designation</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>PM Mobile</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>PM Email</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpPmName ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpPmDesig ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpPmMobile ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpPmEmail ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+
+                                @* 4. SPOC Details (4 in 1 row) *@
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 25%;"><b>SPOC Name</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>SPOC Designation</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>SPOC Mobile</b></th>
+                                            <th style="font-size:0.75rem; width: 25%;"><b>SPOC Email</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpSpocName ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpSpocDesig ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpSpocMobile ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpSpocEmail ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudPaper>
+                        </MudItem>
+
+                        @* --- SECTION 3: SLA & COMPLIANCE --- *@
+                        <MudItem xs="12" Class="mb-4">
+                            <MudPaper Elevation="2" Class="pa-3" Style="border-left: 6px solid #ff9800; background-color: #fff9f0;">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2"><b>SLA & Compliance</b></MudText>
+
+                                @* 5. SLA Dates Part 1 (3 in 1 row) *@
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;" Class="mb-3">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>SLA Execution Date</b></th>
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>Effective From</b></th>
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>Effective Upto</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.SlaExecutionDate?.ToShortDateString() ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SlaEffectiveFrom?.ToShortDateString() ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SlaEffectiveUpto?.ToShortDateString() ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+
+                                @* 6. SLA Dates Part 2 (3 in 1 row) *@
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;" Class="mb-3">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>SLA Renewal Date</b></th>
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>SP Onboarding Date</b></th>
+                                            <th style="font-size:0.75rem; width: 33.33%;"><b>SP Agreement Date</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">@(Projects?.SlaRenewalDate?.ToShortDateString() ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpOnboardingDate?.ToShortDateString() ?? "N/A")</td>
+                                            <td style="font-size:0.8rem;">@(Projects?.SpAgreementDate?.ToShortDateString() ?? "N/A")</td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+
+                                @* 7. SLA Legal Vetting (Yes/No Status) *@
+                                <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Style="overflow-x: auto;">
+                                    <thead>
+                                        <tr style="background-color: rgba(0,0,0,0.03);">
+                                            <th style="font-size:0.75rem;"><b>SLA Legal Vetting</b></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style="font-size:0.8rem;">
+                                                @if (Projects?.SlaLegalVetting == "Y")
+                                                {
+                                                    <span style="color: green; font-weight: bold;">Yes</span>
+                                                }
+                                                else if (Projects?.SlaLegalVetting == "N")
+                                                {
+                                                    <span style="color: red; font-weight: bold;">No</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>N/A</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudPaper>
+                        </MudItem>
+
+                    </MudGrid>
+                </MudTabPanel>
+
+                        @* --- TAB 4: MILESTONE DETAILS (VIEW MODE) --- *@
+                        <MudTabPanel Text="Milestones" Icon="@Icons.Material.Filled.Flag">
+                            <MudGrid Spacing="1" Class="mt-2">
+
+
+                                @* --- MILESTONE DATA TABLE --- *@
+                                <MudItem xs="12">
+                                    <MudPaper Elevation="1" Class="pa-2">
+                                        <MudTable Items="@MilestoneList" Dense="true" Hover="true" Bordered="true" Elevation="0" HorizontalScrollbar="true">
+                                            <HeaderContent>
+                                       
+                                                <MudTh Class="grid-header"> Code</MudTh>
+                                                <MudTh Class="grid-header">Milestone Name</MudTh>
+                                                <MudTh Class="grid-header">Owner</MudTh>
+                                                <MudTh Class="grid-header">Planned</MudTh>
+                                                <MudTh Class="grid-header">Baseline</MudTh>
+                                                <MudTh Class="grid-header">Revised</MudTh>
+                                                <MudTh Class="grid-header">Actual</MudTh>
+                                                <MudTh Class="grid-header">Status</MudTh>
+                                                <MudTh Class="grid-header">SLA</MudTh>
+                                                <MudTh Class="grid-header">Penalty</MudTh>
+                                                <MudTh Class="grid-header">Dependencies</MudTh>
+                                            </HeaderContent>
+                                            <RowTemplate>
+
+                                                <MudTd Class="grid-data"><b>@context.MilestoneCode</b></MudTd>
+                                                <MudTd Class="grid-data">@context.MilestoneName</MudTd>
+                                                <MudTd Class="grid-data">@context.OwnerName</MudTd>
+                                                <MudTd Class="grid-data">@context.PlannedDate?.ToString("dd-MMM-yyyy")</MudTd>
+                                                <MudTd Class="grid-data">@context.BaselineDate?.ToString("dd-MMM-yyyy")</MudTd>
+                                                <MudTd Class="grid-data">@context.RevisedDate?.ToString("dd-MMM-yyyy")</MudTd>
+                                                <MudTd Class="grid-data">@context.ActualDate?.ToString("dd-MMM-yyyy")</MudTd>
+                                                <MudTd Class="grid-data">
+                                                    <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)" Style="font-size:0.65rem; height:18px;">
+                                                        @(context.Status ?? "N/A")
+                                                    </MudChip>
+                                                </MudTd>
+                                                <MudTd Class="grid-data">
+                                                    <MudIcon Icon="@(context.IsSlaMet == "Y" ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                                             Color="@(context.IsSlaMet == "Y" ? Color.Success : Color.Error)" Size="Size.Small" />
+                                                    <span style="font-size: 0.65rem;">@(context.IsSlaMet == "Y" ? "MET" : "NO")</span>
+                                                </MudTd>
+                                                <MudTd Class="grid-data">
+                                                    <MudText Color="@(context.IsPenaltyApplicable == "Y" ? Color.Error : Color.Default)" Style="font-size: 0.65rem; font-weight: bold;">
+                                                        @(context.IsPenaltyApplicable == "Y" ? "YES" : "NO")
+                                                    </MudText>
+                                                </MudTd>
+                                                <MudTd Class="grid-data" Style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                                    @context.Dependencies
+                                                </MudTd>
+                                            </RowTemplate>
+                                            <NoRecordsContent>
+                                                <MudText Typo="Typo.body2" Class="pa-4 text-center text-secondary">No milestones found.</MudText>
+                                            </NoRecordsContent>
+                                        </MudTable>
+                                    </MudPaper>
+                                </MudItem>
+
+                            </MudGrid>
+                        </MudTabPanel>
+
+                @* --- TAB 5: PROJECT ISSUES (VIEW MODE) --- *@
+                <MudTabPanel Text="Risk" Icon="@Icons.Material.Filled.ReportProblem">
+                    <MudGrid Spacing="1" Class="mt-2">
+
+
+                        @* --- ISSUES DATA TABLE --- *@
+                        <MudItem xs="12">
+                            <MudPaper Elevation="1" Class="pa-2">
+                                <MudTable Items="@IssueList" Dense="true" Hover="true" Bordered="true" Elevation="0" HorizontalScrollbar="true">
+                                    <HeaderContent>
+                                        <MudTh Class="grid-header">ID</MudTh>
+                                        <MudTh Class="grid-header">Issue Code</MudTh>
+                                        <MudTh Class="grid-header">Description</MudTh>
+                                        <MudTh Class="grid-header">Impact</MudTh>
+                                        <MudTh Class="grid-header">Root Cause</MudTh>
+                                        <MudTh Class="grid-header">Owner</MudTh>
+                                        <MudTh Class="grid-header">Raised</MudTh>
+                                        <MudTh Class="grid-header">Target</MudTh>
+                                        <MudTh Class="grid-header">Actual</MudTh>
+                                        <MudTh Class="grid-header">Status</MudTh>
+                                        <MudTh Class="grid-header">Resolution Summary</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd Class="grid-data">@context.IssueId</MudTd>
+                                        <MudTd Class="grid-data"><b>@context.IssueCode</b></MudTd>
+                                        <MudTd Class="grid-data" Style="min-width: 200px; max-width: 300px;">
+                                            <div style="white-space: normal; word-wrap: break-word; font-size: 0.7rem;">
+                                                @context.IssueDescription
+                                            </div>
+                                        </MudTd>
+                                        <MudTd Class="grid-data">@context.Impact</MudTd>
+                                        <MudTd Class="grid-data">@context.RootCause</MudTd>
+                                        <MudTd Class="grid-data">@context.OwnerName</MudTd>
+                                        <MudTd Class="grid-data">@context.DateRaised?.ToString("dd-MMM-yyyy")</MudTd>
+                                        <MudTd Class="grid-data">@context.TargetResolutionDate?.ToString("dd-MMM-yyyy")</MudTd>
+                                        <MudTd Class="grid-data">@(context.ActualResolutionDate?.ToString("dd-MMM-yyyy") ?? "-")</MudTd>
+                                        <MudTd Class="grid-data">
+                                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)" Style="font-size:0.65rem; height:18px;">
+                                                @(context.Status ?? "N/A")
+                                            </MudChip>
+                                        </MudTd>
+                                        <MudTd Class="grid-data" Style="min-width: 200px;">
+                                            <div style="white-space: normal; word-wrap: break-word; font-size: 0.7rem; color: #666;">
+                                                @context.ResolutionSummary
+                                            </div>
+                                        </MudTd>
+                                    </RowTemplate>
+                                    <NoRecordsContent>
+                                        <MudText Typo="Typo.body2" Class="pa-4 text-center text-secondary">No issues found for this project.</MudText>
+                                    </NoRecordsContent>
+                                </MudTable>
+                            </MudPaper>
+                        </MudItem>
+
+                    </MudGrid>
+                </MudTabPanel>
+
+                @* --- TAB 6: PROJECT RESOURCES (VIEW MODE) --- *@
+                <MudTabPanel Text="Resources" Icon="@Icons.Material.Filled.People">
+                    <MudGrid Spacing="1" Class="mt-2">
+
+
+                        @* --- RESOURCES DATA TABLE --- *@
+                        <MudItem xs="12">
+                            <MudPaper Elevation="1" Class="pa-2">
+                                <MudTable Items="@ResourceList" Dense="true" Hover="true" Bordered="true" Elevation="0" HorizontalScrollbar="true">
+                                    <HeaderContent>
+                                        <MudTh Class="grid-header">Code</MudTh>
+                                        <MudTh Class="grid-header">Resource Name</MudTh>
+                                        <MudTh Class="grid-header">Designation</MudTh>
+                                        <MudTh Class="grid-header">Role</MudTh>
+                                        <MudTh Class="grid-header">Type</MudTh>
+                                        <MudTh Class="grid-header">Skillset</MudTh>
+                                        <MudTh Class="grid-header">Start Date</MudTh>
+                                        <MudTh Class="grid-header">End Date</MudTh>
+                                        <MudTh Class="grid-header">Remarks</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd Class="grid-data"><b>@context.ResourceCode</b></MudTd>
+                                        <MudTd Class="grid-data">@context.ResourceName</MudTd>
+                                        <MudTd Class="grid-data">@context.ResourceDesig</MudTd>
+                                        <MudTd Class="grid-data">@context.ResourceRole</MudTd>
+                                        <MudTd Class="grid-data">
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Variant="Variant.Text"
+                                                     Color="@(context.ResourceType?.ToUpper() == "INTERNAL" ? Color.Success : Color.Info)"
+                                                     Style="font-size:0.65rem; height:18px; font-weight: bold;">
+                                                @(context.ResourceType ?? "N/A")
+                                            </MudChip>
+                                        </MudTd>
+                                        <MudTd Class="grid-data" Style="min-width: 150px; max-width: 250px;">
+                                            <div style="white-space: normal; word-wrap: break-word; font-size: 0.7rem;">
+                                                @context.ResourceSkillset
+                                            </div>
+                                        </MudTd>
+                                        <MudTd Class="grid-data">@context.ResourceStartDate?.ToString("dd-MMM-yyyy")</MudTd>
+                                        <MudTd Class="grid-data">@(context.ResourceEndDate?.ToString("dd-MMM-yyyy") ?? "-")</MudTd>
+                                        <MudTd Class="grid-data" Style="min-width: 150px;">
+                                            <div style="white-space: normal; word-wrap: break-word; font-size: 0.7rem; color: #666;">
+                                                @context.ResourceRemark
+                                            </div>
+                                        </MudTd>
+                                    </RowTemplate>
+                                    <NoRecordsContent>
+                                        <MudText Typo="Typo.body2" Class="pa-4 text-center text-secondary">No resources assigned to this project.</MudText>
+                                    </NoRecordsContent>
+                                </MudTable>
+                            </MudPaper>
+                        </MudItem>
+
+                    </MudGrid>
+                </MudTabPanel>
+
+
+
+                @* --- TAB 7: DOCUMENTS (VIEW MODE) --- *@
+                <MudTabPanel Text="Documents" Icon="@Icons.Material.Filled.AttachFile">
+                    <MudGrid Spacing="1" Class="mt-2">
+
+                        @* --- DOCUMENTS DATA TABLE --- *@
+                        <MudItem xs="12">
+                            <MudPaper Elevation="1" Class="pa-2">
+                                <MudTable Items="@DocumentList" Dense="true" Hover="true" Bordered="true" Elevation="0" HorizontalScrollbar="true">
+                                    <HeaderContent>
+                                        <MudTh Class="grid-header">ID</MudTh>
+                                        <MudTh Class="grid-header">Doc Code</MudTh>
+                                        <MudTh Class="grid-header">Document Name</MudTh>
+                                        <MudTh Class="grid-header">Type</MudTh>
+                                        <MudTh Class="grid-header">Reference (Field1)</MudTh>
+                                        <MudTh Class="grid-header">Remark</MudTh>
+                                        <MudTh Class="grid-header">File</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd Class="grid-data">@context.DocId</MudTd>
+                                        <MudTd Class="grid-data"><b>@context.DocCode</b></MudTd>
+                                        <MudTd Class="grid-data">@context.DocName</MudTd>
+                                        <MudTd Class="grid-data">
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info" Style="font-size:0.65rem; height:18px; font-weight: bold;">
+                                                @(context.DocType ?? "General")
+                                            </MudChip>
+                                        </MudTd>
+                                        <MudTd Class="grid-data">@context.Field1</MudTd>
+                                        <MudTd Class="grid-data" Style="min-width: 200px;">
+                                            <div style="white-space: normal; word-wrap: break-word; font-size: 0.7rem; color: #666;">
+                                                @context.Remark
+                                            </div>
+                                        </MudTd>
+                                        <MudTd Class="grid-data">
+                                            @if (context.FileContent != null && context.FileContent.Length > 0)
+                                            {
+                                                <MudLink OnClick="@(() => DownloadFile(context))" Color="Color.Primary" Underline="Underline.Always" Style="cursor:pointer; font-size:0.7rem; display: flex; align-items: center;">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Small" Class="mr-1" /> Download
+                                                </MudLink>
+                                            }
+                                            else
+                                            {
+                                                <MudText Style="font-size:0.7rem; color:gray;">No File</MudText>
+                                            }
+                                        </MudTd>
+                                    </RowTemplate>
+                                    <NoRecordsContent>
+                                        <MudText Typo="Typo.body2" Class="pa-4 text-center text-secondary">No documents found for this project.</MudText>
+                                    </NoRecordsContent>
+                                </MudTable>
+                            </MudPaper>
+                        </MudItem>
+
+                    </MudGrid>
+                </MudTabPanel>
+                @* --- BUDGET ALLOCATION (read only, mirrors the Edit dialog) --- *@
+                <MudTabPanel Text="Budget Allocation" Icon="@Icons.Material.Filled.Savings">
+                    <MudGrid Spacing="3" Class="mt-2">
+
+                        @* ---------- CAPITAL ---------- *@
+                        <MudItem xs="12">
+                            <MudPaper Elevation="1" Class="pa-4" Style="background:#f4f2ff; border-left:4px solid #594ae2;">
+                                <div class="d-flex align-center mb-3" style="gap:10px;flex-wrap:wrap;">
+                                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Style="color:#594ae2;" />
+                                    <MudText Typo="Typo.subtitle1" Style="color:#594ae2;"><b>CAPITAL BUDGET</b></MudText>
+                                    @if (_viewFyLabel is not null)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Style="color:#594ae2;border-color:#594ae2;">FY @_viewFyLabel</MudChip>
+                                    }
+                                    @if (_viewCapital is { IsRevised: true })
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">Revised</MudChip>
+                                    }
+                                </div>
+
+                                @if (_viewCapital is null)
+                                {
+                                    <MudAlert Severity="Severity.Normal" Dense="true" Class="mb-0">No capital budget has been allotted for this project.</MudAlert>
+                                }
+                                else
+                                {
+                                    <MudGrid Spacing="2">
+                                        <MudItem xs="12" sm="4">
+                                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Spillover Allotted</MudText>
+                                            <MudText Typo="Typo.h6" Style="color:#111827;">₹ @_viewCapital.Spillover.ToString("N2") <small>Cr</small></MudText>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Fresh Allotted</MudText>
+                                            <MudText Typo="Typo.h6" Style="color:#111827;">₹ @_viewCapital.Fresh.ToString("N2") <small>Cr</small></MudText>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Total Allotted</MudText>
+                                            <MudText Typo="Typo.h6" Style="color:#594ae2;"><b>₹ @_viewCapital.Total.ToString("N2") <small>Cr</small></b></MudText>
+                                        </MudItem>
+                                    </MudGrid>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                        @* ---------- REVENUE ---------- *@
+                        <MudItem xs="12">
+                            <MudPaper Elevation="1" Class="pa-4" Style="background:#eef8f6; border-left:4px solid #00897b;">
+                                <div class="d-flex align-center mb-3" style="gap:10px;flex-wrap:wrap;">
+                                    <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Style="color:#00897b;" />
+                                    <MudText Typo="Typo.subtitle1" Style="color:#00897b;"><b>REVENUE BUDGET</b></MudText>
+                                    @if (_viewFyLabel is not null)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Style="color:#00897b;border-color:#00897b;">FY @_viewFyLabel</MudChip>
+                                    }
+                                    @if (_viewRevenue is { IsRevised: true })
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">Revised</MudChip>
+                                    }
+                                </div>
+
+                                @if (_viewRevenue is null)
+                                {
+                                    <MudAlert Severity="Severity.Normal" Dense="true" Class="mb-0">No revenue budget has been allotted for this project.</MudAlert>
+                                }
+                                else
+                                {
+                                    <MudGrid Spacing="2">
+                                        <MudItem xs="12" sm="4">
+                                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Spillover Allotted</MudText>
+                                            <MudText Typo="Typo.h6" Style="color:#111827;">₹ @_viewRevenue.Spillover.ToString("N2") <small>Cr</small></MudText>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Fresh Allotted</MudText>
+                                            <MudText Typo="Typo.h6" Style="color:#111827;">₹ @_viewRevenue.Fresh.ToString("N2") <small>Cr</small></MudText>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Total Allotted</MudText>
+                                            <MudText Typo="Typo.h6" Style="color:#00897b;"><b>₹ @_viewRevenue.Total.ToString("N2") <small>Cr</small></b></MudText>
+                                        </MudItem>
+                                    </MudGrid>
+                                }
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.caption" Style="color:#6b7280;">
+                                Read-only. Allotments are set from Project List &rarr; Edit &rarr; Budget Management.
+                            </MudText>
+                        </MudItem>
+
+                    </MudGrid>
+                </MudTabPanel>
+
+                    </MudTabs>
+                    </div>
+               
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Variant="Variant.Filled">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public ProjectsMaster Projects { get; set; } = new();
+    [Parameter] public ProjectMilestone Milestone { get; set; } = new();
+    [Parameter] public ProjectIssue ProjectIssue { get; set; } = new();
+    [Parameter] public ProjectResource ProjectResource { get; set; } = new();
+    [Parameter] public Document Document { get; set; } = new();
+
+
+
+
+
+    private List<ProjectMilestone> MilestoneList = new();
+    private List<ProjectIssue> IssueList = new();
+    private List<ProjectResource> ResourceList = new();
+    private List<Document> DocumentList = new();
+
+    private AllocInfo? _viewCapital;
+    private AllocInfo? _viewRevenue;
+    private string? _viewFyLabel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Projects != null && !string.IsNullOrEmpty(Projects.ProjectCode))
+        {
+            // USE THESE METHODS to fetch multiple records for the grids
+            MilestoneList = await ProjectService.GetMilestoneListByProjectAsync(Projects.ProjectCode);
+            IssueList = await ProjectService.GetIssueListByProjectAsync(Projects.ProjectCode);
+            ResourceList = await ProjectService.GetResourceListByProjectAsync(Projects.ProjectCode);
+            DocumentList = await ProjectService.GetDocumentListByProjectAsync(Projects.ProjectCode);
+        }
+
+        if (Projects != null && Projects.ProjectId > 0)
+        {
+            var fyId = await BudgetSvc.GetCurrentFyIdAsync();
+            var fys = await BudgetSvc.GetFinancialYearsAsync();
+            if (fyId == 0 && fys.Count > 0) fyId = fys[0].FyId;
+            _viewFyLabel = fys.FirstOrDefault(f => f.FyId == fyId)?.FyLabel;
+
+            // A project can now carry both kinds of budget.
+            _viewCapital = await BudgetSvc.GetAllocationAsync("CAPITAL", Projects.ProjectId, fyId);
+            _viewRevenue = await BudgetSvc.GetAllocationAsync("REVENUE", Projects.ProjectId, fyId);
+        }
+    }
+
+    private void Close() => MudDialog.Close();
+
+    private string FormatCurrency(string? value)
+    {
+        if (decimal.TryParse(value, out var result))
+            return result.ToString("N2");
+        return value ?? "0.00";
+    }
+
+    private async Task LoadMilestones()
+    {
+        if (!string.IsNullOrEmpty(Projects?.ProjectCode))
+        {
+            // Fetching all records from the milestone table filtered by ProjectCode
+            var result = await ProjectService.GetMilestoneListByProjectAsync(Projects.ProjectCode);
+            if (result != null)
+            {
+                MilestoneList = result;
+            }
+        }
+    }
+
+    private async Task LoadIssues()
+    {
+        if (!string.IsNullOrEmpty(Projects?.ProjectCode))
+        {
+            // Make sure this method is added to your Service/Interface
+            var result = await ProjectService.GetIssueListByProjectAsync(Projects.ProjectCode);
+            if (result != null)
+            {
+                IssueList = result;
+            }
+        }
+    }
+
+    private async Task LoadResources()
+    {
+        if (!string.IsNullOrEmpty(Projects?.ProjectCode))
+        {
+            // Fetching all records from the resource table filtered by ProjectCode
+            var result = await ProjectService.GetResourceListByProjectAsync(Projects.ProjectCode);
+            if (result != null)
+            {
+                ResourceList = result;
+            }
+        }
+    }
+    private async Task LoadDocuments()
+    {
+        if (!string.IsNullOrEmpty(Projects?.ProjectCode))
+        {
+            var result = await ProjectService.GetDocumentListByProjectAsync(Projects.ProjectCode);
+            if (result != null)
+            {
+                DocumentList = result;
+            }
+        }
+    }
+
+    private Color GetStatusColor(string? status) => status?.ToLower() switch
+    {
+        "go live" or "completed" => Color.Success,
+        "uat" or "in progress" or "implementation" => Color.Info,
+        "delayed" or "overdue" => Color.Error,
+        "drop" or "dropped" => Color.Dark,
+        _ => Color.Default
+    };
+
+    private async Task DownloadFile(Document doc)
+    {
+        if (doc.FileContent == null || doc.FileContent.Length == 0)
+        {
+            Snackbar.Add("No file data available for download.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            // Convert byte array to Base64 for the JS helper
+            var base64 = Convert.ToBase64String(doc.FileContent);
+
+            // Ensure you have the 'downloadFileFromBase64' script in your index.html
+            await JS.InvokeVoidAsync("downloadFileFromBase64",
+                doc.FileName ?? "document_download",
+                base64,
+                doc.ContentType ?? "application/octet-stream");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Download failed: " + ex.Message, Severity.Error);
+        }
+    }
+}
+
+            <style>
+    /* 1. Kills the outer scrollbar on the dialog content */
+    .mud-dialog-content {
+        overflow-y: hidden !important;
+        padding: 0 !important;
+    }
+
+    /* 2. Custom scrollbar for your internal 'div' to look cleaner */
+    div::-webkit-scrollbar {
+        width: 8px;
+    }
+    div::-webkit-scrollbar-thumb {
+        background: #e0e0e0;
+        border-radius: 10px;
+    }
+
+    /* 3. High-density grid styles for full-width tables */
+    .compact-edit-grid .mud-input-control {
+        margin-top: 0px !important;
+        margin-bottom: 4px !important;
+    }
+    .compact-edit-grid .mud-input, 
+    .compact-edit-grid .mud-input-label {
+        font-size: 0.8rem !important;
+    }
+
+    /* Locks the internal tab area to a static height */
+    .fixed-dialog-panel {
+        height: 65vh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+    }
+
+    /* Prevents the outer dialog from creating a secondary scrollbar */
+    .mud-dialog-content {
+        overflow: hidden !important;
+        padding: 0 !important;
+    }
+
+    /* Ensures the tabs fill the allocated vertical space */
+    .mud-tabs-panels {
+        height: 100% !important;
+    }
+</style>

@@ -1,0 +1,418 @@
+@page "/dit/project/dashboard"
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Services
+@using System.Globalization
+@inject IProjectMasterService ProjectService
+@inject ProjectBudgetService BudgetSvc
+@inject IAdminMasterService AdminService
+@inject DitUserSession Session
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    <div class="d-flex justify-space-between align-center mb-4">
+        <div>
+            <MudText Typo="Typo.h4">Project Management Dashboard</MudText>
+            <MudText Typo="Typo.subtitle2" Color="Color.Primary">
+                <b>Financial Year: @FyLabel</b>
+            </MudText>
+            @if (_scopeNote is not null)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_scopeNote</MudText>
+            }
+        </div>
+        <div style="width:220px;">
+            <MudSelect T="int" Label="Financial Year" Value="_fyId" ValueChanged="OnFyChanged"
+                       ToStringFunc="@FyText"
+                       Variant="Variant.Outlined" Dense="true">
+                @foreach (var fy in _fys)
+                {
+                    <MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </div>
+
+    @if (NoAccess)
+    {
+        <MudAlert Severity="Severity.Warning">
+            You are not mapped to any section yet, so nothing can be shown.
+            Please ask the administrator to add you under Admin &rarr; Sections &rarr; Team.
+        </MudAlert>
+    }
+    else
+    {
+        @* ---------------- KPI CARDS ---------------- *@
+        <MudGrid Spacing="2" Class="mb-4">
+
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Class="pa-3 rounded-lg d-flex flex-column align-center" Elevation="2"
+                          Style="background:#eef2ff; border-top:4px solid #3f51b5;">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Departments</MudText>
+                    <MudText Typo="Typo.h6" Style="color:#3f51b5;"><b>@ScopedDepts.Count</b></MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Class="pa-3 rounded-lg d-flex flex-column align-center" Elevation="2"
+                          Style="background:#e8eaf6; border-top:4px solid #5c6bc0;">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Sections</MudText>
+                    <MudText Typo="Typo.h6" Style="color:#5c6bc0;"><b>@ScopedSections.Count</b></MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Class="pa-3 rounded-lg d-flex flex-column align-center" Elevation="2"
+                          Style="background:#e3f2fd; border-top:4px solid #1e88e5;">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Total Projects</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Primary"><b>@Scoped.Count</b></MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Class="pa-3 rounded-lg d-flex flex-column align-center" Elevation="2"
+                          Style="background:#e8f5e9; border-top:4px solid #43a047;">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Allocated</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Success"><b>@AllocatedCount</b></MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Class="pa-3 rounded-lg d-flex flex-column align-center" Elevation="2"
+                          Style="background:#fff3e0; border-top:4px solid #fb8c00;">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Not Allocated</MudText>
+                    <MudText Typo="Typo.h6" Style="color:#fb8c00;"><b>@NotAllocatedCount</b></MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Class="pa-3 rounded-lg d-flex flex-column align-center" Elevation="2"
+                          Style="background:#f4f2ff; border-top:4px solid #594ae2;">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Total Allotted</MudText>
+                    <MudText Typo="Typo.h6" Style="color:#594ae2;">
+                        <b>@TotalAllotted.ToString("N2", Inr) Cr.</b>
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* ---------------- CHARTS ---------------- *@
+        <MudGrid Spacing="3">
+
+            @* 1. Projects by Section - ranked bars, so long section names stay readable *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="3" Style="height:100%;">
+                    <MudText Typo="Typo.subtitle2" Align="Align.Center" Class="mb-3"><b>PROJECTS BY SECTION</b></MudText>
+
+                    @{
+                        var groups = SectionGroups;
+                        var maxCount = groups.Count == 0 ? 0 : groups.Max(g => g.Count);
+                    }
+
+                    @if (groups.Count == 0)
+                    {
+                        <MudText Align="Align.Center" Class="mt-8 mud-text-secondary">No sections to show</MudText>
+                    }
+                    else
+                    {
+                        <div style="max-height:300px;overflow-y:auto;padding-right:6px;">
+                            @foreach (var s in groups)
+                            {
+                                var pct = maxCount == 0 ? 0d : (double)s.Count * 100d / maxCount;
+                                var barStyle = $"height:100%;width:{pct:0.#}%;background:#1e88e5;";
+
+                                <div class="mb-3">
+                                    <div class="d-flex justify-space-between align-center" style="gap:12px;">
+                                        <div style="min-width:0;">
+                                            <div title="@s.Label"
+                                                 style="font-size:.8rem;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                                @s.Label
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(s.Dept))
+                                            {
+                                                <div style="font-size:.68rem;color:#9ca3af;">@s.Dept</div>
+                                            }
+                                        </div>
+                                        <div style="font-weight:700;color:#1e88e5;flex:none;">@s.Count</div>
+                                    </div>
+                                    <div style="height:8px;border-radius:4px;background:#eceff1;margin-top:4px;overflow:hidden;">
+                                        <div style="@barStyle"></div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* 2. Timeline health *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="3" Style="height:100%;">
+                    <MudText Typo="Typo.subtitle2" Align="Align.Center" Class="mb-2"><b>OVERALL TIMELINE HEALTH</b></MudText>
+                    @if (TimelineGroups.Count == 0)
+                    {
+                        <MudText Align="Align.Center" Class="mt-8 mud-text-secondary">No projects to show</MudText>
+                    }
+                    else
+                    {
+                        <MudChart ChartType="ChartType.Donut" Width="100%" Height="300px"
+                                  InputData="@TimelineGroups.Select(x => (double)x.Count).ToArray()"
+                                  InputLabels="@TimelineGroups.Select(x => x.Label).ToArray()"
+                                  ChartOptions="@TimelineOptions" />
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* 3. Allocated vs Not allocated *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="3" Style="height:100%;">
+                    <MudText Typo="Typo.subtitle2" Align="Align.Center" Class="mb-2"><b>BUDGET ALLOCATION STATUS</b></MudText>
+                    <MudText Typo="Typo.caption" Align="Align.Center" Class="d-block mb-2 mud-text-secondary">
+                        Financial year @FyLabel
+                    </MudText>
+                    @if (Scoped.Count == 0)
+                    {
+                        <MudText Align="Align.Center" Class="mt-8 mud-text-secondary">No projects to show</MudText>
+                    }
+                    else
+                    {
+                        <MudChart ChartType="ChartType.Donut" Width="100%" Height="280px"
+                                  InputData="@(new double[] { AllocatedCount, NotAllocatedCount })"
+                                  InputLabels="@(new string[] { "Allocated", "Not Allocated" })"
+                                  ChartOptions="@_allocOptions" />
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* 4. Capital vs Revenue *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="3" Style="height:100%;">
+                    <MudText Typo="Typo.subtitle2" Align="Align.Center" Class="mb-2"><b>CAPITAL vs REVENUE</b></MudText>
+                    <MudText Typo="Typo.caption" Align="Align.Center" Class="d-block mb-2 mud-text-secondary">
+                        Projects with a budget in @FyLabel
+                    </MudText>
+                    @if (CapitalCount + RevenueCount == 0)
+                    {
+                        <MudText Align="Align.Center" Class="mt-8 mud-text-secondary">Nothing allotted in @FyLabel</MudText>
+                    }
+                    else
+                    {
+                        <MudChart ChartType="ChartType.Donut" Width="100%" Height="250px"
+                                  InputData="@(new double[] { CapitalCount, RevenueCount })"
+                                  InputLabels="@(new string[] { "Capital", "Revenue" })"
+                                  ChartOptions="@_capRevOptions" />
+
+                        <div class="d-flex justify-center mt-2" style="gap:28px;">
+                            <div style="text-align:center;">
+                                <div style="font-size:.7rem;color:#6b7280;">Capital allotted</div>
+                                <div style="font-weight:700;color:#594ae2;">₹ @CapitalAmount.ToString("N2", Inr) Cr</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div style="font-size:.7rem;color:#6b7280;">Revenue allotted</div>
+                                <div style="font-weight:700;color:#00897b;">₹ @RevenueAmount.ToString("N2", Inr) Cr</div>
+                            </div>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">
+            Departments, Sections, Total Projects, Projects by Section and Timeline Health cover everything in your scope.
+            Allocated, Not Allocated, Capital vs Revenue and Total Allotted are for the selected financial year only.
+        </MudText>
+    }
+</MudContainer>
+
+@code {
+    private static readonly CultureInfo Inr = new("en-IN");
+
+    private List<ProjectsMaster> _allProjects = new();
+    private List<DeptItem> _allDepts = new();
+    private List<SecItem> _allSections = new();
+    private List<FyItem> _fys = new();
+
+    private int _fyId;
+    private Dictionary<int, decimal> _capAllot = new(), _revAllot = new();
+
+    private bool _loaded;
+    private string? _scopeNote;
+
+    private static readonly string[] TimelineOrder = { "On Track", "Delayed", "Dropped", "N/A" };
+
+    private static readonly Dictionary<string, string> TimelineColors = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["On Track"] = "#43a047",
+            ["Delayed"] = "#e53935",
+            ["Dropped"] = "#9e9e9e",
+            ["N/A"] = "#bdbdbd"
+        };
+
+    // Colours follow the labels actually present, so green always means On Track.
+    private ChartOptions TimelineOptions => new()
+        {
+            ChartPalette = TimelineGroups
+                .Select(g => TimelineColors.TryGetValue(g.Label, out var c) ? c : "#607d8b")
+                .ToArray()
+        };
+    private readonly ChartOptions _allocOptions = new() { ChartPalette = new[] { "#43a047", "#bdbdbd" } };
+    private readonly ChartOptions _capRevOptions = new() { ChartPalette = new[] { "#594ae2", "#00897b" } };
+
+    private bool IsAdmin => Session.User?.IsAdmin == true;
+
+    private bool NoAccess => _loaded && !IsAdmin
+        && (Session.User is null || Session.User.SectionIds.Count == 0);
+
+    private string FyLabel => _fys.FirstOrDefault(f => f.FyId == _fyId)?.FyLabel ?? "-";
+
+    // MudSelect cannot resolve its own display text when the value is set in code,
+    // so give it the text explicitly - otherwise it prints the raw id ("2").
+    private string FyText(int id) => _fys.FirstOrDefault(f => f.FyId == id)?.FyLabel ?? "";
+
+    // ---- scope: identical rule to the Project List ----
+    private List<ProjectsMaster> Scoped
+    {
+        get
+        {
+            var u = Session.User;
+            if (u is null || u.IsAdmin) return _allProjects;
+            if (u.SectionIds.Count == 0) return new List<ProjectsMaster>();
+
+            return _allProjects
+                .Where(p => p.SECTION_ID.HasValue && u.SectionIds.Contains(p.SECTION_ID.Value))
+                .ToList();
+        }
+    }
+
+    private List<DeptItem> ScopedDepts
+    {
+        get
+        {
+            var u = Session.User;
+            if (u is null || u.IsAdmin || u.DeptIds.Count == 0) return _allDepts;
+            return _allDepts.Where(d => u.DeptIds.Contains(d.DeptId)).ToList();
+        }
+    }
+
+    private List<SecItem> ScopedSections
+    {
+        get
+        {
+            var u = Session.User;
+            if (u is null || u.IsAdmin || u.SectionIds.Count == 0) return _allSections;
+            return _allSections.Where(s => u.SectionIds.Contains(s.SectionId)).ToList();
+        }
+    }
+
+    // ---- budget figures for the selected financial year ----
+    private int AllocatedCount =>
+        Scoped.Count(p => _capAllot.ContainsKey(p.ProjectId) || _revAllot.ContainsKey(p.ProjectId));
+
+    private int NotAllocatedCount => Scoped.Count - AllocatedCount;
+
+    private int CapitalCount => Scoped.Count(p => _capAllot.ContainsKey(p.ProjectId));
+    private int RevenueCount => Scoped.Count(p => _revAllot.ContainsKey(p.ProjectId));
+
+    private decimal CapitalAmount =>
+        Scoped.Where(p => _capAllot.ContainsKey(p.ProjectId)).Sum(p => _capAllot[p.ProjectId]);
+
+    private decimal RevenueAmount =>
+        Scoped.Where(p => _revAllot.ContainsKey(p.ProjectId)).Sum(p => _revAllot[p.ProjectId]);
+
+    private decimal TotalAllotted => CapitalAmount + RevenueAmount;
+
+    // ---- chart data ----
+    private List<(string Label, string Dept, int Count)> SectionGroups
+    {
+        get
+        {
+            var list = ScopedSections
+                .Select(s => (
+                    Label: s.SectionName ?? "-",
+                    Dept: _allDepts.FirstOrDefault(d => d.DeptId == s.DeptId)?.DeptName ?? "",
+                    Count: Scoped.Count(p => p.SECTION_ID == s.SectionId)))
+                .ToList();
+
+            // Projects saved before Department/Section became mandatory.
+            var orphan = Scoped.Count(p => p.SECTION_ID == null);
+            if (orphan > 0) list.Add((Label: "Unassigned", Dept: "", Count: orphan));
+
+            return list.OrderByDescending(x => x.Count).ThenBy(x => x.Label).ToList();
+        }
+    }
+
+    // Grouped by whatever the service returns, so this can never disagree with
+    // the Timeline column on the Project List.
+    private List<(string Label, int Count)> TimelineGroups
+    {
+        get
+        {
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var p in Scoped)
+            {
+                // The service returns "Delayed by 12 Days" - one distinct string per
+                // project - so collapse them all into a single "Delayed" bucket.
+                var raw = ProjectService.GetProjectTimelineStatus(p.CurrentPhase, p.ProjectEndDate) ?? "";
+                var label = raw.StartsWith("Delayed", StringComparison.OrdinalIgnoreCase) ? "Delayed"
+                          : string.IsNullOrWhiteSpace(raw) ? "N/A"
+                          : raw;
+
+                counts[label] = counts.TryGetValue(label, out var c) ? c + 1 : 1;
+            }
+
+            var ordered = TimelineOrder
+                .Where(l => counts.ContainsKey(l))
+                .Select(l => (Label: l, Count: counts[l]))
+                .ToList();
+
+            // anything the service returns that we did not anticipate still shows up
+            ordered.AddRange(counts
+                .Where(kv => !TimelineOrder.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                .Select(kv => (Label: kv.Key, Count: kv.Value)));
+
+            return ordered;
+        }
+    }
+
+    // Session storage can only be read after the first render.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _loaded) return;
+        _loaded = true;
+
+        await Session.LoadAsync();
+        await Session.EnsureScopeAsync(AdminService);
+
+        _fys = await BudgetSvc.GetFinancialYearsAsync();
+        _fyId = await BudgetSvc.GetCurrentFyIdAsync();
+        if (_fyId == 0 && _fys.Count > 0) _fyId = _fys[0].FyId;
+
+        _allDepts = await BudgetSvc.GetDepartmentsAsync();
+        _allSections = await BudgetSvc.GetAllSectionsAsync();
+        _allProjects = await ProjectService.GetProjectsMastersAsync();
+
+        var u = Session.User;
+        if (u is not null && !u.IsAdmin)
+        {
+            _scopeNote = u.DeptIds.Count == 1
+                ? $"Showing your department and {(u.SectionIds.Count == 1 ? "section" : $"{u.SectionIds.Count} sections")}."
+                : $"Showing your {u.DeptIds.Count} departments and {u.SectionIds.Count} sections.";
+        }
+
+        await LoadAllotments();
+        StateHasChanged();
+    }
+
+    private async Task LoadAllotments()
+    {
+        _capAllot = await BudgetSvc.GetAllotmentsAsync("CAPITAL", _fyId);
+        _revAllot = await BudgetSvc.GetAllotmentsAsync("REVENUE", _fyId);
+    }
+
+    private async Task OnFyChanged(int id)
+    {
+        _fyId = id;
+        await LoadAllotments();
+    }
+}

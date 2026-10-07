@@ -1,0 +1,131 @@
+@page "/knowledge-hub/e-manual"
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@layout MyDiary.Web.Components.Layout.MainLayout
+
+<PageTitle>E-manual Content — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    .kh-container { padding: 20px 24px 40px; }
+
+    .kh-manual-search { max-width: 380px; }
+
+    .kh-chapter-list .mud-list-item {
+        border-radius: 10px;
+        margin-bottom: 4px;
+    }
+
+        .kh-chapter-list .mud-list-item:hover { background: #f5f7fb; }
+
+    .kh-manual-panel {
+        border-radius: 12px !important;
+        border: 1px solid #eef0f4 !important;
+        overflow: hidden;
+    }
+</style>
+
+@* <div class="kh-container"> *@
+    <PageHeader Title="E-manual Content"
+                Subtitle="Digital reference manuals and operating instructions, organised by department"
+                PageKey="knowledge-hub-e-manual"
+                Crumbs="_crumbs" />
+
+    <MudGrid Spacing="3" Class="mt-1">
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="0" Class="pa-3 kh-manual-panel">
+                <MudTextField @bind-Value="_search" Placeholder="Search manuals..."
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true" Class="kh-manual-search mb-2" />
+
+                <MudList T="string" Class="kh-chapter-list">
+                    @foreach (var m in FilteredManuals)
+                    {
+                        <MudListItem T="string" Icon="@m.Icon" OnClick="@(() => _selectedKey = m.Key)">
+                            <div class="d-flex justify-space-between align-center" style="width:100%;">
+                                <span>@m.Title</span>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">@m.Chapters.Count</MudChip>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+
+                @if (!FilteredManuals.Any())
+                {
+                    <MudAlert Severity="Severity.Info" Class="mt-2">No manuals match your search.</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="8">
+            @if (_selected is not null)
+            {
+                <MudPaper Elevation="0" Class="pa-4 kh-manual-panel">
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudIcon Icon="@_selected.Icon" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Style="font-weight:700;">@_selected.Title</MudText>
+                    </div>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">@_selected.Description</MudText>
+
+                    <MudList T="string">
+                        @foreach (var chapter in _selected.Chapters)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Description">
+                                <div class="d-flex justify-space-between align-center" style="width:100%;">
+                                    <span>@chapter</span>
+                                    <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small"
+                                                   aria-label="@($"Open {chapter}")" />
+                                </div>
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudPaper>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info">Select a manual on the left to view its chapters.</MudAlert>
+            }
+        </MudItem>
+    </MudGrid>
+@* </div> *@
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Knowledge Hub"),
+        new("E-manual Content"),
+    };
+
+    private string _search = "";
+    private string? _selectedKey;
+
+    private sealed record Manual(string Key, string Title, string Icon, string Description, List<string> Chapters);
+
+    // Sample/placeholder content — replace with real DB-driven content when available.
+    private readonly List<Manual> _manuals = new()
+    {
+        new("deposits", "Deposits & Accounts Manual", Icons.Material.Filled.Savings,
+            "Reference manual covering account opening, KYC, deposit products and closures.",
+            new() { "1. Account Opening Procedures", "2. KYC & Re-KYC Norms", "3. Term Deposit Products", "4. Account Closure & Transfer", "5. Nomination & Survivorship" }),
+        new("advances", "Advances & Loans Manual", Icons.Material.Filled.AccountBalanceWallet,
+            "Guidance on loan appraisal, sanction, documentation and recovery processes.",
+            new() { "1. Loan Appraisal Basics", "2. Documentation Checklist", "3. Sanction & Disbursement", "4. NPA Classification", "5. Recovery & Restructuring" }),
+        new("digital", "Digital Banking Manual", Icons.Material.Filled.PhoneAndroid,
+            "Net banking, mobile banking, UPI and card operations reference.",
+            new() { "1. Net/Mobile Banking Onboarding", "2. UPI Registration & Limits", "3. Debit/Credit Card Issuance", "4. Dispute Handling", "5. Digital Fraud Prevention" }),
+        new("hr", "HR Policy Manual", Icons.Material.Filled.Groups,
+            "Staff-facing HR policies — leave, transfers, appraisals and conduct.",
+            new() { "1. Leave Policy", "2. Transfer & Posting Guidelines", "3. Performance Appraisal", "4. Code of Conduct", "5. Grievance Redressal" }),
+    };
+
+    private IEnumerable<Manual> FilteredManuals => _manuals
+        .Where(m => string.IsNullOrWhiteSpace(_search) || m.Title.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    private Manual? _selected => _manuals.FirstOrDefault(m => m.Key == _selectedKey) ?? FilteredManuals.FirstOrDefault();
+
+    protected override void OnInitialized()
+    {
+        _selectedKey = _manuals.First().Key;
+    }
+}

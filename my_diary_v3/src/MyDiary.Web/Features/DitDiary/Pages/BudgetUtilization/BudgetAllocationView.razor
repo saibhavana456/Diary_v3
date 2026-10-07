@@ -1,0 +1,263 @@
+@page "/dit/budget/allocation"
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Services
+@inject IProjectMasterService ProjectService
+@inject ProjectBudgetService BudgetSvc
+@inject IAdminMasterService AdminService
+@inject DitUserSession Session
+@inject NavigationManager Nav
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    @if (!_authChecked)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-6" />
+    }
+    else if (!_authOk)
+    {
+        <MudAlert Severity="Severity.Warning">This page is available to administrators only.</MudAlert>
+    }
+    else
+    {
+        <div class="d-flex justify-space-between align-center mb-4">
+            <MudText Typo="Typo.h4">Budget Allocation</MudText>
+            <div style="width: 220px;">
+                <MudSelect T="int" Label="Financial Year" Value="_fyId" ValueChanged="OnFyChanged"
+                           Variant="Variant.Outlined" Dense="true">
+                    @foreach (var fy in _fys)
+                    {
+                        <MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+        </div>
+
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+            This screen is for viewing only. To give or revise a budget, open the project from
+            <b>Project Management &rarr; Project List</b> and use the <b>Budget Management</b> tab.
+        </MudAlert>
+
+        <MudGrid Spacing="2" Class="mb-4">
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="@(_view == "CAPITAL" ? 8 : 1)"
+                          Style="@($"cursor:pointer; border-left:6px solid {(_view == "CAPITAL" ? "#594ae2" : "#cfcfcf")};")"
+                          @onclick="@(() => _view = "CAPITAL")">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance"
+                                 Color="@(_view == "CAPITAL" ? Color.Primary : Color.Default)" Size="Size.Large" />
+                        <div>
+                            <MudText Typo="Typo.subtitle1"><b>CAPITAL EXPENDITURE</b></MudText>
+                            <MudText Typo="Typo.caption">Budget per project</MudText>
+                        </div>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="@(_view == "REVENUE" ? 8 : 1)"
+                          Style="@($"cursor:pointer; border-left:6px solid {(_view == "REVENUE" ? "#00897b" : "#cfcfcf")};")"
+                          @onclick="@(() => _view = "REVENUE")">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.Receipt"
+                                 Color="@(_view == "REVENUE" ? Color.Tertiary : Color.Default)" Size="Size.Large" />
+                        <div>
+                            <MudText Typo="Typo.subtitle1"><b>REVENUE EXPENDITURE</b></MudText>
+                            <MudText Typo="Typo.caption">Budget per project</MudText>
+                        </div>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="5">
+            <MudGrid Spacing="1" AlignItems="AlignItems.Center">
+                <MudItem xs="12" md="3">
+                    <MudSelect T="long?" Label="Department" Value="_deptId" ValueChanged="OnDeptChanged"
+                               Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                        <MudSelectItem T="long?" Value="@((long?)null)">All Departments</MudSelectItem>
+                        @foreach (var d in _allDepts)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)d.DeptId)">@d.DeptName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudSelect T="long?" Label="Section" @bind-Value="_sectionId" Disabled="@(_deptId == null)"
+                               Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                        <MudSelectItem T="long?" Value="@((long?)null)">All Sections</MudSelectItem>
+                        @foreach (var s in _allSections.Where(s => s.DeptId == _deptId))
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)s.SectionId)">@s.SectionName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="2">
+                    <MudSelect T="string" Label="Status" @bind-Value="_status" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        <MudSelectItem Value="@("Allotted")">Allotted</MudSelectItem>
+                        <MudSelectItem Value="@("Not allotted")">Not allotted</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField @bind-Value="_search" Label="Search" Variant="Variant.Outlined"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true" Dense="true" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudTable Items="@Rows" Hover="true" Striped="true" FixedHeader="true" Height="520px" Elevation="4" Class="rounded-lg">
+            <HeaderContent>
+                <MudTh>Code</MudTh>
+                <MudTh>Project</MudTh>
+                <MudTh>Department</MudTh>
+                <MudTh>Section</MudTh>
+                <MudTh Style="text-align:right;">Total Allotted</MudTh>
+                <MudTh Style="text-align:right;">Utilised</MudTh>
+                <MudTh Style="text-align:right;">Balance</MudTh>
+                <MudTh Style="text-align:right;">Util %</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Code">@context.Code</MudTd>
+                <MudTd DataLabel="Project"><b>@context.Name</b></MudTd>
+                <MudTd DataLabel="Department">@context.DeptName</MudTd>
+                <MudTd DataLabel="Section">@context.SectionName</MudTd>
+                <MudTd DataLabel="Total" Style="text-align:right;">
+                    @if (context.Total > 0)
+                    {
+                        <b>@context.Total.ToString("N2")</b>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">Not allotted</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Utilised" Style="text-align:right;">@context.Used.ToString("N2")</MudTd>
+                <MudTd DataLabel="Balance" Style="text-align:right;">@((context.Total - context.Used).ToString("N2"))</MudTd>
+                <MudTd DataLabel="Util %" Style="text-align:right;">
+                    @(context.Total > 0 ? (context.Used / context.Total * 100).ToString("N1") + "%" : "-")
+                </MudTd>
+            </RowTemplate>
+            <PagerContent><MudTablePager /></PagerContent>
+        </MudTable>
+
+        <MudPaper Class="pa-3 mt-3" Elevation="2">
+            <MudStack Row="true" Spacing="6">
+                <MudText Typo="Typo.body2">Total Allotted: <b>@Rows.Sum(r => r.Total).ToString("N2") Cr</b></MudText>
+                <MudText Typo="Typo.body2">Total Utilised: <b>@Rows.Sum(r => r.Used).ToString("N2") Cr</b></MudText>
+                <MudText Typo="Typo.body2">Balance: <b>@((Rows.Sum(r => r.Total) - Rows.Sum(r => r.Used)).ToString("N2")) Cr</b></MudText>
+                <MudText Typo="Typo.body2">Rows: <b>@Rows.Count</b></MudText>
+            </MudStack>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private class Row
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string DeptName { get; set; } = "";
+        public string SectionName { get; set; } = "";
+        public decimal Total { get; set; }
+        public decimal Used { get; set; }
+    }
+
+    private bool _authChecked, _authOk;
+    private string _view = "CAPITAL", _status = "All", _search = "";
+    private long? _deptId, _sectionId;
+    private int _fyId;
+
+    private List<FyItem> _fys = new();
+    private List<DeptItem> _allDepts = new();
+    private List<SecItem> _allSections = new();
+    private List<ProjectsMaster> _projects = new();
+
+    // Capital and Revenue are both keyed on PROJECT_ID now.
+    private Dictionary<int, decimal> _capAllot = new(), _capUsed = new();
+    private Dictionary<int, decimal> _revAllot = new(), _revUsed = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _authChecked) return;
+        _authChecked = true;
+
+        await Session.LoadAsync();
+        await Session.EnsureScopeAsync(AdminService);
+        _authOk = Session.User?.IsAdmin == true;
+
+        if (_authOk)
+        {
+            _fys = await BudgetSvc.GetFinancialYearsAsync();
+            _fyId = await BudgetSvc.GetCurrentFyIdAsync();
+            if (_fyId == 0 && _fys.Count > 0) _fyId = _fys[0].FyId;
+
+            _allDepts = await BudgetSvc.GetDepartmentsAsync();
+            _allSections = await BudgetSvc.GetAllSectionsAsync();
+            _projects = await ProjectService.GetProjectsMastersAsync();
+            await LoadFigures();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadFigures()
+    {
+        _capAllot = await BudgetSvc.GetAllotmentsAsync("CAPITAL", _fyId);
+        _capUsed = await BudgetSvc.GetCapitalUtilisedAsync(_fyId);
+        _revAllot = await BudgetSvc.GetAllotmentsAsync("REVENUE", _fyId);
+        _revUsed = await BudgetSvc.GetRevenueUtilisedAsync(_fyId);
+    }
+
+    private async Task OnFyChanged(int id)
+    {
+        _fyId = id;
+        await LoadFigures();
+    }
+
+    private void OnDeptChanged(long? id)
+    {
+        _deptId = id;
+        _sectionId = null;
+    }
+
+    private string DeptNameOf(long? id) =>
+        id == null ? "-" : (_allDepts.FirstOrDefault(d => d.DeptId == id)?.DeptName ?? "-");
+
+    private string SecNameOf(long? id) =>
+        id == null ? "-" : (_allSections.FirstOrDefault(s => s.SectionId == id)?.SectionName ?? "-");
+
+    // One row per project, for whichever budget type is selected.
+    private List<Row> Rows
+    {
+        get
+        {
+            var allot = _view == "CAPITAL" ? _capAllot : _revAllot;
+            var used = _view == "CAPITAL" ? _capUsed : _revUsed;
+
+            var list = _projects.Select(p => new Row
+            {
+                Code = p.ProjectCode ?? "",
+                Name = p.ProjectName ?? "",
+                DeptName = DeptNameOf(p.DEPT_ID),
+                SectionName = SecNameOf(p.SECTION_ID),
+                Total = allot.TryGetValue(p.ProjectId, out var a) ? a : 0m,
+                Used = used.TryGetValue(p.ProjectId, out var u) ? u : 0m
+            }).ToList();
+
+            if (_deptId != null) list = list.Where(r => r.DeptName == DeptNameOf(_deptId)).ToList();
+            if (_sectionId != null) list = list.Where(r => r.SectionName == SecNameOf(_sectionId)).ToList();
+
+            if (_status == "Allotted") list = list.Where(r => r.Total > 0).ToList();
+            else if (_status == "Not allotted") list = list.Where(r => r.Total <= 0).ToList();
+
+            if (!string.IsNullOrWhiteSpace(_search))
+                list = list.Where(r =>
+                    r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                    r.SectionName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                    r.Code.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            return list.OrderBy(r => r.DeptName).ThenBy(r => r.SectionName).ThenBy(r => r.Name).ToList();
+        }
+    }
+}

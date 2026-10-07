@@ -1,0 +1,354 @@
+@page "/handover-takeover"
+
+@using MudBlazor
+@using MyDiary.Web.Features.Business.Models
+@using MyDiary.Web.Features.Business.Components.ChargeReports
+@using MyDiary.Web.Features.Business.Services
+
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+@inject IChargeReportService ChargeReportService
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject ChargeReportPdfService PdfService
+
+<MudPaper Class="pa-4">
+    @if (ShowPartA)
+    {
+        <MudForm @ref="_partAForm"
+                 @bind-IsValid="_isPartAValid">
+
+            <PartAForm Model="_partA"
+                       IsDisabled="_isPartADisabled" />
+
+        </MudForm>
+    }
+
+    @if (ShowPartB)
+    {
+        <MudForm @ref="_partBForm"
+                 @bind-IsValid="_isPartBValid">
+
+            <PartBForm Model="_partB"
+                       IsDisabled="_isPartBDisabled" />
+
+        </MudForm>
+    }
+
+    @if (IsCompleted)
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-4">
+            Charge Handing Over &amp; Taking Over process completed successfully.
+        </MudAlert>
+    }
+
+    <MudDivider Class="my-4" />
+
+    @if (ShowPartA && !_isPartADisabled)
+    {
+        <MudStack Direction="Row" Justify="Justify.FlexEnd" Spacing="2">
+
+            <MudButton Color="Color.Primary"
+                       Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       
+                       OnClick="SaveDraftPartA">
+
+                @if (_isSaving)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Save
+            </MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.CheckCircle"
+                        
+                       OnClick="SubmitPartA">
+                @if (_isSaving)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Submit
+            </MudButton>
+        </MudStack>
+    }
+
+    @if (ShowPartB && !_isPartBDisabled)
+    {
+        <MudStack Direction="Row" Justify="Justify.FlexEnd" Spacing="2">
+            <MudButton Color="Color.Default" Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="SaveDraftPartB" Disabled="@_isSaving">
+                @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Save
+            </MudButton>
+            <MudButton Color="Color.Secondary" Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.CheckCircle"
+                       OnClick="SubmitPartB" Disabled="@_isSaving">
+                @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Submit
+            </MudButton>
+        </MudStack>
+    }
+</MudPaper>
+
+
+@code {
+
+    // ? SINGLE model instances
+    private ChargePartAViewModel _partA = new();
+    private ChargePartBViewModel _partB = new();
+    private string _branchIbrCode = "";
+    private string _branchIfsc = "";
+
+    private MudForm? _partAForm;
+    private MudForm? _partBForm;
+    private bool _isPartAValid;
+    private bool _isPartBValid;
+
+    private bool ShowPartA;
+    private bool ShowPartB;
+    private bool IsCompleted;
+
+    private int _activeReportId;
+    private bool _isSaving;
+    private bool _isPartADisabled;
+    private bool _isPartBDisabled;
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        _branchIbrCode = user.FindFirst("branch_solid")?.Value ?? "";
+        _branchIfsc = user.FindFirst("branch_ec_code")?.Value ?? "";
+
+        // ---- INITIALIZE PART-A ----
+        _partA.Documents = new()
+    {
+        new() { DocumentName = "Book of RBI office’s specimen signature" },
+        new() { DocumentName = "Lease deed – Branch Premises" },
+        new() { DocumentName = "Lease deed – ATM (offsite) Premises" },
+        new() { DocumentName = "Power of Attorney of all officers working in the branch" },
+        new() { DocumentName = "Property Records in the name of the Bank" }
+    };
+
+        _partA.AdhocAccounts = new();
+        _partA.ReviewPendingAccounts = new();
+        _partA.SeizedDocuments = new();
+        _partA.ServiceChargeConcessions = new();
+
+
+        var employeeNo = user.FindFirst("emplid")?.Value ?? "";
+
+
+        // ? ABSOLUTE DEFAULT (CRITICAL)
+        ShowPartA = true;
+        ShowPartB = false;
+        IsCompleted = false;
+
+        try
+        {
+            var context = await ChargeReportService.GetActiveChargeForUserAsync(employeeNo);
+            if (context != null)
+            {
+                _activeReportId = context.ReportID ?? 0;
+
+                if (context.IsSubmitted && context.IsTakenOver)
+                {
+                    ShowPartA = false; ShowPartB = false; IsCompleted = true;
+                }
+                else if (context.IsIncoming && !context.IsTakenOver)
+                {
+                    ShowPartA = false; ShowPartB = true; _isPartBDisabled = false;
+                    if (_activeReportId > 0)
+                    {
+                        var draftB = await ChargeReportService.LoadDraftPartBAsync(_activeReportId);
+                        if (draftB != null)
+                        {
+                            PreserveAuthFields(draftB);
+                            _partB = draftB;
+                        }
+                    }
+                }
+                else if (context.IsOutgoing && context.IsSubmitted)
+                {
+                    ShowPartA = true; ShowPartB = false; _isPartADisabled = true;
+                    if (_activeReportId > 0)
+                    {
+                        var draftA = await ChargeReportService.LoadDraftPartAAsync(_activeReportId);
+                        if (draftA != null) { PreserveAuthFields(draftA); _partA = draftA; }
+                    }
+                }
+                else if (context.IsOutgoing && !context.IsSubmitted)
+                {
+                    ShowPartA = true; ShowPartB = false; _isPartADisabled = false;
+                    if (_activeReportId > 0)
+                    {
+                        var draftA = await ChargeReportService.LoadDraftPartAAsync(_activeReportId);
+                        if (draftA != null)
+                        {
+                            PreserveAuthFields(draftA);
+                            draftA.Documents ??= _partA.Documents;
+                            draftA.AdhocAccounts ??= new();
+                            draftA.ReviewPendingAccounts ??= new();
+                            draftA.SeizedDocuments ??= new();
+                            draftA.ServiceChargeConcessions ??= new();
+                            _partA = draftA;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Could not load charge context. Defaulting to Part A.", Severity.Warning);
+            AppLogger.LogError(ex, ex.ToString());
+        }
+
+        StateHasChanged();
+    }
+
+    private void PreserveAuthFields(ChargePartAViewModel draft)
+    {
+        if (!string.IsNullOrEmpty(_partA.OfficerName)) draft.OfficerName = _partA.OfficerName;
+        if (!string.IsNullOrEmpty(_partA.EmployeeNo)) draft.EmployeeNo = _partA.EmployeeNo;
+        if (!string.IsNullOrEmpty(_partA.Designation)) draft.Designation = _partA.Designation;
+        if (!string.IsNullOrEmpty(_partA.BranchName)) draft.BranchName = _partA.BranchName;
+        if (!string.IsNullOrEmpty(_partA.RegionName)) draft.RegionName = _partA.RegionName;
+        if (!string.IsNullOrEmpty(_partA.ZoneName)) draft.ZoneName = _partA.ZoneName;
+    }
+
+    private void PreserveAuthFields(ChargePartBViewModel draft)
+    {
+        if (!string.IsNullOrEmpty(_partB.OfficerName)) draft.OfficerName = _partB.OfficerName;
+        if (!string.IsNullOrEmpty(_partB.EmployeeNo)) draft.EmployeeNo = _partB.EmployeeNo;
+        if (!string.IsNullOrEmpty(_partB.Designation)) draft.Designation = _partB.Designation;
+        if (!string.IsNullOrEmpty(_partB.BranchName)) draft.BranchName = _partB.BranchName;
+        if (!string.IsNullOrEmpty(_partB.RegionName)) draft.RegionName = _partB.RegionName;
+        if (!string.IsNullOrEmpty(_partB.ZoneName)) draft.ZoneName = _partB.ZoneName;
+    }
+
+
+    private async Task DownloadPartAPdf()
+    {
+        var bytes = PdfService.ExportPartAToPdf(_partA);
+
+        var fileName = $"HANDOVER_{_branchIbrCode}.pdf";
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            fileName,
+            "application/pdf",
+            Convert.ToBase64String(bytes)
+        );
+    }
+
+    private async Task DownloadPartBPdf()
+    {
+        var bytes = PdfService.ExportPartBToPdf(_partB);
+
+        var fileName = $"TAKEOVER_{_branchIbrCode}.pdf";
+        // or $"TAKEOVER_{_branchIfsc}.pdf"
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            fileName,
+            "application/pdf",
+            Convert.ToBase64String(bytes)
+        );
+    }
+
+    async Task SaveAll()
+    {
+        _isSaving = true;
+        try
+        {
+            if (ShowPartA) { await ChargeReportService.SavePartAAsync(_partA); await DownloadPartAPdf(); Snackbar.Add("Part-A saved and PDF downloaded", Severity.Success); }
+            else if (ShowPartB) { await ChargeReportService.SavePartBAsync(_activeReportId, _partB); await DownloadPartBPdf(); Snackbar.Add("Part-B saved and PDF downloaded", Severity.Success); }
+        }
+        catch (Exception ex) { Snackbar.Add("Error during save/export", Severity.Error); AppLogger.LogError(ex, ex.ToString()); }
+        finally { _isSaving = false; }
+    }
+
+    // ===== DRAFT SAVE =====
+
+    private async Task SaveDraftPartA()
+    {
+
+        _isSaving = true;
+        try
+        {
+            _activeReportId = await ChargeReportService.SaveDraftPartAAsync(_partA, _activeReportId);
+            Snackbar.Add("Part A draft saved successfully.", Severity.Success);
+            Nav.NavigateTo("business");
+        }
+        catch (Exception ex) { Snackbar.Add("Error saving Part A draft.", Severity.Error); AppLogger.LogError(ex, ex.ToString()); }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SaveDraftPartB()
+    {
+        _isSaving = true;
+        try
+        {
+            await ChargeReportService.SaveDraftPartBAsync(_activeReportId, _partB);
+            Snackbar.Add("Part B draft saved successfully.", Severity.Success);
+            Nav.NavigateTo("business");
+        }
+        catch (Exception ex) { Snackbar.Add("Error saving Part B draft.", Severity.Error); AppLogger.LogError(ex, ex.ToString()); }
+        finally { _isSaving = false; }
+    }
+
+    // ===== SUBMIT =====
+
+    private async Task SubmitPartA()
+    {
+        await _partAForm!.Validate();
+        if (!_isPartAValid)
+        {
+            Snackbar.Add("Please complete all required fields.", Severity.Warning);
+            return;
+        }
+        _isSaving = true;
+        try
+        {
+            _activeReportId = await ChargeReportService.SubmitPartAAsync(_partA, _activeReportId);
+            _isPartADisabled = true;
+            await DownloadPartAPdf();
+            Snackbar.Add("Part A submitted and PDF downloaded.", Severity.Success);
+            Nav.NavigateTo("business");
+        }
+        catch (Exception ex) { Snackbar.Add("Error submitting Part A.", Severity.Error); AppLogger.LogError(ex, ex.ToString()); }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SubmitPartB()
+    {
+        await _partBForm!.Validate();
+        if (!_isPartBValid)
+        {
+            Snackbar.Add("Please complete all required fields.", Severity.Warning);
+            return;
+        }
+        _isSaving = true;
+        try
+        {
+            await ChargeReportService.SubmitPartBAsync(_activeReportId, _partB);
+            _isPartBDisabled = true;
+            ShowPartB = false;
+            IsCompleted = true;
+            await DownloadPartBPdf();
+            Snackbar.Add("Part B submitted. Charge takeover complete.", Severity.Success);
+            Nav.NavigateTo("business");
+        }
+        catch (Exception ex) { Snackbar.Add("Error submitting Part B.", Severity.Error); AppLogger.LogError(ex, ex.ToString()); }
+        finally { _isSaving = false; }
+    }
+
+}

@@ -1,0 +1,405 @@
+@using MyDiary.Web.Core.Extensions
+@page "/reports/retailCorporateAnnualTurnover"
+@using Microsoft.JSInterop
+@using System.Linq
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Retail Corporate Annual Turnover — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // Privilege context (CO | ZONE | REGION | BRANCH). Map from claims if available.
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ------- Column configurations (match SELECT aliases) -------
+    // Summary grid (gv_sunsummary)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",        PropertyName = "zone_name_eng", Width = "16%" },
+        new ColumnConfig { Header = "Region",      PropertyName = "region_name",   Width = "16%" },
+        new ColumnConfig { Header = "Branch",      PropertyName = "Branch_Name",   Width = "16%" },
+        new ColumnConfig { Header = "Sol ID",      PropertyName = "SolId",         Width = "10%" },
+        new ColumnConfig { Header = "CIF Type",    PropertyName = "Type",          Width = "14%" },
+        new ColumnConfig { Header = "Risk",        PropertyName = "RiskRating",    Width = "10%" },
+        new ColumnConfig { Header = "Total CIF",   PropertyName = "CIFCount",      IsNumeric = true, Format = "N0", Width = "18%" }
+    };
+
+    // Detailed grid (gv_sundry)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",             PropertyName = "zone_name_eng", Width = "12%" },
+        new ColumnConfig { Header = "Region",           PropertyName = "region_name",   Width = "12%" },
+        new ColumnConfig { Header = "Branch",           PropertyName = "BRANCH_NAME",   Width = "14%" },
+        new ColumnConfig { Header = "Sol ID",           PropertyName = "branchsol",     Width = "8%"  },
+        new ColumnConfig { Header = "CIF ID",           PropertyName = "CifId",         Width = "10%" },
+        new ColumnConfig { Header = "Account Name",     PropertyName = "AccountName",   Width = "14%" },
+        new ColumnConfig { Header = "CIF Type",         PropertyName = "Type",          Width = "8%"  },
+        new ColumnConfig { Header = "Risk",             PropertyName = "RiskRating",    Width = "6%"  },
+        new ColumnConfig { Header = "CIF Created Date", PropertyName = "CIFCreationDate", IsDate = true, Width = "12%" },
+        new ColumnConfig { Header = "A/C No.",          PropertyName = "AccountNo",     Width = "12%" },
+        new ColumnConfig { Header = "A/C Status",       PropertyName = "AccountStatus", Width = "10%" },
+        new ColumnConfig { Header = "AT Code",          PropertyName = "ATCode",        Width = "8%"  },
+        new ColumnConfig { Header = "Phone",            PropertyName = "PhoneNo",       Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Retail Corporate Annual Turnover";
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) f)
+    {
+        _selectedZone = f.zone;
+        _selectedRegion = f.region;
+        _selectedBranch = f.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Base FROM clauses
+            string fromSummary = " FROM Retail_Corporate_CIF_Report A JOIN Branch_Master B ON A.SolID = B.SOL_ID ";
+            string fromDetail = " FROM Retail_Corporate_CIF A JOIN Branch_Master B ON A.SolID = B.SOL_ID ";
+
+            // Baseline WHERE
+            string where = " B.region_solid <> '' ";
+
+            string columns = "";
+            string groupBy = "";
+            string orderBy = "";
+            bool isSummary = true;
+
+            // ---- Projection helpers ----
+            string SummaryAll() =>
+                " Type, RiskRating, SUM(CIFCount) AS CIFCount, " +
+                " 'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId ";
+
+            string SummaryZoneRow() =>
+                " Type, RiskRating, SUM(CIFCount) AS CIFCount, " +
+                " 'All' AS Branch_Name, 'All' AS region_name, B.zone_name_eng, B.Zone_SolId AS SolId ";
+
+            string SummaryRegionRow() =>
+                " Type, RiskRating, SUM(CIFCount) AS CIFCount, " +
+                " 'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId ";
+
+            string SummaryBranchRow() =>
+                " Type, RiskRating, SUM(CIFCount) AS CIFCount, " +
+                " B.zone_name_eng, B.region_name, B.BRANCH_NAME AS Branch_Name, B.sol_id AS SolId ";
+
+            string DetailRow() =>
+                " B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id branchsol, " +
+                " A.CifId, A.AccountName, A.Type, A.RiskRating, A.CIFCreationDate, " +
+                " [dbo].[ufn_DecryptString](A.AccountNo) AS AccountNo, A.AccountStatus, A.ATCode, " +
+                " [dbo].[ufn_DecryptString](A.PhoneNo) AS PhoneNo ";
+
+            // ========== Privilege branching ==========
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1")
+                {
+                    // All (Summary)
+                    isSummary = true;
+                    columns = SummaryAll();
+                    groupBy = " GROUP BY Type, RiskRating ";
+                    orderBy = " ORDER BY Type, RiskRating ";
+                }
+                else if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedRegion == "1") // Zonewise
+                    {
+                        isSummary = true;
+                        columns = SummaryZoneRow();
+                        groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng, Type, RiskRating ";
+                        orderBy = " ORDER BY B.Zone_SolId, B.zone_name_eng, Type, RiskRating ";
+                    }
+                    else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_selectedBranch == "1") // Regionwise
+                        {
+                            isSummary = true;
+                            columns = SummaryRegionRow();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.region_SolId, Type, RiskRating ";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase)) // Branchwise
+                        {
+                            isSummary = true;
+                            columns = SummaryBranchRow();
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                        }
+                        else
+                        {
+                            // Specific Branch -> Detailed
+                            isSummary = false;
+                            columns = DetailRow();
+                            where += $" AND B.sol_id = '{_selectedBranch}' ";
+                            orderBy = " ORDER BY Type, RiskRating ";
+                        }
+                    }
+                    else
+                    {
+                        // Specific Region (across all zones)
+                        where += $" AND B.region_solid = '{_selectedRegion}' ";
+                        if (_selectedBranch == "1")
+                        {
+                            isSummary = true;
+                            columns = SummaryRegionRow();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.region_SolId, Type, RiskRating ";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isSummary = true;
+                            columns = SummaryBranchRow();
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                        }
+                        else
+                        {
+                            isSummary = false;
+                            columns = DetailRow();
+                            where += $" AND B.sol_id = '{_selectedBranch}' ";
+                            orderBy = " ORDER BY Type, RiskRating ";
+                        }
+                    }
+                }
+                else
+                {
+                    // Specific Zone selected
+                    where += $" AND B.zone_solid = '{_selectedZone}' ";
+                    if (_selectedRegion == "1")
+                    {
+                        isSummary = true;
+                        columns = SummaryZoneRow();
+                        groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng, Type, RiskRating ";
+                        orderBy = " ORDER BY B.zone_name_eng, Type, RiskRating ";
+                    }
+                    else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_selectedBranch == "1")
+                        {
+                            isSummary = true;
+                            columns = SummaryRegionRow();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, Type, RiskRating ";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isSummary = true;
+                            columns = SummaryBranchRow();
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                        }
+                        else
+                        {
+                            isSummary = false;
+                            columns = DetailRow();
+                            where += $" AND B.sol_id = '{_selectedBranch}' ";
+                            orderBy = " ORDER BY Type, RiskRating ";
+                        }
+                    }
+                    else
+                    {
+                        // Particular Region in Zone
+                        where += $" AND B.region_solid = '{_selectedRegion}' ";
+                        if (_selectedBranch == "1")
+                        {
+                            isSummary = true;
+                            columns = SummaryRegionRow();
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, Type, RiskRating ";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isSummary = true;
+                            columns = SummaryBranchRow();
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                            orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, Type, RiskRating ";
+                        }
+                        else
+                        {
+                            isSummary = false;
+                            columns = DetailRow();
+                            where += $" AND B.sol_id = '{_selectedBranch}' ";
+                            orderBy = " ORDER BY Type, RiskRating ";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND B.Zone_solid = '{_userZoneSolid}' ";
+                if (_selectedRegion == "1")
+                {
+                    isSummary = true;
+                    columns = SummaryZoneRow();
+                    groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId, Type, RiskRating ";
+                    orderBy = " ORDER BY B.zone_name_eng, Type, RiskRating ";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        isSummary = true;
+                        columns = SummaryRegionRow();
+                        groupBy = " GROUP BY B.Region_name, B.region_SolId, B.zone_name_eng, Type, RiskRating ";
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name, Type, RiskRating ";
+                    }
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isSummary = true;
+                        columns = SummaryBranchRow();
+                        groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.Branch_Name, B.Sol_ID, Type, RiskRating ";
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.Sol_ID, Type, RiskRating ";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = DetailRow();
+                        where += $" AND B.sol_id = '{_selectedBranch}' ";
+                        orderBy = " ORDER BY Type, RiskRating ";
+                    }
+                }
+                else
+                {
+                    where += $" AND B.region_solid = '{_selectedRegion}' ";
+                    if (_selectedBranch == "1")
+                    {
+                        isSummary = true;
+                        columns = SummaryRegionRow();
+                        groupBy = " GROUP BY B.Region_name, B.region_SolId, B.zone_name_eng, Type, RiskRating ";
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name, Type, RiskRating ";
+                    }
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isSummary = true;
+                        columns = SummaryBranchRow();
+                        groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.Branch_Name, B.Sol_ID, Type, RiskRating ";
+                        orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.Branch_Name, B.Sol_ID, Type, RiskRating ";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = DetailRow();
+                        where += $" AND B.sol_id = '{_selectedBranch}' ";
+                        orderBy = " ORDER BY Type, RiskRating ";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND B.region_solid = '{_userRegionSolid}' ";
+                if (_selectedBranch == "1")
+                {
+                    isSummary = true;
+                    columns = SummaryRegionRow();
+                    groupBy = " GROUP BY B.Region_name, B.region_SolId, B.zone_name_eng, Type, RiskRating ";
+                    orderBy = " ORDER BY B.zone_name_eng, B.region_name, Type, RiskRating ";
+                }
+                else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    isSummary = true;
+                    columns = SummaryBranchRow();
+                    groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.Branch_Name, B.Sol_ID, Type, RiskRating ";
+                    orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.Branch_Name, B.Sol_ID, Type, RiskRating ";
+                }
+                else
+                {
+                    isSummary = false;
+                    columns = DetailRow();
+                    where += $" AND B.sol_id = '{_selectedBranch}' ";
+                    orderBy = " ORDER BY Type, RiskRating ";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                isSummary = false;
+                where += $" AND B.sol_id = '{_userBranchSolid}' ";
+                columns = DetailRow();
+                orderBy = " ORDER BY Type, RiskRating ";
+            }
+
+            // Pick FROM based on summary/detail
+            string fromClause = isSummary ? fromSummary : fromDetail;
+            string finalQuery = $"SELECT {columns} {fromClause} WHERE {where}{groupBy}{orderBy}";
+            // Data query and as-on-date are independent - run in parallel
+            var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            var dateTask = ReportService.GetAsOnDateAsync("Retail_Corporate_CIF");
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+            string date = dateTask.Result;
+            if (isSummary)
+            {
+                _activeConfig.Columns = _summaryCols;
+                _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+            }
+            else
+            {
+                _activeConfig.Columns = _detailedCols;
+                _asOnDateLabel = $"Data As On - {date} (Rs. in Actuals)";
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[RetailCorporateAnnualTurnover] Unhandled error: " + ex.Message);
+            _data = new();
+            _activeConfig.Columns = _summaryCols;
+            _asOnDateLabel = "No data available.";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns,
+            "RetailCorporateAnnualTurnover");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "RetailCorporateAnnualTurnover.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

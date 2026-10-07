@@ -1,0 +1,167 @@
+@using MyDiary.Web.Core.Extensions
+@page "/faq-sop"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@using MyDiary.Web.Features.Departments.Models
+@using MyDiary.Web.Features.Departments.Services
+@using global::RequestPortal.Web.Shared
+@layout MyDiary.Web.Components.Layout.MainLayout
+@inject IActivityService ActivityService
+@inject IDepartmentService DeptService
+@inject NavigationManager Nav
+
+<PageTitle>FAQs/SOPs — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    :root {
+        --card-min-width: 320px;
+        --card-height: 200px;
+    }
+
+    .kh-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+        gap: 1.5rem;
+        padding: 20px 0 2rem;
+    }
+
+    .kh-activity-card {
+        background: white !important;
+        border-radius: 16px !important;
+        padding: 1.5rem !important;
+        border: 2px solid #e2e8f0 !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: var(--card-height) !important;
+        width: 100% !important;
+        text-transform: none !important;
+        cursor: pointer !important;
+    }
+
+        .kh-activity-card:hover {
+            transform: translateY(-6px) !important;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1) !important;
+            border-color: var(--rp-navy, #1E3A8A) !important;
+        }
+
+        .kh-activity-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: var(--rp-grad);
+        }
+
+    .kh-activity-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #2d3748;
+        line-height: 1.3;
+        text-align: center;
+        margin: auto;
+    }
+
+    .kh-empty-state, .kh-loading-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #64748b;
+    }
+</style>
+
+<PageHeader Title="FAQs/SOPs"
+            Subtitle="Frequently asked questions and standard operating procedures for day-to-day operations"
+            PageKey="faq-sop"
+            Crumbs="_crumbs" />
+
+<div class="pa-4">
+    @if (_isLoading)
+    {
+        <div class="kh-loading-state">
+            <MudProgressCircular Indeterminate="true" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Large" />
+            <MudText Typo="Typo.body1" Class="mt-4" Style="color:#64748b;">Loading FAQ / SOP items…</MudText>
+        </div>
+    }
+    else if (_notFound)
+    {
+        <div class="kh-empty-state">
+            <MudIcon Icon="@Icons.Material.Filled.SearchOff" Style="font-size: 4rem; color: #cbd5e1;" />
+            <h4>FAQ / SOP Department Not Found</h4>
+            <p>No department with "FAQ" in its name was found in the system.</p>
+            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Primary"
+                       OnClick='() => Nav.NavigateTo("departmentsnew")' Class="mt-3">
+                Browse All Departments
+            </MudButton>
+        </div>
+    }
+    else if (!_activities.Any())
+    {
+        <div class="kh-empty-state">
+            <MudIcon Icon="@Icons.Material.Filled.Inbox" Style="font-size: 4rem; color: #cbd5e1;" />
+            <h4>No Items Found</h4>
+            <p>No FAQ or SOP items are available at this time.</p>
+        </div>
+    }
+    else
+    {
+        <div class="kh-cards-grid">
+            @foreach (var act in _activities)
+            {
+                <MudButton Class="kh-activity-card"
+                           OnClick="() => NavigateToDocuments(act.ActivityID)"
+                           Ripple="false">
+                    <h3 class="kh-activity-title">@act.ActivityName</h3>
+                </MudButton>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Knowledge Hub", "circulars"),
+        new("FAQs/SOPs"),
+    };
+
+    private bool _isLoading = true;
+    private bool _notFound = false;
+    private List<Activity> _activities = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Fetch all departments and find the one with "FAQ" in its name
+            var allDepts = await DeptService.GetActiveDepartmentsAsync("Knowledge Hub");
+
+            var faqDept = allDepts.FirstOrDefault(d =>
+                d.DepartmentName.Contains("FAQ", StringComparison.OrdinalIgnoreCase));
+
+            if (faqDept == null)
+            {
+                _notFound = true;
+                return;
+            }
+
+            _activities = await ActivityService.GetActivitiesByDeptIdAsync(faqDept.DepartmentID);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[FaqSop] Unhandled error: " + ex.Message);
+            // On any DB failure show the not-found state rather than crashing
+            _notFound = true;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void NavigateToDocuments(int activityId)
+    {
+        Nav.NavigateTo($"documents3/{activityId}?source=faq-sop");
+    }
+}

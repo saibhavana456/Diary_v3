@@ -1,0 +1,216 @@
+@namespace RequestPortal.Web.Pages.Requests
+@page "/requests/escalation-matrix"
+@inject IMasterRepo Masters
+@inject IEscalationMatrixRepo Escalation
+@inject ISnackbar Snackbar
+
+<PageTitle>Escalation Matrix</PageTitle>
+
+<PageHeader PageKey="escalation-matrix" Title="Escalation Matrix" Crumbs="_crumbs" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudText Typo="Typo.subtitle1" Class="mb-2 fw-bold">Filters</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" Label="Request Type" Value="_requestTypeId" ValueChanged="OnRequestTypeChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (var r in _requestTypes) { <MudSelectItem T="long?" Value="@((long?)r.Id)">@r.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" Label="Unit Type" Value="_unitTypeId" ValueChanged="OnUnitTypeChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_unitTypes.Count==0)">
+                @foreach (var u in _unitTypes) { <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" Label="Unit" Value="_unitId" ValueChanged="OnUnitChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_units.Count==0)">
+                @foreach (var u in _units) { <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" Label="Vertical" Value="_verticalId" ValueChanged="OnVerticalChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_verticals.Count==0)">
+                @foreach (var v in _verticals) { <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" Label="Department" Value="_departmentId" ValueChanged="OnDepartmentChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_departments.Count==0)">
+                @foreach (var d in _departments) { <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" Label="Activity" Value="_activityId" ValueChanged="OnActivityChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_activities.Count==0)">
+                @foreach (var a in _activities) { <MudSelectItem T="long?" Value="@((long?)a.Id)">@a.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+    <MudText Typo="Typo.caption" Class="mt-2 text-muted">
+        Select an <b>Activity</b> to view its escalation matrix (L1–L5). Unit is optional.
+    </MudText>
+</MudPaper>
+
+@if (_loading)
+{
+    <div class="d-flex justify-center pa-6"><MudProgressCircular Indeterminate="true" /></div>
+}
+else if (_activityId is null)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">Choose an activity above to see the escalation matrix.</MudAlert>
+}
+else if (_entries.Count == 0)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">No escalation matrix is defined for this activity yet.</MudAlert>
+}
+else
+{
+    <MudText Typo="Typo.h6" Class="mb-3">Escalation Matrix — @_activityName</MudText>
+    @foreach (var lvl in Enumerable.Range(1, 5))
+    {
+        var members = _entries.Where(e => e.LevelNo == lvl).ToList();
+        <MudCard Class="mb-3" Elevation="1">
+            <MudCardHeader Style="@($"background:{LevelColor(lvl)};color:#fff;")">
+                <CardHeaderContent>
+                    <MudText Typo="Typo.subtitle1" Class="fw-bold">Level @lvl (L@(lvl)) </MudText>
+                    @* — @LevelName(lvl) *@
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="pa-0">
+                @if (members.Count == 0)
+                {
+                    <div class="pa-3 text-muted">No team member mapped at this level.</div>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto;">
+                        <thead>
+                            <tr>
+                                <th>PF No.</th><th>Name</th><th>Scale</th><th>Role</th>
+                                <th>Email</th><th>Mobile</th><th>IP Number</th><th>Generic Mail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in members)
+                            {
+                                <tr>
+                                    <td>@m.PfNumber</td>
+                                    <td>@m.EmpName</td>
+                                    <td>@m.Scale</td>
+                                    <td>@m.EmpRole</td>
+                                    <td>@(string.IsNullOrWhiteSpace(m.Email) ? "-" : m.Email)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(m.Mobile) ? "-" : m.Mobile)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(m.IpNumber) ? "-" : m.IpNumber)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(m.GenericMail) ? "-" : m.GenericMail)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudCardContent>
+        </MudCard>
+    }
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Request Portal"), new("Escalation Matrix")
+    };
+
+    private IReadOnlyList<RequestType> _requestTypes = new List<RequestType>();
+    private List<UnitType>             _unitTypes    = new();
+    private List<Unit>                 _units        = new();
+    private List<Vertical>             _verticals    = new();
+    private List<Department>           _departments  = new();
+    private List<Activity>             _activities   = new();
+
+    private long? _requestTypeId, _unitTypeId, _unitId, _verticalId, _departmentId, _activityId;
+    private string? _activityName;
+    private List<EscalationMatrixEntry> _entries = new();
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Same dropdown logic as the New Request page: two independent roots.
+            //   • Unit Type → Unit
+            //   • Vertical  → Department → Activity
+            // Request Type is an independent selector (does not drive the cascade).
+            // These lookups are independent — run in parallel.
+            var rtTask = Masters.ListRequestTypesAllAsync();
+            var utTask = Masters.ListUnitTypesAllAsync();
+            await Task.WhenAll(rtTask, utTask);
+            _requestTypes = rtTask.Result;
+            _unitTypes    = utTask.Result.ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "EscalationMatrix: failed to load master data");
+        }
+    }
+
+    private void OnRequestTypeChanged(long? v)
+    {
+        // Independent filter — like New Request, it does not cascade.
+        _requestTypeId = v;
+    }
+    private async Task OnUnitTypeChanged(long? v)
+    {
+        // Unit Type → Unit branch (independent of Vertical/Department/Activity).
+        _unitTypeId = v; _unitId = null;
+        _units = new(); _entries = new();
+        if (v is not null) _units = (await Masters.ListUnitsAllAsync(v)).ToList();
+    }
+    private async Task OnUnitChanged(long? v)
+    {
+        // Unit is an optional filter on the matrix; reload with the current activity.
+        _unitId = v;
+        _verticals = (await Masters.ListVerticalsAllAsyncRequest(_unitId.ToString())).ToList();
+        await LoadMatrixAsync();
+    }
+    private async Task OnVerticalChanged(long? v)
+    {
+        // Vertical → Department branch (independent of Unit Type/Unit).
+        _verticalId = v; _departmentId = null; _activityId = null;
+        _departments = new(); _activities = new(); _entries = new();
+        if (v is not null) _departments = (await Masters.ListDepartmentsAllAsync(v)).ToList();
+    }
+    private async Task OnDepartmentChanged(long? v)
+    {
+        _departmentId = v; _activityId = null; _activities = new(); _entries = new();
+        if (v is not null) _activities = (await Masters.ListActivitiesAllAsync(v)).ToList();
+    }
+    private async Task OnActivityChanged(long? v)
+    {
+        _activityId = v;
+        _activityName = _activities.FirstOrDefault(a => a.Id == v)?.Name;
+        await LoadMatrixAsync();
+    }
+
+    private async Task LoadMatrixAsync()
+    {
+        if (_activityId is null) { _entries = new(); return; }
+        _loading = true; StateHasChanged();
+        try
+        {
+            _entries = (await Escalation.GetByActivityAsync(_activityId.Value, _unitId)).ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "EscalationMatrix: failed to load matrix entries");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+            _entries = new();
+        }
+        finally { _loading = false; }
+    }
+
+    private static string LevelName(int l) => l switch
+    { 1 => "First Response", 2 => "Supervisor", 3 => "Manager", 4 => "Senior Management", 5 => "Apex", _ => "" };
+
+    private static string LevelColor(int l) => l switch
+    { 1 => "#1E88E5", 2 => "#00897B", 3 => "#6D4C41", 4 => "#8E24AA", 5 => "#C62828", _ => "#455A64" };
+}

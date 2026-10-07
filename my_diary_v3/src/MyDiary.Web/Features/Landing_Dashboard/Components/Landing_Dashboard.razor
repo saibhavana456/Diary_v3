@@ -1,0 +1,487 @@
+﻿@page "/Landing_Dashboard"
+@using ApexCharts
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<MudGrid Spacing="3">
+        <!-- LEFT: 9 columns -->
+        <MudItem xs="12" md="10">
+
+<div id="business-page-root" class="pa-4">
+    @* --- Breadcrumbs & Filters --- *@
+    <div class="d-flex align-center justify-space-between mb-4">
+        <MudBreadcrumbs Items="_breadcrumbs" Separator="/" />
+        <div class="d-flex gap-2">
+            <MudSelect T="string" Label="Entity" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="width: 150px; background: white;">
+                <MudSelectItem Value="@("All Units")" />
+            </MudSelect>
+            <MudSelect T="string" Label="Period" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="width: 150px; background: white;">
+                <MudSelectItem Value="@("FY 2024-25")" />
+            </MudSelect>
+        </div>
+    </div>
+
+    @* --- LEVEL 1: Navigation --- *@
+    <div class="category-nav-wrapper mb-6">
+        @foreach (var cat in _categories)
+        {
+            <div class="nav-item @(ActiveCategory == cat ? "active" : "")" @onclick="() => SelectCategory(cat)">
+                @cat
+            </div>
+        }
+    </div>
+
+    <MudPaper Elevation="0" Class="pa-6 rounded-lg border" Style="background-color: #ffffff;">
+        @* --- LEVEL 2: Sub-Navigation --- *@
+        <div class="d-flex align-center justify-space-between mb-6 border-bottom">
+            <MudTabs Elevation="0" MinimumWidth="50px" ActivePanelIndexChanged="OnSubTabChanged" Class="sub-nav-tabs" SliderColor="MudBlazor.Color.Transparent">
+                @foreach (var sub in _subCategories)
+                {
+                    <MudTabPanel Text="@sub" />
+                }
+            </MudTabs>
+            <div class="minimal-toggle-container">
+                <MudToggleGroup T="string" SelectionMode="SelectionMode.SingleSelection" @bind-Value="_currentView" Color="MudBlazor.Color.Dark" CheckMark="false" Class="custom-toggle">
+                    <MudToggleItem Value="@("Terminal")" Text="Terminal" />
+                    <MudToggleItem Value="@("Avg")" Text="Avg" />
+                </MudToggleGroup>
+            </div>
+        </div>
+
+        @* --- 2x2 Balanced Grid --- *@
+        <MudGrid Spacing="4">
+
+            @* 1. Refined Performance Card *@
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-5 border rounded-lg d-flex flex-column" Elevation="0" Style="height: 320px;">
+                    <div class="d-flex justify-space-between align-center mb-auto">
+                        <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">@ActiveSubCategory Performance</MudText>
+                        <MudText Typo="Typo.caption" Style="color: #1572e8; font-weight: 600;">Amt (Crores)</MudText>
+                    </div>
+
+                    <div class="d-flex align-center justify-space-around flex-grow-1">
+                        @* Left Side: Big Number *@
+                        <div class="text-center">
+                            <MudText Typo="Typo.h2" Style="color: #1572e8;" Class="fw-bold">273.80</MudText>
+                            <MudText Typo="Typo.subtitle1" Class="mud-text-secondary">Actual Total</MudText>
+                        </div>
+
+                        @* Right Side: Mini Stats Vertical *@
+                        <div class="d-flex flex-column gap-4 border-left pl-6">
+                            <div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary uppercase">Current (FY 23)</MudText>
+                                <MudText Typo="Typo.h6" Class="fw-bold">238.86</MudText>
+                            </div>
+                            <div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary uppercase">Target (FY 25)</MudText>
+                                <MudText Typo="Typo.h6" Class="fw-bold">297.85</MudText>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* Bottom: Progress Bar *@
+                    <div class="mt-auto">
+                        <div class="d-flex justify-space-between mb-1">
+                            <MudText Typo="Typo.caption" Class="fw-bold">Progress to Target</MudText>
+                            <MudText Typo="Typo.caption" Class="fw-bold">92%</MudText>
+                        </div>
+                        <MudProgressLinear Color="MudBlazor.Color.Primary" Value="92" Height="12" Class="rounded-pill" />
+                    </div>
+                </MudPaper>
+            </MudItem>
+
+            @* 2. Portfolio Overview *@
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-4 border rounded-lg" Elevation="0" Style="height: 320px;">
+                    <MudText Typo="Typo.subtitle2" Class="fw-bold mb-2" Style="color: #1b4a98;">Portfolio Overview</MudText>
+                    <ApexChart TItem="MetricData" Options="_donutOptions" Height="240">
+                        <ApexPointSeries TItem="MetricData" Items="_portfolioItems" Name="Advances" SeriesType="SeriesType.Donut" XValue="@(e => e.Category)" YValue="@(e => e.Value)" />
+                    </ApexChart>
+                </MudPaper>
+            </MudItem>
+
+            @* 3. Outstanding Book *@
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-4 border rounded-lg" Elevation="0" Style="height: 320px;">
+                    <div class="d-flex justify-space-between mb-2">
+                        <MudText Typo="Typo.subtitle2" Class="fw-bold" Style="color: #1b4a98;">Outstanding Book</MudText>
+                        <MudToggleGroup T="string" Size="MudBlazor.Size.Small" Value="@("Amt")" Color="MudBlazor.Color.Primary">
+                            <MudToggleItem Value="@("NOA")" />
+                            <MudToggleItem Value="@("Amt")" />
+                        </MudToggleGroup>
+                    </div>
+                    <ApexChart TItem="MetricData" Options="_columnOptions" Height="220">
+                        <ApexPointSeries TItem="MetricData" Items="_bookData" Name="Amount" SeriesType="SeriesType.Bar" XValue="@(e => e.Category)" YValue="@(e => e.Value)" />
+                    </ApexChart>
+                </MudPaper>
+            </MudItem>
+
+            @* 4. Total Advances Growth *@
+            <MudItem xs="12" md="3">
+                <MudPaper Class="pa-4 border rounded-lg" Elevation="0" Style="height: 320px;">
+                    <MudText Typo="Typo.subtitle2" Class="fw-bold mb-2" Style="color: #1b4a98;">Total Advances Growth</MudText>
+                    <ApexChart TItem="MetricData" Options="_lineOptions" Height="220">
+                        <ApexPointSeries TItem="MetricData" Items="_growthTrend" Name="Growth %" SeriesType="SeriesType.Area" XValue="@(e => e.Category)" YValue="@(e => e.Value)" />
+                    </ApexChart>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+</div>
+</MudItem>
+ <MudItem xs="12" md="2">
+
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/blogpost1.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+                <div class="profile-picture text-center">
+                    <div class="avatar avatar-xl">
+                        <img src="images/sy_img.jpg"
+                             alt="..."
+                             class="avatar-img rounded-circle" width="80px" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2 text-center">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">
+                    <div class="name">Sandeep Yadav</div>
+                    <div class="job">Chief Manager (IT) </div>
+                    <div class="job">  (Strategy Vertical, Central Office)</div>
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/blogpost_2.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+        
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/blogpost1.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+
+
+     </MudItem>
+</MudGrid>
+
+<div class="row">
+    
+    <div class="col-md-2">
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/Designer_card.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+           
+    </div>
+    <div class="col-md-2">
+
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/Designer_card.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+        
+    </div>
+    <div class="col-md-2">
+
+
+        
+
+
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/Designer_card.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @*Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+        
+    </div>
+    <div class="col-md-2">
+
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/Designer_card.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+        
+    </div>
+    <div class="col-md-2">
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/Designer_card.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+        
+    </div>
+    <div class="col-md-2">
+
+        <MudCard Class="card-profile mb-3" Elevation="1" Style="overflow:hidden;">
+            <!-- Header with background image -->
+            <div class="card-header"
+                 style="
+            background-image: url('images/Designer_card.png');
+            background-repeat: no-repeat;
+            background-size: 120% 120%;
+            height: 50px;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;">
+            </div>
+
+            <!-- Body -->
+            <MudCardContent Class="mt-7 mb-2">
+                @* Your content here *@
+                <MudText Typo="Typo.body2">Content inside MudCardContent</MudText>
+            </MudCardContent>
+        </MudCard>
+        
+    </div>
+</div>
+
+
+<style>
+    .category-nav-wrapper {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+    }
+
+    .nav-item {
+        padding: 10px 22px;
+        background-color: #d1e3ff;
+        color: #1e3a8a;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 700;
+        white-space: nowrap;
+        font-size: 0.9rem;
+        transition: 0.2s;
+    }
+
+        .nav-item.active {
+            background-color: #1b4a98;
+            color: #ffffff;
+        }
+
+    .sub-nav-tabs .mud-tab {
+        color: #666 !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        text-transform: none !important;
+        border-bottom: 3px solid transparent;
+    }
+
+        .sub-nav-tabs .mud-tab.mud-tab-active {
+            color: #1b4a98 !important;
+            border-bottom: 3px solid #1b4a98 !important;
+        }
+
+    .sub-nav-tabs .mud-tabs-slider {
+        display: none !important;
+    }
+
+    .custom-toggle {
+        background: #eee;
+        border-radius: 6px;
+        padding: 2px;
+    }
+
+        .custom-toggle .mud-toggle-item {
+            font-size: 0.75rem !important;
+            padding: 4px 12px !important;
+            border: none !important;
+        }
+
+        .custom-toggle .mud-toggle-item-selected {
+            background: #1a2035 !important;
+            color: white !important;
+            border-radius: 4px !important;
+        }
+
+    .border-bottom {
+        border-bottom: 2px solid #f0f0f0;
+    }
+
+    .border-left {
+        border-left: 1px solid #e0e0e0;
+    }
+
+    .fw-bold {
+        font-weight: 700 !important;
+    }
+
+    .uppercase {
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+</style>
+
+@code {
+    private string ActiveCategory = "Advances";
+    private string ActiveSubCategory = "Total Advances";
+    private string _currentView = "Terminal";
+
+    private List<string> _categories = new() { "Advances", "Deposits", "Income", "Operating Profit", "Compliance", "Digital Banking", "Customer Satisfaction" };
+    private List<string> _subCategories = new() { "Total Advances", "Retail", "MSME", "Agriculture", "Corporate Loans" };
+
+    public class MetricData { public string Category { get; set; } = ""; public decimal Value { get; set; } }
+
+    private List<MetricData> _portfolioItems = new() {
+        new MetricData { Category = "Corporate", Value = 50 },
+        new MetricData { Category = "Retail", Value = 76 },
+        new MetricData { Category = "Agri", Value = 69 },
+        new MetricData { Category = "MSME", Value = 75 }
+    };
+
+    private List<MetricData> _bookData = new() {
+        new MetricData { Category = "Mar 23", Value = 221043 },
+        new MetricData { Category = "Jun 23", Value = 234241 },
+        new MetricData { Category = "Sep 23", Value = 250544 },
+        new MetricData { Category = "Nov 23", Value = 273798 }
+    };
+
+    private List<MetricData> _growthTrend = new() {
+        new MetricData { Category = "Jan", Value = 2.1m },
+        new MetricData { Category = "Feb", Value = 3.4m },
+        new MetricData { Category = "Mar", Value = 4.0m },
+        new MetricData { Category = "Apr", Value = 3.8m }
+    };
+
+    private ApexChartOptions<MetricData> _donutOptions = new()
+    {
+        Legend = new Legend { Position = LegendPosition.Bottom },
+        Colors = new List<string> { "#507CA2", "#518CBF", "#89B1D3", "#6294C1" }
+    };
+
+    private ApexChartOptions<MetricData> _columnOptions = new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+        Colors = new List<string> { "#147ad6" }
+    };
+
+    private ApexChartOptions<MetricData> _lineOptions = new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+        Stroke = new Stroke { Curve = Curve.Smooth },
+        Colors = new List<string> { "#2a9d5c" }
+    };
+
+    private List<BreadcrumbItem> _breadcrumbs => new() {
+        new BreadcrumbItem("Business", href: "#"),
+        new BreadcrumbItem(ActiveCategory, href: null, disabled: true)
+    };
+
+    private void SelectCategory(string category) { ActiveCategory = category; StateHasChanged(); }
+    private void OnSubTabChanged(int index)
+    {
+        if (index >= 0 && index < _subCategories.Count)
+        {
+            ActiveSubCategory = _subCategories[index];
+            StateHasChanged();
+        }
+    }
+}

@@ -1,0 +1,115 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/CyberFraudSearch"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<div class="d-flex align-items-center gap-3 mt-3">
+    <label class="fw-bold">Account No:</label>
+    <input type="text" class="form-control w-25" @bind="accountNo" />
+
+    <button class="btn btn-primary" @onclick="Search">
+        Search
+    </button>
+
+    <button class="btn btn-warning" @onclick="Reset">
+        Reset
+    </button>
+</div>
+
+
+@code {
+
+    private string accountNo = "";
+
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Acknowledgement No.", PropertyName = "ackno", Width = "10%" },
+        new ColumnConfig { Header = "Sub Category of Complaint", PropertyName = "sub_category", Width = "10%" },
+        new ColumnConfig { Header = "Transaction Date", PropertyName = "tran_date", Width = "10%" },
+        new ColumnConfig { Header = "Date of reporting/escalation", PropertyName = "date_time", Width = "8%" },
+        new ColumnConfig { Header = "Time of reporting/escalation", PropertyName = "Time", Width = "12%" },
+        new ColumnConfig { Header = "State", PropertyName = "State", Width = "12%" },
+        new ColumnConfig { Header = "District", PropertyName = "District", Width = "8%" },
+        new ColumnConfig { Header = "Police Station", PropertyName = "policestation"},
+        new ColumnConfig { Header = "Account Number", PropertyName = "accno", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Transaction Id / UTR Number", PropertyName = "tran_id", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "layers", PropertyName = "layers", Width = "12%" },
+        new ColumnConfig { Header = "Email of Nodal Officer", PropertyName = "email_nodal_ofc", Width = "8%" },
+        new ColumnConfig { Header = "Transaction Amount", PropertyName = "transaction_amount", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Disputed Amount", PropertyName = "disputed_amount", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Remarks", PropertyName = "remarks", Width = "8%" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeConfig.Title = Title ?? "Cyber Fraud Search - OAP";
+
+        _activeConfig.Columns = _detailedCols; 
+        _loading = false;
+
+    }
+
+    private async Task Search()
+    {
+
+        if (string.IsNullOrWhiteSpace(accountNo))
+            return;
+
+        try
+        {
+
+            _loading = true;
+            StateHasChanged();
+            var accPattern = $"%{accountNo.Trim()}%";
+
+            _data = await ReportService.ExecuteStoredProcAsync(
+                            "usp_CyberFraudSearch",
+                            new Dictionary<string, object>
+                                {
+                                    ["@AccPattern"] = accPattern
+                                }
+                        );
+
+            _activeConfig.Columns = _detailedCols;
+
+            _loading = false;
+            StateHasChanged();
+        }
+        catch(Exception ex)
+        {
+            AppLogger.LogError(ex, "[CyberFraudSearchReport] Error: " + ex.Message);
+            
+        }
+
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+
+    }
+
+
+    private void Reset()
+    {
+        accountNo = "";
+        _data.Clear();
+        // _asOnDateLabel = "";
+        StateHasChanged();
+    }
+
+}

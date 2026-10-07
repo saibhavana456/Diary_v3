@@ -1,0 +1,182 @@
+@namespace RequestPortal.Web.Pages.Profile
+@page "/profile"
+@inject ICurrentUser CurrentUser
+@inject IRequestRepo RequestRepo
+@inject IServiceProvider SP
+
+<PageTitle>My Profile</PageTitle>
+<PageHeader PageKey="profile-user" Title="My Profile" Subtitle="Your organisational details, role allocation, and request summary."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Profile") })" />
+
+<MudGrid>
+    @* ── Left: Profile card ────────────────────────────────────────────────── *@
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="1" Class="pa-0 mb-4" Style="overflow:hidden">
+            <div style="background:linear-gradient(135deg,#1E3A8A,#EF4444);padding:28px 20px 20px;text-align:center">
+                <div class="rp-profile-avatar mx-auto mb-2">@Initials(CurrentUser.Name)</div>
+                <div class="rp-profile-name">@CurrentUser.Name</div>
+                <div class="rp-profile-role">@CurrentUser.EmpCode</div>
+                <div class="d-flex justify-center flex-wrap gap-1 mt-2">
+                    @foreach (var r in CurrentUser.Roles)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="@RoleColor(r)" Variant="Variant.Filled">@DemoStore.RoleLabel(r)</MudChip>
+                    }
+                </div>
+            </div>
+            <div class="pa-4">
+                @if (_emp is not null)
+                {
+                    <div class="d-flex flex-column gap-2">
+                        <div><MudIcon Icon="@Icons.Material.Filled.Badge" Size="Size.Small" Class="mr-1" Style="color:var(--rp-navy)" /><strong>Sol ID:</strong> @_sol?.Code — @_sol?.Name</div>
+                        <div><MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" Class="mr-1" Style="color:var(--rp-navy)" /><strong>Type:</strong> @DemoStore.SolIdTypeLabel(_emp.SolIdType)</div>
+                        <div><MudIcon Icon="@Icons.Material.Filled.WorkOutline" Size="Size.Small" Class="mr-1" Style="color:var(--rp-navy)" /><strong>Position:</strong> @DemoStore.PositionLabel(_emp.Position)</div>
+                        <div><MudIcon Icon="@Icons.Material.Filled.Stars" Size="Size.Small" Class="mr-1" Style="color:var(--rp-navy)" /><strong>Designation:</strong> @(_emp.Designation ?? "—")</div>
+                        <div><MudIcon Icon="@Icons.Material.Filled.Email" Size="Size.Small" Class="mr-1" Style="color:var(--rp-navy)" /><strong>Email:</strong> @(_emp.Email ?? "—")</div>
+                    </div>
+                }
+            </div>
+        </MudPaper>
+
+        @* Role Allocation summary *@
+        @if (_allocations.Any())
+        {
+            <MudPaper Elevation="1" Class="pa-4">
+                <MudText Typo="Typo.subtitle2" Class="mb-3" Style="font-weight:700;color:var(--rp-navy)">Role Allocations</MudText>
+                @foreach (var a in _allocations)
+                {
+                    <div class="d-flex align-center gap-2 mb-2">
+                        <MudChip T="string" Size="Size.Small" Color="@RoleColor(a.Role)" Variant="Variant.Filled">@DemoStore.RoleLabel(a.Role)</MudChip>
+                        @if (a.ModuleScope is not null)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@a.ModuleScope Admin</MudChip>
+                        }
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@a.Notes</MudText>
+                    </div>
+                }
+            </MudPaper>
+        }
+    </MudItem>
+
+    @* ── Right: Request home dashboard ─────────────────────────────────────── *@
+    <MudItem xs="12" md="8">
+        <MudText Typo="Typo.h6" Class="mb-3" Style="font-weight:700;color:var(--rp-navy)">Request Dashboard</MudText>
+
+        @* Status KPI strip *@
+        <MudGrid Class="mb-4">
+            @foreach (var k in _kpis)
+            {
+                <MudItem xs="6" sm="3">
+                    <MudPaper Elevation="1" Class="pa-3 text-center" Style="@($"border-top:3px solid {k.Color}")">
+                        <MudText Typo="Typo.h4" Style="@($"font-weight:700;color:{k.Color}")">@k.Value</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@k.Label</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        @* Recent requests *@
+        <MudPaper Elevation="1" Class="mb-4">
+            <MudTable T="RequestListItem" Items="@_myRequests" Dense="true" Hover="true" Class="rp-data-table">
+                <ToolBarContent>
+                    <MudText Typo="Typo.subtitle2" Style="font-weight:600">My Requests</MudText>
+                    <MudSpacer />
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Href="requests/mine">View All</MudButton>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>Ref #</MudTh><MudTh>Type</MudTh><MudTh>Subject</MudTh><MudTh>Status</MudTh><MudTh>SLA Due</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd><MudLink Href="@($"requests/{context.Id}")" Color="Color.Primary">@context.ReqNo</MudLink></MudTd>
+                    <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.RequestTypeName</MudChip></MudTd>
+                    <MudTd Style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@context.Subject</MudTd>
+                    <MudTd><MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)" Variant="Variant.Filled">@context.Status.Replace("Sought","").Trim()</MudChip></MudTd>
+                    <MudTd Style="font-size:12px">@SlaText(context.SlaDueUtc)</MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText Class="pa-4" Color="Color.Secondary">No requests raised yet.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+
+        @* Quick actions *@
+        <MudPaper Elevation="1" Class="pa-4">
+            <MudText Typo="Typo.subtitle2" Class="mb-3" Style="font-weight:700">Quick Actions</MudText>
+            <div class="d-flex flex-wrap gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.AddCircle" Href="requests/new">Raise New Request</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Inbox" Href="requests/mine">My Requests</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Notifications" Href="notifications">Notifications</MudButton>
+                @if (CurrentUser.Roles.Any(r => r is RoleCode.VertL1 or RoleCode.VertL2 or RoleCode.VertL3 or RoleCode.VertL4))
+                {
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AssignmentInd" Href="handler/inbox">Handler Inbox</MudButton>
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private EmployeeMaster?          _emp;
+    private SolIdRecord?             _sol;
+    private List<RoleAllocationRecord> _allocations = new();
+    private List<RequestListItem>    _myRequests = new();
+    private List<KpiCard>            _kpis = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var demo = SP.GetService<DemoStore>();
+        if (demo is not null && CurrentUser.EmpCode is not null)
+        {
+            _emp         = demo.EmployeeMasters.FirstOrDefault(e => e.EmpCode == CurrentUser.EmpCode);
+            _sol         = _emp is not null ? demo.SolIds.FirstOrDefault(s => s.Id == _emp.SolId) : null;
+            _allocations = demo.RoleAllocations.Where(a => a.EmpCode == CurrentUser.EmpCode && a.IsActive).ToList();
+        }
+
+        var (all, _) = await RequestRepo.ListAsync(new FilterDto(PageSize: 200), null, CurrentUser.EmpCode);
+        _myRequests = all.OrderByDescending(r => r.CreatedAt).Take(8).ToList();
+
+        var now = DateTime.UtcNow;
+        var allList = all.ToList();
+        _kpis = new()
+        {
+            new("Open",     allList.Count(r => r.Status is not ("Closed" or "Cancelled" or "Resolved")).ToString(), "#1E3A8A"),
+            new("Resolved", allList.Count(r => r.Status == "Resolved").ToString(), "#1a7f37"),
+            new("Breached", allList.Count(r => r.SlaDueUtc.HasValue && r.SlaDueUtc < now && r.Status is not ("Closed" or "Cancelled")).ToString(), "#cf222e"),
+            new("Closed",   allList.Count(r => r.Status == "Closed").ToString(), "#59636e"),
+        };
+    }
+
+    private static string Initials(string? n)
+    {
+        if (string.IsNullOrWhiteSpace(n)) return "?";
+        var p = n.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return p.Length == 1 ? p[0][..Math.Min(2, p[0].Length)].ToUpper() : $"{p[0][0]}{p[^1][0]}".ToUpper();
+    }
+
+    private static Color RoleColor(RoleCode r) => r switch
+    {
+        RoleCode.AppAdmin or RoleCode.SuperAdmin => Color.Error,
+        RoleCode.VertL5                          => Color.Info,
+        RoleCode.VertL4 or RoleCode.VertL3      => Color.Warning,
+        RoleCode.VertL2 or RoleCode.VertL1      => Color.Success,
+        _                                        => Color.Default
+    };
+
+    private static Color StatusColor(string s) => s switch
+    {
+        "InProgress" or "Reopened"    => Color.Primary,
+        "ClarificationSought"         => Color.Info,
+        "Resolved"                    => Color.Success,
+        "Cancelled"                   => Color.Error,
+        _                             => Color.Default
+    };
+
+    private static string SlaText(DateTime? d)
+    {
+        if (!d.HasValue) return "—";
+        var diff = d.Value - DateTime.UtcNow;
+        if (diff.TotalHours < 0) return $"⚠ {(int)(-diff).TotalHours}h overdue";
+        if (diff.TotalHours < 24) return $"⏰ {(int)diff.TotalHours}h left";
+        return AppTime.ToIndia(d.Value).ToString("dd-MMM");
+    }
+
+    private sealed record KpiCard(string Label, string Value, string Color);
+}

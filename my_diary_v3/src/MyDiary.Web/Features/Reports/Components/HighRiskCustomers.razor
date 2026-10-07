@@ -1,0 +1,360 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/high-risk-customers"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>High Risk Customers — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // Defaults; hook to auth claims if needed (same pattern as your other pages)
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ===== Columns =====
+    // Summary (counts)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "20%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "20%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "branch_name", Width = "20%" },
+        new ColumnConfig { Header = "No of HighRisk Customers", PropertyName = "HighRiskCustCount", IsNumeric = true, Format = "N0", Width = "25%" },
+        new ColumnConfig { Header = "Sol ID", PropertyName = "SolId", Width = "15%" }
+    };
+
+    // Detailed (branch-wise data with file link)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Sol ID", PropertyName = "SolId", Width = "15%" },
+        new ColumnConfig { Header = "Branch Name", PropertyName = "Branch_Name", Width = "30%" },
+        new ColumnConfig { Header = "No of HighRisk Customers", PropertyName = "HighRiskCustCount", IsNumeric = true, Format = "N0", Width = "25%" }
+        // new ColumnConfig {
+        //     Header = "Download File",
+        //     PropertyName = "HighRiskCustFileName",
+        //     Width = "20%",
+            // IsLink = true,
+            // LinkUrlPattern = "{0}",
+            // LinkText = "Download File",
+            // LinkTarget = "_blank"
+        // }
+    };
+
+    // For zone/region summary view that doesn't have file links
+    private readonly List<ColumnConfig> _summaryZoneRegionCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "20%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "20%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name", Width = "20%" },
+        new ColumnConfig { Header = "No of HighRisk Customers", PropertyName = "HighRiskCustCount", IsNumeric = true, Format = "N0", Width = "25%" },
+        new ColumnConfig { Header = "Sol ID", PropertyName = "SolId", Width = "15%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "High Risk Customers";
+
+        // Optional: read user claims (uncomment if you already have this in your app)
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "";
+        string groupBy = "";
+        string orderBy = " ORDER BY zone_name_eng, region_name, Branch_Name";
+        bool isSummary = true;
+        bool showFileLink = false;
+
+        // ===== Logic ported from ListHighRiskAccounts.aspx.cs =====
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // Display Total of All Zones
+            {
+                columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId";
+                where = "B.region_solid <> '00000' AND B.region_solid <> ' '";
+                orderBy = "";
+            }
+            else if (_selectedZone == "all")
+            {
+                if (_selectedRegion == "1") // Display Zonewise Data
+                {
+                    columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId";
+                    where = "B.region_solid <> '00000' AND B.region_solid <> ' '";
+                    groupBy = " GROUP BY Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Display Total of All Regions
+                    {
+                        columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, region_name, zone_name_eng, region_SolId AS SolId";
+                        where = "B.region_solid <> '00000' AND B.region_solid <> ' '";
+                        groupBy = " GROUP BY region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Branchwise Data (All branches)
+                    {
+                        isSummary = false;
+                        showFileLink = true;
+                        columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, B.SOL_ID AS SolId";
+                        where = "B.region_solid <> '00000' AND B.region_solid <> ' '";
+                    }
+                }
+                else // If particular Region is selected
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, region_name, zone_name_eng, region_SolId AS SolId";
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE region_solid = '{_selectedRegion}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                        groupBy = " GROUP BY region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        showFileLink = true;
+                        columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, B.SOL_ID AS SolId";
+                        if (_selectedBranch != "all")
+                        {
+                            where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE sol_id = '{_selectedBranch}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                        }
+                        else
+                        {
+                            where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE region_solid = '{_selectedRegion}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                        }
+                    }
+                }
+            }
+            else // If particular Zone is selected
+            {
+                if (_selectedRegion == "1") // Display Zonewise Data
+                {
+                    columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId";
+                    where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_selectedZone}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    groupBy = " GROUP BY Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Display Total of All Regions of the Zone
+                    {
+                        columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, region_name, zone_name_eng, region_SolId AS SolId";
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_selectedZone}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                        groupBy = " GROUP BY region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Detailed within zone
+                    {
+                        isSummary = false;
+                        showFileLink = true;
+                        columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, B.SOL_ID AS SolId";
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_selectedZone}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    }
+                }
+                else // If particular Region is selected
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, region_name, zone_name_eng, region_SolId AS SolId";
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_selectedZone}' AND region_solid = '{_selectedRegion}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                        groupBy = " GROUP BY region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        showFileLink = true;
+                        columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, region_name, zone_name_eng, B.SOL_ID AS SolId";
+                        if (_selectedBranch != "all")
+                        {
+                            where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_selectedZone}' AND sol_id = '{_selectedBranch}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                        }
+                        else
+                        {
+                            where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_selectedZone}' AND region_solid = '{_selectedRegion}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                        }
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            if (_selectedRegion == "1") // Summary of ZO
+            {
+                columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId";
+                where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE Zone_solid = '{_userZoneSolid}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                orderBy = "";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1") // Regionwise Summary
+                {
+                    columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, region_name, zone_name_eng, region_solid AS SolId";
+                    where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE Zone_solid = '{_userZoneSolid}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    groupBy = " GROUP BY region_name, region_SolId, zone_name_eng";
+                }
+                else // Branchwise Data
+                {
+                    isSummary = false;
+                    showFileLink = true;
+                    columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, B.SOL_ID AS SolId";
+                    if (_selectedBranch != "all")
+                    {
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_userZoneSolid}' AND sol_id = '{_selectedBranch}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    }
+                    else
+                    {
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_userZoneSolid}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    }
+                }
+            }
+            else // Specific Region within zone
+            {
+                if (_selectedBranch == "1") // Selected Region Summary
+                {
+                    columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, region_name, zone_name_eng, region_solid AS SolId";
+                    where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE Zone_solid = '{_userZoneSolid}' AND region_solid = '{_selectedRegion}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    groupBy = " GROUP BY region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    showFileLink = true;
+                    columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, region_name, zone_name_eng, B.SOL_ID AS SolId";
+                    if (_selectedBranch != "all")
+                    {
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_userZoneSolid}' AND region_solid = '{_selectedRegion}' AND sol_id = '{_selectedBranch}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    }
+                    else
+                    {
+                        where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE zone_solid = '{_userZoneSolid}' AND region_solid = '{_selectedRegion}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            if (_selectedBranch == "1") // Region Summary
+            {
+                columns = "SUM(HighRiskCustCount) AS HighRiskCustCount, 'All' AS Branch_Name, region_name, zone_name_eng, region_solid AS SolId";
+                where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE region_solid = '{_userRegionSolid}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                groupBy = " GROUP BY region_name, region_SolId, zone_name_eng";
+            }
+            else // Branchwise Data
+            {
+                isSummary = false;
+                showFileLink = true;
+                columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, region_name, zone_name_eng, B.SOL_ID AS SolId";
+                if (_selectedBranch != "all")
+                {
+                    where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE region_solid = '{_userRegionSolid}' AND sol_id = '{_selectedBranch}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                }
+                else
+                {
+                    where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE region_solid = '{_userRegionSolid}' AND region_solid <> '00000' AND region_solid <> ' ')";
+                }
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            showFileLink = true;
+            columns = "A.HighRiskCustCount, A.HighRiskCustFileName, B.Branch_Name, B.region_name, B.zone_name_eng, B.SOL_ID AS SolId";
+            where = $"B.sol_id IN (SELECT DISTINCT SOL_ID FROM Branch_Master WHERE sol_id = '{_userBranchSolid}' AND region_solid <> '00000' AND region_solid <> ' ')";
+        }
+
+        string finalQuery = $@"
+            SELECT {columns}
+            FROM HighRiskCustomerStatus A
+            JOIN Branch_Master B ON A.SolId = B.SOL_ID
+            WHERE {where}{groupBy}{(isSummary ? orderBy : orderBy)}";
+
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+        // ===== As On Date =====
+        string asOnDate = "";
+        try
+        {
+            var asOnRows = await ReportService.ExecuteRawQueryAsync("SELECT CONVERT(varchar, MAX(lastupdatedate), 103) AS AsOn FROM HighRiskCustomerStatus");
+            asOnDate = asOnRows.FirstOrDefault()?["AsOn"]?.ToString() ?? "";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[HighRiskCustomers] Unhandled error: " + ex.Message);
+            asOnDate = "";
+        }
+
+        // Select appropriate column configuration
+        if (isSummary)
+        {
+            _activeConfig.Columns = _summaryCols;
+        }
+        else
+        {
+            _activeConfig.Columns = _detailedCols;
+        }
+
+        _asOnDateLabel = string.IsNullOrWhiteSpace(asOnDate) ? "" : $"Data As On - {asOnDate} (Rs. in Lacs)";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "HighRiskCustCount");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "HighRiskCustCount.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

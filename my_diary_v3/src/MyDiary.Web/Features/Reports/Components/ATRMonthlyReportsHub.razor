@@ -1,0 +1,505 @@
+@page "/reports/atr-monthly"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@inject AtrMonthlyReportService AtrService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+@* ───────────────────────────────────────────────────────────────────────
+   ATRMonthlyReportsHub — all four monthly ATR MIS reports (BRD 07.08.2026)
+   on one page, switched with tabs instead of four separate menu entries.
+   One ATRMonthFilter instance is reused; its Show*/Require* parameters
+   change with the active tab, so the filter bar only ever asks for what
+   that report actually needs. GO re-fetches whichever tab is active;
+   switching tabs afterwards re-shows each tab's own last-fetched data
+   (no refetch) until GO is pressed again.
+   This page does not replace the four individual report pages — both can
+   stay live side by side; remove whichever routing you don't need.
+   ─────────────────────────────────────────────────────────────────────── *@
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<MudPaper Class="pa-4">
+
+    <ATRMonthFilter @ref="_atrFilter" ShowZone="true"
+                    ShowRegion="@(_activeTab is 0 or 1)"
+                    ShowBranch="@(_activeTab == 1)"
+                    RequireZone="@(_activeTab is 0 or 1)"
+                    RequireRegion="@(_activeTab is 0 or 1)"
+                    RequireBranch="@(_activeTab == 1)"
+                    AllZonesOption="@(_activeTab is 2 or 3)"
+                    BranchUserAllowed="@(_activeTab == 1)"
+                    ExportEnabled="@(CurrentGrid.Rows.Count > 0)"
+                    OnGo="OnGoAsync"
+                    OnExport="HandleExport" />
+
+    <MudTabs ActivePanelIndex="_activeTab" ActivePanelIndexChanged="OnTabChanged" Elevation="0" Rounded="true" Class="mt-2"
+             PanelClass="pa-0" Color="Color.Primary" ApplyEffectsToContainer="true">
+
+        <MudTabPanel Text="Region-wise" Icon="@Icons.Material.Filled.Map">
+            @RenderStatus(_loadedRegion, _grids[0].Rows.Count > 0)
+            @if (_loadedRegion && _grids[0].Rows.Count > 0)
+            {
+                <MudText Typo="Typo.h6" Class="mt-2 mb-1 fw-bold">
+                    Region-wise Monthly ATR Compliance Report - @(_tabSelections[0]?.RegionName ?? _tabSelections[0]?.Region) (@_tabSelections[0]?.Month.ToString("MMMM yyyy"))
+                </MudText>
+                <div class="atr-legend mb-2">
+                    <span class="atr-c">C = Submitted-complied</span>
+                    <span class="atr-nc">NC = Submitted-not complied</span>
+                    <span class="atr-ns">NS = Not submitted</span>
+                </div>
+                <div class="atr-scroll" tabindex="0">
+                    <table class="atr-table atr-region-table">
+                        <thead>
+                            <tr>
+                                @* <th>S.No</th>
+                                <th class="atr-sticky" style="background-color:#2a2f5b; z-index:5">Branch Name</th>
+                                <th>Branch Code</th>
+                                <th>Branch SOL</th> *@
+
+                                <th class="atr-sticky-sno">S.No</th>
+                                <th class="atr-sticky-branch">Branch Name</th>
+                                <th class="atr-sticky-code">Branch Code</th>
+                                <th class="atr-sticky-sol">Branch SOL</th>
+
+                                @foreach (var d in _grids[0].Days)
+                                {
+                                    <th title="@d.ToString("dd-MM-yyyy")">@d.ToString("dd-MM-yy")</th>
+                                }
+                                <th>Submitted-complied</th>
+                                <th>Submitted-not complied</th>
+                                <th>Not submitted</th>
+                                <th>Compliance %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var i1 = 0; }
+                            @foreach (var row in _grids[0].Rows)
+                            {
+                                i1++;
+                                <tr>
+                                    @* <td class="atr-center">@i1</td>
+                                    <td class="atr-left atr-sticky">@row["branch_name"]</td>
+                                    <td class="atr-center">@row["branch_code"]</td>
+                                    <td class="atr-center">@row["sol_id"]</td> *@
+
+                                    <td class="atr-center atr-sticky-sno">@i1</td>
+                                    <td class="atr-left atr-sticky-branch">@row["branch_name"]</td>
+                                    <td class="atr-center atr-sticky-code">@row["branch_code"]</td>
+                                    <td class="atr-center atr-sticky-sol">@row["sol_id"]</td>
+
+                                    @foreach (var d in _grids[0].Days)
+                                    {
+                                        var text = (string)row[DayKey(d)];
+                                        <td class="@AtrStatus.Css(text)" title="@text">@AtrStatus.Short(text)</td>
+                                    }
+                                    <td class="atr-num">@(((int)row["cnt_c"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)row["cnt_nc"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)row["cnt_ns"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((decimal)row["pct"]).ToString("0.0"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            @foreach (var f in _grids[0].FooterRows)
+                            {
+                                <tr>
+                                    <td colspan="4" class="atr-left">@f["branch_name"]</td>
+                                    @foreach (var d in _grids[0].Days)
+                                    {
+                                        <td class="atr-center">@f[DayKey(d)]</td>
+                                    }
+                                    <td class="atr-num">@f["cnt_c"]</td>
+                                    <td class="atr-num">@f["cnt_nc"]</td>
+                                    <td class="atr-num">@f["cnt_ns"]</td>
+                                    <td></td>
+                                </tr>
+                            }
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Branch-wise" Icon="@Icons.Material.Filled.AccountBalance">
+            @RenderStatus(_loadedBranch, _grids[1].Header.Count > 0)
+            @if (_loadedBranch && _grids[1].Header.Count > 0)
+            {
+                <MudText Typo="Typo.h6" Class="mt-2 mb-2 fw-bold">
+                    Branch-wise Monthly ATR Submission Report (@_tabSelections[1]?.Month.ToString("MMMM yyyy"))
+                </MudText>
+                <MudSimpleTable Dense="true" Bordered="true" Style="max-width:520px;" Class="mb-4">
+                    <tbody>
+                        <tr><td class="fw-bold">Select Month</td><td>@_sel?.Month.ToString("MMMM, yyyy")</td></tr>
+                        <tr><td class="fw-bold">Branch Name</td><td>@_grids[1].Header["branch_name"]</td></tr>
+                        <tr><td class="fw-bold">Branch Code</td><td>@_grids[1].Header["branch_code"]</td></tr>
+                        <tr><td class="fw-bold">RO Code</td><td>@_grids[1].Header["ro_code"]</td></tr>
+                        <tr><td class="fw-bold">RO Name</td><td>@_grids[1].Header["ro_name"]</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+
+                @if (_grids[1].Rows.Count == 0)
+                {
+                    <MudText Color="Color.Error" Align="Align.Center" Class="mt-2">No Data Found!</MudText>
+                }
+                else
+                {
+                    <div class="atr-legend mb-2">
+                        <span class="atr-c">Submitted-complied</span>
+                        <span class="atr-nc">Submitted-not complied</span>
+                        <span class="atr-ns">Not submitted</span>
+                    </div>
+                    <div class="atr-scroll" tabindex="0">
+                        <table class="atr-table" style="max-width:640px;">
+                            <thead>
+                                <tr>
+                                    <th style="width:60px;">S.No</th>
+                                    <th>Date</th>
+                                    <th>Submission Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ var i2 = 0; }
+                                @foreach (var row in _grids[1].Rows)
+                                {
+                                    i2++;
+                                    <tr>
+                                        <td class="atr-center">@i2</td>
+                                        <td class="atr-center">@row["date"]</td>
+                                        <td class="@AtrStatus.Css((string)row["status"])">@row["status"]</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                @foreach (var f in _grids[1].FooterRows)
+                                {
+                                    <tr>
+                                        <td colspan="2" class="atr-left">@f["date"]</td>
+                                        <td class="atr-center">@f["status"]</td>
+                                    </tr>
+                                }
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="RO-wise Consolidated" Icon="@Icons.Material.Filled.ViewList">
+            @RenderStatus(_loadedRo, _grids[2].Rows.Count > 0)
+            @if (_loadedRo && _grids[2].Rows.Count > 0)
+            {
+                <MudText Typo="Typo.h6" Class="mt-2 mb-1 fw-bold">
+                    Regional Office-wise Monthly Consolidated ATR Report - @(_tabSelections[2]?.RegionName ?? _tabSelections[2]?.ZoneName ?? "All Zones") (@_tabSelections[2]?.Month.ToString("MMMM yyyy"))
+                </MudText>
+                <MudText Typo="Typo.caption" Class="mb-2" Style="font-style:italic; color:#666;">
+                    Figures are numbers of branches for each date. Month totals are branch-days.
+                </MudText>
+                <div class="atr-scroll" tabindex="0">
+                    <table class="atr-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2">S.No</th>
+                                <th rowspan="2" class="atr-sticky" style="background-color:#2a2f5b;">Zone</th>
+                                <th rowspan="2">Region Name</th>
+                                @foreach (var d in _grids[2].Days)
+                                {
+                                    <th colspan="3">@d.ToString("dd-MM-yy")</th>
+                                }
+                                <th colspan="4">Region-wise count for the month</th>
+                            </tr>
+                            <tr>
+                                @foreach (var d in _grids[2].Days)
+                                {
+                                    <th>Submitted-complied</th>
+                                    <th>Submitted-not complied</th>
+                                    <th>Not submitted</th>
+                                }
+                                <th>Submitted-complied</th>
+                                <th>Submitted-not complied</th>
+                                <th>Not submitted</th>
+                                <th>Compliance %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var i3 = 0; }
+                            @foreach (var row in _grids[2].Rows)
+                            {
+                                i3++;
+                                <tr>
+                                    <td class="atr-center">@i3</td>
+                                    <td class="atr-left atr-sticky">@row["zone_name"]</td>
+                                    <td class="atr-left">@row["region_name"]</td>
+                                    @foreach (var d in _grids[2].Days)
+                                    {
+                                        var k = DayKey(d);
+                                        <td class="atr-num">@(row[k + "_c"])</td>
+                                        <td class="atr-num">@(row[k + "_nc"])</td>
+                                        <td class="atr-num">@(row[k + "_ns"])</td>
+                                    }
+                                    <td class="atr-num">@(((int)row["cnt_c"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)row["cnt_nc"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)row["cnt_ns"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((decimal)row["pct"]).ToString("0.0"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            @foreach (var f in _grids[2].FooterRows)
+                            {
+                                <tr>
+                                    <td colspan="3" class="atr-left">@f["zone_name"]</td>
+                                    @foreach (var d in _grids[2].Days)
+                                    {
+                                        var k = DayKey(d);
+                                        <td class="atr-num">@(f[k + "_c"])</td>
+                                        <td class="atr-num">@(f[k + "_nc"])</td>
+                                        <td class="atr-num">@(f[k + "_ns"])</td>
+                                    }
+                                    <td class="atr-num">@(((int)f["cnt_c"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)f["cnt_nc"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)f["cnt_ns"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((decimal)f["pct"]).ToString("0.0"))</td>
+                                </tr>
+                            }
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Region Summary" Icon="@Icons.Material.Filled.Summarize">
+            @RenderStatus(_loadedSummary, _grids[3].Rows.Count > 0)
+            @if (_loadedSummary && _grids[3].Rows.Count > 0)
+            {
+                <MudText Typo="Typo.h6" Class="mt-2 mb-1 fw-bold">
+                    Region-wise Monthly ATR Summary - @(_tabSelections[3]?.RegionName ?? _tabSelections[3]?.ZoneName ?? "All Zones") (@_tabSelections[3]?.Month.ToString("MMMM yyyy"))
+                </MudText>
+                <MudText Typo="Typo.caption" Class="mb-2" Style="font-style:italic; color:#666;">
+                    Counts are branch-days for the month (No. of branches x No. of report dates).
+                </MudText>
+                <div class="atr-scroll" tabindex="0">
+                    <table class="atr-table">
+                        <thead>
+                            <tr>
+                                <th style="width:60px;">S.No</th>
+                                <th>Zone</th>
+                                <th>Region Name</th>
+                                <th>Submitted-Complied</th>
+                                <th>Submitted-Not complied</th>
+                                <th>Not submitted</th>
+                                <th>Total</th>
+                                <th>Compliance %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var i4 = 0; }
+                            @foreach (var row in _grids[3].Rows)
+                            {
+                                i4++;
+                                <tr>
+                                    <td class="atr-center">@i4</td>
+                                    <td class="atr-left">@row["zone_name"]</td>
+                                    <td class="atr-left">@row["region_name"]</td>
+                                    <td class="atr-num">@(((int)row["cnt_c"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)row["cnt_nc"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)row["cnt_ns"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)row["total"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((decimal)row["pct"]).ToString("0.0"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            @foreach (var f in _grids[3].FooterRows)
+                            {
+                                <tr>
+                                    <td colspan="3" class="atr-left">@f["zone_name"]</td>
+                                    <td class="atr-num">@(((int)f["cnt_c"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)f["cnt_nc"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)f["cnt_ns"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((int)f["total"]).ToString("N0"))</td>
+                                    <td class="atr-num">@(((decimal)f["pct"]).ToString("0.0"))</td>
+                                </tr>
+                            }
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </MudTabPanel>
+
+    </MudTabs>
+
+</MudPaper>
+
+@code {
+    // Index: 0 = Region-wise, 1 = Branch-wise, 2 = RO-wise Consolidated, 3 = Region Summary
+    private int _activeTab;
+    private AtrFilterSelection? _sel;
+    private ATRMonthFilter? _atrFilter;
+    private readonly AtrGrid[] _grids = { new(), new(), new(), new() };
+    private readonly AtrFilterSelection?[] _tabSelections = new AtrFilterSelection?[4];
+    private bool _loadedRegion, _loadedBranch, _loadedRo, _loadedSummary;
+    private bool _loading;
+
+    private AtrGrid CurrentGrid => _grids[_activeTab];
+
+    private static string DayKey(DateTime d) => "d" + d.ToString("yyyyMMdd");
+
+    /// <summary>
+    /// Shared "loading / not-yet-loaded / empty" banner so each tab body doesn't repeat it.
+    /// hasData tells it whether THIS tab's grid currently has something to show; each tab
+    /// passes its own notion of "has data" (row count, or header+row count for the branch tab).
+    /// </summary>
+    private RenderFragment RenderStatus(bool loaded, bool hasData) => builder =>
+    {
+        if (_loading)
+        {
+            builder.OpenComponent<MudProgressLinear>(0);
+            builder.AddAttribute(1, "Color", Color.Primary);
+            builder.AddAttribute(2, "Indeterminate", true);
+            builder.AddAttribute(3, "Class", "my-2");
+            builder.CloseComponent();
+        }
+        else if (!loaded)
+        {
+            builder.OpenComponent<MudText>(0);
+            builder.AddAttribute(1, "Color", Color.Default);
+            builder.AddAttribute(2, "Align", Align.Center);
+            builder.AddAttribute(3, "Class", "mt-4 mud-text-secondary");
+            builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(0, "Select the filters above and click GO to load this report.")));
+            builder.CloseComponent();
+        }
+        else if (!hasData)
+        {
+            builder.OpenComponent<MudText>(0);
+            builder.AddAttribute(1, "Color", Color.Error);
+            builder.AddAttribute(2, "Align", Align.Center);
+            builder.AddAttribute(3, "Class", "mt-2");
+            builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(0, "No Data Found!")));
+            builder.CloseComponent();
+        }
+    };
+
+    private async Task OnTabChanged(int newTab)
+    {
+        if (_activeTab == newTab)
+            return;
+
+        _activeTab = newTab;
+
+        _sel = null;
+
+        if (_atrFilter is not null)
+            await _atrFilter.ResetForTabChangeAsync();
+
+        StateHasChanged();
+    }
+
+    private async Task OnGoAsync(AtrFilterSelection sel)
+    {
+        _sel = sel;
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            switch (_activeTab)
+            {
+                case 0:
+                    _grids[0] = await AtrService.GetAtrMonthlyRegionGridAsync(sel.Month, sel.Zone, sel.Region!);
+                    _loadedRegion = true;
+                    break;
+
+                case 1:
+                    _grids[1] = await AtrService.GetAtrMonthlyBranchGridAsync(sel.Month, sel.Branch!);
+                    _loadedBranch = true;
+                    break;
+
+                case 2:
+                    {
+                        var rows = await AtrService.GetAtrMonthlyRegionSummaryAsync(sel.Month, sel.Zone, sel.Region);
+                        _grids[2] = AtrService.BuildAtrRegionDayGrid(rows);
+                        _loadedRo = true;
+                        break;
+                    }
+
+                case 3:
+                    {
+                        var rows = await AtrService.GetAtrMonthlyRegionSummaryAsync(sel.Month, sel.Zone, sel.Region);
+                        _grids[3] = AtrService.BuildAtrRegionMonthGrid(rows);
+                        _loadedSummary = true;
+                        break;
+                    }
+            }
+
+            _tabSelections[_activeTab] = sel; // Remember which filters generated this tab's currently displayed data.
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[ATRMonthlyReportsHub] Load failed (tab " + _activeTab + "): " + ex.Message);
+            Snackbar.Add("Failed to load the report. Please retry.", Severity.Error);
+            _grids[_activeTab] = new();
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        if (_sel is null || CurrentGrid.Rows.Count == 0) return;
+
+        byte[] bytes;
+        string fileName;
+
+        switch (_activeTab)
+        {
+            case 0:
+                bytes = AtrService.ExportToExcel(_grids[0].Rows.Concat(_grids[0].FooterRows).ToList(), _grids[0].Columns, "Region-wise ATR");
+                fileName = $"ATR_Monthly_RegionWise_{_sel.Month:yyyyMM}.xlsx";
+                break;
+
+            case 1:
+                var cols = new List<ColumnConfig>
+                {
+                    new() { Header = "Date", PropertyName = "date" },
+                    new() { Header = "Submission Status", PropertyName = "status" }
+                };
+                var data = new List<Dictionary<string, object>>
+                {
+                    new() { ["date"] = "Select Month", ["status"] = _sel.Month.ToString("MMMM, yyyy") },
+                    new() { ["date"] = "Branch Name",  ["status"] = _grids[1].Header["branch_name"] },
+                    new() { ["date"] = "Branch Code",  ["status"] = _grids[1].Header["branch_code"] },
+                    new() { ["date"] = "RO Code",      ["status"] = _grids[1].Header["ro_code"] },
+                    new() { ["date"] = "RO Name",      ["status"] = _grids[1].Header["ro_name"] },
+                    new() { ["date"] = "",             ["status"] = "" }
+                };
+                data.AddRange(_grids[1].Rows);
+                data.AddRange(_grids[1].FooterRows);
+                bytes = AtrService.ExportToExcel(data, cols, "Branch-wise ATR");
+                fileName = $"ATR_Monthly_BranchWise_{_sel.Branch}_{_sel.Month:yyyyMM}.xlsx";
+                break;
+
+            case 2:
+                bytes = AtrService.ExportToExcel(_grids[2].Rows.Concat(_grids[2].FooterRows).ToList(), _grids[2].Columns, "RO-wise ATR");
+                fileName = $"ATR_Monthly_RO_Consolidated_{_sel.Month:yyyyMM}.xlsx";
+                break;
+
+            case 3:
+                bytes = AtrService.ExportToExcel(_grids[3].Rows.Concat(_grids[3].FooterRows).ToList(), _grids[3].Columns, "Region ATR Summary");
+                fileName = $"ATR_Monthly_RegionSummary_{_sel.Month:yyyyMM}.xlsx";
+                break;
+
+            default:
+                return;
+        }
+
+        await JS.InvokeVoidAsync("BlazorDownloadFile", fileName,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

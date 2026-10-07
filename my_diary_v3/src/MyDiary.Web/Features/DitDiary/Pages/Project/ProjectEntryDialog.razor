@@ -1,0 +1,2701 @@
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Services
+@using MudBlazor
+@inherits MudComponentBase
+@inject IProjectMasterService ProjectService
+@inject ProjectBudgetService BudgetSvc
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject IAdminMasterService AdminService
+@inject IBudgetEntryService EntryService
+@inject DitUserSession Session
+<style>
+	.mud-tab.mud-tab-active {
+		background-color: rgba(var(--mud-palette-primary-rgb), 0.1) !important;
+		color: var(--mud-palette-primary) !important;
+		font-weight: bold;
+		border-bottom: 3px solid var(--mud-palette-primary);
+		border-radius: 4px 4px 0 0;
+	}
+
+	.mud-tab-slider {
+		display: none !important;
+	}
+
+	.static-footer {
+		border-top: 1px solid #e0e0e0;
+		background: white;
+	}
+
+	.fixed-dialog-panel {
+		overflow-y: auto;
+		overflow-x: hidden;
+		flex-grow: 1;
+		height: 0;
+	}
+
+	.ml-row {
+		align-items: flex-start !important;
+	}
+
+		.ml-row .ultra-compact-label {
+			padding-top: 6px;
+		}
+
+	.multiline-input,
+	.multiline-input .mud-input-control,
+	.multiline-input .mud-input-slot,
+	.multiline-input textarea {
+		height: auto !important;
+		min-height: unset !important;
+	}
+
+	/* Common alignment for Identity Part A and Part B */
+	.identity-field-row {
+		display: grid;
+		grid-template-columns: 26% minmax(0, 74%);
+		align-items: start;
+		width: 100%;
+		column-gap: 6px;
+		margin-bottom: 4px;
+	}
+
+		/* Identity field labels */
+		.identity-field-row > .ultra-compact-label {
+			width: 100% !important;
+			min-width: 0 !important;
+			margin: 0;
+			padding-top: 7px !important;
+			padding-right: 6px;
+			box-sizing: border-box;
+			color: #212121 !important;
+			font-size: 0.78rem !important;
+			font-weight: 600 !important;
+			line-height: 1.25;
+			white-space: normal;
+		}
+
+		/* Make all MudBlazor fields fill the second grid column */
+		.identity-field-row > .mud-input-control {
+			width: 100% !important;
+			min-width: 0 !important;
+			margin: 0 !important;
+		}
+
+	/* Single-line fields */
+	.identity-singleline-field {
+		width: 100% !important;
+		min-width: 0 !important;
+		margin: 0 !important;
+	}
+
+		.identity-singleline-field input {
+			color: #212121 !important;
+			font-size: 0.78rem !important;
+			font-weight: 500 !important;
+			white-space: nowrap;
+			overflow-x: auto;
+		}
+
+	/* Multiline field component */
+	.identity-multiline-field {
+		width: 100% !important;
+		min-width: 0 !important;
+		margin: 0 !important;
+	}
+
+		/* Prevent the multiline input wrapper from clipping text */
+		.identity-multiline-field .mud-input-control,
+		.identity-multiline-field .mud-input-root,
+		.identity-multiline-field .mud-input-slot {
+			width: 100% !important;
+			height: auto !important;
+			min-height: 64px !important;
+			margin-top: 0 !important;
+			margin-bottom: 0 !important;
+			overflow: visible !important;
+			box-sizing: border-box;
+		}
+
+		/* Make entered multiline text clearly visible */
+		.identity-multiline-field textarea {
+			width: 100% !important;
+			min-height: 64px !important;
+			height: auto !important;
+			padding: 10px !important;
+			box-sizing: border-box;
+			color: #212121 !important;
+			font-size: 0.82rem !important;
+			font-weight: 500 !important;
+			line-height: 1.5 !important;
+			opacity: 1 !important;
+			resize: vertical;
+			overflow-y: auto !important;
+		}
+
+			/* Placeholder should be visible but lighter */
+			.identity-multiline-field textarea::placeholder,
+			.identity-singleline-field input::placeholder {
+				color: #757575 !important;
+				font-size: 0.76rem !important;
+				font-weight: 400 !important;
+				opacity: 1 !important;
+			}
+</style>
+
+<MudDialog DisableSidePadding="true" ContentStyle="overflow: hidden;">
+	<DialogContent>
+		@* 1. Outer wrapper with fixed height, flexbox, and NO overflow *@
+		<div style="height: 75vh; display: flex; flex-direction: column; overflow: hidden;">
+
+			@* 2. MudForm stretches to fill the wrapper perfectly *@
+			<MudForm @ref="_form" @bind-IsValid="@_formIsValid" Style="display: flex; flex-direction: column; height: 100%;">
+
+				@* 3. MudTabs uses flex-grow and applies scrolling ONLY to the inner PanelClass *@
+				<MudTabs @bind-ActivePanelIndex="_activeIndex"
+						 Elevation="0"
+						 CenterTabs="true"
+						 ReadOnly="true"
+						 Style="flex-grow: 1; display: flex; flex-direction: column;"
+						 PanelClass="fixed-dialog-panel pa-2">
+
+
+					@* --- TAB 1: GENERAL & OWNERSHIP (ULTRA-COMPACT ENTRY & GRID) --- *@
+					<MudTabPanel Text="Basic Details" Icon="@Icons.Material.Filled.Info">
+						<div class="fixed-panel-scroll">
+							<MudGrid Spacing="1">
+
+								@*  --- BUDGET ALLOCATION (created together with the project) --- 
+								<MudItem xs="12">
+									<MudPaper Elevation="1" Class="pa-3 mb-2" Style="background-color:#fff8e1; border-left:4px solid #ffa000;">
+										<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+											<MudIcon Icon="@Icons.Material.Filled.Savings" Color="Color.Warning" />
+											<MudText Typo="Typo.subtitle2"><b>BUDGET ALLOCATION — @BudgetType</b></MudText>
+											@if (_budgetSaved)
+											{
+												<MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">Saved</MudChip>
+											}
+										</MudStack>
+
+																				@if (BudgetType == "REVENUE")
+										{
+											<MudGrid Spacing="2" Class="mb-1">
+												<MudItem xs="12" md="4">
+													@if (IsEdit)
+													{
+													<MudTextField T="string" Label="Department" Disabled="true" 
+														Value="@Depttext(_budgetDeptId)" 
+														Variant="Variant.Outlined" Margin="Margin.Dense" />
+													}
+													else
+													{
+														<MudSelect T="long?" Label="Department *" Value="_budgetDeptId" ValueChanged="OnBudgetDeptChanged"
+															ToStringFunc="@Depttext"
+															Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+													
+														@foreach (var d in _budgetDepts)
+														{
+															<MudSelectItem T="long?" Value="@((long?)d.DeptId)">@d.DeptName</MudSelectItem>
+														}
+													</MudSelect>
+													}
+												</MudItem>
+												<MudItem xs="12" md="4">
+													@if (IsEdit)
+													{
+														<MudTextField T="string" Label="Section" Disabled="true"
+															Value="@SecText(_budgetSectionId)"
+															Variant="Variant.Outlined" Margin="Margin.Dense" />
+													}
+													else
+													{
+													<MudSelect T="long?" Label="Section *" Value="_budgetSectionId" ValueChanged="OnBudgetSectionChanged"
+															ToStringFunc="@SecText" Disabled="@(_budgetDeptId == null)"
+															   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+														@foreach (var s in _budgetSections)
+														{
+																var taken = TakenBy(s.SectionId);
+																<MudSelectItem T="long?" Value="@((long?)s.SectionId)" Disabled="@(taken != null)">
+																	@s.SectionName
+																	@if (taken != null)
+																	{
+																		<span style="opacity:.65;">&nbsp;- already has @taken.Code @taken.Name</span>
+																	}
+																</MudSelectItem>
+														}
+													</MudSelect>
+													}
+												</MudItem>
+												<MudItem xs="12" md="4">
+													<MudTextField T="string" Label="Item Name *" @bind-Value="Projects.ProjectName"
+																  Variant="Variant.Outlined" Margin="Margin.Dense" />
+												</MudItem>
+											</MudGrid>
+										}
+
+										<MudGrid Spacing="2">
+											<MudItem xs="12" md="3">
+												<MudSelect T="int" Label="Financial Year" @bind-Value="_budgetFyId"
+														Disabled="@BudgetLocked" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+													@foreach (var fy in _budgetFys)
+													{
+														<MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+													}
+												</MudSelect>
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudNumericField T="decimal" Label="Spillover Allotted (Cr)" @bind-Value="_allotSpillover"
+															ReadOnly="@BudgetLocked"  Min="0" HideSpinButtons="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudNumericField T="decimal" Label="Fresh Allotted (Cr)" @bind-Value="_allotFresh"
+															ReadOnly="@BudgetLocked"  Min="0" HideSpinButtons="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudTextField T="string" Label="Total Allotted (Cr)" ReadOnly="true"
+															  Value="@AllotTotal.ToString("N2")" Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+										</MudGrid>
+										@if (_budgetSaved)
+										{
+											<MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+												@if (IsEdit)
+											{
+												<text>
+											This @(BudgetType == "REVENUE" ? "Section" : "project") already has
+											<b>@AllotTotal.ToString("N2") Cr</b> Allotted for <b>@FyLabelText</b>
+										Tick below to revise it.
+									</text>
+											}
+											else
+											{
+
+											<text>
+													This @(BudgetType == "REVENUE" ? "Section" : "project") already has
+												<b>@AllotTotal.ToString("N2") Cr</b> Allotted for <b>@FyLabelText</b>
+												Enter the Item Name to record it - the budget will not change.
+												</text>
+											}
+									</MudAlert>
+									@if (IsEdit)
+									{
+											<MudCheckBox T="bool" @bind-Value="_reviseBudget" Color="Color.Warning" Dense="true" Class="mt-1"
+											Label="Revise this section's budget" />
+										}
+										}
+
+										<MudText Typo="Typo.caption" Class="mt-2">
+											@(BudgetType == "CAPITAL"
+												? "Capital budget is allotted per project. Utilisation above this amount will be blocked."
+												: "Revenue budget is allotted per section. Utilisation above this amount will show a warning but still save.")
+											It is saved automatically when you press Save &amp; Next on this tab.
+										</MudText>
+									</MudPaper>
+								</MudItem>
+
+								
+
+																@if (BudgetType != "REVENUE")
+								{ *@
+
+
+								@* --- PROJECT IDENTITY SECTIONS (Part A & B side-by-side) --- *@
+								<MudItem xs="12" md="6">
+									<MudPaper Elevation="1" Class="pa-2" Style="background-color: #f9f9f9; border-left: 3px solid #594ae2; height: 100%;">
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.65rem;"><b>IDENTITY - PART A</b></MudText>
+										@* Project Code: Single-line field *@
+										@* Project Code: Single-line field *@
+										@* <div class="identity-field-row">
+											<MudText Class="ultra-compact-label">
+												Project Code *
+											</MudText>
+
+											<MudTextField T="string"
+														  @bind-Value="Projects.ProjectCode"
+														  Variant="Variant.Outlined"
+														  Required="true"
+														  RequiredError="Project Code is required."
+														  Margin="Margin.Dense"
+														  Class="ultra-compact-input identity-singleline-field"
+														  FullWidth="true" />
+										</div> *@
+
+										<div class="identity-field-row">
+	<MudText Class="ultra-compact-label">
+		Project Code
+	</MudText>
+
+	<MudTextField T="string"
+				  Value="@Projects.ProjectCode"
+				  Placeholder="Generated automatically when you save"
+				  ReadOnly="true"
+				  Variant="Variant.Filled"
+				  Margin="Margin.Dense"
+				  Class="identity-singleline-field"
+				  FullWidth="true" />
+</div>
+
+										@* Project Name: Single-line field *@
+										<div class="identity-field-row">
+											<MudText Class="ultra-compact-label">
+												Project Name *
+											</MudText>
+
+											<MudTextField T="string"
+														  @bind-Value="Projects.ProjectName"
+														  Variant="Variant.Outlined"
+														  Required="true"
+														  RequiredError="Project Name is required."
+														  Margin="Margin.Dense"
+														  Class="ultra-compact-input identity-singleline-field"
+														  FullWidth="true" />
+										</div>
+
+										@* Project Brief: Multiline field *@
+										<div class="identity-field-row">
+											<MudText Class="ultra-compact-label">
+												Project Brief
+											</MudText>
+
+											<MudTextField T="string"
+														  @bind-Value="Projects.ProjectBrief"
+														  Variant="Variant.Outlined"
+														  Margin="Margin.Dense"
+														  Class="identity-multiline-field"
+														  Lines="3"
+														  AutoGrow="true"
+														  MaxLines="6"
+														  FullWidth="true"
+														  Placeholder="Enter a brief summary of the project" />
+										</div>
+
+										@* Description: Multiline field *@
+										<div class="identity-field-row">
+											<MudText Class="ultra-compact-label">
+												Description
+											</MudText>
+
+											<MudTextField T="string"
+														  @bind-Value="Projects.ProjectDesc"
+														  Variant="Variant.Outlined"
+														  Margin="Margin.Dense"
+														  Class="identity-multiline-field"
+														  Lines="3"
+														  AutoGrow="true"
+														  MaxLines="6"
+														  FullWidth="true"
+														  Placeholder="Enter detailed project description" />
+										</div>
+
+										@* Needs: Multiline field *@
+										<div class="identity-field-row">
+											<MudText Class="ultra-compact-label">
+												Needs
+											</MudText>
+
+											<MudTextField T="string"
+														  @bind-Value="Projects.ProjectNeed"
+														  Variant="Variant.Outlined"
+														  Margin="Margin.Dense"
+														  Class="identity-multiline-field"
+														  Lines="3"
+														  AutoGrow="true"
+														  MaxLines="6"
+														  FullWidth="true"
+														  Placeholder="Enter the business or technical need" />
+										</div>
+									</MudPaper>
+								</MudItem>
+
+								<MudItem xs="12" md="6">
+									<MudPaper Elevation="1" Class="pa-2" Style="background-color: #f9f9f9; border-left: 3px solid #594ae2; height: 100%;">
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.65rem;"><b>IDENTITY - PART B</b></MudText>
+										<div class="identity-field-row">
+											<MudText Class="ultra-compact-label">
+												Benefits to Bank *
+											</MudText>
+
+											<MudTextField T="string"
+														  @bind-Value="Projects.ProjectBenefitsBank"
+														  Variant="Variant.Outlined"
+														  Required="true"
+														  RequiredError="Benefits to Bank is required."
+														  Margin="Margin.Dense"
+														  Class="identity-multiline-field"
+														  Lines="3"
+														  AutoGrow="true"
+														  MaxLines="6"
+														  FullWidth="true"
+														  Placeholder="Enter the expected benefits to the Bank" />
+										</div>
+
+										<div class="identity-field-row">
+	<MudText Class="ultra-compact-label">
+		Type
+	</MudText>
+
+	<MudSelect T="string"
+			   @bind-Value="Projects.ProjectType"
+			   Variant="Variant.Outlined"
+			   Margin="Margin.Dense"
+			   Dense="true"
+			   Class="identity-singleline-field"
+			   FullWidth="true">
+
+		<MudSelectItem Value="@("")"></MudSelectItem>
+		<MudSelectItem Value="@("Y")">TECH PROJECT</MudSelectItem>
+		<MudSelectItem Value="@("N")">BIZ PROJECT</MudSelectItem>
+	</MudSelect>
+</div>
+										<div class="identity-field-row">
+	<MudText Class="ultra-compact-label">
+		Category
+	</MudText>
+
+	<MudSelect T="string"
+			   @bind-Value="Projects.ProjectCategory"
+			   Variant="Variant.Outlined"
+			   Margin="Margin.Dense"
+			   Dense="true"
+			   Class="identity-singleline-field"
+			   FullWidth="true">
+
+		<MudSelectItem Value="@("")"></MudSelectItem>
+		<MudSelectItem Value="@("Y")">Non-IT PROJECT</MudSelectItem>
+		<MudSelectItem Value="@("N")">IT PROJECT</MudSelectItem>
+	</MudSelect>
+</div>
+										<div class="identity-field-row">
+	<MudText Class="ultra-compact-label">
+		Nature
+	</MudText>
+
+	<MudTextField T="string"
+				  @bind-Value="Projects.ProjectNature"
+				  Variant="Variant.Outlined"
+				  Margin="Margin.Dense"
+				  Class="identity-multiline-field"
+				  Lines="3"
+				  AutoGrow="true"
+				  MaxLines="6"
+				  FullWidth="true"
+				  Placeholder="Enter the nature of the project" />
+</div>
+
+
+									</MudPaper>
+								</MudItem>
+
+								@* --- OWNERSHIP SECTIONS (3 Parts Side-by-Side) --- *@
+
+								<MudItem xs="12" md="4">
+									<MudPaper Elevation="1" Class="pa-2" Style="background-color: #f0f4ff; border-left: 3px solid #2196f3; height: 100%;">
+										@* <MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;"><b>BUSINESS OWNERSHIP</b></MudText> *@
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;"><b>BUSINESS OWNERSHIP</b></MudText>
+										<div class="ultra-compact-row">
+											<MudText Class="ultra-compact-label">Office Type</MudText>
+											<MudSelect T="string" Value="@_bizOfficeType" ValueChanged="OnBizOfficeTypeChanged"
+													   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+													   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+													   Disabled="@(Projects.IS_IT_BUSINESS_SAME == "Y")">
+												<MudSelectItem T="string" Value="@("")">-- Select Office Type --</MudSelectItem>
+												@foreach (var t in _officeTypes)
+												{
+													<MudSelectItem T="string" Value="@t">@t</MudSelectItem>
+												}
+											</MudSelect>
+										</div>
+																				<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Department *</MudText>
+											<MudSelect T="string" Value="Projects.BUSINESS_OWNER_DEPT_NAME" ValueChanged="OnBizDeptChanged" Required="true"
+													   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+													   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Disabled="@(Projects.IS_IT_BUSINESS_SAME == "Y")">
+												@* @foreach (var d in _mapDepartments) { <MudSelectItem Value="@d.DEPT_NAME">@d.DEPT_NAME</MudSelectItem> } *@
+												@foreach (var d in _bizDepartments)
+												{
+													<MudSelectItem Value="@d.DEPT_NAME">@d.DEPT_NAME</MudSelectItem>
+												}
+											</MudSelect>
+										</div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Section</MudText>
+											<MudSelect T="string" Value="Projects.BUSINESS_OWNER_SEC_NAME" ValueChanged="OnBizSecChanged"
+													   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+													   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Disabled="@(Projects.IS_IT_BUSINESS_SAME == "Y")">
+												@foreach (var s in _bizSections) { <MudSelectItem Value="@s.NAME">@s.NAME</MudSelectItem> }
+											</MudSelect>
+										</div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Owner Name *</MudText><MudTextField @bind-Value="Projects.BUSINESS_OWNER_NAME" Variant="Variant.Outlined" Required="true" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Designation</MudText><MudTextField @bind-Value="Projects.BUSINESS_OWNER_DESIG" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">IP Number</MudText><MudTextField @bind-Value="Projects.BUSINESS_OWNER_IP_NO" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Mobile</MudText><MudTextField @bind-Value="Projects.BUSINESS_OWNER_MOBILE" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Email</MudText><MudTextField @bind-Value="Projects.BUSINESS_OWNER_EMAIL" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										@* --- SIMPLE TOGGLE PLACED HERE --- *@
+										<div class="mt-2 pt-1 d-flex align-center" style="border-top: 1px dotted #ccc;">
+											<MudText Class="ultra-compact-label" Style="width: 50%;">Is Business and IT Same?</MudText>
+											<MudRadioGroup T="string" Value="@Projects.IS_IT_BUSINESS_SAME" ValueChanged="OnItAndBusinessSameChanged" Class="d-flex align-center mt-0">
+												<MudRadio T="string" Value="@("Y")" Size="Size.Small" Dense="true" Color="Color.Primary"><span style="font-size: 0.7rem;">Yes</span></MudRadio>
+												<MudRadio T="string" Value="@("N")" Size="Size.Small" Dense="true" Color="Color.Primary"><span style="font-size: 0.7rem;">No</span></MudRadio>
+											</MudRadioGroup>
+										</div>
+
+									</MudPaper>
+								</MudItem>
+
+
+								<MudItem xs="12" md="4">
+									<MudPaper Elevation="1" Class="pa-2" Style="background-color: #f0f4ff; border-left: 3px solid #2196f3; height: 100%;">
+										@* <MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;"><b>IT OWNERSHIP</b></MudText> *@
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;"><b>IT OWNERSHIP</b></MudText>
+										@if (Projects.IS_IT_BUSINESS_SAME == "Y" && Projects.DEPT_ID == null)
+										{
+											<MudText Typo="Typo.caption" Style="font-size:0.65rem;color:#c62828;" Class="d-block mb-1">
+												That business department is not one of your DIT departments — please choose the IT Department and Section here.
+											</MudText>
+										}
+																				@* <div class="ultra-compact-row"><MudText Class="ultra-compact-label">Department *</MudText>
+											 <MudSelect T="string" Value="Projects.BUSINESS_OWNER_DEPT_NAME" ValueChanged="OnBizDeptChanged" Required="true"
+													   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+													   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Disabled="@(Projects.IS_IT_BUSINESS_SAME == "Y")">
+												@foreach (var d in _mapDepartments)
+												{
+													<MudSelectItem Value="@d.DEPT_NAME">@d.DEPT_NAME</MudSelectItem>
+												}
+											</MudSelect>
+										</div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Section</MudText>
+											<MudSelect T="string" Value="Projects.BUSINESS_OWNER_SEC_NAME" ValueChanged="OnBizSecChanged"
+													   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+													   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Disabled="@(Projects.IS_IT_BUSINESS_SAME == "Y")">
+												@foreach (var s in _bizSections)
+												{
+													<MudSelectItem Value="@s.NAME">@s.NAME</MudSelectItem>
+												}
+											</MudSelect>
+										</div>  *@
+
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Department *</MudText>
+											<MudSelect T="long?" Value="Projects.DEPT_ID" ValueChanged="OnItDepartmentChanged" Required="true"
+													   ToStringFunc="@(id => _itDepartments.FirstOrDefault(d => d.DEPT_ID == id)?.DEPT_NAME ?? "")"
+													   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+													   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+													   Disabled="@((Projects.IS_IT_BUSINESS_SAME == "Y" && Projects.DEPT_ID != null) || _deptLocked)">
+												@foreach (var d in _itDepartments)
+												{
+														<MudSelectItem T="long?" Value="@((long?)d.DEPT_ID)">@d.DEPT_NAME</MudSelectItem>
+												}
+											</MudSelect>
+										</div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Section *</MudText>
+											<MudSelect T="long?" Value="Projects.SECTION_ID" ValueChanged="OnItSectionChanged" Required="true"
+													   ToStringFunc="@(id => _itSections.FirstOrDefault(s => s.SECTION_ID == id)?.NAME ?? "")"
+													   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+													   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+													   Disabled="@((Projects.IS_IT_BUSINESS_SAME == "Y" && Projects.SECTION_ID != null) || _sectionLocked)">
+												@foreach (var s in _itSectionsForDept)
+												{
+														<MudSelectItem T="long?" Value="@((long?)s.SECTION_ID)">@s.NAME</MudSelectItem>
+												}
+											</MudSelect>
+										</div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">IT Owner *</MudText><MudTextField @bind-Value="Projects.IT_OWNER_NAME" Variant="Variant.Outlined" Required="true" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">IT Designation</MudText><MudTextField @bind-Value="Projects.IT_OWNER_DESIG" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">IT IP No</MudText><MudTextField @bind-Value="Projects.IT_OWNER_IP_NO" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">IT Mobile</MudText><MudTextField @bind-Value="Projects.IT_OWNER_MOBILE" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">IT Email</MudText><MudTextField @bind-Value="Projects.IT_OWNER_EMAIL" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+									</MudPaper>
+								</MudItem>
+
+
+								<MudItem xs="12" md="4">
+									<MudPaper Elevation="1" Class="pa-2" Style="background-color: #f0f4ff; border-left: 3px solid #2196f3; height: 100%;">
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;"><b>SUPPORTING OWNER</b></MudText>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Department</MudText><MudTextField @bind-Value="Projects.SupportingOwnerDeptName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Section</MudText><MudTextField @bind-Value="Projects.SupportingOwnerSecName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Owner Name</MudText><MudTextField @bind-Value="Projects.SupportingOwnerName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Designation</MudText><MudTextField @bind-Value="Projects.SupportingOwnerDesig" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">IP No</MudText><MudTextField @bind-Value="Projects.SupportingOwnerIpNo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Mobile</MudText><MudTextField @bind-Value="Projects.SupportingOwnerMobile" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+										<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Email</MudText><MudTextField @bind-Value="Projects.SupportingOwnerEmail" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+									</MudPaper>
+								</MudItem>
+
+
+
+
+								@* --- ADMIN APPROVAL DETAILS --- *@
+								<MudItem xs="12">
+									<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #ff9800; background-color: #fffcf5;">
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.65rem;" Class="mb-1 d-block"><b>ADMIN APPROVAL DETAILS</b></MudText>
+
+										<MudGrid Spacing="1">
+											<MudItem xs="6">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Authority</MudText>
+												<MudTextField @bind-Value="Projects.AdminApprovalAuthority" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+											</MudItem>
+
+											<MudItem xs="6">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Approval Date</MudText>
+												<MudDatePicker @bind-Date="Projects.AdminApprovalDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+										</MudGrid>
+
+									</MudPaper>
+								</MudItem>
+
+
+								@* --- TIMELINE DETAILS --- *@
+								<MudItem xs="12">
+									<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #4caf50; background-color: #fafffa;">
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block"><b>TIMELINE DETAILS</b></MudText>
+
+										<MudGrid Spacing="1">
+											@* --- ROW 1 (3 Fields) --- *@
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Planned Start</MudText>
+												<MudDatePicker @bind-Date="Projects.ProjectStartDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Planned End</MudText>
+												<MudDatePicker @bind-Date="Projects.ProjectEndDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Baseline</MudText>
+												<MudDatePicker @bind-Date="Projects.BaselineTimeline" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+
+											@* --- ROW 2 (3 Fields) --- *@
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Actual Start</MudText>
+												<MudDatePicker @bind-Date="Projects.ActualStartDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Actual End</MudText>
+												<MudDatePicker @bind-Date="Projects.ActualEndDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Revised</MudText>
+												<MudDatePicker @bind-Date="Projects.RevisedTimeline" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+										</MudGrid>
+
+									</MudPaper>
+								</MudItem>
+
+
+								@* --- PRESENT STATE --- *@
+								<MudItem xs="12">
+									<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #f44336; background-color: #fffafa;">
+										<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block"><b>PRESENT STATE</b></MudText>
+
+										<MudGrid Spacing="1">
+											@* --- ROW 1 (3 Fields) --- *@
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Phase</MudText>
+												<MudSelect T="string" @bind-Value="Projects.CurrentPhase" Variant="Variant.Outlined"
+														   Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+														   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+													<MudSelectItem T="string" Value="@("")"></MudSelectItem>
+													@foreach (var p in _phaseOptions)
+													{
+														<MudSelectItem T="string" Value="@p">@p</MudSelectItem>
+													}
+												</MudSelect>
+											</MudItem>
+
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Completion %</MudText>
+												<MudNumericField @bind-Value="Projects.CompletePerc" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" Min="0" Max="100" />
+											</MudItem>
+
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Overall Status</MudText>
+												<MudSelect T="string" @bind-Value="Projects.OverallStatus" Variant="Variant.Outlined"
+														   Margin="Margin.Dense" Dense="true" Class="ultra-compact-input"
+														   AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+													<MudSelectItem T="string" Value="@("")"></MudSelectItem>
+													@foreach (var s in _statusOptions)
+													{
+														<MudSelectItem T="string" Value="@s">@s</MudSelectItem>
+													}
+												</MudSelect>
+											</MudItem>
+
+											@* --- ROW 2 (2 Fields) --- *@
+											<MudItem xs="4">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Last Review Date</MudText>
+												<MudDatePicker @bind-Date="Projects.LastReviewDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+											</MudItem>
+
+											<MudItem xs="8">
+												<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Remarks</MudText>
+												<MudTextField @bind-Value="Projects.Remarks" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+											</MudItem>
+										</MudGrid>
+
+																		</MudPaper>
+								</MudItem>
+							</MudGrid>
+						</div>
+					</MudTabPanel>
+
+					<style>
+						/* Fixed dialog panel prevents window resizing */
+						.fixed-panel-scroll {
+							height: 65vh !important;
+							overflow-y: auto !important;
+							overflow-x: hidden !important;
+							padding: 4px !important;
+						}
+
+						/* Ultra-compact horizontal logic */
+						.ultra-compact-row {
+							display: flex;
+							align-items: center;
+							margin-bottom: 2px;
+						}
+
+						.ultra-compact-label {
+							width: 35%;
+							font-size: 0.7rem !important;
+							color: #424242;
+							font-weight: 600;
+							white-space: nowrap;
+							padding-right: 4px;
+						}
+
+						/* 24px height density */
+						.ultra-compact-input .mud-input-root {
+							font-size: 0.7rem !important;
+							height: 24px !important;
+							padding: 0px !important;
+						}
+
+						.ultra-compact-input .mud-input-outlined-border {
+							padding: 0px 4px !important;
+						}
+
+						/* Grid Display Styles */
+						.grid-header {
+							font-size: 0.7rem !important;
+							padding: 4px !important;
+							font-weight: bold;
+						}
+
+						.grid-data {
+							font-size: 0.72rem !important;
+							padding: 4px !important;
+						}
+					</style>
+
+					@* --- TAB 2: PROCUREMENT & FINANCIALS (ULTRA-COMPACT ENTRY) --- *@
+					<MudTabPanel Text="Procurement & Financials" Icon="@Icons.Material.Filled.ShoppingCart" Disabled="@(!BasicSaved)">
+						<MudGrid Spacing="1" Class="mt-2">
+
+							@* --- RFP DETAILS (Part A & B side-by-side) --- *@
+							<MudItem xs="12" md="6">
+								<MudPaper Elevation="1" Class="pa-2" Style="background-color: #f9f9f9; border-left: 3px solid #594ae2; height: 100%;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.65rem;"><b>RFP DETAILS - PART A</b></MudText>
+
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Procure Type</MudText><MudTextField @bind-Value="Projects.ProjectProcureType" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">RFP Name</MudText><MudTextField @bind-Value="Projects.RfpName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Ref No.</MudText><MudTextField @bind-Value="Projects.RfpRefNo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">App. Date</MudText><MudDatePicker @bind-Date="Projects.RfpApprovedDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" /></div>
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Publish Date</MudText><MudDatePicker @bind-Date="Projects.RfpPublishDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" /></div>
+								</MudPaper>
+							</MudItem>
+
+							<MudItem xs="12" md="6">
+								<MudPaper Elevation="1" Class="pa-2" Style="background-color: #f9f9f9; border-left: 3px solid #594ae2; height: 100%;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.65rem;"><b>RFP DETAILS - PART B</b></MudText>
+
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Pre-Bid Date</MudText><MudDatePicker @bind-Date="Projects.PreBidMeetingDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" /></div>
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Sub. Date</MudText><MudDatePicker @bind-Date="Projects.RfpSubmissionDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" /></div>
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Comp. Date</MudText><MudDatePicker @bind-Date="Projects.RfpCompletionDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" /></div>
+									<div class="ultra-compact-row"><MudText Class="ultra-compact-label">Status</MudText><MudTextField @bind-Value="Projects.RfpStatus" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" /></div>
+								</MudPaper>
+							</MudItem>
+
+
+							@* --- FINANCIAL DETAILS (4 Fields in 1 Row) --- *@
+							<MudItem xs="12">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #2196f3; background-color: #f0f4ff;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.65rem;" Class="mb-1 d-block"><b>FINANCIAL DETAILS</b></MudText>
+
+									<MudGrid Spacing="1">
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Authority</MudText>
+											<MudTextField @bind-Value="Projects.FinApprovalAuthority" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">App. Date</MudText>
+											<MudDatePicker @bind-Date="Projects.FinApprovalDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Additional App.</MudText>
+											<MudSelect T="string" @bind-Value="Projects.IsAdditionalAppvalAvailable" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")"></MudSelectItem>
+												<MudSelectItem Value="@("Y")">Yes</MudSelectItem>
+												<MudSelectItem Value="@("N")">No</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Est. Cost</MudText>
+											<MudNumericField @bind-Value="Projects.EstimatedCostProject" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" Min="0" HideSpinButtons="true" />
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+							@* --- PO DETAILS (4 Fields in 1 Row) --- *@
+							<MudItem xs="12">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #ff9800; background-color: #fff9f0;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.65rem;" Class="mb-1 d-block"><b>PO DETAILS</b></MudText>
+
+									<MudGrid Spacing="1">
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">PO Issued</MudText>
+											<MudSelect T="string" @bind-Value="Projects.IsPoIssued" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")"></MudSelectItem>
+												<MudSelectItem Value="@("Y")">Yes</MudSelectItem>
+												<MudSelectItem Value="@("N")">No</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">PO Date</MudText>
+											<MudDatePicker @bind-Date="Projects.PoDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Add. PO Issued</MudText>
+											<MudSelect T="string" @bind-Value="Projects.IsAdditionalPoIssued" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")"></MudSelectItem>
+												<MudSelectItem Value="@("Y")">Yes</MudSelectItem>
+												<MudSelectItem Value="@("N")">No</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Acceptance Date</MudText>
+											<MudDatePicker @bind-Date="Projects.PoAcceptanceDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+						</MudGrid>
+					</MudTabPanel>
+
+					@* --- TAB 3: SERVICE PROVIDER (ULTRA-COMPACT ENTRY) --- *@
+					<MudTabPanel Text="Vendor Details" Icon="@Icons.Material.Filled.Business" Disabled="@(!BasicSaved)">
+						<MudGrid Spacing="1" Class="mt-2">
+
+							@* --- SECTION 1: SERVICE PROVIDER DETAILS --- *@
+							<MudItem xs="12" Class="mb-2">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #594ae2; background-color: #f9f9f9;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block"><b>SERVICE PROVIDER DETAILS</b></MudText>
+
+									<MudGrid Spacing="1">
+										@* Row 1: Basic Info (3 in a row) *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SP Name</MudText>
+											<MudTextField @bind-Value="Projects.SpName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SP Type</MudText>
+											<MudTextField @bind-Value="Projects.SpType" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Address</MudText>
+											<MudTextField @bind-Value="Projects.SpAddress" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* Row 2: Statutory (4 in a row) *@
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">PAN No</MudText>
+											<MudTextField @bind-Value="Projects.PanNo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">GST/TIN No</MudText>
+											<MudTextField @bind-Value="Projects.TinGstNo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">CIN No</MudText>
+											<MudTextField @bind-Value="Projects.CinNo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">DIN No</MudText>
+											<MudTextField @bind-Value="Projects.DinNo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+							@* --- SECTION 2: CONTACT PERSONNEL --- *@
+							<MudItem xs="12" Class="mb-2">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #2196f3; background-color: #f0f4ff;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block"><b>CONTACT PERSONNEL</b></MudText>
+
+									<MudGrid Spacing="1">
+										@* Row 1: PM Details (4 in a row) *@
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">PM Name</MudText>
+											<MudTextField @bind-Value="Projects.SpPmName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">PM Designation</MudText>
+											<MudTextField @bind-Value="Projects.SpPmDesig" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">PM Mobile</MudText>
+											<MudTextField @bind-Value="Projects.SpPmMobile" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">PM Email</MudText>
+											<MudTextField @bind-Value="Projects.SpPmEmail" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* Row 2: SPOC Details (4 in a row) *@
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SPOC Name</MudText>
+											<MudTextField @bind-Value="Projects.SpSpocName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SPOC Designation</MudText>
+											<MudTextField @bind-Value="Projects.SpSpocDesig" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SPOC Mobile</MudText>
+											<MudTextField @bind-Value="Projects.SpSpocMobile" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SPOC Email</MudText>
+											<MudTextField @bind-Value="Projects.SpSpocEmail" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+							@* --- SECTION 3: SLA & COMPLIANCE --- *@
+							<MudItem xs="12" Class="mb-2">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #ff9800; background-color: #fff9f0;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block"><b>SLA & COMPLIANCE</b></MudText>
+
+									<MudGrid Spacing="1">
+										@* Row 1: SLA Execution, Effective From, Upto (3 in a row) *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SLA Execution Date</MudText>
+											<MudDatePicker @bind-Date="Projects.SlaExecutionDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Effective From</MudText>
+											<MudDatePicker @bind-Date="Projects.SlaEffectiveFrom" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Effective Upto</MudText>
+											<MudDatePicker @bind-Date="Projects.SlaEffectiveUpto" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+
+										@* Row 2: Renewal, Onboarding, Agreement (3 in a row) *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Renewal Date</MudText>
+											<MudDatePicker @bind-Date="Projects.SlaRenewalDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Onboarding Date</MudText>
+											<MudDatePicker @bind-Date="Projects.SpOnboardingDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Agreement Date</MudText>
+											<MudDatePicker @bind-Date="Projects.SpAgreementDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+
+										@* Row 3: Legal Vetting *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Legal Vetting</MudText>
+											<MudSelect T="string" @bind-Value="Projects.SlaLegalVetting" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")"></MudSelectItem>
+												<MudSelectItem Value="@("Y")">Yes</MudSelectItem>
+												<MudSelectItem Value="@("N")">No</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+						</MudGrid>
+					</MudTabPanel>
+
+					@* --- TAB 4: MILESTONES (ULTRA-COMPACT ENTRY WITH SMART VALIDATION) --- *@
+					<MudTabPanel Text="Milestones" Icon="@Icons.Material.Filled.Flag" Disabled="@(!BasicSaved)">
+						<MudGrid Spacing="1" Class="mt-2">
+
+							@* --- ENTRY FORM SECTION --- *@
+							<MudItem xs="12">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #594ae2; background-color: #f9f9f9;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block">
+										<b>NEW MILESTONE ENTRY</b> (Fill all fields ONLY if you wish to add a new milestone)
+									</MudText>
+
+									<MudGrid Spacing="1">
+										@* ROW 1: Identity & Owner *@
+										<MudItem xs="5">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Milestone Name</MudText>
+											<MudTextField @bind-Value="Milestone.MilestoneName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Owner Name</MudText>
+											<MudTextField @bind-Value="Milestone.OwnerName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Status</MudText>
+											<MudSelect T="string" @bind-Value="Milestone.Status" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												@* --- THE DISABLED DEFAULT OPTION --- *@
+												<MudSelectItem Value="@("")" Disabled="true">-- Select --</MudSelectItem>
+												<MudSelectItem Value="@("Pending")">Pending</MudSelectItem>
+												<MudSelectItem Value="@("In Progress")">In Progress</MudSelectItem>
+												<MudSelectItem Value="@("Completed")">Completed</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+
+										@* ROW 2: Timelines *@
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Planned Date</MudText>
+											<MudDatePicker @bind-Date="Milestone.PlannedDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Baseline Date</MudText>
+											<MudDatePicker @bind-Date="Milestone.BaselineDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Revised Date</MudText>
+											<MudDatePicker @bind-Date="Milestone.RevisedDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Actual Date</MudText>
+											<MudDatePicker @bind-Date="Milestone.ActualDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+
+										@* ROW 3: Status & Compliance *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">SLA Met?</MudText>
+											<MudSelect T="string" @bind-Value="Milestone.IsSlaMet" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")" Disabled="true">-- Select --</MudSelectItem>
+												<MudSelectItem Value="@("Y")">Yes</MudSelectItem>
+												<MudSelectItem Value="@("N")">No</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Penalty Applicable?</MudText>
+											<MudSelect T="string" @bind-Value="Milestone.IsPenaltyApplicable" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")" Disabled="true">-- Select --</MudSelectItem>
+												<MudSelectItem Value="@("Y")">Yes</MudSelectItem>
+												<MudSelectItem Value="@("N")">No</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Description</MudText>
+											<MudTextField @bind-Value="Milestone.MilestoneDescription" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* Action Buttons *@
+										<MudItem xs="12" Class="d-flex justify-end mt-1 gap-2">
+											<MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="ResetMilestoneForm" StartIcon="@Icons.Material.Filled.Refresh">
+												Reset
+											</MudButton>
+											<MudButton Variant="Variant.Filled" Color="@(_editingMilestone == null ? Color.Primary : Color.Info)" Size="Size.Small" OnClick="AddMilestoneToList" StartIcon="@Icons.Material.Filled.Add">
+												@(_editingMilestone == null ? "Add to List" : "Update Item")
+											</MudButton>
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+							@* --- MILESTONE LIST GRID --- *@
+							<MudItem xs="12" Class="mt-2">
+								<MudText Typo="Typo.caption" Color="Color.Primary"><b>MILESTONES TO BE SAVED (@MilestoneList.Count)</b></MudText>
+								<MudTable Items="@MilestoneList" Dense="true" Hover="true" Bordered="true" Elevation="0" Class="mt-1" HorizontalScrollbar="true">
+									<HeaderContent>
+										<MudTh Class="grid-header">Name</MudTh>
+										<MudTh Class="grid-header">Owner</MudTh>
+										<MudTh Class="grid-header">Planned</MudTh>
+										<MudTh Class="grid-header">Baseline</MudTh>
+										<MudTh Class="grid-header">Revised</MudTh>
+										<MudTh Class="grid-header">Actual</MudTh>
+										<MudTh Class="grid-header">SLA</MudTh>
+										<MudTh Class="grid-header">Penalty</MudTh>
+										<MudTh Class="grid-header">Status</MudTh>
+										<MudTh Class="grid-header">Description</MudTh>
+										<MudTh Class="grid-header" Style="width:80px">Action</MudTh>
+									</HeaderContent>
+									<RowTemplate>
+										<MudTd Class="grid-data">@context.MilestoneName</MudTd>
+										<MudTd Class="grid-data">@(context.OwnerName ?? "-")</MudTd>
+										<MudTd Class="grid-data">@context.PlannedDate?.ToString("dd-MMM-yyyy")</MudTd>
+										<MudTd Class="grid-data">@context.BaselineDate?.ToString("dd-MMM-yyyy")</MudTd>
+										<MudTd Class="grid-data">@(context.RevisedDate?.ToString("dd-MMM-yyyy") ?? "-")</MudTd>
+										<MudTd Class="grid-data">@(context.ActualDate?.ToString("dd-MMM-yyyy") ?? "-")</MudTd>
+										<MudTd Class="grid-data">
+											<MudText Color="@(context.IsSlaMet == "Y" ? Color.Success : Color.Error)" Style="font-size:0.7rem; font-weight:bold;">
+												@(context.IsSlaMet == "Y" ? "YES" : "NO")
+											</MudText>
+										</MudTd>
+										<MudTd Class="grid-data">
+											<MudText Color="@(context.IsPenaltyApplicable == "Y" ? Color.Error : Color.Default)" Style="font-size:0.7rem;">
+												@(context.IsPenaltyApplicable == "Y" ? "YES" : "NO")
+											</MudText>
+										</MudTd>
+										<MudTd Class="grid-data">
+											<MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)" Style="font-size:0.65rem; height:18px;">
+												@(context.Status ?? "Pending")
+											</MudChip>
+										</MudTd>
+										<MudTd Class="grid-data">@context.MilestoneDescription</MudTd>
+										<MudTd>
+											<div class="d-flex">
+												<MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="@(() => LoadMilestoneForEdit(context))" Class="pa-1" />
+												<MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => RemoveMilestoneFromList(context))" Class="pa-1" />
+											</div>
+										</MudTd>
+									</RowTemplate>
+								</MudTable>
+							</MudItem>
+						</MudGrid>
+					</MudTabPanel>
+
+
+					@* --- TAB 5: ISSUES (ULTRA-COMPACT ENTRY WITH SMART VALIDATION & RESET) --- *@
+					<MudTabPanel Text="Risk" Icon="@Icons.Material.Filled.ReportProblem" Disabled="@(!BasicSaved)">
+						<MudGrid Spacing="1" Class="mt-2">
+
+							@* --- ISSUE ENTRY FORM --- *@
+							<MudItem xs="12">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #f44336; background-color: #fffafa;">
+									<MudText Typo="Typo.caption" Color="Color.Error" Style="font-size: 0.75rem;" Class="mb-1 d-block">
+										<b>NEW ISSUE ENTRY</b> (All fields required only when adding to list)
+									</MudText>
+
+									<MudGrid Spacing="1">
+										@* Row 1: Owner, Status & Impact *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Owner Name</MudText>
+											<MudTextField @bind-Value="ProjectIssue.OwnerName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Status</MudText>
+											<MudSelect T="string" @bind-Value="ProjectIssue.Status" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")" Disabled="true">Select</MudSelectItem>
+												<MudSelectItem Value="@("Open")">Open</MudSelectItem>
+												<MudSelectItem Value="@("In Progress")">In Progress</MudSelectItem>
+												<MudSelectItem Value="@("Resolved")">Resolved</MudSelectItem>
+												<MudSelectItem Value="@("Closed")">Closed</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Impact</MudText>
+											<MudTextField @bind-Value="ProjectIssue.Impact" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* Row 2: Full-Width Description *@
+										<MudItem xs="12">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Issue Description</MudText>
+											<MudTextField @bind-Value="ProjectIssue.IssueDescription" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* Row 3: Root Cause & Resolution *@
+										<MudItem xs="6">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Root Cause</MudText>
+											<MudTextField @bind-Value="ProjectIssue.RootCause" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="6">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Resolution Summary</MudText>
+											<MudTextField @bind-Value="ProjectIssue.ResolutionSummary" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* Row 4: Dates *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Date Raised</MudText>
+											<MudDatePicker @bind-Date="ProjectIssue.DateRaised" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Target Resolution</MudText>
+											<MudDatePicker @bind-Date="ProjectIssue.TargetResolutionDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Actual Resolution</MudText>
+											<MudDatePicker @bind-Date="ProjectIssue.ActualResolutionDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+
+										@* Action Buttons *@
+										<MudItem xs="12" Class="d-flex justify-end mt-1 gap-2">
+											<MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="ResetIssueForm" StartIcon="@Icons.Material.Filled.Refresh">
+												Reset
+											</MudButton>
+											<MudButton Variant="Variant.Filled" Color="@(_editingIssue == null ? Color.Error : Color.Info)" Size="Size.Small" OnClick="AddIssueToList" StartIcon="@Icons.Material.Filled.Add">
+												@(_editingIssue == null ? "Add to List" : "Update Item")
+											</MudButton>
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+							@* --- ISSUE LIST GRID --- *@
+							<MudItem xs="12" Class="mt-2">
+								<MudText Typo="Typo.caption" Color="Color.Primary"><b>ISSUES TO BE SAVED (@IssueList.Count)</b></MudText>
+								<MudTable Items="@IssueList" Dense="true" Hover="true" Bordered="true" Elevation="0" Class="mt-1" HorizontalScrollbar="true">
+									<HeaderContent>
+										<MudTh Class="grid-header">Code</MudTh>
+										<MudTh Class="grid-header">Owner</MudTh>
+										<MudTh Class="grid-header">Status</MudTh>
+										<MudTh Class="grid-header">Description</MudTh>
+										<MudTh Class="grid-header">Impact</MudTh>
+										<MudTh Class="grid-header">Root Cause</MudTh>
+										<MudTh Class="grid-header">Resolution Summary</MudTh>
+										<MudTh Class="grid-header">Raised</MudTh>
+										<MudTh Class="grid-header">Target</MudTh>
+										<MudTh Class="grid-header">Actual</MudTh>
+										<MudTh Class="grid-header" Style="width:80px">Action</MudTh>
+									</HeaderContent>
+									<RowTemplate>
+										<MudTd Class="grid-data"><b>@context.IssueCode</b></MudTd>
+										<MudTd Class="grid-data">@(context.OwnerName ?? "-")</MudTd>
+										<MudTd Class="grid-data">
+											<MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)" Style="font-size:0.65rem; height:18px;">
+												@(context.Status ?? "Open")
+											</MudChip>
+										</MudTd>
+										<MudTd Class="grid-data" Style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@context.IssueDescription</MudTd>
+										<MudTd Class="grid-data">@context.Impact</MudTd>
+										<MudTd Class="grid-data">@context.RootCause</MudTd>
+										<MudTd Class="grid-data" Style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@context.ResolutionSummary</MudTd>
+										<MudTd Class="grid-data">@context.DateRaised?.ToString("dd-MMM-yyyy")</MudTd>
+										<MudTd Class="grid-data">@context.TargetResolutionDate?.ToString("dd-MMM-yyyy")</MudTd>
+										<MudTd Class="grid-data">@(context.ActualResolutionDate?.ToString("dd-MMM-yyyy") ?? "-")</MudTd>
+										<MudTd>
+											<div class="d-flex">
+												<MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="@(() => LoadIssueForEdit(context))" Class="pa-1" />
+												<MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => RemoveIssueFromList(context))" Class="pa-1" />
+											</div>
+										</MudTd>
+									</RowTemplate>
+								</MudTable>
+							</MudItem>
+						</MudGrid>
+					</MudTabPanel>
+
+
+					@* --- TAB 6: RESOURCES (ULTRA-COMPACT ENTRY WITH SMART VALIDATION & RESET) --- *@
+					<MudTabPanel Text="Resources" Icon="@Icons.Material.Filled.People" Disabled="@(!BasicSaved)">
+						<MudGrid Spacing="1" Class="mt-2">
+
+							@* --- ENTRY FORM SECTION --- *@
+							<MudItem xs="12">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #2196f3; background-color: #f0f4ff;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block">
+										<b>NEW RESOURCE ENTRY</b> (All fields mandatory only when adding to list)
+									</MudText>
+
+									<MudGrid Spacing="1">
+										@* ROW 1: Name, Designation & Role *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Resource Name</MudText>
+											<MudTextField @bind-Value="ProjectResource.ResourceName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Designation</MudText>
+											<MudTextField @bind-Value="ProjectResource.ResourceDesig" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Resource Role</MudText>
+											<MudTextField @bind-Value="ProjectResource.ResourceRole" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* ROW 2: Skillset, Type & Remark (As Requested) *@
+										<MudItem xs="4">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Skillset</MudText>
+											<MudTextField @bind-Value="ProjectResource.ResourceSkillset" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Type</MudText>
+											<MudSelect T="string" @bind-Value="ProjectResource.ResourceType" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")" Disabled="true">Select</MudSelectItem>
+												<MudSelectItem Value="@("INTERNAL")">INTERNAL</MudSelectItem>
+												<MudSelectItem Value="@("VENDOR")">VENDOR</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+										<MudItem xs="5">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Resource Remark</MudText>
+											<MudTextField @bind-Value="ProjectResource.ResourceRemark" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* ROW 3: Timelines (Moved here to make room for Row 2) *@
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Start Date</MudText>
+											<MudDatePicker @bind-Date="ProjectResource.ResourceStartDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">End Date</MudText>
+											<MudDatePicker @bind-Date="ProjectResource.ResourceEndDate" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" DateFormat="dd-MMM-yyyy" />
+										</MudItem>
+
+										@* Action Buttons *@
+										<MudItem xs="6" Class="d-flex justify-end align-end gap-2 pb-1">
+											<MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="ResetResourceForm" StartIcon="@Icons.Material.Filled.Refresh">
+												Reset
+											</MudButton>
+											<MudButton Variant="Variant.Filled" Color="@(_editingResource == null ? Color.Info : Color.Warning)" Size="Size.Small" OnClick="AddResourceToList" StartIcon="@Icons.Material.Filled.Add">
+												@(_editingResource == null ? "Add to List" : "Update Item")
+											</MudButton>
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+							@* --- RESOURCE LIST GRID --- *@
+							<MudItem xs="12" Class="mt-2">
+								<MudText Typo="Typo.caption" Color="Color.Primary"><b>RESOURCES TO BE SAVED (@ResourceList.Count)</b></MudText>
+								<MudTable Items="@ResourceList" Dense="true" Hover="true" Bordered="true" Elevation="0" Class="mt-1" HorizontalScrollbar="true">
+									<HeaderContent>
+										<MudTh Class="grid-header">Code</MudTh>
+										<MudTh Class="grid-header">Name</MudTh>
+										<MudTh Class="grid-header">Designation</MudTh>
+										<MudTh Class="grid-header">Role</MudTh>
+										<MudTh Class="grid-header">Skillset</MudTh>
+										<MudTh Class="grid-header">Type</MudTh>
+										<MudTh Class="grid-header">Start Date</MudTh>
+										<MudTh Class="grid-header">End Date</MudTh>
+										<MudTh Class="grid-header">Remarks</MudTh>
+										<MudTh Class="grid-header" Style="width:80px">Action</MudTh>
+									</HeaderContent>
+									<RowTemplate>
+										<MudTd Class="grid-data">@context.ResourceCode</MudTd>
+										<MudTd Class="grid-data"><b>@context.ResourceName</b></MudTd>
+										<MudTd Class="grid-data">@context.ResourceDesig</MudTd>
+										<MudTd Class="grid-data">@context.ResourceRole</MudTd>
+										<MudTd Class="grid-data">@context.ResourceSkillset</MudTd>
+										<MudTd Class="grid-data">
+											<MudChip T="string" Size="Size.Small" Color="@(context.ResourceType == "INTERNAL" ? Color.Success : Color.Info)" Style="font-size:0.65rem; height:18px;">
+												@(context.ResourceType ?? "NA")
+											</MudChip>
+										</MudTd>
+										<MudTd Class="grid-data">@context.ResourceStartDate?.ToString("dd-MMM-yyyy")</MudTd>
+										<MudTd Class="grid-data">@context.ResourceEndDate?.ToString("dd-MMM-yyyy")</MudTd>
+										<MudTd Class="grid-data" Style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@context.ResourceRemark</MudTd>
+										<MudTd>
+											<div class="d-flex">
+												<MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="@(() => LoadResourceForEdit(context))" Class="pa-1" />
+												<MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => RemoveResourceFromList(context))" Class="pa-1" />
+											</div>
+										</MudTd>
+									</RowTemplate>
+								</MudTable>
+							</MudItem>
+						</MudGrid>
+					</MudTabPanel>
+					
+
+
+					@* --- TAB 7: DOCUMENTS (FIXED CONTEXT CONFLICT) --- *@
+					<MudTabPanel Text="Documents" Icon="@Icons.Material.Filled.AttachFile" Disabled="@(!BasicSaved)">
+						<MudGrid Spacing="1" Class="mt-2">
+
+							<MudItem xs="12">
+								<MudPaper Elevation="1" Class="pa-2" Style="border-left: 6px solid #ff9800; background-color: #fff9f0;">
+									<MudText Typo="Typo.caption" Color="Color.Primary" Style="font-size: 0.75rem;" Class="mb-1 d-block">
+										<b>NEW DOCUMENT REFERENCE</b>
+									</MudText>
+
+									<MudGrid Spacing="1">
+										@* --- Document Name (Left Side) --- *@
+										<MudItem xs="7">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Document Name *</MudText>
+											<MudTextField @bind-Value="Document.DocName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										@* --- Attachment Upload (Right Side) --- *@
+										<MudItem xs="5">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Attachment *</MudText>
+											<MudFileUpload T="IBrowserFile" OnFilesChanged="HandleFileSelection" Accept=".xlsx">
+												<ActivatorContent>
+													<div class="d-flex align-center border rounded pa-1" style="height: 30px; background: white; border-color: #bdbdbd !important; cursor: pointer;">
+														@* Area showing the filename *@
+														<MudText Typo="Typo.caption" Class="flex-grow-1 px-2 text-truncate" Style="font-size: 0.7rem; color: #616161;">
+															@(string.IsNullOrEmpty(selectedFileName) ? "No file chosen" : selectedFileName)
+														</MudText>
+
+														@* "Choose File" Button label *@
+														<MudButton Variant="Variant.Filled"
+																   Color="Color.Default"
+																   Size="Size.Small"
+																   Style="height: 22px; font-size: 0.65rem; text-transform: none; margin-left: 4px; pointer-events: none;">
+															Choose File
+														</MudButton>
+													</div>
+												</ActivatorContent>
+											</MudFileUpload>
+										</MudItem>
+
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Type *</MudText>
+											<MudSelect T="string" @bind-Value="Document.DocType" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="ultra-compact-input">
+												<MudSelectItem Value="@("")" Disabled="true">Select Type</MudSelectItem>
+												<MudSelectItem Value="@("RFP")">RFP</MudSelectItem>
+												<MudSelectItem Value="@("SLA")">SLA</MudSelectItem>
+												<MudSelectItem Value="@("Approval Note")">Approval Note</MudSelectItem>
+											</MudSelect>
+										</MudItem>
+										<MudItem xs="3">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Reference *</MudText>
+											<MudTextField @bind-Value="Document.Field1" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+										<MudItem xs="6">
+											<MudText Typo="Typo.caption" Style="font-size: 0.65rem; color: gray;">Remarks *</MudText>
+											<MudTextField @bind-Value="Document.Remark" Variant="Variant.Outlined" Margin="Margin.Dense" Class="ultra-compact-input" />
+										</MudItem>
+
+										<MudItem xs="12" Class="d-flex justify-end mt-1 gap-2">
+											<MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ResetDocumentForm" StartIcon="@Icons.Material.Filled.Refresh">Reset</MudButton>
+											<MudButton Variant="Variant.Filled" Color="@(_editingDocument == null ? Color.Warning : Color.Info)" Size="Size.Small" OnClick="AddDocumentToList" StartIcon="@Icons.Material.Filled.Add">
+												@(_editingDocument == null ? "Add to List" : "Update Item")
+											</MudButton>
+										</MudItem>
+									</MudGrid>
+								</MudPaper>
+							</MudItem>
+
+							<MudItem xs="12" Class="mt-2">
+								@* Added HorizontalScrollbar to handle the extra columns safely *@
+								<MudTable Items="@DocumentList" Context="doc" Dense="true" Hover="true" Bordered="true" Elevation="0" Class="mt-1" HorizontalScrollbar="true">
+									<HeaderContent>
+										@* --- ADDED ALL REQUESTED COLUMNS TO HEADER --- *@
+										<MudTh Class="grid-header">ID</MudTh>
+										<MudTh Class="grid-header">Project</MudTh>
+										<MudTh Class="grid-header">Code</MudTh>
+										<MudTh Class="grid-header">Name</MudTh>
+										<MudTh Class="grid-header">Type</MudTh>
+										<MudTh Class="grid-header">Reference (Field1)</MudTh>
+										<MudTh Class="grid-header">Remark</MudTh>
+										<MudTh Class="grid-header">File</MudTh>
+										<MudTh Class="grid-header" Style="width:100px">Action</MudTh>
+									</HeaderContent>
+									<RowTemplate>
+										@* --- MAPPING DATA TO ROWS --- *@
+										<MudTd Class="grid-data">@doc.DocId</MudTd>
+										<MudTd Class="grid-data">@doc.ProjectCode</MudTd>
+										<MudTd Class="grid-data"><b>@doc.DocCode</b></MudTd>
+										<MudTd Class="grid-data">@doc.DocName</MudTd>
+										<MudTd Class="grid-data">
+											<MudChip T="string" Size="Size.Small" Color="Color.Info" Style="font-size:0.65rem; height:18px;">
+												@(doc.DocType ?? "NA")
+											</MudChip>
+										</MudTd>
+										@* Field1 and Remark often contain long text, so we add a max-width and ellipsis *@
+										<MudTd Class="grid-data" Style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+											@doc.Field1
+										</MudTd>
+										<MudTd Class="grid-data" Style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+											@doc.Remark
+										</MudTd>
+										<MudTd Class="grid-data">
+											@if (doc.FileContent != null)
+											{
+												<MudLink OnClick="@(() => DownloadFile(doc))" Style="cursor:pointer; font-size:0.7rem; display: flex; align-items: center;">
+													<MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Small" Class="mr-1" /> Download
+												</MudLink>
+											}
+											else
+											{
+												<MudText Style="font-size:0.7rem; color:gray;">No File</MudText>
+											}
+										</MudTd>
+										<MudTd>
+											<div class="d-flex">
+												<MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small" OnClick="@(() => LoadDocumentForEdit(doc))" Class="pa-1" />
+												<MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DocumentList.Remove(doc))" Class="pa-1" />
+											</div>
+										</MudTd>
+									</RowTemplate>
+								</MudTable>
+							</MudItem>
+						</MudGrid>
+					</MudTabPanel>
+
+					@* --- TAB 8: BUDGET MANAGEMENT --- *@
+					<MudTabPanel Text="Budget Management" Icon="@Icons.Material.Filled.Savings" Disabled="@(!BasicSaved)">
+						<div class="fixed-panel-scroll">
+							<MudGrid Spacing="2" Class="mt-2">
+
+								@* ---------------- CAPITAL ---------------- *@
+								<MudItem xs="12">
+									<MudPaper Elevation="2" Class="pa-4" Style="background:#f4f2ff; border-left:6px solid #594ae2;">
+										<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+											<MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
+											<MudText Typo="Typo.subtitle1"><b>CAPITAL BUDGET</b></MudText>
+											@if (_capSaved)
+											{
+												<MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">Saved</MudChip>
+											}
+										</MudStack>
+
+										<MudGrid Spacing="2">
+											<MudItem xs="12" md="3">
+												<MudSelect T="int" Label="Financial Year" Value="_capFyId" ValueChanged="OnCapFyChanged"
+														   Disabled="@CapLocked" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+													@foreach (var fy in _budgetFys)
+													{
+														<MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+													}
+												</MudSelect>
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudNumericField T="decimal" Label="Spillover Allotted (Cr)" @bind-Value="_capSpill"
+																 ReadOnly="@CapLocked" Min="0" HideSpinButtons="true"
+																 Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudNumericField T="decimal" Label="Fresh Allotted (Cr)" @bind-Value="_capFresh"
+																 ReadOnly="@CapLocked" Min="0" HideSpinButtons="true"
+																 Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudTextField T="string" Label="Total Allotted (Cr)" ReadOnly="true"
+															  Value="@CapTotal.ToString("N2")" Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+										</MudGrid>
+
+										<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-3">
+											<div>
+												@if (_capSaved)
+												{
+													<MudCheckBox T="bool" @bind-Value="_capRevise" Color="Color.Warning" Dense="true"
+																 Label="Revise the capital budget." />
+												}
+											</div>
+											<MudButton Variant="Variant.Filled" Color="Color.Primary"
+													   StartIcon="@Icons.Material.Filled.Save"
+													   Disabled="@(CapLocked || _isProcessing)"
+													   OnClick="SaveCapitalBudget"
+													   Style="text-transform:none; min-width:160px;">
+												SAVE CAPITAL
+											</MudButton>
+										</MudStack>
+									</MudPaper>
+								</MudItem>
+
+								@* ---------------- REVENUE ---------------- *@
+								<MudItem xs="12">
+									<MudPaper Elevation="2" Class="pa-4" Style="background:#eef8f6; border-left:6px solid #00897b;">
+										<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+											<MudIcon Icon="@Icons.Material.Filled.Receipt" Color="Color.Tertiary" />
+											<MudText Typo="Typo.subtitle1"><b>REVENUE BUDGET</b></MudText>
+											@if (_revSaved)
+											{
+												<MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">Saved</MudChip>
+											}
+										</MudStack>
+
+										<MudGrid Spacing="2">
+											<MudItem xs="12" md="3">
+												<MudSelect T="int" Label="Financial Year" Value="_revFyId" ValueChanged="OnRevFyChanged"
+														   Disabled="@RevLocked" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+													@foreach (var fy in _budgetFys)
+													{
+														<MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+													}
+												</MudSelect>
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudNumericField T="decimal" Label="Spillover Allotted (Cr)" @bind-Value="_revSpill"
+																 ReadOnly="@RevLocked" Min="0" HideSpinButtons="true"
+																 Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudNumericField T="decimal" Label="Fresh Allotted (Cr)" @bind-Value="_revFresh"
+																 ReadOnly="@RevLocked" Min="0" HideSpinButtons="true"
+																 Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+											<MudItem xs="12" md="3">
+												<MudTextField T="string" Label="Total Allotted (Cr)" ReadOnly="true"
+															  Value="@RevTotal.ToString("N2")" Variant="Variant.Outlined" Margin="Margin.Dense" />
+											</MudItem>
+										</MudGrid>
+
+										<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-3">
+											<div>
+												@if (_revSaved)
+												{
+													<MudCheckBox T="bool" @bind-Value="_revRevise" Color="Color.Warning" Dense="true"
+																 Label="Revise the revenue budget." />
+												}
+											</div>
+											<MudButton Variant="Variant.Filled" Color="Color.Tertiary"
+													   StartIcon="@Icons.Material.Filled.Save"
+													   Disabled="@(RevLocked || _isProcessing)"
+													   OnClick="SaveRevenueBudget"
+													   Style="text-transform:none; min-width:160px;">
+												SAVE REVENUE
+											</MudButton>
+										</MudStack>
+									</MudPaper>
+								</MudItem>
+
+								<MudItem xs="12">
+									<MudText Typo="Typo.caption" Style="color:#666;">
+										A project may have a capital budget, a revenue budget, or both.
+										Leave a box at zero if it does not apply. Each box is saved on its own.
+									</MudText>
+								</MudItem>
+							</MudGrid>
+						</div>
+					</MudTabPanel>
+
+				</MudTabs>
+			</MudForm>
+		</div>
+
+	</DialogContent>
+
+	<DialogActions>
+		<div class="d-flex justify-space-between mud-width-full px-6 py-4 static-footer">
+			<MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="_isProcessing">Cancel</MudButton>
+			<div class="d-flex gap-3">
+				<MudButton Disabled="@(_activeIndex == 0 || _isProcessing)" OnClick="PrevTab" Variant="Variant.Outlined">Back</MudButton>
+
+				<MudButton OnClick="HandleSaveAndNext" Variant="Variant.Filled" Color="Color.Primary" Disabled="_isProcessing">
+					@if (_isProcessing)
+					{
+						<MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+					}
+					@(!IsLastTab ? "Save & Next" : "Save & Finish")
+				</MudButton>
+			</div>
+		</div>
+	</DialogActions>
+</MudDialog>
+
+@code {
+	[CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+	// Parameters passed from ProjectDetails.razor
+	[Parameter] public ProjectsMaster Projects { get; set; } = new();
+	[Parameter]
+	public ProjectMilestone Milestone { get; set; } = new()
+	{
+		Status = "",
+		IsSlaMet = "",
+		IsPenaltyApplicable = ""
+	};
+	[Parameter] public ProjectIssue ProjectIssue { get; set; } = new();
+	[Parameter] public ProjectResource ProjectResource { get; set; } = new();
+	[Parameter] public Document Document { get; set; } = new() { DocType = "" };
+	[Parameter] public int BudgetFyId { get; set; }
+
+	// --- Budget Management tab: one box for Capital, one for Revenue ---
+	private List<FyItem> _budgetFys = new();
+	private List<DeptItem> _pmAllDepts =  new();
+	private List<SecItem> _pmAllSections = new();
+
+	private int _capFyId, _revFyId;
+	private decimal _capSpill, _capFresh, _revSpill, _revFresh;
+	private bool _capSaved, _revSaved, _capRevise, _revRevise;
+
+	private decimal CapTotal => _capSpill + _capFresh;
+	private decimal RevTotal => _revSpill + _revFresh;
+	private bool CapLocked => _capSaved && !_capRevise;
+	private bool RevLocked => _revSaved && !_revRevise;
+
+	// Dropdown values come from APP_LOOKUP - adding an option is one INSERT, no rebuild.
+	private List<string> _phaseOptions = new();
+	private List<string> _statusOptions = new();
+
+	private bool IsEdit => Projects.ProjectId > 0;
+
+	// Every tab except Basic Details stays disabled until the project actually exists.
+	private bool BasicSaved => Projects.ProjectId > 0;
+
+	// Save logic switches on the tab NAME, never the index.
+	private List<string> VisibleTabs => new()
+		{ "Basic", "Procurement", "Vendor", "Milestones", "Risk", "Resources", "Documents", "Budget" };
+
+	private string CurrentTab =>
+		(_activeIndex >= 0 && _activeIndex < VisibleTabs.Count) ? VisibleTabs[_activeIndex] : "Basic";
+
+	private bool IsLastTab => _activeIndex >= VisibleTabs.Count - 1;
+
+	private List<ProjectMilestone> MilestoneList = new();
+	private List<ProjectIssue> IssueList = new();
+	private List<ProjectResource> ResourceList = new();
+	private List<Document> DocumentList = new();
+
+	private ProjectMilestone? _editingMilestone = null;
+	private ProjectIssue? _editingIssue = null;
+	private ProjectResource? _editingResource = null;
+	private Document? _editingDocument = null;
+	private string? selectedFileName;
+	private byte[]? tempFileContent;
+	private string? tempContentType;
+
+
+	private MudForm? _form;
+	private bool _formIsValid, _isProcessing = false;
+	private int _activeIndex = 0;
+	private readonly string[] _tabTitles = { "Basic Info", "Procurement", "Milestones", "Issues", "Resources", "Provider", "Documents" };
+
+
+	private void OnItAndBusinessSameChanged(string selectedValue)
+	{
+		// 1. Update the property in the model
+		Projects.IS_IT_BUSINESS_SAME = selectedValue;
+
+		// 2. If 'Yes' is selected, copy Business details into IT details
+		if (selectedValue == "Y")
+		{
+			Projects.IT_OWNER_DEPT_NAME = Projects.BUSINESS_OWNER_DEPT_NAME;
+			Projects.IT_OWNER_SEC_NAME = Projects.BUSINESS_OWNER_SEC_NAME;
+			Projects.IT_OWNER_NAME = Projects.BUSINESS_OWNER_NAME;
+			Projects.IT_OWNER_DESIG = Projects.BUSINESS_OWNER_DESIG;
+			Projects.IT_OWNER_IP_NO = Projects.BUSINESS_OWNER_IP_NO;
+			Projects.IT_OWNER_MOBILE = Projects.BUSINESS_OWNER_MOBILE;
+			Projects.IT_OWNER_EMAIL = Projects.BUSINESS_OWNER_EMAIL;
+		}
+
+	}
+	// ---- Project ↔ Department/Section mapping (Capital) ----
+	private List<Department> _mapDepartments = new();
+	private List<Section> _mapCapitalSections = new();
+
+	// IT Ownership lists — the same data, narrowed to the signed-in user's own
+	// department and section when they are not an administrator.
+	private List<Department> _itDepartments = new();
+	private List<Section> _itSections = new();
+	// Office Type narrows the Business Ownership department list. It is a filter only -
+	// nothing is stored, the chosen department already carries its office type.
+	private string? _bizOfficeType;
+
+	private List<string> _officeTypes =>
+		_mapDepartments
+			.Select(d => (d.OFFICE_TYPE ?? "").Trim())
+			.Where(t => t.Length > 0)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(t => t)
+			.ToList();
+
+	private IEnumerable<Department> _bizDepartments =>
+		string.IsNullOrWhiteSpace(_bizOfficeType)
+			? new List<Department>()
+			: _mapDepartments.Where(d =>
+				string.Equals((d.OFFICE_TYPE ?? "").Trim(), _bizOfficeType, StringComparison.OrdinalIgnoreCase));
+
+	private void OnBizOfficeTypeChanged(string v)
+	{
+		_bizOfficeType = v;
+		Projects.BUSINESS_OWNER_DEPT_NAME = null;
+		Projects.BUSINESS_OWNER_SEC_NAME = null;
+		if (Projects.IS_IT_BUSINESS_SAME == "Y") CopyBusinessToIt();
+	}
+	private bool _deptLocked, _sectionLocked;
+
+	private IEnumerable<Section> _itSectionsForDept =>
+		Projects.DEPT_ID == null ? new List<Section>()
+			: _itSections.Where(s => s.DEPT_ID == Projects.DEPT_ID);
+	private IEnumerable<Section> _mapSectionsForDept =>
+		Projects.DEPT_ID == null ? new List<Section>()
+			: _mapCapitalSections.Where(s => s.DEPT_ID == Projects.DEPT_ID);
+
+	private void OnItDepartmentChanged(long? deptId)
+	{
+		Projects.DEPT_ID = deptId;
+		var d = _mapDepartments.FirstOrDefault(x => x.DEPT_ID == deptId);
+		Projects.IT_OWNER_DEPT_NAME = d?.DEPT_NAME;   // keep the text in sync
+		Projects.SECTION_ID = null;                    // reset section when department changes
+		Projects.IT_OWNER_SEC_NAME = null;
+	}
+
+	private void OnItSectionChanged(long? sectionId)
+	{
+		Projects.SECTION_ID = sectionId;
+		var s = _mapCapitalSections.FirstOrDefault(x => x.SECTION_ID == sectionId);
+		Projects.IT_OWNER_SEC_NAME = s?.NAME;          // keep the text in sync
+	}
+
+	protected override async Task OnInitializedAsync()
+	{
+		// If we are editing an existing project, load its associated data
+		// Mapping dropdowns: active departments + active CAPITAL sections
+		// Budget: load financial years, default to the current one
+		// Budget: load financial years, default to the current one
+		_budgetFys = await BudgetSvc.GetFinancialYearsAsync();
+		var currentFy = BudgetFyId > 0 ? BudgetFyId : await BudgetSvc.GetCurrentFyIdAsync();
+		if (currentFy == 0 && _budgetFys.Count > 0) currentFy = _budgetFys[0].FyId;
+		_capFyId = _revFyId = currentFy;
+
+		await LoadBudgetsAsync();
+
+		_mapDepartments = await AdminService.GetDepartmentsAsync(false);
+		_mapCapitalSections = (await AdminService.GetSectionsAsync(false)).ToList();
+
+		// _phaseOptions = await BudgetSvc.GetLookupValuesAsync("PROJECT_PHASE");
+		// On Edit, show the office type of the department already stored on the project.
+		_bizOfficeType = _mapDepartments
+			.FirstOrDefault(d => d.DEPT_NAME == Projects.BUSINESS_OWNER_DEPT_NAME)?.OFFICE_TYPE?.Trim();
+
+		_phaseOptions = await BudgetSvc.GetLookupValuesAsync("PROJECT_PHASE");
+		_statusOptions = await BudgetSvc.GetLookupValuesAsync("OVERALL_STATUS");
+
+		// IT Ownership starts from the same lists, then narrows to the user's scope.
+		_itDepartments = _mapDepartments.ToList();
+		_itSections = _mapCapitalSections.ToList();
+
+		await Session.LoadAsync();
+		var me = Session.User;
+		if (me is not null && !me.IsAdmin)
+		{
+			if (me.DeptIds.Count > 0)
+				_itDepartments = _itDepartments.Where(d => me.DeptIds.Contains(d.DEPT_ID)).ToList();
+
+			// if (me.SectionIds.Count > 0)
+			// 	_itSections = _itSections.Where(s => me.SectionIds.Contains(s.SECTION_ID)).ToList();
+			// 	_mapDepartments = _itDepartments.ToList();
+			// 	_mapCapitalSections = _itSections.ToList();
+
+			if (Projects.ProjectId == 0)   // new project only — never re-point an existing one
+			{
+				if (_itDepartments.Count == 1)
+				{
+					Projects.DEPT_ID = _itDepartments[0].DEPT_ID;
+					Projects.IT_OWNER_DEPT_NAME = _itDepartments[0].DEPT_NAME;
+					_deptLocked = true;
+				}
+				if (_itSections.Count == 1)
+				{
+					Projects.SECTION_ID = _itSections[0].SECTION_ID;
+					Projects.IT_OWNER_SEC_NAME = _itSections[0].NAME;
+					_sectionLocked = true;
+				}
+			}
+		}
+
+
+		// Back-fill IDs for older projects that only stored the section NAME
+		if (Projects.SECTION_ID == null && !string.IsNullOrWhiteSpace(Projects.IT_OWNER_SEC_NAME))
+		{
+			var match = _mapCapitalSections.FirstOrDefault(s => s.NAME == Projects.IT_OWNER_SEC_NAME);
+			if (match != null) { Projects.SECTION_ID = match.SECTION_ID; Projects.DEPT_ID = match.DEPT_ID; }
+		}
+		else if (Projects.DEPT_ID == null && !string.IsNullOrWhiteSpace(Projects.IT_OWNER_DEPT_NAME))
+		{
+			var dep = _mapDepartments.FirstOrDefault(d => d.DEPT_NAME == Projects.IT_OWNER_DEPT_NAME);
+			if (dep != null) Projects.DEPT_ID = dep.DEPT_ID;
+		}
+
+		if (string.IsNullOrEmpty(Milestone.Status))
+		{
+			Milestone.Status = "";
+			Milestone.IsSlaMet = "";
+			Milestone.IsPenaltyApplicable = "";
+		}
+
+		if (!string.IsNullOrEmpty(Projects.ProjectCode))
+		{
+			MilestoneList = await ProjectService.GetMilestonesByProjectAsync(Projects.ProjectCode);
+			IssueList = await ProjectService.GetIssuesByProjectAsync(Projects.ProjectCode);
+			ResourceList = await ProjectService.GetResourcesByProjectAsync(Projects.ProjectCode);
+			DocumentList = await ProjectService.GetDocumentsByProjectAsync(Projects.ProjectCode);
+		}
+	}
+
+	// Re-reads the allotment whenever the key changes, so a second Revenue item
+	// under the same section never overwrites the first one's budget with zero.
+	// Both budgets are keyed on the project. Re-read whenever the year changes.
+	private async Task LoadBudgetsAsync()
+	{
+		try
+		{
+			await LoadBudgetCoreAsync();
+		}
+		catch (Exception ex)
+		{
+			Snackbar.Add("could not load budget deatils: " + ex.Message, Severity.Error);
+		}
+	}
+
+	private async Task LoadBudgetCoreAsync()
+	{
+		if (Projects.ProjectId <= 0) return;
+
+		var cap = await BudgetSvc.GetAllocationAsync("CAPITAL", Projects.ProjectId, _capFyId);
+		_capSpill = cap?.Spillover ?? 0m;
+		_capFresh = cap?.Fresh ?? 0m;
+		_capSaved = cap != null;
+		_capRevise = false;
+
+		var rev = await BudgetSvc.GetAllocationAsync("REVENUE", Projects.ProjectId, _revFyId);
+		_revSpill = rev?.Spillover ?? 0m;
+		_revFresh = rev?.Fresh ?? 0m;
+		_revSaved = rev != null;
+		_revRevise = false;
+	}
+
+	private async Task OnCapFyChanged(int id) { _capFyId = id; await LoadBudgetsAsync(); }
+	private async Task OnRevFyChanged(int id) { _revFyId = id; await LoadBudgetsAsync(); }
+
+	private async Task SaveCapitalBudget() => await SaveBudgetBox("CAPITAL");
+	private async Task SaveRevenueBudget() => await SaveBudgetBox("REVENUE");
+
+	private async Task SaveBudgetBox(string type)
+	{
+		try
+		{
+			await SaveBudgetBoxCore(type);
+		}
+		catch (Exception ex)
+		{
+			Snackbar.Add("could not save the budget: " + ex.Message, Severity.Error);
+			StateHasChanged();
+		}
+	}
+
+	private async Task SaveBudgetBoxCore(string type)
+	{
+		bool isCapital = type == "CAPITAL";
+		int fy = isCapital ? _capFyId : _revFyId;
+		decimal spill = isCapital ? _capSpill : _revSpill;
+		decimal fresh = isCapital ? _capFresh : _revFresh;
+
+		if (!await ConfirmBudget(type, fy, spill, fresh)) return;
+
+		_isProcessing = true;
+		try
+		{
+			// SaveAllocationAsync also refuses a budget below what is already utilised.
+			var err = await BudgetSvc.SaveAllocationAsync(type, Projects.ProjectId, fy, spill, fresh,
+															Projects.IT_OWNER_NAME ?? "SYSTEM");
+			if (err != null) { Snackbar.Add(err, Severity.Error); return; }
+
+			if (isCapital) { _capSaved = true; _capRevise = false; }
+			else { _revSaved = true; _revRevise = false; }
+
+			Snackbar.Add($"{type} budget saved: {(spill + fresh):N2} Cr", Severity.Success);
+		}
+		finally { _isProcessing = false; }
+	}
+
+
+
+	private async Task HandleSaveAndNext()
+	{
+		if (_form == null) return;
+		await _form.Validate();
+		if (!_formIsValid) return;
+
+		_isProcessing = true;
+		bool stepSuccess = false;
+		var tab = CurrentTab;
+
+		try
+		{
+			// Basic / Procurement / Vendor all write to PROJECTS_MASTER
+			// Basic / Procurement / Vendor all write to PROJECTS_MASTER
+			if (tab is "Basic" or "Procurement" or "Vendor")
+			{
+				if (tab == "Basic")
+				{
+					// The IT Ownership dropdowns now write DEPT_ID / SECTION_ID directly,
+					// so here we validate them and keep the text columns in step with the ids.
+					if (Projects.DEPT_ID == null || Projects.SECTION_ID == null)
+					{
+						Snackbar.Add("Please select the IT Ownership Department and Section before saving.", Severity.Warning);
+						_isProcessing = false;
+						return;
+					}
+
+					Projects.IT_OWNER_DEPT_NAME =
+						_mapDepartments.FirstOrDefault(d => d.DEPT_ID == Projects.DEPT_ID)?.DEPT_NAME
+						?? Projects.IT_OWNER_DEPT_NAME;
+
+					Projects.IT_OWNER_SEC_NAME =
+						_mapCapitalSections.FirstOrDefault(s => s.SECTION_ID == Projects.SECTION_ID)?.NAME
+						?? Projects.IT_OWNER_SEC_NAME;
+
+					// A team leader / member may only create or edit inside their own section.
+					var scoped = Session.User;
+					if (scoped is not null && !scoped.IsAdmin && scoped.SectionIds.Count > 0
+						&& !scoped.SectionIds.Contains(Projects.SECTION_ID.Value))
+					{
+						Snackbar.Add("You can only create or edit projects inside your own section.", Severity.Warning);
+						_isProcessing = false;
+						return;
+					}
+
+					var dupCode = await BudgetSvc.FindDuplicateNameAsync(Projects.ProjectName ?? "", Projects.ProjectId);
+					if (dupCode != null)
+					{
+						Snackbar.Add($"A project named \"{Projects.ProjectName}\" already exists ({dupCode}). Please use a different name.",
+									 Severity.Error);
+						_isProcessing = false;
+						return;
+					}
+				}
+
+				var result = await ProjectService.SaveProjectGeneralAsync(Projects);
+				if (result != null)
+				{
+					Projects = result; // Captures Oracle-generated ProjectCode/ID
+					stepSuccess = true;
+
+					// The project now has an Id, so the Budget Management tab can read its allocations.
+					if (tab == "Basic") await LoadBudgetsAsync();
+				}
+			}
+			else if (tab == "Milestones")
+			{
+				stepSuccess = true;
+
+				if (!string.IsNullOrWhiteSpace(Milestone.MilestoneName))
+				{
+					Milestone.ProjectCode = Projects.ProjectCode;
+					var currentRes = await ProjectService.SaveMilestoneAsync(Milestone);
+					if (!currentRes) stepSuccess = false;
+				}
+
+				foreach (var m in MilestoneList)
+				{
+					m.ProjectCode = Projects.ProjectCode;
+					var res = await ProjectService.SaveMilestoneAsync(m);
+					if (!res) stepSuccess = false;
+				}
+
+				if (stepSuccess)
+					MilestoneList = await ProjectService.GetMilestoneListByProjectAsync(Projects.ProjectCode);
+			}
+			else if (tab == "Risk")
+			{
+				if (!string.IsNullOrWhiteSpace(ProjectIssue.IssueDescription))
+				{
+					ProjectIssue.ProjectCode = Projects.ProjectCode;
+					await ProjectService.SaveIssueAsync(ProjectIssue);
+				}
+
+				stepSuccess = true;
+				foreach (var i in IssueList)
+				{
+					i.ProjectCode = Projects.ProjectCode;
+					var res = await ProjectService.SaveIssueAsync(i);
+					if (!res) stepSuccess = false;
+				}
+
+				if (stepSuccess)
+					IssueList = await ProjectService.GetIssueListByProjectAsync(Projects.ProjectCode);
+			}
+			else if (tab == "Resources")
+			{
+				if (!string.IsNullOrWhiteSpace(ProjectResource.ResourceName))
+				{
+					ProjectResource.ProjectCode = Projects.ProjectCode;
+					ProjectResource.ProjectId = Projects.ProjectId;
+					await ProjectService.SaveResourceAsync(ProjectResource);
+				}
+
+				stepSuccess = true;
+				foreach (var r in ResourceList)
+				{
+					r.ProjectCode = Projects.ProjectCode;
+					r.ProjectId = Projects.ProjectId;
+					if (!string.IsNullOrEmpty(r.ResourceType)) r.ResourceType = r.ResourceType.ToUpper();
+					var res = await ProjectService.SaveResourceAsync(r);
+					if (!res) stepSuccess = false;
+				}
+
+				if (stepSuccess)
+					ResourceList = await ProjectService.GetResourceListByProjectAsync(Projects.ProjectCode);
+			}
+			else if (tab == "Documents")
+			{
+				if (!string.IsNullOrWhiteSpace(Document.DocName))
+				{
+					Document.ProjectCode = Projects.ProjectCode;
+					await ProjectService.SaveDocumentAsync(Document);
+				}
+
+				stepSuccess = true;
+				foreach (var d in DocumentList)
+				{
+					d.ProjectCode = Projects.ProjectCode;
+					var res = await ProjectService.SaveDocumentAsync(d);
+					if (!res) stepSuccess = false;
+				}
+
+			}
+			else if (tab == "Budget")
+			{
+				// The two boxes save themselves. This button only finishes.
+				stepSuccess = true;
+				MudDialog.Close(DialogResult.Ok(true));
+			}
+
+			// Move to the next VISIBLE tab if the save succeeded
+
+			// Move to the next VISIBLE tab if the save succeeded
+			if (stepSuccess && !IsLastTab)
+			{
+				_activeIndex++;
+				Milestone = new ProjectMilestone { Status = "Pending" };
+				ProjectIssue = new ProjectIssue { Status = "Open", DateRaised = DateTime.Now };
+				ProjectResource = new ProjectResource();
+				Document = new Document();
+
+				StateHasChanged();
+			}
+		}
+		catch (Exception ex)
+		{
+			Snackbar.Add($"Error during save: {ex.Message}", Severity.Error);
+		}
+		finally
+		{
+			_isProcessing = false;
+		}
+	}
+
+	private async Task<bool> ConfirmBudget(string type, int fyId, decimal spill, decimal fresh)
+	{
+		var fyLabel = _budgetFys.FirstOrDefault(f => f.FyId == fyId)?.FyLabel ?? "-";
+
+		var parameters = new DialogParameters
+			{
+				["BudgetType"] = type,
+				["ProjectName"] = string.IsNullOrWhiteSpace(Projects.ProjectName) ? "-" : Projects.ProjectName,
+				["FyLabel"] = fyLabel,
+				["Spillover"] = spill,
+				["Fresh"] = fresh
+			};
+
+		var options = new DialogOptions
+			{
+				MaxWidth = MaxWidth.ExtraSmall,
+				FullWidth = true,
+				CloseButton = true,
+				BackdropClick = false
+			};
+
+		var dlg = await DialogService.ShowAsync<BudgetConfirmDialog>("", parameters, options);
+		var result = await dlg.Result;
+		return result is not null && !result.Canceled;
+	}
+
+
+
+
+	// MILESTONE LIST
+	private void AddMilestoneToList()
+	{
+		// Check if the form is empty. If it's completely empty, we do nothing.
+		if (string.IsNullOrWhiteSpace(Milestone.MilestoneName) &&
+			string.IsNullOrWhiteSpace(Milestone.OwnerName) &&
+			Milestone.PlannedDate == null)
+		{
+			Snackbar.Add("Please enter milestone details before adding.", Severity.Warning);
+			return;
+		}
+
+		// SMART VALIDATION: If the user started filling it, ALL fields must be present.
+		if (string.IsNullOrWhiteSpace(Milestone.MilestoneName) ||
+			string.IsNullOrWhiteSpace(Milestone.OwnerName) ||
+			string.IsNullOrWhiteSpace(Milestone.Status) ||
+			string.IsNullOrWhiteSpace(Milestone.IsSlaMet) ||
+			string.IsNullOrWhiteSpace(Milestone.IsPenaltyApplicable) ||
+			string.IsNullOrWhiteSpace(Milestone.MilestoneDescription) ||
+			Milestone.PlannedDate == null ||
+			Milestone.BaselineDate == null ||
+			Milestone.RevisedDate == null ||
+			Milestone.ActualDate == null)
+		{
+			Snackbar.Add("To add/update a milestone, all fields are mandatory.", Severity.Error);
+			return;
+		}
+
+		if (_editingMilestone != null)
+		{
+			// UPDATE MODE: Update the existing reference in the list
+			_editingMilestone.MilestoneName = Milestone.MilestoneName;
+			_editingMilestone.OwnerName = Milestone.OwnerName;
+			_editingMilestone.PlannedDate = Milestone.PlannedDate;
+			_editingMilestone.BaselineDate = Milestone.BaselineDate;
+			_editingMilestone.RevisedDate = Milestone.RevisedDate;
+			_editingMilestone.ActualDate = Milestone.ActualDate;
+			_editingMilestone.Status = Milestone.Status;
+			_editingMilestone.IsSlaMet = Milestone.IsSlaMet;
+			_editingMilestone.IsPenaltyApplicable = Milestone.IsPenaltyApplicable;
+			_editingMilestone.MilestoneDescription = Milestone.MilestoneDescription;
+
+			_editingMilestone = null;
+			Snackbar.Add("Milestone updated successfully.", Severity.Success);
+		}
+		else
+		{
+			// ADD MODE: Add a new one
+			MilestoneList.Add(new ProjectMilestone
+			{
+				MilestoneName = Milestone.MilestoneName,
+				OwnerName = Milestone.OwnerName,
+				PlannedDate = Milestone.PlannedDate,
+				BaselineDate = Milestone.BaselineDate,
+				RevisedDate = Milestone.RevisedDate,
+				ActualDate = Milestone.ActualDate,
+				Status = Milestone.Status,
+				IsSlaMet = Milestone.IsSlaMet,
+				IsPenaltyApplicable = Milestone.IsPenaltyApplicable,
+				MilestoneDescription = Milestone.MilestoneDescription,
+				ProjectCode = Projects.ProjectCode
+			});
+			Snackbar.Add("Milestone added to list.", Severity.Success);
+		}
+
+		ResetMilestoneForm();
+	}
+
+	// Ensure there is ONLY ONE version of this method
+	private void LoadMilestoneForEdit(ProjectMilestone item)
+	{
+		_editingMilestone = item; // Store the reference
+
+		// Copy data to form
+		Milestone = new ProjectMilestone
+		{
+			MilestoneName = item.MilestoneName,
+			OwnerName = item.OwnerName,
+			PlannedDate = item.PlannedDate,
+			BaselineDate = item.BaselineDate,
+			RevisedDate = item.RevisedDate,
+			ActualDate = item.ActualDate,
+			Status = item.Status,
+			IsSlaMet = item.IsSlaMet,
+			IsPenaltyApplicable = item.IsPenaltyApplicable,
+			MilestoneDescription = item.MilestoneDescription
+		};
+		StateHasChanged();
+	}
+
+	private void ResetMilestoneForm()
+	{
+		_editingMilestone = null;
+
+		Milestone = new ProjectMilestone
+		{
+			Status = "",
+			IsSlaMet = "",
+			IsPenaltyApplicable = ""
+		};
+		StateHasChanged();
+	}
+
+	private void RemoveMilestoneFromList(ProjectMilestone item)
+	{
+		MilestoneList.Remove(item);
+	}
+
+
+
+	//ISSUE LIST
+	private void AddIssueToList()
+	{
+		// 1. Check if form is totally empty
+		if (string.IsNullOrWhiteSpace(ProjectIssue.IssueDescription) &&
+			string.IsNullOrWhiteSpace(ProjectIssue.OwnerName) &&
+			ProjectIssue.DateRaised == null)
+		{
+			Snackbar.Add("Please enter issue details before adding.", Severity.Warning);
+			return;
+		}
+
+		// 2. STRICT VALIDATION: If user started filling, all fields are mandatory
+		if (string.IsNullOrWhiteSpace(ProjectIssue.IssueDescription) ||
+			string.IsNullOrWhiteSpace(ProjectIssue.OwnerName) ||
+			string.IsNullOrWhiteSpace(ProjectIssue.Status) ||
+			string.IsNullOrWhiteSpace(ProjectIssue.Impact) ||
+			string.IsNullOrWhiteSpace(ProjectIssue.RootCause) ||
+			string.IsNullOrWhiteSpace(ProjectIssue.ResolutionSummary) ||
+			ProjectIssue.DateRaised == null ||
+			ProjectIssue.TargetResolutionDate == null ||
+			ProjectIssue.ActualResolutionDate == null)
+		{
+			Snackbar.Add("All fields are mandatory to add an issue to the list.", Severity.Error);
+			return;
+		}
+
+		if (_editingIssue != null)
+		{
+			// UPDATE MODE: Update reference in list
+			_editingIssue.OwnerName = ProjectIssue.OwnerName;
+			_editingIssue.Status = ProjectIssue.Status;
+			_editingIssue.IssueDescription = ProjectIssue.IssueDescription;
+			_editingIssue.Impact = ProjectIssue.Impact;
+			_editingIssue.RootCause = ProjectIssue.RootCause;
+			_editingIssue.ResolutionSummary = ProjectIssue.ResolutionSummary;
+			_editingIssue.DateRaised = ProjectIssue.DateRaised;
+			_editingIssue.TargetResolutionDate = ProjectIssue.TargetResolutionDate;
+			_editingIssue.ActualResolutionDate = ProjectIssue.ActualResolutionDate;
+
+			_editingIssue = null;
+			Snackbar.Add("Issue updated in list.", Severity.Success);
+		}
+		else
+		{
+			// ADD MODE: New instance
+			IssueList.Add(new ProjectIssue
+			{
+				OwnerName = ProjectIssue.OwnerName,
+				Status = ProjectIssue.Status,
+				IssueDescription = ProjectIssue.IssueDescription,
+				Impact = ProjectIssue.Impact,
+				RootCause = ProjectIssue.RootCause,
+				ResolutionSummary = ProjectIssue.ResolutionSummary,
+				DateRaised = ProjectIssue.DateRaised,
+				TargetResolutionDate = ProjectIssue.TargetResolutionDate,
+				ActualResolutionDate = ProjectIssue.ActualResolutionDate,
+				ProjectCode = Projects.ProjectCode
+			});
+			Snackbar.Add("Issue added to list.", Severity.Success);
+		}
+
+		ResetIssueForm();
+	}
+
+	private void LoadIssueForEdit(ProjectIssue item)
+	{
+		_editingIssue = item;
+		ProjectIssue = new ProjectIssue
+		{
+			OwnerName = item.OwnerName,
+			Status = item.Status,
+			IssueDescription = item.IssueDescription,
+			Impact = item.Impact,
+			RootCause = item.RootCause,
+			ResolutionSummary = item.ResolutionSummary,
+			DateRaised = item.DateRaised,
+			TargetResolutionDate = item.TargetResolutionDate,
+			ActualResolutionDate = item.ActualResolutionDate
+		};
+		StateHasChanged();
+	}
+
+	private void ResetIssueForm()
+	{
+		_editingIssue = null;
+		ProjectIssue = new ProjectIssue { Status = "", DateRaised = DateTime.Now };
+		StateHasChanged();
+	}
+
+
+
+	private void RemoveIssueFromList(ProjectIssue item)
+	{
+		IssueList.Remove(item);
+	}
+
+
+
+	//Resources
+	private void AddResourceToList()
+	{
+		// 1. Check if form is totally empty
+		if (string.IsNullOrWhiteSpace(ProjectResource.ResourceName) &&
+			string.IsNullOrWhiteSpace(ProjectResource.ResourceRole) &&
+			ProjectResource.ResourceStartDate == null)
+		{
+			Snackbar.Add("Please enter resource details before adding.", Severity.Warning);
+			return;
+		}
+
+		// 2. STRICT VALIDATION: All fields mandatory upon adding
+		if (string.IsNullOrWhiteSpace(ProjectResource.ResourceName) ||
+			string.IsNullOrWhiteSpace(ProjectResource.ResourceDesig) ||
+			string.IsNullOrWhiteSpace(ProjectResource.ResourceRole) ||
+			string.IsNullOrWhiteSpace(ProjectResource.ResourceSkillset) ||
+			string.IsNullOrWhiteSpace(ProjectResource.ResourceType) ||
+			string.IsNullOrWhiteSpace(ProjectResource.ResourceRemark) ||
+			ProjectResource.ResourceStartDate == null ||
+			ProjectResource.ResourceEndDate == null)
+		{
+			Snackbar.Add("All fields are mandatory to add a resource to the list.", Severity.Error);
+			return;
+		}
+
+		if (_editingResource != null)
+		{
+			// UPDATE MODE: Update the existing reference in the list
+			_editingResource.ResourceName = ProjectResource.ResourceName;
+			_editingResource.ResourceDesig = ProjectResource.ResourceDesig;
+			_editingResource.ResourceRole = ProjectResource.ResourceRole;
+			_editingResource.ResourceSkillset = ProjectResource.ResourceSkillset;
+			_editingResource.ResourceType = ProjectResource.ResourceType;
+			_editingResource.ResourceStartDate = ProjectResource.ResourceStartDate;
+			_editingResource.ResourceEndDate = ProjectResource.ResourceEndDate;
+			_editingResource.ResourceRemark = ProjectResource.ResourceRemark;
+
+			_editingResource = null; // Clear edit mode
+			Snackbar.Add("Resource updated successfully.", Severity.Success);
+		}
+		else
+		{
+			// ADD MODE: Create new instance
+			ResourceList.Add(new ProjectResource
+			{
+				ResourceName = ProjectResource.ResourceName,
+				ResourceDesig = ProjectResource.ResourceDesig,
+				ResourceRole = ProjectResource.ResourceRole,
+				ResourceSkillset = ProjectResource.ResourceSkillset,
+				ResourceType = ProjectResource.ResourceType,
+				ResourceStartDate = ProjectResource.ResourceStartDate,
+				ResourceEndDate = ProjectResource.ResourceEndDate,
+				ResourceRemark = ProjectResource.ResourceRemark,
+				ProjectCode = Projects.ProjectCode
+			});
+			Snackbar.Add("Resource added to list.", Severity.Success);
+		}
+
+		ResetResourceForm();
+	}
+	private void LoadResourceForEdit(ProjectResource item)
+	{
+		_editingResource = item; // Keep reference to list item
+
+		// Fill form with current data
+		ProjectResource = new ProjectResource
+		{
+			ResourceName = item.ResourceName,
+			ResourceDesig = item.ResourceDesig,
+			ResourceRole = item.ResourceRole,
+			ResourceSkillset = item.ResourceSkillset,
+			ResourceType = item.ResourceType,
+			ResourceStartDate = item.ResourceStartDate,
+			ResourceEndDate = item.ResourceEndDate,
+			ResourceRemark = item.ResourceRemark,
+			ResourceCode = item.ResourceCode // Keep code if it exists
+		};
+		StateHasChanged();
+	}
+
+	private void ResetResourceForm()
+	{
+		_editingResource = null;
+		ProjectResource = new ProjectResource { ResourceType = "" }; // Default NA
+		StateHasChanged();
+	}
+
+	private void RemoveResourceFromList(ProjectResource item)
+	{
+		ResourceList.Remove(item);
+	}
+
+
+
+	//DOCUMENTS
+	private void AddDocumentToList()
+	{
+		// 1. Mandatory Validation
+		if (string.IsNullOrWhiteSpace(Document.DocName) ||
+			string.IsNullOrWhiteSpace(Document.DocType) ||
+			(tempFileContent == null && _editingDocument?.FileContent == null))
+		{
+			Snackbar.Add("Name, Type, and File Upload are mandatory!", Severity.Error);
+			return;
+		}
+
+		if (_editingDocument != null)
+		{
+			// 2. UPDATE MODE
+			_editingDocument.DocName = Document.DocName;
+			_editingDocument.DocType = Document.DocType;
+			_editingDocument.Field1 = Document.Field1;
+			_editingDocument.Remark = Document.Remark;
+
+			// Update file only if a new one was picked
+			if (tempFileContent != null)
+			{
+				_editingDocument.FileContent = tempFileContent;
+				_editingDocument.ContentType = tempContentType;
+				_editingDocument.FileName = selectedFileName;
+			}
+
+			_editingDocument = null;
+			Snackbar.Add("Document updated.", Severity.Success);
+		}
+		else
+		{
+			// 3. ADD MODE
+			DocumentList.Add(new Document
+			{
+				DocName = Document.DocName,
+				DocType = Document.DocType,
+				Field1 = Document.Field1,
+				Remark = Document.Remark,
+				FileContent = tempFileContent,
+				ContentType = tempContentType,
+				FileName = selectedFileName,
+				ProjectCode = Projects.ProjectCode
+			});
+			Snackbar.Add("Document added to list.", Severity.Success);
+		}
+
+		ResetDocumentForm();
+	}
+
+	private void LoadDocumentForEdit(Document item)
+	{
+		if (item == null) return;
+
+		_editingDocument = item;
+		selectedFileName = item.FileName;
+
+		// Create a new instance for the form to avoid direct mutation of the list item
+		// until "Update" is clicked. Ensure all strings default to "" instead of null.
+		Document = new Document
+		{
+			DocId = item.DocId,
+			DocCode = item.DocCode,
+			ProjectCode = item.ProjectCode,
+			DocName = item.DocName ?? "",
+			DocType = item.DocType ?? "",
+			Field1 = item.Field1 ?? "",
+			Remark = item.Remark ?? "",
+			FileContent = item.FileContent, // Maintain the binary reference
+			FileName = item.FileName,
+			ContentType = item.ContentType
+		};
+
+		StateHasChanged();
+	}
+
+	private void ResetDocumentForm()
+	{
+		_editingDocument = null;
+		selectedFileName = null;
+		tempFileContent = null;
+		tempContentType = null;
+		Document = new Document { DocType = "" };
+		StateHasChanged();
+	}
+
+	private void RemoveDocumentFromList(Document item)
+	{
+		DocumentList.Remove(item);
+	}
+
+	private async Task HandleFileSelection(InputFileChangeEventArgs e)
+	{
+		var file = e.File;
+		if (file != null)
+		{
+			selectedFileName = file.Name;
+			tempContentType = file.ContentType;
+
+			// Read file into byte array (Max 10MB limit)
+			using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+			using var ms = new MemoryStream();
+			await stream.CopyToAsync(ms);
+			tempFileContent = ms.ToArray();
+
+			Snackbar.Add($"File '{selectedFileName}' attached.", Severity.Info);
+		}
+	}
+
+	private async Task DownloadFile(Document doc)
+	{
+		if (doc.FileContent == null || doc.FileContent.Length == 0)
+		{
+			Snackbar.Add("No file data available for download.", Severity.Warning);
+			return;
+		}
+
+		try
+		{
+			var base64 = Convert.ToBase64String(doc.FileContent);
+			await JS.InvokeVoidAsync("downloadFileFromBase64",
+				doc.FileName ?? "document_download",
+				base64,
+				doc.ContentType ?? "application/octet-stream");
+		}
+		catch (Exception ex)
+		{
+			Snackbar.Add("Download failed: " + ex.Message, Severity.Error);
+		}
+	}
+	private IEnumerable<Section> _bizSections => string.IsNullOrEmpty(Projects.BUSINESS_OWNER_DEPT_NAME)
+	? new List<Section>()
+	: _mapCapitalSections.Where(s => _mapDepartments.FirstOrDefault(d => d.DEPT_NAME == Projects.BUSINESS_OWNER_DEPT_NAME)?.DEPT_ID == s.DEPT_ID);
+
+	private void OnBizDeptChanged(string v)
+	{
+		Projects.BUSINESS_OWNER_DEPT_NAME = v;
+		Projects.BUSINESS_OWNER_SEC_NAME = null;
+		if (Projects.IS_IT_BUSINESS_SAME == "Y") CopyBusinessToIt();
+	}
+
+	private void OnBizSecChanged(string v)
+	{
+		Projects.BUSINESS_OWNER_SEC_NAME = v;
+		if (Projects.IS_IT_BUSINESS_SAME == "Y") CopyBusinessToIt();
+	}
+
+	private void CopyBusinessToIt()
+	{
+		Projects.IT_OWNER_NAME = Projects.BUSINESS_OWNER_NAME;
+		Projects.IT_OWNER_DESIG = Projects.BUSINESS_OWNER_DESIG;
+		Projects.IT_OWNER_IP_NO = Projects.BUSINESS_OWNER_IP_NO;
+		Projects.IT_OWNER_MOBILE = Projects.BUSINESS_OWNER_MOBILE;
+		Projects.IT_OWNER_EMAIL = Projects.BUSINESS_OWNER_EMAIL;
+
+		// A scoped user is locked to their own department and section — copying the
+		// business side must not move the project out of it.
+		if (_deptLocked || _sectionLocked) return;
+
+	// 	Projects.IT_OWNER_DEPT_NAME = Projects.BUSINESS_OWNER_DEPT_NAME;
+	// 	Projects.IT_OWNER_SEC_NAME = Projects.BUSINESS_OWNER_SEC_NAME;
+	// 	Projects.DEPT_ID = _mapDepartments.FirstOrDefault(d => d.DEPT_NAME == Projects.BUSINESS_OWNER_DEPT_NAME)?.DEPT_ID;
+	// 	Projects.SECTION_ID = _mapCapitalSections.FirstOrDefault(s => s.NAME == Projects.BUSINESS_OWNER_SEC_NAME)?.SECTION_ID;
+	// }
+
+	// Business Ownership can be any department in the bank, but IT Ownership drives
+		// DEPT_ID / SECTION_ID, so it may only be filled from a DIT department in scope.
+		var bizDept = _itDepartments.FirstOrDefault(x =>
+			string.Equals((x.DEPT_NAME ?? "").Trim(), (Projects.BUSINESS_OWNER_DEPT_NAME ?? "").Trim(),
+						  StringComparison.OrdinalIgnoreCase));
+
+		if (bizDept == null) return;   // not a DIT department - leave IT Ownership for the user
+
+		Projects.DEPT_ID = bizDept.DEPT_ID;
+		Projects.IT_OWNER_DEPT_NAME = bizDept.DEPT_NAME;
+
+		var bizSec = _itSections.FirstOrDefault(x =>
+			x.DEPT_ID == bizDept.DEPT_ID &&
+			string.Equals((x.NAME ?? "").Trim(), (Projects.BUSINESS_OWNER_SEC_NAME ?? "").Trim(),
+						  StringComparison.OrdinalIgnoreCase));
+
+		Projects.SECTION_ID = bizSec?.SECTION_ID;
+		Projects.IT_OWNER_SEC_NAME = bizSec?.NAME;
+	}
+
+
+
+	private void PrevTab() { if (_activeIndex > 0) _activeIndex--; }
+
+	private void Cancel() => MudDialog.Cancel();
+
+	// FIXED: Added missing color helper method
+	private Color GetStatusColor(string? status) => status?.ToLower() switch
+	{
+		"completed" or "resolved" or "y" => Color.Success,
+		"in progress" or "open" or "implementation" => Color.Info,
+		"delayed" or "pending" or "n" => Color.Warning,
+		_ => Color.Default
+	};
+}
+

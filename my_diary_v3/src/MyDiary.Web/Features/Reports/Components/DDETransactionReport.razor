@@ -1,0 +1,411 @@
+﻿@page "/reports/DDETransactionReport"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>DDE Transaction Report — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+                <!-- Filters + Export -->
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <!-- Zone -->
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="Zone"
+                                   Value="SelectedZone"
+                                   ValueChanged="HandleZoneChanged"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">
+                                @z["zone_name_eng"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Region -->
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">
+                                @r["region_name"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Branch -->
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Branch"
+                               Value="SelectedBranch"
+                               ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["sol_id"].ToString()">
+                                @b["branch_name"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 11px;"
+                               OnClick="OnExportInternal">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- As On Label -->
+            <div class="px-4 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                    @_asOnDateLabel
+                </MudText>
+            </div>
+
+            <!-- SUMMARY TABLE -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_dataSummary"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="360px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                        @foreach (var col in _colsSummary)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@(_dataSummary.IndexOf(context) + 1)</MudTd>
+                        @foreach (var col in _colsSummary)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_colsSummary.Count + 1)" style="text-align:center; padding: 20px;">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Info">Summary will appear here when available.</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+
+            <!-- DETAIL TABLE -->
+            <MudItem xs="12" Class="px-4 pb-4">
+                <MudTable Items="_dataDetail"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="360px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                        @foreach (var col in _colsDetail)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@(_dataDetail.IndexOf(context) + 1)</MudTd>
+                        @foreach (var col in _colsDetail)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_colsDetail.Count + 1)" style="text-align:center; padding: 40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // ---- UI / State ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private string _title => string.IsNullOrWhiteSpace(Title) ? "DDE Transaction Report" : Title!;
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    private string SelectedZone { get; set; } = "All";
+    private string SelectedRegion { get; set; } = "All";
+    private string SelectedBranch { get; set; } = "All";
+
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+
+    private List<Dictionary<string, object>> _dataSummary = new();
+    private List<Dictionary<string, object>> _dataDetail = new();
+
+    // ---- Columns (SUMMARY) ----
+    private readonly List<ColumnConfig> _colsSummary = new()
+    {
+        new ColumnConfig { Header = "Zone",                         PropertyName = "zone",               Width = "18%" },
+        new ColumnConfig { Header = "Region",                       PropertyName = "region",             Width = "22%" },
+        new ColumnConfig { Header = "Branch",                       PropertyName = "branch",             Width = "28%" },
+        new ColumnConfig { Header = "DDE Successful Transactions",  PropertyName = "dde_success_count",  Width = "18%", IsNumeric = true, Format = "N0" }
+    };
+
+    // ---- Columns (DETAIL) ----
+    private readonly List<ColumnConfig> _colsDetail = new()
+    {
+        new ColumnConfig { Header = "Zone",               PropertyName = "zone",              Width = "12%" },
+        new ColumnConfig { Header = "Region",             PropertyName = "region",            Width = "14%" },
+        new ColumnConfig { Header = "Branch",             PropertyName = "branch",            Width = "18%" },
+        new ColumnConfig { Header = "Sol Id",             PropertyName = "sol_id",            Width = "8%"  },
+        new ColumnConfig { Header = "Status",             PropertyName = "status",            Width = "8%"  },
+        new ColumnConfig { Header = "Customer Name",      PropertyName = "customer_name",     Width = "16%" },
+        new ColumnConfig { Header = "Sanctioned Amount",  PropertyName = "sanctioned_amount", Width = "14%", IsNumeric = true, Format = "N2" },
+        new ColumnConfig { Header = "Loan Account No",    PropertyName = "loan_account_no",   Width = "14%" },
+        new ColumnConfig { Header = "Executed Date",      PropertyName = "executed_date",     Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Zone, Region, Branch lookups are independent — load in parallel with data
+        var zonesTask = ReportService.GetLookupDataAsync(
+            "zone_master",
+            "zone_name_eng, zone_solid",
+            "status='A'",
+            "zone_name_eng"
+        );
+
+        var regionsTask = ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            "1=1",
+            "region_name"
+        );
+
+        var branchesTask = ReportService.GetLookupDataAsync(
+            "branch_master",
+            "CONCAT(UPPER(branch_name),'  (',branch_code,')') as branch_name, sol_id",
+            "1=1",
+            "branch_name"
+        );
+
+        var dataTask = LoadData();
+
+        await Task.WhenAll(zonesTask, regionsTask, branchesTask, dataTask);
+        _zones = zonesTask.Result;
+        _regions = regionsTask.Result;
+        _branches = branchesTask.Result;
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        SelectedZone = value ?? "All";
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        var regionWhere = SelectedZone.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"zone_solid = '{SelectedZone}'";
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            regionWhere,
+            "region_name"
+        );
+
+        // Reset branches for All region
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "CONCAT(UPPER(branch_name),'  (',branch_code,')') as branch_name, sol_id",
+            "1=1",
+            "branch_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        SelectedRegion = value ?? "All";
+        SelectedBranch = "All";
+
+        var branchWhere = SelectedRegion.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"region_solid = '{SelectedRegion}'";
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "CONCAT(UPPER(branch_name),'  (',branch_code,')') as branch_name, sol_id",
+            branchWhere,
+            "branch_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        SelectedBranch = value ?? "All";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Base FROM/JOIN and Filter (as in WebForms)
+        string fromJoin =
+            "[10.0.232.203,7473].[dde_cmrd_Live].[dbo].[DDE_Response] a " +
+            "JOIN [10.0.232.203,7473].[dde_cmrd_Live].[dbo].[loan_details] b ON a.txnid = b.txnid " +
+            "JOIN Branch_Master c ON b.loc = c.SOL_ID";
+
+        string where =
+            "a.status='SUCCESS' AND a.downloadurl <> 'null' AND rspmsg='DEBTOR' " +
+            "AND LEN(downloadurl) > 15 AND a.entry_date >= '2020-11-11'";
+
+        if (!string.Equals(SelectedZone, "All", StringComparison.OrdinalIgnoreCase))
+            where += $" AND c.zone_solid = '{SelectedZone}'";
+        if (!string.Equals(SelectedRegion, "All", StringComparison.OrdinalIgnoreCase))
+            where += $" AND c.region_solid = '{SelectedRegion}'";
+        if (!string.Equals(SelectedBranch, "All", StringComparison.OrdinalIgnoreCase))
+            where += $" AND c.SOL_ID = '{SelectedBranch}'";
+
+        // RBAC: clamp to the logged-in user's own scope for non-CO users (fail-closed to BRANCH).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            if (__scope.IsZone) where += $" AND c.zone_solid = '{__scope.ZoneSolid}'";
+            else if (__scope.IsRegion) where += $" AND c.region_solid = '{__scope.RegionSolid}'";
+            else if (__scope.IsBranch) where += $" AND c.SOL_ID = '{__scope.BranchSolid}'";
+        }
+
+        // SUMMARY (grouped by Zone/Region/Branch)
+        string summaryQuery =
+            $"SELECT c.zone_name_eng AS zone, c.region_name AS region, c.BRANCH_NAME AS branch, " +
+            $"       COUNT(a.loanno) AS dde_success_count " +
+            $"FROM {fromJoin} " +
+            $"WHERE {where} " +
+            $"GROUP BY c.zone_name_eng, c.region_name, c.BRANCH_NAME " +
+            $"ORDER BY c.zone_name_eng, c.region_name, c.BRANCH_NAME";
+
+        // DETAIL
+        string detailQuery =
+            $"SELECT DISTINCT " +
+            $" c.zone_name_eng AS zone, c.region_name AS region, c.BRANCH_NAME AS branch, " +
+            $" b.loc AS sol_id, a.status AS status, b.fulnm AS customer_name, " +
+            $" b.snctnamt AS sanctioned_amount, b.loanno AS loan_account_no, " +
+            $" CONVERT(varchar(10), a.entry_date, 103) AS executed_date " +
+            $"FROM {fromJoin} " +
+            $"WHERE {where} " +
+            $"ORDER BY a.entry_date";
+
+        _dataSummary = await ReportService.ExecuteRawQueryAsync(summaryQuery);
+        _dataDetail = await ReportService.ExecuteRawQueryAsync(detailQuery);
+
+        // As On label (current date like WebForms)
+        _asOnDateLabel = (_dataSummary.Count > 0 || _dataDetail.Count > 0)
+            ? $"Data As On -  {AppTime.Now:dd/MM/yyyy} "
+            : "";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnExportInternal()
+    {
+        // Export whichever has rows; otherwise export empty detail structure
+        var hasSummary = _dataSummary.Count > 0;
+        var bytes = ReportService.ExportToExcel(
+            hasSummary ? _dataSummary : _dataDetail,
+            hasSummary ? _colsSummary : _colsDetail,
+            "DDE_Transaction_Report");
+
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            hasSummary ? "DDE_Transactions_Summary.xlsx" : "DDE_Transactions_Detail.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+        return val.ToString();
+    }
+}

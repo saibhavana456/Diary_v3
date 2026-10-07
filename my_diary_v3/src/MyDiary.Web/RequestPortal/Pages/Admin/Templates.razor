@@ -1,0 +1,118 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/templates"
+@* Notifications module page — Admin manages templates. *@
+@using RequestPortal.Web.Pages.Admin.Dialogs
+@inject INotifRepo NotifRepo
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject ICurrentUser CurrentUser
+@inject IAuditService AuditSvc
+
+<PageTitle>Notification Templates</PageTitle>
+
+<PageHeader PageKey="admin-templates" Title="Notification Templates" Crumbs="_crumbs"
+            Subtitle="One row per (Event, Channel). Scriban variables: request.req_no, request.subject, actor.name, level." />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudPaper Elevation="1" Class="pa-3">
+    <div class="d-flex justify-end mb-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="Add">Add</MudButton>
+    </div>
+
+    <MudTable Items="@_rows" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+        <HeaderContent>
+            <MudTh>Event</MudTh>
+            <MudTh>Channel</MudTh>
+            <MudTh>Subject</MudTh>
+            <MudTh>Active</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.EventCode</MudTd>
+            <MudTd>@context.Channel</MudTd>
+            <MudTd>@(string.IsNullOrEmpty(context.Subject) ? "\u2014" : context.Subject)</MudTd>
+            <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => Edit(context))" aria-label="Edit" />
+                <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                               Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                               OnClick="@(() => ToggleActive(context))" aria-label="Deactivate" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("Notification Templates"),
+    };
+
+    private List<NotifTemplate> _rows = new();
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+        => _rows = (await NotifRepo.ListTemplatesAsync()).ToList();
+
+    private async Task Add()
+    {
+        var dlg = await Dialogs.ShowAsync<TemplateDialog>("Add template", new DialogParameters());
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not TemplateDialog.TemplateFormResult f) return;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var t = new NotifTemplate { EventCode = f.EventCode, Channel = f.Channel, Subject = f.Subject,
+                Body = f.Body, IsActive = f.IsActive, CreatedByUserId = CurrentUser.UserId, CreatedAt = now };
+            var id = await NotifRepo.InsertTemplateAsync(t);
+            await AuditSvc.LogAsync(AuditEntityNames.NotifTemplate, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { t.EventCode, t.Channel, t.Subject });
+            Snackbar.Add("Template added.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Templates: save failed — {ex.Message}");
+            AppLogger.LogError(ex, "Templates: save failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task Edit(NotifTemplate t)
+    {
+        var dlg = await Dialogs.ShowAsync<TemplateDialog>("Edit template", new DialogParameters
+        {
+            ["EventCode"] = t.EventCode, ["Channel"] = t.Channel,
+            ["Subject"] = t.Subject, ["Body"] = t.Body, ["IsActive"] = t.IsActive
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not TemplateDialog.TemplateFormResult f) return;
+        var old = new { t.EventCode, t.Channel, t.Subject, t.IsActive };
+        t.EventCode = f.EventCode; t.Channel = f.Channel; t.Subject = f.Subject;
+        t.Body = f.Body; t.IsActive = f.IsActive;
+        t.ModifiedByUserId = CurrentUser.UserId; t.ModifiedAt = DateTime.UtcNow;
+        await NotifRepo.UpdateTemplateAsync(t);
+        await AuditSvc.LogAsync(AuditEntityNames.NotifTemplate, t.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { t.EventCode, t.Channel, t.Subject, t.IsActive });
+        Snackbar.Add("Template updated.", Severity.Success);
+        await ReloadAsync();
+    }
+
+    private async Task ToggleActive(NotifTemplate t)
+    {
+        var action = t.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await NotifRepo.SetTemplateActiveAsync(t.Id, !t.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.NotifTemplate, t.Id, action, CurrentUser.EmpCode, new { t.IsActive }, new { IsActive = !t.IsActive });
+        await ReloadAsync();
+    }
+}

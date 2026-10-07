@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+@inject IConfiguration Configuration
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b4a98" />
+    <base href="@GetBaseHref()" />
+    @* Self-hosted Roboto (css/roboto.css + wwwroot/css/fonts/*.woff2) — the Google Fonts CDN
+       link this used to be is unreachable from UAT/Production (no internet access), and was
+       blocking initial render for ~4s waiting on a DNS/connect timeout to a host that can
+       never be reached from those environments. *@
+    <link rel="stylesheet" href="css/roboto.css" />
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    @* Bootstrap GRID ONLY (.row / .col-*) — the migrated dashboards use Bootstrap's
+       grid for their card layout. Grid-only avoids Bootstrap's reboot/typography
+       resets fighting MudBlazor globally. *@
+    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap-grid.min.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="css/requestportal.css" />
+    <link rel="stylesheet" href="css/focus360.css" />
+    <link rel="stylesheet" href="css/union-hub.css" />
+    <link rel="stylesheet" href="css/responsive-a11y.css" />
+    <link rel="stylesheet" href="MyDiary.Web.styles.css" />
+    @* Loaded last so its input-focus overrides win the cascade. *@
+    <link rel="stylesheet" href="css/accessibility-fixes.css" />
+    <link rel="icon" type="image/png" href="images/URL_Logo.jpg" />
+    <HeadOutlet @rendermode="@InteractiveServer" />
+</head>
+<body>
+    <CascadingAuthenticationState>
+        <Routes @rendermode="@InteractiveServer" />
+    </CascadingAuthenticationState>
+    <script src="_framework/blazor.web.js" autostart="false"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script>
+        window.BlazorDownloadFile = (fileName, contentType, contentBase64) => {
+            const link = document.createElement('a');
+            link.download = fileName;
+            link.href = `data:${contentType};base64,${contentBase64}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    </script>
+    <script>
+        window.downloadFileFromStream = async (fileName, contentStreamReference) => {
+            const arrayBuffer = await contentStreamReference.arrayBuffer();
+            const blob = new Blob([arrayBuffer]);
+            const url = URL.createObjectURL(blob);
+            const anchorElement = document.createElement('a');
+            anchorElement.href = url;
+            anchorElement.download = fileName ?? '';
+            anchorElement.click();
+            anchorElement.remove();
+            URL.revokeObjectURL(url);
+        };
+        window.openPdf = (base64Data) => {
+            try {
+                const byteCharacters = atob(base64Data);
+                const byteNumbers = new Array(byteCharacters.length);
+
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+
+                // Use an anchor element with target _blank to avoid popup blocker issues
+                const a = document.createElement('a');
+                a.href = url;
+                a.target = '_blank';
+                a.rel = 'noopener';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                setTimeout(() => URL.revokeObjectURL(url), 120000);
+            } catch (e) {
+                console.error('[openPdf] Error:', e);
+                // Fallback: try window.open directly
+                try {
+                    const byteCharacters = atob(base64Data);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], { type: 'application/pdf' });
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, '_blank');
+                    setTimeout(() => URL.revokeObjectURL(url), 120000);
+                } catch (e2) {
+                    console.error('[openPdf] Fallback also failed:', e2);
+                }
+            }
+        };
+
+        // PDF placeholder pattern: opens a blank window immediately (preserving user gesture),
+        // then loads the PDF into it once the async download completes.
+        window._pdfPlaceholderWindow = null;
+
+        window.openPdfPlaceholder = () => {
+            window._pdfPlaceholderWindow = window.open('about:blank', '_blank');
+            if (window._pdfPlaceholderWindow) {
+                window._pdfPlaceholderWindow.document.title = 'Loading PDF...';
+                window._pdfPlaceholderWindow.document.body.innerHTML =
+                    '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Arial,sans-serif;color:#555;">' +
+                    '<div style="text-align:center;"><p style="font-size:1.2rem;">Loading PDF, please wait...</p>' +
+                    '<div style="width:40px;height:40px;border:4px solid #e0e0e0;border-top:4px solid #1E3A8A;border-radius:50%;animation:spin 1s linear infinite;margin:20px auto;"></div></div></div>' +
+                    '<style>@@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}</style>';
+            }
+        };
+
+        window.openPdfInPlaceholder = (base64Data) => {
+            try {
+                const byteCharacters = atob(base64Data);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+
+                if (window._pdfPlaceholderWindow && !window._pdfPlaceholderWindow.closed) {
+                    window._pdfPlaceholderWindow.location.href = url;
+                } else {
+                    // Placeholder was blocked or closed, fall back to anchor click
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+                setTimeout(() => URL.revokeObjectURL(url), 120000);
+                window._pdfPlaceholderWindow = null;
+            } catch (e) {
+                console.error('[openPdfInPlaceholder] Error:', e);
+                window._pdfPlaceholderWindow = null;
+            }
+        };
+
+        window.closePdfPlaceholder = () => {
+            if (window._pdfPlaceholderWindow && !window._pdfPlaceholderWindow.closed) {
+                window._pdfPlaceholderWindow.close();
+            }
+            window._pdfPlaceholderWindow = null;
+        };
+
+        // Clears an <InputFile>'s selected file so the same filename can be
+        // re-selected later and "Selected: ..." state doesn't linger visually.
+        window.resetFileInput = (elementId) => {
+            const el = document.getElementById(elementId);
+            if (el) el.value = '';
+        };
+
+    </script>
+    <script src="js/lang.js"></script>
+    <script src="js/focus360.js"></script>
+    <script src="js/appdownload.js"></script>
+    <script src="js/execbranchvisit.js"></script>
+    @* <script src="js/commandcenter.js"></script> *@
+    <script src="js/lazy-charts.js"></script>
+
+    <script>
+        // ── Start Blazor with SILENT reconnection ────────────────────
+        //
+        // Key design decisions:
+        //   • maxRetries: 30 with fast initial retries (1s, 2s, 4s … capped at 30s)
+        //     so a brief network blip or rolling-deploy restart reconnects silently.
+        //   • Total retry window: ~10 minutes — matches server retention of 20 min.
+        //   • onConnectionDown / onRetry: do NOTHING — no UI shown while retrying.
+        //   • onConnectionUp: do NOTHING — page just resumes normally.
+        //   • onFailure: all retries exhausted → reload page.
+        //   • configureSignalR: the server sends a keep-alive ping every 30s
+        //     (HubOptions.KeepAliveInterval in Program.cs) — but the SignalR JS
+        //     client's OWN default serverTimeoutInMilliseconds is ALSO 30s, and
+        //     is NOT auto-derived from the server's setting. With both at 30s,
+        //     the client's patience runs out on the SLIGHTEST delay to a single
+        //     ping (network jitter, a slow render, momentary GC) — which is
+        //     exactly the "Server timeout elapsed without receiving a message
+        //     from the server" disconnects seen in practice, ~30-90s into a
+        //     session, with nothing wrong server-side. Giving the client a
+        //     comfortably wider timeout than the server's ping interval (here:
+        //     2 minutes vs. 30s — a 4x margin) fixes the false-positive
+        //     disconnects without touching server-side timing at all.
+        //
+        Blazor.start({
+            circuit: {
+                // ── SignalR connection timeouts ──────────────────────────────
+                // CRITICAL: serverTimeout must be well above the server's
+                // KeepAliveInterval (30s in Program.cs). If a server keep-alive
+                // ping is delayed (GC pause, slow DB call blocking the circuit
+                // thread, network blip), the client would otherwise time out and
+                // disconnect with "Server timeout elapsed without receiving a
+                // message from the server", followed by "No interop methods are
+                // registered for renderer 1" on the next click.
+                //
+                // Rule of thumb: serverTimeout >= 2x server KeepAliveInterval.
+                // Server keep-alive = 30s → client serverTimeout = 120s (4x margin).
+                configureSignalR: function (builder) {
+                    builder.withServerTimeout(120000)        // 120s (server pings every 30s)
+                        .withKeepAliveInterval(15000);    // client pings server every 15s
+                },
+                reconnectionOptions: {
+                    maxRetries: 30,
+                    retryIntervalMilliseconds: (attempt) =>
+                        // 1s, 2s, 4s, 8s, 16s, 30s, 30s, 30s...
+                        Math.min(1000 * Math.pow(2, attempt), 30000)
+                },
+                reconnectionHandler: {
+                    onConnectionDown: (_options, _error) => {
+                        window._blazorDisconnected = true;
+                    },
+                    onRetry: (_context) => { /* intentionally silent */ },
+                    onConnectionUp: () => {
+                        window._blazorDisconnected = false;
+                        if (typeof loadLanguage === 'function') {
+                            try { loadLanguage(); } catch(e) {}
+                        }
+                    },
+                    onFailure: (_context) => {
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 500);
+                    }
+                }
+            }
+        });
+
+        // ── Client-side keep-alive heartbeat ─────────────────────────
+        // Sends a real server round-trip every 90 seconds to keep the
+        // SignalR circuit alive.
+        setInterval(function() {
+            if (document.visibilityState === 'visible' && !window._blazorDisconnected) {
+                try {
+                    DotNet.invokeMethodAsync('MyDiary.Web', 'CircuitPing');
+                } catch(e) { /* circuit already dead, reconnect will handle */ }
+            }
+        }, 90000);
+
+        // ── Reconnect on tab visibility change ───────────────────────
+        // When user returns to a backgrounded tab, check circuit health.
+        window._lastVisibleTime = Date.now();
+        window._reloadPending = false;
+
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                var idleDuration = Date.now() - (window._lastVisibleTime || 0);
+
+                if (window._blazorDisconnected && idleDuration > 20 * 60 * 1000) {
+                    window.location.reload();
+                    return;
+                }
+
+                // If idle for less than 10 minutes, circuit is almost certainly alive.
+                if (idleDuration < 10 * 60 * 1000) {
+                    return;
+                }
+
+                // If idle for more than 20 minutes (exceeds server retention), reload.
+                if (idleDuration > 20 * 60 * 1000) {
+                    window.location.reload();
+                    return;
+                }
+
+                // Between 10–20 minutes: verify with a ping (20s timeout).
+                if (window._reloadPending) return;
+                window._reloadPending = true;
+
+                var pingTimeout = setTimeout(function() {
+                    window._reloadPending = false;
+                    window.location.reload();
+                }, 20000);
+
+                try {
+                    DotNet.invokeMethodAsync('MyDiary.Web', 'CircuitPing')
+                        .then(function() {
+                            clearTimeout(pingTimeout);
+                            window._reloadPending = false;
+                            window._blazorDisconnected = false;
+                        })
+                        .catch(function() {
+                            clearTimeout(pingTimeout);
+                            window._reloadPending = false;
+                            window.location.reload();
+                        });
+                } catch(e) {
+                    clearTimeout(pingTimeout);
+                    window._reloadPending = false;
+                    window.location.reload();
+                }
+            } else {
+                window._lastVisibleTime = Date.now();
+            }
+        });
+
+        // ── Suppress "not in the Connected State" errors silently ─────
+        window.addEventListener('unhandledrejection', function(event) {
+            if (event.reason && event.reason.message &&
+                event.reason.message.indexOf('not in the \'Connected\' State') !== -1) {
+                event.preventDefault();
+            }
+        });
+
+        // ── Handle "No interop methods are registered" — the circuit died ──
+        // This uncaught error fires when the user interacts with a page whose
+        // circuit has already been torn down (after a server timeout / disconnect).
+        // Rather than letting it spam the console and leave the page frozen, we
+        // trigger a single reconnect attempt; if that fails, reload the page.
+        window.addEventListener('error', function(event) {
+            var msg = (event && event.message) || '';
+            if (msg.indexOf('No interop methods are registered') !== -1) {
+                event.preventDefault();
+                if (window._interopRecoveryPending) return;
+                window._interopRecoveryPending = true;
+
+                // Try a silent reconnect first; if the circuit can't be restored,
+                // reload so the user gets a fresh, working page.
+                (async function () {
+                    try {
+                        var ok = typeof Blazor !== 'undefined' && Blazor.reconnect
+                            ? await Blazor.reconnect()
+                            : false;
+                        if (!ok) {
+                            window.location.reload();
+                        } else {
+                            window._interopRecoveryPending = false;
+                        }
+                    } catch (e) {
+                        window.location.reload();
+                    }
+                })();
+            }
+        }, true);
+
+        // ── Circuit rejected (server restart / deployment) ────────────
+        document.addEventListener('blazor-circuit-rejected', () => {
+            window.location.reload();
+        });
+    </script>
+</body>
+</html>
+
+@code {
+    // prerender:false — auth state lives in browser storage (JS interop), which is
+    // unavailable during prerender. Prerendering would make every authenticated user
+    // appear anonymous on the server pass, causing NavigationGuard to redirect to
+    // /login and breaking interactive clicks until hydration. Rendering only through
+    // the interactive circuit keeps auth + interactivity consistent.
+    private static readonly IComponentRenderMode InteractiveServer =
+        new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false);
+
+    private string GetBaseHref()
+    {
+        var pathBase = Configuration.GetValue<string>("AppSettings:PathBase") ?? "/My_Diary_V3";
+        if (string.IsNullOrWhiteSpace(pathBase) || pathBase == "/") return "/";
+        return pathBase.TrimEnd('/') + "/";
+    }
+
+    // Target of the JS heartbeat above (DotNet.invokeMethodAsync('MyDiary.Web',
+    // 'CircuitPing')) — does nothing except create a server round-trip; the act
+    // of calling it keeps the SignalR circuit alive. A static [JSInvokable] is
+    // resolved by assembly name, not by this component being rendered, so this
+    // works regardless of where it lives — kept here since this is the only
+    // place that still starts the heartbeat (previously duplicated by
+    // CircuitKeepAlive.razor, which ran a second, independent 90s interval
+    // doing the exact same thing; removed).
+    [Microsoft.JSInterop.JSInvokable("CircuitPing")]
+    public static Task<bool> CircuitPing() => Task.FromResult(true);
+}

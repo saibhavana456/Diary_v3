@@ -1,0 +1,152 @@
+@page "/recon/annexure4/zo"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using System.Globalization
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@using MyDiary.Web.Features.Recon.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IReconAnnexure4Service ReconService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Annexure 4 — ZO Operations</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudText Typo="Typo.h5" Class="mb-1">Annexure 4 — ZO Consolidation</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+        Zone @_zoneSolId — @_reportMonth @_reportYear
+    </MudText>
+
+    @if (_view.PendingRegions.Count > 0)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-2">
+            @_view.PendingRegions.Count region(s) have not yet been forwarded by their RO Checker.
+            All regions must be forwarded before this can go to the ZO Checker.
+        </MudAlert>
+        <MudButton Variant="Variant.Text" Color="Color.Success" StartIcon="@Icons.Material.Filled.CloudDownload" Class="mb-2" OnClick="ExportPendingToExcel">
+            Export Pending List (Excel)
+        </MudButton>
+        <MudTable Items="_view.PendingRegions" Class="mb-4" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Region Code</MudTh>
+                <MudTh>Region Name</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.RegionCode</MudTd>
+                <MudTd>@context.RegionName</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-4">
+            All regions in this zone have been forwarded. Ready to forward to ZO Checker.
+        </MudAlert>
+    }
+
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Aggregated Totals (Sundry / Suspense / POB / Inter-Bank)</MudText>
+        <MudSimpleTable Dense="true">
+            <thead>
+                <tr><th>Category</th><th>Upto 3M</th><th>3-6M</th><th>Over 6M</th><th>New Over 6M</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Sundry (Entries)</td><td>@_view.Aggregated.SunUpto3MEntries</td><td>@_view.Aggregated.SunThree6MEntries</td>
+                    <td>@_view.Aggregated.SunOver6MEntries</td><td>@_view.Aggregated.SunNewOver6MEntries</td>
+                </tr>
+                <tr>
+                    <td>Suspense (Entries)</td><td>@_view.Aggregated.SusUpto3MEntries</td><td>@_view.Aggregated.SusThree6MEntries</td>
+                    <td>@_view.Aggregated.SusOver6MEntries</td><td>@_view.Aggregated.SusNewOver6MEntries</td>
+                </tr>
+                <tr>
+                    <td>POB (Entries)</td><td>@_view.Aggregated.PobUpto3MEntries</td><td>@_view.Aggregated.PobThree6MEntries</td>
+                    <td>@_view.Aggregated.PobOver6MEntries</td><td>@_view.Aggregated.PobNewOver6MEntries</td>
+                </tr>
+                <tr>
+                    <td>Inter-Bank (Entries)</td><td>@_view.Aggregated.IbkUpto3MEntries</td><td>@_view.Aggregated.IbkThree6MEntries</td>
+                    <td>@_view.Aggregated.IbkOver6MEntries</td><td>@_view.Aggregated.IbkNewOver6MEntries</td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(!_view.CanForward || _forwarding)" OnClick="Forward">
+        @(_forwarding ? "Forwarding..." : "Forward to ZO Checker")
+    </MudButton>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _forwarding;
+    private string _empId = "", _zoneSolId = "";
+    private string _reportMonth = "", _reportYear = "";
+    private ReconZoOperationsView _view = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _empId = user.FindFirst("emplid")?.Value ?? "";
+        _zoneSolId = user.FindFirst("zone_solid")?.Value ?? "";
+
+        _reportMonth = DateTime.Now.AddMonths(-1).ToString("MMMM", CultureInfo.InvariantCulture);
+        _reportYear = DateTime.Now.AddMonths(-1).ToString("yyyy", CultureInfo.InvariantCulture);
+
+        await Load();
+        _loading = false;
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            _view = await ReconService.GetZoOperationsViewAsync(_empId, _zoneSolId, _reportMonth, _reportYear);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task Forward()
+    {
+        _forwarding = true;
+        try
+        {
+            await ReconService.ForwardToZoCheckerAsync(_empId, _zoneSolId, _reportMonth, _reportYear);
+            Snackbar.Add("Reports forwarded successfully to ZH/Dy ZH.", Severity.Success);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _forwarding = false;
+        }
+    }
+
+    private async Task ExportPendingToExcel()
+    {
+        try
+        {
+            var rows = _view.PendingRegions.Select(r => (r.RegionCode, r.RegionName)).ToList();
+            var bytes = ReconExcelExportService.GeneratePendingRegionsExcel(rows, _reportYear, _reportMonth);
+            var fileName = $"PendingRegions_ZO_{_zoneSolId}_{_reportYear}_{_reportMonth}.xlsx";
+            await JS.InvokeVoidAsync("appDownloadFile", fileName, Convert.ToBase64String(bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
+        }
+    }
+}

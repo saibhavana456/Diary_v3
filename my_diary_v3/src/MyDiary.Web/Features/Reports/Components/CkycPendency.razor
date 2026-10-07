@@ -1,0 +1,292 @@
+﻿@page "/reports/ckyc-pendency"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>CKYC Pendency List — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // Defaults; hook to claims if needed (same pattern you have in Sundry/Beneficial files)
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // SUMMARY columns (like gvZoneRegionwise)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",            PropertyName = "zone_name_eng", Width = "25%" },
+        new ColumnConfig { Header = "Region",          PropertyName = "region_name",    Width = "25%" },
+        new ColumnConfig { Header = "Branch",          PropertyName = "Branch_Name",    Width = "25%" },
+        new ColumnConfig { Header = "No of Pending Cust IDs", PropertyName = "Total", IsNumeric = true, Format = "N0", Width = "20%" }
+    };
+
+    // DETAILED columns (like gvBranchwise)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",              PropertyName = "zone_name_eng",    Width = "12%" },
+        new ColumnConfig { Header = "Region",            PropertyName = "region_name",      Width = "12%" },
+        new ColumnConfig { Header = "Branch",            PropertyName = "Branch_Name",      Width = "14%" },
+        new ColumnConfig { Header = "Sol ID",            PropertyName = "SolId",            Width = "8%"  },
+        new ColumnConfig { Header = "Cust ID",           PropertyName = "CustID",           Width = "10%" },
+        new ColumnConfig { Header = "Customer Name",     PropertyName = "CustName",         Width = "16%" },
+        new ColumnConfig { Header = "Constitution",      PropertyName = "CustConstitution", Width = "12%" },
+        new ColumnConfig { Header = "Mobile Number",     PropertyName = "MobileNo",         Width = "12%" },
+        new ColumnConfig { Header = "Email ID",          PropertyName = "EmailID",          Width = "16%" },
+        new ColumnConfig { Header = "Accounts List",     PropertyName = "AccountList",      Width = "20%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "CKYC Pendency (New Portal)";
+
+        // Optional: read user claims (uncomment if you already do this in your app)
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        // Base WHERE consistent with WebForms: exclude invalid region_solid
+        string where = "b.region_solid <> '00000' AND b.region_solid <> ''";
+        string groupBy = "";
+        bool isSummary = true;
+
+        // ------- Logic ported 1:1 from CKYCPendencyNew.aspx.cs -------
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = "Count(*) As Total, 'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As SolId";
+            }
+            else if (_selectedZone == "all") // All(Zonewise) → Regionwise/Branchwise via selections
+            {
+                if (_selectedRegion == "1") // Zonewise summary
+                {
+                    columns = "Count(*) As Total, 'All' As Branch_Name, 'All' As region_name, b.zone_name_eng, b.Zone_SolId As SolId";
+                    groupBy = " Group By b.Zone_SolId, b.zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Regionwise summary
+                    {
+                        columns = "Count(*) As Total, 'All' As Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId As SolId";
+                        groupBy = " Group By b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else // Branchwise detailed (all branches)
+                    {
+                        isSummary = false;
+                        columns = DetailedColumns();
+                    }
+                }
+                else // Specific Region
+                {
+                    where += $" AND b.region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Count(*) As Total, 'All' As Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId As SolId";
+                        groupBy = " Group By b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                        columns = DetailedColumns();
+                    }
+                }
+            }
+            else // Specific Zone
+            {
+                where += $" AND b.zone_solid = '{_selectedZone}'";
+                if (_selectedRegion == "1")
+                {
+                    columns = "Count(*) As Total, 'All' As Branch_Name, 'All' As region_name, b.zone_name_eng, b.Zone_SolId As SolId";
+                    groupBy = " Group By b.Zone_SolId, b.zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Regionwise summary within zone
+                    {
+                        columns = "Count(*) As Total, 'All' As Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId As SolId";
+                        groupBy = " Group By b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else // Detailed within zone
+                    {
+                        isSummary = false;
+                        columns = DetailedColumns();
+                    }
+                }
+                else // Specific Region inside Zone
+                {
+                    where += $" AND b.region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Count(*) As Total, 'All' As Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId As SolId";
+                        groupBy = " Group By b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                        columns = DetailedColumns();
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" AND b.Zone_solid = '{_userZoneSolid}'";
+            if (_selectedRegion == "1") // Summary of ZO
+            {
+                columns = "Count(*) As Total, 'All' As Branch_Name, 'All' As region_name, b.zone_name_eng, b.Zone_SolId As SolId";
+                groupBy = " Group By b.zone_name_eng, b.Zone_SolId";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1") // Regionwise summary
+                {
+                    columns = "Count(*) As Total, 'All' As Branch_Name, b.region_name, b.zone_name_eng, b.region_solid As SolId";
+                    groupBy = " Group By b.region_name, b.region_SolId, b.zone_name_eng";
+                }
+                else // Detailed at zone level (all or specific branch)
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                    columns = DetailedColumns();
+                }
+            }
+            else // Specific Region within zone
+            {
+                where += $" AND b.region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1") // Region summary
+                {
+                    columns = "Count(*) As Total, 'All' As Branch_Name, b.region_name, b.zone_name_eng, b.region_solid As SolId";
+                    groupBy = " Group By b.region_name, b.region_SolId, b.zone_name_eng";
+                }
+                else // Detailed
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                    columns = DetailedColumns();
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" AND b.region_solid = '{_userRegionSolid}'";
+            if (_selectedBranch == "1") // Region summary
+            {
+                columns = "Count(*) As Total, 'All' As Branch_Name, b.region_name, b.zone_name_eng, b.region_solid As SolId";
+                groupBy = " Group By b.region_name, b.region_SolId, b.zone_name_eng";
+            }
+            else // Detailed (all or specific branch)
+            {
+                isSummary = false;
+                if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                columns = DetailedColumns();
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" AND b.sol_id = '{_userBranchSolid}'";
+            columns = DetailedColumns();
+        }
+
+        // Final query
+        string finalQuery =
+            $"SELECT {columns} " +
+            "FROM CKYCPendencyNew A " +
+            "JOIN Branch_Master B ON A.SolID = B.SOL_ID " +
+            $"WHERE {where}{groupBy}";
+
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("CKYCPendencyNew");
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+        string date = dateTask.Result;
+        if (isSummary)
+        {
+            _activeConfig.Columns = _summaryCols;
+            _asOnDateLabel = $"Data As On - {date}";
+        }
+        else
+        {
+            _activeConfig.Columns = _detailedCols;
+            _asOnDateLabel = $"Data As On - {date}";
+        }
+
+        _loading = false;
+        StateHasChanged();
+
+        // Helper: Detailed SELECT projection (kept central to avoid drift)
+        static string DetailedColumns() =>
+            "b.zone_name_eng, b.region_name, b.BRANCH_NAME AS Branch_Name, " +
+            "b.SOL_ID AS SolId, " +
+            "A.CustID, A.CustName, A.CustConstitution, A.CustConstitutionCat, " +
+            "A.MobileNo, A.EmailID, REPLACE(A.AccountList, ',', ', ') AS AccountList";
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "CKYCPendency");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "CKYCPendency.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

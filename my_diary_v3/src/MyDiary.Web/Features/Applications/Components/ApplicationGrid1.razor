@@ -1,0 +1,824 @@
+@page "/app-portal1"
+@layout MyDiary.Web.Components.Layout.MainLayout
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using MudBlazor
+@using Oracle.ManagedDataAccess.Client
+@using System.Data
+@using MyDiary.Web.Core.Services.Authentication
+@using MyDiary.Web.Core.Services.Storage
+@inject IConfiguration Configuration
+@inject SSOService SSOService
+@inject IJSRuntime JS
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using System.Globalization
+@using System.Text
+@inject ISessionStorageService SessionStorage
+@inject MyDiary.Web.Services.IEncryptionService EncryptionService
+@inject MyDiary.Web.Services.EkamSsoService EkamSsoService
+@inject IDialogService DialogService
+@inject MyDiary.Web.Features.Shared.Services.IVCardService VCardService
+@inject MyDiary.Web.Services.EoiSsoService EoiSsoService
+@inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+@inject global::RequestPortal.Core.Abstractions.ICcpRbacService CcpRbacService
+
+<PageTitle>Applications — My Diary | Union Bank of India</PageTitle>
+
+<PageHeader PageKey="applications" Title="Applications"
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Applications") })"
+            Subtitle="Browse and launch applications" />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+            @* --- Header Section --- *@
+            @* <MudCard Elevation="2" Style="border-top-left-radius: 10px; border-top-right-radius: 10px;">
+                <MudCardHeader Class="justify-center text-white" Style="height:50px; font-weight:800; background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    <h2 class="ma-0" style="font-size:1.25rem; font-weight:800; color:white;">Applications</h2>
+                </MudCardHeader>
+            </MudCard> *@
+
+            <div class="application-component-root pa-4">
+                <div class="filter-container">
+                    @* Filter row: categories wrap freely on the left; search+toggle stay pinned top-right *@
+                    <div style="display:grid; grid-template-columns:1fr auto; align-items:start;
+                                gap:8px; padding:16px; border-bottom:1px solid #f1f5f9;">
+                        <div class="d-flex flex-wrap gap-2">
+                            <MudButton Variant="Variant.Filled" Class="@GetButtonClass("All")" OnClick='() => SetFilterMode("All")' UserAttributes="@AriaBtn("All")">All</MudButton>
+                            <MudButton Variant="Variant.Filled" Class="@GetButtonClass("Category")" OnClick='() => SetFilterMode("Category")' UserAttributes="@AriaBtn("Category")">Category</MudButton>
+                            <MudButton Variant="Variant.Filled" Class="@GetButtonClass("Department")" OnClick='() => SetFilterMode("Department")' UserAttributes="@AriaBtn("Department")">Department</MudButton>
+                            <MudButton Variant="Variant.Filled" Class="@GetButtonClass("Type")" OnClick='() => SetFilterMode("Type")' UserAttributes="@AriaBtn("Type")">Type</MudButton>
+                            <MudButton Variant="Variant.Filled" Class="@GetButtonClass("InHouse Software")" OnClick='() => SetFilterMode("InHouse Software")' UserAttributes="@AriaBtn("InHouse Software")">InHouse Software</MudButton>
+                            <MudButton Variant="Variant.Filled" Class="@GetButtonClass("Fast Access")" OnClick='() => SetFilterMode("Fast Access")' UserAttributes="@AriaBtn("Fast Access")">Fast Access</MudButton>
+                            <MudButton Variant="Variant.Filled" Class="@GetButtonClass("Useful Links")" OnClick='() => SetFilterMode("Useful Links")' UserAttributes="@AriaBtn("Useful Links")">Useful Links</MudButton>
+                        </div>
+
+                        @* Search + toggle � always top-right, never wraps *@
+                        <div class="d-flex align-center gap-2" style="white-space:nowrap;">
+                            <MudTextField @bind-Value="_searchText"
+                                          PlaceHolder="Search Applications"
+                                          Variant="Variant.Outlined"
+                                          Adornment="Adornment.End"
+                                          AdornmentIcon="@Icons.Material.Filled.Search"
+                                          Margin="Margin.Dense"
+                                          Class="search-bar"
+                                          Immediate="true" />
+                            <MudToggleGroup T="string" Value="@_viewMode" ValueChanged="v => _viewMode = v"
+                                            Delimiter="false" Color="Color.Info" Rounded="true"
+                                            aria-label="View mode">
+                                <MudToggleItem Value='@("List")' Icon="@Icons.Material.Filled.List" aria-label="List view" />
+                                <MudToggleItem Value='@("Grid")' Icon="@Icons.Material.Filled.GridView" aria-label="Grid view" />
+                            </MudToggleGroup>
+                        </div>
+                    </div>
+                    @if (_activeFilter != "All")
+                    {
+                        <div class="dropdown-row pt-3" style="border-top: 1px solid #f1f5f9;">
+                            @if (_activeFilter == "Category")
+                            {
+                                <div role="combobox" aria-label="Select Category" aria-haspopup="listbox" aria-expanded="false">
+                                <MudSelect T="string" Label="Select Category" @bind-Value="SelectedCat" Variant="Variant.Outlined" Margin="Margin.Dense" Class="large-select"
+                                           AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                                           UserAttributes="@(new Dictionary<string, object>{ ["aria-label"] = "Select Category" })">
+                                    <MudSelectItem Value="@("All")">All Categories</MudSelectItem>
+                                    @foreach (var cat in GetFilteredCategories())
+                                    {
+                                        <MudSelectItem Value="@cat">@cat</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                </div>
+                            }
+                            else if (_activeFilter == "Department")
+                            {
+                                <div role="combobox" aria-label="Select Department" aria-haspopup="listbox" aria-expanded="false">
+                                <MudSelect T="string" Label="Select Department" @bind-Value="SelectedDept" Variant="Variant.Outlined" Margin="Margin.Dense" Class="large-select"
+                                           AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                                           UserAttributes="@(new Dictionary<string, object>{ ["aria-label"] = "Select Department" })">
+                                    <MudSelectItem Value="@("All")">All Departments</MudSelectItem>
+                                    @foreach (var dept in GetFilteredDepartments())
+                                    {
+                                        <MudSelectItem Value="@dept">@dept</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                </div>
+                            }
+                            else if (_activeFilter == "Type")
+                            {
+                                <div role="combobox" aria-label="Select Application Type" aria-haspopup="listbox" aria-expanded="false">
+                                <MudSelect T="string" Label="Select Application Type" @bind-Value="SelectedType" Variant="Variant.Outlined" Margin="Margin.Dense" Class="large-select"
+                                           AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                                           UserAttributes="@(new Dictionary<string, object>{ ["aria-label"] = "Select Application Type" })">
+                                    <MudSelectItem Value="@("All")">All Types</MudSelectItem>
+                                    @foreach (var type in _allApps?.Select(x => x.Type).Distinct().OrderBy(x => x) ?? Enumerable.Empty<string>())
+                                    {
+                                        <MudSelectItem Value="@type">@type</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                </div>
+                            }
+                            else if (_activeFilter == "Useful Links")
+                            {
+                                <div role="combobox" aria-label="Select Useful Link Group" aria-haspopup="listbox" aria-expanded="false">
+                                <MudSelect T="string" Label="Select Useful Link Group" @bind-Value="SelectedUsefulSub" Variant="Variant.Outlined" Margin="Margin.Dense" Class="large-select"
+                                           AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                                           UserAttributes="@(new Dictionary<string, object>{ ["aria-label"] = "Select Useful Link Group" })">
+                                    <MudSelectItem Value="@("All")">All Useful Links</MudSelectItem>
+                                    @foreach (var sub in GetUsefulSubCategories())
+                                    {
+                                        <MudSelectItem Value="@sub">@sub</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                </div>
+                            }
+                            else if (_activeFilter == "InHouse Software")
+                            {
+                                <div class="d-flex flex-wrap gap-2">
+                                    <MudButton Variant="Variant.Filled"
+                                               Class="@(_inHouseSubFilter == "All" ? "tab-btn active" : "tab-btn")"
+                                               OnClick='() => _inHouseSubFilter = "All"'
+                                               UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = _inHouseSubFilter == "All" ? "true" : "false" })">All</MudButton>
+                                    <MudButton Variant="Variant.Filled"
+                                               Class="@(_inHouseSubFilter == "SSO" ? "tab-btn active" : "tab-btn")"
+                                               OnClick='() => _inHouseSubFilter = "SSO"'
+                                               UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = _inHouseSubFilter == "SSO" ? "true" : "false" })">SSO Applications</MudButton>
+                                    <MudButton Variant="Variant.Filled"
+                                               Class="@(_inHouseSubFilter == "Non-SSO" ? "tab-btn active" : "tab-btn")"
+                                               OnClick='() => _inHouseSubFilter = "Non-SSO"'
+                                               UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = _inHouseSubFilter == "Non-SSO" ? "true" : "false" })">Non-SSO Applications</MudButton>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @* --- Main Content Grid --- *@
+                <div aria-live="polite" class="visually-hidden">
+                    @if (!_isLoading && _allApps != null)
+                    {
+                        <span>Showing @_activeFilter filter. @FilteredApps.Count() applications found. Content updated below the filter section.</span>
+                    }
+                </div>
+                <div class="@(_viewMode == "Grid" ? "cards-grid mt-2" : "mt-2")">
+                    @if (_isLoading)
+                    {
+                        <div class="d-flex justify-center pa-10 w-100">
+                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                            <MudText Class="ml-3">Loading Applications...</MudText>
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(_loadError))
+                    {
+                        <div class="w-100">
+                            <MudAlert Severity="Severity.Error">@_loadError</MudAlert>
+                        </div>
+                    }
+                    else if (_allApps == null || !FilteredApps.Any())
+                    {
+                        <div class="d-flex justify-center pa-10 w-100">
+                            <MudAlert Severity="Severity.Info">No applications found matching your criteria.</MudAlert>
+                        </div>
+                    }
+                    else if (_viewMode == "Grid")
+                    {
+                        @foreach (var app in FilteredApps)
+                        {
+                            <div class="app-card">
+                                <div class="d-flex align-start gap-4">
+                                    <div class="icon-badge-container" style="background: #f1f5f9; border-radius: 12px; padding: 12px; border: 1px solid #e2e8f0;">
+                                        <MudIcon Icon="@GetMudIcon(app.IconName)" Color="Color.Success" Style="font-size: 2.5rem;" />
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <div class="app-info-text card-title"><b>@app.FullName</b></div>
+                                        <div class="app-info-text">@app.Type</div>
+                                        @if (app.Type == "EXTERNAL")
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Style="font-size: 0.7rem; height: 22px;">External</MudChip>
+                                        }
+                                        else if (app.Type == "Mobile App")
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Style="font-size: 0.7rem; height: 22px;">Mobile Only</MudChip>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="app-divider my-3" style="height: 1px; background-color: #d1d5db;"></div>
+                                <div class="d-flex justify-space-between align-end">
+                                    <div class="d-flex flex-column gap-1">
+                                        <div class="app-info-text"><b>Department:</b> @app.Department</div>
+                                        <div class="app-info-text"><b>Category:</b> @app.Category</div>
+                                        <div class="app-info-text"><b>SubCategory:</b> @app.SubCategory</div>
+                                        <div class="mt-3">
+                                            <MudButton Variant="Variant.Text" Class="tab-btn active go-btn"
+                                                       OnClick="@(() => HandleGoClick(app))"
+                                                       EndIcon="@Icons.Material.Filled.ArrowRightAlt"
+                                                       aria-label="@($"Open {app.FullName}")">GO</MudButton>
+                                        </div>
+                                    </div>
+                                    <MudMenu ActivationEvent="@MouseEvent.MouseOver" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.BottomRight">
+                                        <ActivatorContent>
+                                            <div class="tab-btn active info-btn-circle">
+                                                <span class="custom-i-icon">i</span>
+                                            </div>
+                                        </ActivatorContent>
+                                        <ChildContent>
+                                            <div class="styled-popup-content">@app.Description</div>
+                                        </ChildContent>
+                                    </MudMenu>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <MudTable Items="FilteredApps" Dense="true" Hover="true" Striped="true" Bordered="true">
+                            <HeaderContent>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Application Name</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Type</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Department</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Category</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">SubCategory</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white; width:80px;">Action</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd><b>@context.FullName</b></MudTd>
+                                <MudTd>@context.Type</MudTd>
+                                <MudTd>@context.Department</MudTd>
+                                <MudTd>@context.Category</MudTd>
+                                <MudTd>@context.SubCategory</MudTd>
+                                <MudTd>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="Color.Primary"
+                                                   OnClick="@(() => HandleGoClick(context))"
+                                                   aria-label="@($"Open {context.FullName}")" />
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </div>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .search-bar {
+        max-width: 350px;
+    }
+
+        .search-bar ::deep .mud-input-outlined-border {
+            border-radius: 15px !important;
+        }
+
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 24px;
+    }
+
+    @@media (max-width: 1200px) {
+        .cards-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
+
+    @@media (max-width: 900px) {
+        .cards-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @@media (max-width: 600px) {
+        .cards-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .app-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        padding: 24px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+    }
+
+        .app-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.15);
+        }
+
+    .card-title {
+        font-weight: 700;
+        color: #111827;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .large-select {
+        max-width: 450px;
+        width: 100%;
+    }
+
+    .tab-btn {
+        background-color: white !important;
+        border: 1px solid rgba(0,0,0,0.08) !important;
+        color: #1f2937 !important;
+        border-radius: 999px !important;
+        font-size: 0.9rem !important;
+        font-weight: 700 !important;
+        text-transform: none !important;
+    }
+
+        .tab-btn.active {
+            background: var(--primary-gradient) !important;
+            color: #fff !important;
+            box-shadow: 0 10px 26px rgba(30,58,138,0.45) !important;
+            border: none !important;
+        }
+
+    .info-btn-circle {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .custom-i-icon {
+        font-family: 'Georgia', serif;
+        font-weight: 900;
+        font-style: italic;
+        font-size: 1.6rem;
+        color: white;
+    }
+
+    .app-info-text {
+        font-size: 0.95rem;
+        color: #374151;
+        line-height: 1.4;
+    }
+
+    .styled-popup-content {
+        padding: 20px;
+        max-width: 320px;
+        background-color: white;
+        border-radius: 15px !important;
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+
+    /* --- Sub-category underlined text links (matches Business page) --- */
+    .sub-tab-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        padding: 8px 16px 0;
+        border-bottom: 2px solid #e5e7eb;
+        align-items: flex-end;
+        margin-bottom: 12px;
+    }
+
+    .sub-tab {
+        padding: 6px 2px 8px;
+        font-size: 0.88rem;
+        font-weight: 500;
+        color: #6b7280;
+        cursor: pointer;
+        text-decoration: none;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s;
+        margin-bottom: -2px;
+        background: none;
+        border-top: none;
+        border-left: none;
+        border-right: none;
+    }
+
+        .sub-tab:hover { color: #1E3A8A; }
+
+        .sub-tab.active {
+            color: #111827;
+            font-weight: 700;
+            border-bottom-color: #1E3A8A;
+        }
+</style>
+
+@code {
+    private List<AppModel> _allApps = new();
+    private string SelectedType { get; set; } = "All";
+    private string SelectedDept { get; set; } = "All";
+    private string SelectedCat { get; set; } = "All";
+    private string SelectedUsefulSub { get; set; } = "All";
+    private string _activeFilter = "All";
+    private string _searchText = "";
+    private string? _userIdf;
+    private string? _pwdf;
+    private string _inHouseSubFilter = "All";
+    private string _viewMode = "Grid";
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    private string GetButtonClass(string mode) => _activeFilter == mode ? "tab-btn active" : "tab-btn";
+
+    private Dictionary<string, object> AriaBtn(string mode) => new()
+    {
+        ["aria-current"] = _activeFilter == mode ? "true" : "false"
+    };
+
+    private void SetFilterMode(string mode)
+    {
+        _activeFilter = mode;
+        SelectedType = "All";
+        SelectedDept = "All";
+        SelectedCat = "All";
+        SelectedUsefulSub = "All";
+        _inHouseSubFilter = "All";
+        _searchText = "";
+        StateHasChanged();
+    }
+
+    private IEnumerable<AppModel> FilteredApps
+    {
+        get
+        {
+            if (_allApps == null) return Enumerable.Empty<AppModel>();
+            var query = _allApps.AsEnumerable();
+
+            // Handle Standard Logic
+            if (_activeFilter == "Type" && SelectedType != "All") query = query.Where(x => x.Type == SelectedType);
+            else if (_activeFilter == "Department" && SelectedDept != "All") query = query.Where(x => x.Department == SelectedDept);
+            else if (_activeFilter == "Category" && SelectedCat != "All") query = query.Where(x => x.Category == SelectedCat);
+
+            // Handle Tag-based InHouse Logic
+            else if (_activeFilter == "InHouse Software")
+            {
+                query = query.Where(x => x.AppAccessTag.Contains("In-house Software", StringComparison.OrdinalIgnoreCase));
+
+                if (_inHouseSubFilter == "SSO")
+                    query = query.Where(x => x.SSOFlag == "Y");
+                else if (_inHouseSubFilter == "Non-SSO")
+                    query = query.Where(x => x.SSOFlag != "Y");
+            }
+            else if (_activeFilter == "Fast Access")
+                query = query.Where(x => x.AppAccessTag.Contains("Fast Access", StringComparison.OrdinalIgnoreCase));
+            else if (_activeFilter == "Useful Links")
+            {
+                query = query.Where(x => x.AppAccessTag.Contains("Useful Links", StringComparison.OrdinalIgnoreCase));
+                if (SelectedUsefulSub != "All")
+                {
+                    query = query.Where(x => x.AppAccessTag.Contains($"{SelectedUsefulSub}", StringComparison.OrdinalIgnoreCase));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                query = query.Where(x => x.ShortName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                                       x.FullName.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query.OrderBy(x => x.ShortName);
+        }
+    }
+
+    private IEnumerable<string> GetUsefulSubCategories()
+    {
+        var subs = new List<string>();
+        if (_allApps == null) return subs;
+
+        foreach (var app in _allApps)
+        {
+            if (string.IsNullOrWhiteSpace(app.AppAccessTag)) continue;
+            var parts = app.AppAccessTag.Split('|', StringSplitOptions.TrimEntries).ToList();
+            int index = parts.FindIndex(p => p.Equals("Useful Links", StringComparison.OrdinalIgnoreCase));
+            if (index != -1 && index + 1 < parts.Count)
+            {
+                subs.Add(parts[index + 1]);
+            }
+        }
+        return subs.Distinct().OrderBy(x => x);
+    }
+
+    private IEnumerable<string> GetFilteredDepartments() => _allApps?.Select(x => x.Department).Distinct().OrderBy(x => x) ?? Enumerable.Empty<string>();
+    private IEnumerable<string> GetFilteredCategories() => _allApps?.Select(x => x.Category).Distinct().OrderBy(x => x) ?? Enumerable.Empty<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allApps = new List<AppModel>();
+        try
+        {
+            _isLoading = true;
+            _loadError = null;
+
+            using var con = new OracleConnection(Configuration.GetConnectionString("MyDiaryDBConnection"));
+            await con.OpenAsync();
+            using var cmd = new OracleCommand("SELECT * FROM APPLICATION_LIST ORDER BY APP_NAME", con);
+            using var r = await cmd.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+            {
+                _allApps.Add(new AppModel
+                    {
+                        FullName = r["APP_NAME"]?.ToString()?.Trim() ?? "",
+                        //Type = r["APP_TYPE"]?.ToString() ?? "",
+                        Type = !string.IsNullOrWhiteSpace(r["APP_TYPE"]?.ToString()) ?
+                                            r["APP_TYPE"]!.ToString() : "Others",
+                        //Department = r["APP_BUSINESS_OWNER_DEPT_NAME"]?.ToString() ?? "",
+                        //Category = r["APP_CATEGORY"]?.ToString() ?? "",
+                        Department = !string.IsNullOrWhiteSpace(r["APP_BUSINESS_OWNER_DEPT_NAME"]?.ToString())
+                                           ? r["APP_BUSINESS_OWNER_DEPT_NAME"]!.ToString()
+                                           : (r["APP_SHORT_NAME"]?.ToString()?
+                                                  .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                                                  .FirstOrDefault() ?? ""),
+                        Category = !string.IsNullOrWhiteSpace(r["APP_CATEGORY"]?.ToString())
+                                   ? r["APP_CATEGORY"]!.ToString()
+                                   : !string.IsNullOrWhiteSpace(r["APP_BUSINESS_OWNER_DEPT_NAME"]?.ToString())
+                                       ? r["APP_BUSINESS_OWNER_DEPT_NAME"]!.ToString()
+                                       : (r["APP_SHORT_NAME"]?.ToString()?
+                                              .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                                              .FirstOrDefault() ?? ""),
+                        SubCategory = !string.IsNullOrWhiteSpace(r["APP_SUBCATEGORY"]?.ToString())
+                                       ? r["APP_SUBCATEGORY"]!.ToString()
+                                       : !string.IsNullOrWhiteSpace(r["APP_BUSINESS_OWNER_DEPT_NAME"]?.ToString())
+                                           ? r["APP_BUSINESS_OWNER_DEPT_NAME"]!.ToString()
+                                           : (r["APP_SHORT_NAME"]?.ToString()?
+                                                  .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                                                  .FirstOrDefault() ?? ""),
+                        ShortName = r["APP_SHORT_NAME"]?.ToString()?.Trim() ?? "",
+                        LoginUrl = r["APP_URL"]?.ToString() ?? "",
+                        Description = !string.IsNullOrWhiteSpace(GetString(r["APP_BRIEF"]))
+                                    ? GetString(r["APP_BRIEF"])
+                                    : GenerateBrief(
+                                        GetString(r["APP_SHORT_NAME"]),
+                                        GetString(r["APP_CATEGORY"]),
+                                        GetString(r["APP_BUSINESS_OWNER_DEPT_NAME"]),
+                                        GetString(r["APP_TYPE"])
+                                      ),
+                        AppAccessTag = r["APP_ACCESS_TAG"]?.ToString() ?? "",
+                        SSOFlag = r["APP_SSO_LOGIN_FLG"]?.ToString() ?? "",
+                        IOSStoreUrl = r["APP_IOS_URL"]?.ToString() ?? ""
+                        // IconName = r["ICON_NAME"]?.ToString() ?? ""
+                    });
+
+                _allApps = _allApps.OrderBy(x => x.FullName).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "ApplicationGrid1: failed to load applications");
+            _loadError = UserFacingError.Generic;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static string GetString(object value) => value == null || value is DBNull ? "" : (value.ToString()?.Trim() ?? "");
+
+    private static string FirstWord(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return "";
+        var first = input.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        return first ?? "";
+    }
+
+    private static string GenerateBrief(string shortName, string category, string dept, string type)
+    {
+        var sentences = new List<string>();
+        if (!string.IsNullOrWhiteSpace(shortName) && !string.IsNullOrWhiteSpace(type))
+            sentences.Add($"{shortName} is a {type} application used across the organization.");
+        else if (!string.IsNullOrWhiteSpace(shortName))
+            sentences.Add($"{shortName} is an application used across the organization.");
+        else if (!string.IsNullOrWhiteSpace(type))
+            sentences.Add($"This is a {type} application used across the organization.");
+        else
+            sentences.Add("This application supports business needs across the organization.");
+
+        if (!string.IsNullOrWhiteSpace(category))
+            sentences.Add($"It focuses on {category} to support day-to-day operations.");
+        else
+            sentences.Add("It supports common business processes and daily operations.");
+
+        if (!string.IsNullOrWhiteSpace(dept))
+            sentences.Add($"The {dept} team oversees ownership and provides guidance and support.");
+        else
+            sentences.Add("Ownership and support are provided by the responsible business team.");
+
+        sentences.Add("Designed for reliability and ease of use, it helps standardize workflows, improve efficiency, and deliver consistent outcomes for employees and stakeholders.");
+        return string.Join(" ", sentences);
+    }
+
+    private string GetMudIcon(string iconName) => iconName switch
+    {
+        "Extension" => Icons.Material.Filled.Extension,
+        "Gavel" => Icons.Material.Filled.Gavel,
+        "Security" => Icons.Material.Filled.Security,
+        "Router" => Icons.Material.Filled.Router,
+        _ => Icons.Material.Filled.Apps
+    };
+
+    async void HandleGoClick(AppModel app)
+    {
+        // -- Internal migrated pages � navigate within the app ------------------
+        // Add a new case here whenever a new page is migrated from the old site.
+        string appKey = !string.IsNullOrWhiteSpace(app.ShortName)
+            ? app.ShortName.Trim()
+            : app.FullName.Trim();
+
+        switch (appKey)
+        {
+            case "Codes & Policy":
+                await JS.InvokeVoidAsync("window.open", "code_policy", "_blank");
+                return;
+            case "Executive Attendance":
+                Nav.NavigateTo("attendance/home");
+                return;
+            case "Back Dated Deposits":
+                Nav.NavigateTo("deposits/hub");
+                return;
+            case "Recon Certificates":
+                Nav.NavigateTo("recon/hub");
+                return;
+            case "Mediation of Nation":
+                Nav.NavigateTo("mediation/hub");
+                return;
+            case "UHV Launch":
+                // Union Hub Video Launch is now reached from the Notifications sidebar (under
+                // "Union Hub"), not the Applications grid — this case stays only as a safety net
+                // in case the APPLICATION_LIST row is ever re-added. Without this case it fell
+                // through to the "default: Standard SSO redirect" branch below, which calls
+                // EncryptionService.EncryptStringAES for an app that has no SSO login at all
+                // (APP_SSO_LOGIN_FLG='N') — that threw "Encryption service is unavailable" inside
+                // this method's `async void`, an exception with nowhere to go, so the Go click
+                // just silently did nothing ("page getting stuck").
+                Nav.NavigateTo("union-hub/video-launch");
+                return;
+            // case "NextMigratedPage":
+            //     Nav.NavigateTo("next-migrated-page");
+            //     return;
+        }
+
+        // External or Mobile-Only: show popup instead of redirect
+        if (app.Type == "EXTERNAL")
+        {            var parameters = new DialogParameters<AppAccessDialog>
+            {
+                { x => x.AccessType, "External" },
+                { x => x.AppName, app.FullName },
+                { x => x.AppUrl, app.LoginUrl }
+            };
+            var options = new DialogOptions
+            {
+                CloseOnEscapeKey = true,
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                NoHeader = true
+            };
+            await DialogService.ShowAsync<AppAccessDialog>(null, parameters, options);
+            return;
+        }
+
+        if (app.Type == "Mobile App")
+        {
+            var parameters = new DialogParameters<AppAccessDialog>
+            {
+                { x => x.AccessType, "MobileOnly" },
+                { x => x.AppName, app.FullName },
+                { x => x.AppUrl, app.LoginUrl },
+                { x => x.AndroidUrl, app.LoginUrl },
+                { x => x.IOSUrl, app.IOSStoreUrl }
+            };
+            var options = new DialogOptions
+            {
+                CloseOnEscapeKey = true,
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                NoHeader = true
+            };
+            await DialogService.ShowAsync<AppAccessDialog>(null, parameters, options);
+            return;
+        }
+
+        // -- App-specific redirect logic --
+        // Match on ShortName (APP_SHORT_NAME); falls back to FullName if ShortName is empty.
+        switch (appKey)
+        {
+            case "VCard":
+                _userIdf = await SessionStorage.GetAsync<string>("UserId");
+                string vcardUrl = await VCardService.BuildVCardUrlAsync(app.LoginUrl, _userIdf ?? "");
+                await JS.InvokeVoidAsync("window.open", vcardUrl, "_blank");
+                break;
+
+            case "EKAM":
+                _userIdf = await SessionStorage.GetAsync<string>("UserId");
+                string ekamUrl = EkamSsoService.BuildEkamUrl(app.LoginUrl, _userIdf ?? "", "lp");
+                await JS.InvokeVoidAsync("window.open", ekamUrl, "_blank");
+                break;
+
+            case "Executive Branch Visit":
+                {
+                    var executiveBranchVisitState = await AuthStateProvider.GetAuthenticationStateAsync();
+                    string bvUrl =
+                        EoiSsoService.BuildExecutiveBranchVisitUrl(
+                            app.LoginUrl,
+                            executiveBranchVisitState.User);
+
+                    await JS.InvokeVoidAsync(
+                        "window.open",
+                        bvUrl,
+                        "_blank");
+
+                    break;
+                }
+
+            case "Corporate EOI":
+                // CCP needs more than a bare employee id — branch/zone scoping and role-gated queues
+                // (BranchMaker/BranchHead/ZonalHead/CoLcv/CoMcv) depend on the full profile + resolved
+                // EoiRole being in the payload. BuildCcpLaunchUrl reads both from the current claims
+                // principal (already populated at login by CustomAuthenticationStateProvider) plus
+                // CcpRbacService's role resolution (attribute-derived Branch/Zone roles + explicit
+                // CoLcv/CoMcv assignment) — see EoiSsoService.BuildCcpLaunchUrl's own doc comment.
+                _userIdf = await SessionStorage.GetAsync<string>("UserId");
+                var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+                var eoiRole = await CcpRbacService.ResolveEoiRoleAsync(_userIdf ?? "");
+                string ccpUrl = EoiSsoService.BuildCcpLaunchUrl(app.LoginUrl, authState.User, eoiRole);
+                await JS.InvokeVoidAsync("window.open", ccpUrl, "_blank");
+                break;
+
+            case "Union Youth":
+                // Standalone microservice ("Yuva Banking Mitra" registration portal) launched via the same
+                // encrypted-token SSO handoff as CCP, but with its own launch-url builder (no EoiRole —
+                // see EoiSsoService.BuildUnionYouthLaunchUrl's own doc comment for why). IsSuperAdmin is
+                // resolved here with a real await, mirroring CCP's ResolveEoiRoleAsync call just below —
+                // it used to be resolved with a blocking .GetAwaiter().GetResult() inside the builder
+                // itself, which deadlocked the Blazor Server circuit (the click just hung forever).
+                var uyAuthState = await AuthStateProvider.GetAuthenticationStateAsync();
+                var uyEmpId = uyAuthState.User.FindFirst("emplid")?.Value ?? "";
+                var uyIsSuperAdmin = await EoiSsoService.ResolveUnionYouthIsSuperAdminAsync(uyEmpId);
+                string uyUrl = EoiSsoService.BuildUnionYouthLaunchUrl(app.LoginUrl, uyAuthState.User, uyIsSuperAdmin);
+                await JS.InvokeVoidAsync("window.open", uyUrl, "_blank");
+                break;
+
+            case "IFCO":
+            case "ifco":
+                {
+                    _userIdf = await SessionStorage.GetAsync<string>("UserId");
+
+                    string ifcoFormattedDateTime =
+                        AppTime.Now.ToString(
+                            "MM/dd/yyyy hh:mm:ss tt",
+                            CultureInfo.InvariantCulture);
+
+                    string ifcoData =
+                        EncryptionService.EncryptStringAES(
+                            $"{_userIdf}|{ifcoFormattedDateTime}");
+
+                    string ifcoUrlWithData =
+                        $"{app.LoginUrl}?data={Uri.EscapeDataString(ifcoData)}";
+
+                    await JS.InvokeVoidAsync("window.open", ifcoUrlWithData,"_blank");
+
+                    break;
+                }
+
+            // Add cases for other apps here as needed, e.g.:
+            // case "SomeOtherApp":
+            //     await HandleSomeOtherAppRedirectAsync(app.LoginUrl);
+            //     break;
+
+            default:
+                // -- Standard SSO redirect --
+                _userIdf = await SessionStorage.GetAsync<string>("UserId");
+                _pwdf = await SessionStorage.GetAsync<string>("Pwd");
+                string formattedDateTime = AppTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
+                string data = EncryptionService.EncryptStringAES(_userIdf + "|" + _pwdf + "|" + formattedDateTime);
+                string urlWithData = app.LoginUrl + "?data=" + data;
+                await JS.InvokeVoidAsync("window.open", urlWithData, "_blank");
+                break;
+        }
+    }
+
+    public class AppModel
+    {
+        public string ShortName { get; set; } = "";
+        public string FullName { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Department { get; set; } = "";
+        public string Category { get; set; } = "";
+        public string SubCategory { get; set; } = "";
+        public string AppAccessTag { get; set; } = "";
+        public string SSOFlag { get; set; } = "";
+        public string LoginUrl { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string IconName { get; set; } = "";
+        public string IOSStoreUrl { get; set; } = "";
+    }
+}

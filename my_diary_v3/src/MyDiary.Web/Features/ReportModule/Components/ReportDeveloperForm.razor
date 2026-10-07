@@ -1,0 +1,374 @@
+@page "/reports/developer/new"
+@page "/reports/developer/edit/{Id:long}"
+@using MudBlazor
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IReportRepo ReportRepo
+@inject IMasterRepo Masters
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject MyDiary.Web.Features.ReportModule.Services.ReportExecutionService ExecSvc
+@inject IAuditService AuditSvc
+
+<PageTitle>@(IsEdit ? "Edit Report" : "New Report")</PageTitle>
+
+<PageHeader PageKey="report-developer" Title="@(IsEdit ? "Edit Report" : "New Report")" Crumbs="_crumbs" />
+
+<SuperAdminOnly>
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="long?" Label="Vertical" Value="_form.VerticalId" ValueChanged="OnVerticalChangedAsync" Required="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var v in _verticals) { <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="long?" Label="Department" @bind-Value="_form.DepartmentId" Required="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var d in _departments) { <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.Name</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="ReportSourceType" Label="Source" @bind-Value="_form.SourceType"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var opt in _sourceOptions)
+                        {
+                            <MudSelectItem T="ReportSourceType" Value="@opt.Value">@opt.Label</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Report Code" Value="@(string.IsNullOrEmpty(_form.ReportCode) ? "(select a vertical)" : _form.ReportCode)"
+                                  ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudText Typo="Typo.caption" Class="text-muted">Auto-generated from the vertical — stable, never edited.</MudText>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Report Name" @bind-Value="_form.ReportName" Required="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="ReportSite" Label="Running From" @bind-Value="_form.RunningFrom"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="ReportSite" Value="ReportSite.Dc">DC (Primary)</MudSelectItem>
+                        <MudSelectItem T="ReportSite" Value="ReportSite.Dr">DR (Secondary)</MudSelectItem>
+                    </MudSelect>
+                    <MudText Typo="Typo.caption" Class="text-muted">The Reports module always reads from whichever site is selected here.</MudText>
+                </MudItem>
+                @if (_form.SourceType is ReportSourceType.FilePath or ReportSourceType.Sftp)
+                {
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="string" Label="File Type" @bind-Value="_form.FileType" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem T="string" Value="@("XLSX")">XLSX</MudSelectItem>
+                            <MudSelectItem T="string" Value="@("CSV")">CSV</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                }
+
+                @if (_form.SourceType is ReportSourceType.FilePath or ReportSourceType.Sftp)
+                {
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <div class="d-flex align-center justify-space-between">
+                            <MudText Typo="Typo.subtitle2" Class="fw-bold">DC (Primary) Details</MudText>
+                            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.ContentCopy"
+                                       OnClick="CopyDcToDr">Copy DC → DR</MudButton>
+                        </div>
+                    </MudItem>
+
+                    <MudItem xs="12" md="@(_form.SourceType == ReportSourceType.Sftp ? 6 : 12)">
+                        <MudTextField T="string" Label="@(_form.SourceType == ReportSourceType.Sftp ? "Remote File Path (DC)" : "Server File Path (DC)")"
+                                      @bind-Value="_form.FilePath" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Placeholder="@(_form.SourceType == ReportSourceType.Sftp ? "/exports/report.xlsx" : "D:\\Reports\\report.xlsx")" />
+                    </MudItem>
+                    @if (_form.SourceType == ReportSourceType.Sftp)
+                    {
+                        <MudItem xs="12" md="3"><MudTextField T="string" Label="SFTP Host / URL (DC)" @bind-Value="_form.SftpHost" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="3"><MudNumericField T="int?" Label="Port (DC)" @bind-Value="_form.SftpPort" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="3"><MudTextField T="string" Label="User ID (DC)" @bind-Value="_form.SftpUser" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudTextField T="string" Label="Password (DC)" InputType="InputType.Password" @bind-Value="_form.SftpPassword"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    }
+
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.subtitle2" Class="fw-bold">DR (Secondary) Details</MudText>
+                    </MudItem>
+
+                    <MudItem xs="12" md="@(_form.SourceType == ReportSourceType.Sftp ? 6 : 12)">
+                        <MudTextField T="string" Label="@(_form.SourceType == ReportSourceType.Sftp ? "Remote File Path (DR)" : "Server File Path (DR)")"
+                                      @bind-Value="_form.FilePathDr" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Placeholder="@(_form.SourceType == ReportSourceType.Sftp ? "/exports/report.xlsx" : "E:\\Reports\\report.xlsx")" />
+                    </MudItem>
+                    @if (_form.SourceType == ReportSourceType.Sftp)
+                    {
+                        <MudItem xs="12" md="3"><MudTextField T="string" Label="SFTP Host / URL (DR)" @bind-Value="_form.SftpHostDr" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="3"><MudNumericField T="int?" Label="Port (DR)" @bind-Value="_form.SftpPortDr" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="3"><MudTextField T="string" Label="User ID (DR)" @bind-Value="_form.SftpUserDr" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudTextField T="string" Label="Password (DR)" InputType="InputType.Password" @bind-Value="_form.SftpPasswordDr"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    }
+                }
+
+                @if (_form.SourceType is ReportSourceType.OracleDb or ReportSourceType.SqlServerDb or ReportSourceType.Impala)
+                {
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.caption" Class="text-muted d-block mb-2">
+                            No connection string is typed here — pick one of the connections already configured in
+                            appsettings, then write the query below.
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" Label="Connection Name" @bind-Value="_form.ConnectionName" Required="true"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var name in _connectionNames)
+                            {
+                                <MudSelectItem T="string" Value="@name">@name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudText Typo="Typo.caption" Class="text-muted">All configured connections are listed — pick one that matches @SourceLabel(_form.SourceType).</MudText>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string" Label="SQL Query" @bind-Value="_form.SqlQuery" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Lines="4" Placeholder="SELECT * FROM MY_TABLE WHERE ..." />
+                        <MudText Typo="Typo.caption" Class="text-muted">Only the top 200 rows are ever fetched to the screen — the query is auto-wrapped.</MudText>
+                    </MudItem>
+                }
+
+                @if (_form.SourceType is ReportSourceType.OracleDb or ReportSourceType.SqlServerDb or ReportSourceType.Impala)
+                {
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.subtitle2" Class="fw-bold mb-1">Filters (shown on the Reports viewing page)</MudText>
+                        <MudText Typo="Typo.caption" Class="text-muted d-block mb-2">
+                            For each filter you enable, enter the exact column name your query above returns to filter on
+                            (e.g. "ZONE_NAME"). Leave a filter off if the query doesn't return a matching column.
+                        </MudText>
+
+                        <div class="d-flex align-center gap-3 mb-2">
+                            <MudSwitch T="bool" @bind-Value="_zoneEnabled" Color="Color.Primary" Label="Zone filter" />
+                            @if (_zoneEnabled)
+                            {
+                                <MudTextField T="string" @bind-Value="_zoneColumn" Label="Column Name" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:260px" />
+                            }
+                        </div>
+                        <div class="d-flex align-center gap-3 mb-2">
+                            <MudSwitch T="bool" @bind-Value="_regionEnabled" Color="Color.Primary" Label="Region filter" />
+                            @if (_regionEnabled)
+                            {
+                                <MudTextField T="string" @bind-Value="_regionColumn" Label="Column Name" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:260px" />
+                            }
+                        </div>
+                        <div class="d-flex align-center gap-3 mb-3">
+                            <MudSwitch T="bool" @bind-Value="_branchEnabled" Color="Color.Primary" Label="Branch filter" />
+                            @if (_branchEnabled)
+                            {
+                                <MudTextField T="string" @bind-Value="_branchColumn" Label="Column Name" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:260px" />
+                            }
+                        </div>
+
+                        <MudText Typo="Typo.body2" Class="fw-bold mb-1">Other Filters</MudText>
+                        @for (int i = 0; i < _otherFilters.Count; i++)
+                        {
+                            var idx = i;
+                            <div class="d-flex align-center gap-3 mb-2">
+                                <MudTextField T="string" Label="Column Name" Value="@_otherFilters[idx].ColumnName"
+                                              ValueChanged="@(v => _otherFilters[idx] = (v, _otherFilters[idx].Label))"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:260px" />
+                                <MudTextField T="string" Label="Display Label" Value="@_otherFilters[idx].Label"
+                                              ValueChanged="@(v => _otherFilters[idx] = (_otherFilters[idx].ColumnName, v))"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:260px" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="@(() => RemoveOtherFilter(idx))" />
+                            </div>
+                        }
+                        <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddOtherFilter">Add Filter</MudButton>
+                    </MudItem>
+                }
+
+                <MudItem xs="12" Class="d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="@_busy">
+                        @(IsEdit ? "Save" : "Submit")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("reports/developer"))">Cancel</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    }
+</SuperAdminOnly>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+    private bool IsEdit => Id.HasValue;
+
+    private List<PageHeader.Crumb> _crumbs => new()
+    {
+        new("Reports"), new("Report Developer", "reports/developer"), new(IsEdit ? "Edit" : "New")
+    };
+
+    private bool _loading = true, _busy;
+    private ReportDefForm _form = new();
+
+    private List<Vertical> _verticals = new();
+    private List<Department> _departments = new();
+    private IReadOnlyList<string> _connectionNames = Array.Empty<string>();
+
+    private readonly (ReportSourceType Value, string Label)[] _sourceOptions =
+    {
+        (ReportSourceType.FilePath, "Server File Path"),
+        (ReportSourceType.Sftp, "SFTP"),
+        (ReportSourceType.OracleDb, "Oracle DB"),
+        (ReportSourceType.SqlServerDb, "MS SQL Server DB"),
+        (ReportSourceType.Impala, "Hive/Impala (via Knox)"),
+    };
+
+    private static string SourceLabel(ReportSourceType t) => t switch
+    {
+        ReportSourceType.OracleDb => "Oracle",
+        ReportSourceType.SqlServerDb => "SQL Server",
+        ReportSourceType.Impala => "Hive/Impala (via Knox)",
+        _ => t.ToString()
+    };
+
+    // ── Filters (Zone/Region/Branch/Custom) — edited as plain UI state, saved as
+    //    a full ReplaceFiltersAsync call alongside the report itself ────────────
+    private bool _zoneEnabled, _regionEnabled, _branchEnabled;
+    private string _zoneColumn = "", _regionColumn = "", _branchColumn = "";
+    private List<(string ColumnName, string Label)> _otherFilters = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = (await Masters.ListVerticalsAllAsync()).ToList();
+        _connectionNames = ExecSvc.ListAvailableConnectionNames();
+
+        if (IsEdit)
+        {
+            var d = await ReportRepo.GetDefAsync(Id!.Value);
+            if (d is not null)
+            {
+                _form = new ReportDefForm
+                {
+                    Id = d.Id, ReportCode = d.ReportCode, ReportName = d.ReportName, VerticalId = d.VerticalId, DepartmentId = d.DepartmentId,
+                    SourceType = d.SourceType, RunningFrom = d.RunningFrom, ConnectionName = d.ConnectionName, FileType = d.FileType,
+                    FilePath = d.FilePath, SftpHost = d.SftpHost, SftpPort = d.SftpPort, SftpUser = d.SftpUser,
+                    SftpPassword = d.SftpPassword, DbConnectionString = d.DbConnectionString,
+                    FilePathDr = d.FilePathDr, SftpHostDr = d.SftpHostDr, SftpPortDr = d.SftpPortDr, SftpUserDr = d.SftpUserDr,
+                    SftpPasswordDr = d.SftpPasswordDr, DbConnectionStringDr = d.DbConnectionStringDr,
+                    SqlQuery = d.SqlQuery
+                };
+
+                var filters = await ReportRepo.ListFiltersAsync(d.Id);
+                foreach (var f in filters)
+                {
+                    switch (f.FilterType)
+                    {
+                        case ReportFilterType.Zone: _zoneEnabled = true; _zoneColumn = f.ColumnName; break;
+                        case ReportFilterType.Region: _regionEnabled = true; _regionColumn = f.ColumnName; break;
+                        case ReportFilterType.Branch: _branchEnabled = true; _branchColumn = f.ColumnName; break;
+                        default: _otherFilters.Add((f.ColumnName, f.Label)); break;
+                    }
+                }
+            }
+        }
+
+        await LoadDepartmentsAsync();
+        _loading = false;
+    }
+
+    private async Task LoadDepartmentsAsync()
+        => _departments = _form.VerticalId.HasValue
+            ? (await Masters.ListDepartmentsAllAsync(_form.VerticalId)).ToList()
+            : new();
+
+    private async Task OnVerticalChangedAsync(long? verticalId)
+    {
+        _form.VerticalId = verticalId;
+        _form.DepartmentId = null;
+        await LoadDepartmentsAsync();
+
+        // Report Code is auto-generated from the vertical and never hand-edited — regenerate
+        // whenever the vertical changes on a NEW report. An existing report's code never
+        // changes once assigned, even if its vertical is later edited.
+        if (!IsEdit)
+            _form.ReportCode = verticalId.HasValue ? await ReportRepo.GenerateReportCodeAsync(verticalId.Value) : "";
+    }
+
+    private void AddOtherFilter() => _otherFilters.Add(("", ""));
+    private void RemoveOtherFilter(int index) => _otherFilters.RemoveAt(index);
+
+    private void CopyDcToDr()
+    {
+        _form.FilePathDr = _form.FilePath;
+        _form.SftpHostDr = _form.SftpHost;
+        _form.SftpPortDr = _form.SftpPort;
+        _form.SftpUserDr = _form.SftpUser;
+        _form.SftpPasswordDr = _form.SftpPassword;
+        _form.DbConnectionStringDr = _form.DbConnectionString;
+        Snackbar.Add("DC details copied to DR.", Severity.Info);
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_form.ReportName) || _form.VerticalId is null || _form.DepartmentId is null)
+        { Snackbar.Add("Report name, vertical and department are required.", Severity.Warning); return; }
+
+        _busy = true;
+        try
+        {
+            var actor = CurrentUser.EmpCode ?? "";
+            long reportId;
+            if (IsEdit)
+            {
+                // Same as MoM Developer's Save() — snapshot the pre-update row so the
+                // audit log's "Before" reflects what was actually overwritten.
+                var before = await ReportRepo.GetDefAsync(_form.Id!.Value);
+                await ReportRepo.UpdateDefAsync(_form, actor);
+                reportId = _form.Id!.Value;
+                await AuditSvc.LogAsync(AuditEntityNames.ReportDef, reportId, AuditEntityNames.ActionUpdate, actor,
+                    before, _form);
+                Snackbar.Add("Report updated.", Severity.Success);
+            }
+            else
+            {
+                reportId = await ReportRepo.InsertDefAsync(_form, actor);
+                await AuditSvc.LogAsync(AuditEntityNames.ReportDef, reportId, AuditEntityNames.ActionCreate, actor,
+                    null, _form);
+                Snackbar.Add("Report created.", Severity.Success);
+            }
+
+            await ReportRepo.ReplaceFiltersAsync(reportId, BuildFilterDefs());
+            Nav.NavigateTo("reports/developer");
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "ReportDeveloperForm: save failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private List<ReportFilterDef> BuildFilterDefs()
+    {
+        var list = new List<ReportFilterDef>();
+        if (_zoneEnabled && !string.IsNullOrWhiteSpace(_zoneColumn))
+            list.Add(new ReportFilterDef { FilterType = ReportFilterType.Zone, ColumnName = _zoneColumn.Trim(), Label = "Zone" });
+        if (_regionEnabled && !string.IsNullOrWhiteSpace(_regionColumn))
+            list.Add(new ReportFilterDef { FilterType = ReportFilterType.Region, ColumnName = _regionColumn.Trim(), Label = "Region" });
+        if (_branchEnabled && !string.IsNullOrWhiteSpace(_branchColumn))
+            list.Add(new ReportFilterDef { FilterType = ReportFilterType.Branch, ColumnName = _branchColumn.Trim(), Label = "Branch" });
+        foreach (var (col, label) in _otherFilters)
+            if (!string.IsNullOrWhiteSpace(col) && !string.IsNullOrWhiteSpace(label))
+                list.Add(new ReportFilterDef { FilterType = ReportFilterType.Custom, ColumnName = col.Trim(), Label = label.Trim() });
+        return list;
+    }
+}

@@ -1,0 +1,391 @@
+@namespace RequestPortal.Web.Pages.Dashboards
+@page "/dashboards/handler"
+@inject IRequestRepo   RequestRepo
+@inject IMasterRepo    Masters
+@inject ICurrentUser   CurrentUser
+@inject NavigationManager Nav
+
+<PageTitle>My Dashboard</PageTitle>
+
+@* -- Page header using shared PageHeader component ----------------------- *@
+<PageHeader Title="@DashTitle"
+            Subtitle="@($"{LevelDesc} - Showing current level {(MyLevel > 0 ? $"(L{MyLevel})" : "")}{(MyLevel > 1 ? $" and L{MyLevel - 1} below" : "")}")"
+            PageKey="handler-dashboard"
+            Crumbs="@(new List<PageHeader.Crumb> { new("Dashboards"), new(DashTitle) })">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="Load" Disabled="@_loading">Refresh</MudButton>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.AssignmentInd"
+                   Href="/handler/inbox">Handler Inbox</MudButton>
+    </Actions>
+</PageHeader>
+
+@* -- KPI Cards -------------------------------------------------------------- *@
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+}
+else
+{
+    <MudGrid Class="mb-4" Spacing="3">
+        @foreach (var k in _kpis)
+        {
+            <MudItem xs="6" sm="3">
+                <MudPaper Elevation="1" Class="rp-kpi-card"
+                          Style="@($"border-top:4px solid {k.Color}")">
+                    <div class="rp-kpi-icon" style="@($"background:{k.Bg}")">
+                        <MudIcon Icon="@k.Icon" Style="@($"color:{k.Color};font-size:22px")" />
+                    </div>
+                    <MudText Typo="Typo.h3" Style="@($"font-weight:800;color:{k.Color};margin:6px 0 2px")">
+                        @k.Value
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Style="font-weight:500">@k.Label</MudText>
+                    @if (k.Sub is not null)
+                    {
+                        <MudText Typo="Typo.caption" Style="@($"color:{k.Color};margin-top:2px")">@k.Sub</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+
+    @* -- Filter panel -------------------------------------------------------- *@
+    <MudPaper Elevation="1" Class="pa-4 mb-4">
+        <MudText Typo="Typo.subtitle2" Class="mb-3" Style="font-weight:700;color:var(--rp-navy)">
+            <MudIcon Icon="@Icons.Material.Filled.FilterList" Size="Size.Small" Class="mr-1" />Filters
+        </MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="long?" @bind-Value="_fType" Label="Request Type" Variant="Variant.Outlined"
+                           Dense="true" Clearable="true" aria-label="Filter by request type">
+                    @foreach (var t in _types)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)t.Id)">@t.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="long?" @bind-Value="_fUnit" Label="Unit / Branch" Variant="Variant.Outlined"
+                           Dense="true" Clearable="true" aria-label="Filter by unit">
+                    @foreach (var u in _units)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="long?" @bind-Value="_fVertical" Label="Vertical" Variant="Variant.Outlined"
+                           Dense="true" Clearable="true" aria-label="Filter by vertical">
+                    @foreach (var v in _verticals)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" @bind-Value="_fStatus" Label="Status" Variant="Variant.Outlined"
+                           Dense="true" Clearable="true" aria-label="Filter by status">
+                    @foreach (var s in _statuses)
+                    {
+                        <MudSelectItem T="string" Value="@s.Key">@s.Value</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudDatePicker @bind-Date="_fFrom" Label="From date" Variant="Variant.Outlined"
+                               Dense="true" Clearable="true" aria-label="Filter from date" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudDatePicker @bind-Date="_fTo" Label="To date" Variant="Variant.Outlined"
+                               Dense="true" Clearable="true" aria-label="Filter to date" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3" Class="d-flex align-end gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           OnClick="@(async () => await ApplyFilters())" aria-label="Apply filters">Apply</MudButton>
+                <MudButton Variant="Variant.Outlined" FullWidth="true"
+                           OnClick="@(async () => await ClearFilters())" aria-label="Clear all filters">Clear</MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* -- Level breakdown row (L1-L4 summary) -------------------------------- *@
+    @if (_levelBreakdown.Any())
+    {
+        <MudGrid Class="mb-4" Spacing="2">
+            @foreach (var lb in _levelBreakdown)
+            {
+                <MudItem xs="6" sm="3">
+                    <MudPaper Elevation="1" Class="pa-3 text-center" Style="cursor:pointer"
+                              @onclick="@(() => _fLevel = lb.Level)">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="font-weight:600">L@(lb.Level) - @lb.Label</MudText>
+                        <div class="d-flex justify-center gap-3 mt-1">
+                            <div>
+                                <div style="font-size:20px;font-weight:700;color:#1E3A8A">@lb.Open</div>
+                                <div style="font-size:10px;color:#59636e">Open</div>
+                            </div>
+                            <div>
+                                <div style="font-size:20px;font-weight:700;color:#cf222e">@lb.Breached</div>
+                                <div style="font-size:10px;color:#59636e">Breached</div>
+                            </div>
+                        </div>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    @* -- Request table ------------------------------------------------------- *@
+    <MudPaper Elevation="1">
+        <MudTable T="RequestListItem" Items="@_filtered" Dense="true" Hover="true"
+                  Class="rp-data-table" RowClass="cursor-pointer"
+                  OnRowClick="@((TableRowClickEventArgs<RequestListItem> e) => Nav.NavigateTo($"requests/{e.Item.Id}"))">
+            <ToolBarContent>
+                <MudText Typo="Typo.subtitle2">
+                    <b>@_filtered.Count</b> request@(_filtered.Count == 1 ? "" : "s")
+                    @if (_filtered.Count != _all.Count) { <span style="color:#59636e"> (filtered from @_all.Count)</span> }
+                </MudText>
+                <MudSpacer />
+                <MudTextField @bind-Value="_textSearch" Placeholder="Search ref / subject..."
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Clearable="true" Immediate="true" Style="max-width:240px"
+                               aria-label="Search requests" />
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh>Ref #</MudTh>
+                <MudTh>Type</MudTh>
+                <MudTh>Subject</MudTh>
+                <MudTh>Raised By</MudTh>
+                <MudTh>Unit</MudTh>
+                <MudTh>Level</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>SLA Due</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudLink Href="@($"requests/{context.Id}")" Color="Color.Primary"
+                             >@context.ReqNo</MudLink>
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                        @context.RequestTypeName
+                    </MudChip>
+                </MudTd>
+                <MudTd Style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                       title="@context.Subject">@context.Subject</MudTd>
+                <MudTd>@context.RaisedByName</MudTd>
+                <MudTd>@context.UnitName</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.CurrentLevel == MyLevel ? Color.Primary : Color.Default)">
+                        L@(context.CurrentLevel)
+                    </MudChip>
+                </MudTd>
+                <MudTd>@StatusBadge(context.Status)</MudTd>
+                <MudTd>@SlaCell(context.SlaDueUtc)</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Class="pa-6 text-center" Color="Color.Secondary">
+                    No requests match the current filters.
+                </MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    // -- State -----------------------------------------------------------------
+    private bool _loading = true;
+    private List<RequestListItem> _all      = new();
+    private List<RequestListItem> _filtered = new();
+    private List<KpiCard>         _kpis     = new();
+    private List<LvBreak>         _levelBreakdown = new();
+
+    // Masters for filter dropdowns
+    private IReadOnlyList<RequestType> _types    = Array.Empty<RequestType>();
+    private IReadOnlyList<Unit>        _units    = Array.Empty<Unit>();
+    private IReadOnlyList<Vertical>    _verticals= Array.Empty<Vertical>();
+
+    private static readonly Dictionary<string, string> _statuses = new()
+    {
+        { "InProgress",          "In Progress" },
+        { "ClarificationSought", "Clarification Pending" },
+        { "Reopened",            "Reopened" },
+        { "Resolved",            "Resolved" },
+        { "Closed",              "Closed" },
+        { "Cancelled",           "Cancelled" }
+    };
+
+    // Filters
+    private long?    _fType;
+    private long?    _fUnit;
+    private long?    _fVertical;
+    private string   _fStatus    = "";
+    private DateTime? _fFrom;
+    private DateTime? _fTo;
+    private int?     _fLevel;
+    private string   _textSearch = "";
+
+    // Role properties
+    private int  MyLevel     => CurrentUser.Roles.DefaultIfEmpty(RoleCode.BranchUser).Max() switch
+    {
+        RoleCode.VertL1    => 1,
+        RoleCode.VertL2    => 2,
+        RoleCode.VertL3    => 3,
+        RoleCode.VertL4    => 4,
+        RoleCode.VertL5    => 5,
+        RoleCode.AppAdmin  => 4,
+        _                  => 1
+    };
+    private string DashTitle => MyLevel switch
+    {
+        1 => "L1 Handler Dashboard",
+        2 => "L2 Handler Dashboard",
+        3 => "L3 Handler Dashboard",
+        4 => "L4 Senior Handler Dashboard",
+        5 => "L5 Oversight Dashboard",
+        _ => "Handler Dashboard"
+    };
+    private string LevelDesc => MyLevel switch
+    {
+        1 => "Branch-level first-line handler",
+        2 => "Regional office handler",
+        3 => "Zonal-level handler",
+        4 => "CO vertical senior handler",
+        5 => "Oversight - all levels",
+        _ => "Handler"
+    };
+
+    // -- Lifecycle -------------------------------------------------------------
+    protected override async Task OnInitializedAsync()
+    {
+        _types     = await Masters.ListRequestTypesAsync();
+        _units     = await Masters.ListUnitsAsync(null);
+        _verticals = await Masters.ListVerticalsAsync();
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        // Load ALL data for KPI baseline (no filters)
+        var (all, _) = await RequestRepo.ListAsync(new FilterDto(PageSize: 500), null, null);
+        _all = all.ToList();
+        BuildKpis();
+        // Load filtered view
+        await ApplyFiltersAsync();
+        _loading = false;
+    }
+
+    private async Task ApplyFilters()
+    {
+        _loading = true;
+        await ApplyFiltersAsync();
+        _loading = false;
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        // Use FilterDto for server-side type/unit/vertical/status/date/level filtering
+        var f = new FilterDto(
+            RequestTypeId: _fType,
+            UnitId:        _fUnit,
+            VerticalId:    _fVertical,
+            Status:        string.IsNullOrEmpty(_fStatus) ? null : _fStatus,
+            Level:         _fLevel,
+            FromDate:      _fFrom?.ToUniversalTime(),
+            ToDate:        _fTo?.AddDays(1).ToUniversalTime(),
+            PageSize:      500
+        );
+        var (items, _) = await RequestRepo.ListAsync(f, null, null);
+        // Client-side text search on top
+        _filtered = items.Where(r =>
+            string.IsNullOrEmpty(_textSearch) ||
+            r.ReqNo.Contains(_textSearch, StringComparison.OrdinalIgnoreCase) ||
+            r.Subject.Contains(_textSearch, StringComparison.OrdinalIgnoreCase)
+        ).OrderByDescending(r => r.CreatedAt).ToList();
+        BuildLevelBreakdown();
+    }
+
+    private async Task ClearFilters()
+    {
+        _fType = null; _fUnit = null; _fVertical = null;
+        _fStatus = ""; _fFrom = null; _fTo = null; _fLevel = null; _textSearch = "";
+        await ApplyFiltersAsync();
+    }
+
+    private void BuildKpis()
+    {
+        var now      = DateTime.UtcNow;
+        var myLevel  = MyLevel;
+        var open     = _all.Where(r => r.Status is not ("Closed" or "Cancelled" or "Resolved")).ToList();
+        var atMyLvl  = open.Where(r => r.CurrentLevel == myLevel).ToList();
+        var breached = open.Where(r => r.SlaDueUtc.HasValue && r.SlaDueUtc < now).ToList();
+        var clarif   = open.Where(r => r.Status == "ClarificationSought").ToList();
+        var dueToday = open.Where(r => r.SlaDueUtc.HasValue && r.SlaDueUtc >= now && r.SlaDueUtc < now.AddDays(1)).ToList();
+
+        _kpis = new()
+        {
+            new($"At L{myLevel} (My Level)", atMyLvl.Count.ToString(),  "#1E3A8A", "#DBEAFE", Icons.Material.Filled.Inbox, null),
+            new("Breached",                   breached.Count.ToString(),  "#cf222e", "#FFEBE9", Icons.Material.Filled.Warning,
+                breached.Count > 0 ? $"{breached.Count} past SLA deadline" : "All within SLA"),
+            new("Due Today",                  dueToday.Count.ToString(), "#9a6700", "#FEF9C3", Icons.Material.Filled.Schedule, null),
+            new("Clarification Pending",      clarif.Count.ToString(),   "#0ea5e9", "#DBEAFE", Icons.Material.Filled.QuestionAnswer, null),
+        };
+    }
+
+    private void BuildLevelBreakdown()
+    {
+        var now     = DateTime.UtcNow;
+        var maxLvl  = Math.Min(MyLevel, 4);
+        var minLvl  = Math.Max(1, MyLevel - 1);
+        var labels  = new Dictionary<int, string> { {1,"Branch"},{2,"Regional"},{3,"Zonal"},{4,"CO Vertical"},{5,"Oversight"} };
+
+        _levelBreakdown = Enumerable.Range(minLvl, maxLvl - minLvl + 1)
+            .Select(l =>
+            {
+                var atL = _filtered.Where(r => r.CurrentLevel == l && r.Status is not ("Closed" or "Cancelled" or "Resolved")).ToList();
+                return new LvBreak(l, labels.GetValueOrDefault(l, $"L{l}"), atL.Count,
+                    atL.Count(r => r.SlaDueUtc.HasValue && r.SlaDueUtc < now));
+            })
+            .ToList();
+    }
+
+    // -- Render helpers --------------------------------------------------------
+    private RenderFragment StatusBadge(string s) =>@<text>
+        @{
+            var (c, label) = s switch
+            {
+                "InProgress"          => (Color.Primary, "In Progress"),
+                "ClarificationSought" => (Color.Info,    "Clarif. Pending"),
+                "Reopened"            => (Color.Warning,  "Reopened"),
+                "Resolved"            => (Color.Success,  "Resolved"),
+                "Closed"              => (Color.Default,  "Closed"),
+                "Cancelled"           => (Color.Error,    "Cancelled"),
+                _                     => (Color.Default,  s)
+            };
+        }
+        <MudChip T="string" Size="Size.Small" Color="@c" Variant="Variant.Filled">@label</MudChip>
+    </text>;
+
+    private RenderFragment SlaCell(DateTime? due) =>@<text>
+        @if (!due.HasValue) { <span style="color:#59636e">-</span> }
+        else
+        {
+            var diff = due.Value - DateTime.UtcNow;
+            var style = diff.TotalHours < 0 ? "color:#cf222e;font-weight:600" :
+                        diff.TotalHours < 24 ? "color:#9a6700;font-weight:600" : "color:#1f2328";
+            var text = diff.TotalHours < 0
+                ? $" {(int)(-diff).TotalHours}h overdue"
+                : diff.TotalHours < 24
+                    ? $" {(int)diff.TotalHours}h left"
+                    : AppTime.ToIndia(due.Value).ToString("dd-MMM HH:mm");
+            <span style="@style" title="@AppTime.ToIndia(due.Value).ToString("g")">@text</span>
+        }
+    </text>;
+
+    private sealed record KpiCard(string Label, string Value, string Color, string Bg, string Icon, string? Sub);
+    private sealed record LvBreak(int Level, string Label, int Open, int Breached);
+}

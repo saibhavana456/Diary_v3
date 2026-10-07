@@ -1,0 +1,213 @@
+@namespace MyDiary.Web.Shared
+@using global::RequestPortal.Web.Features.PageInfo.Services
+@* ───────────────────────────────────────────────────────────────────────
+   PageInfoIcon — ⓘ button that opens a page-information panel.
+   WCAG 2.1 AA:
+     • aria-label + aria-expanded on toggle button (WCAG 4.1.2)
+     • role="dialog" + aria-modal + aria-labelledby on panel (WCAG 4.1.2)
+     • Backdrop dismisses on click/Escape (WCAG 2.1.1)
+     • Close button has aria-label (WCAG 4.1.2)
+     • Emoji icons are aria-hidden; adjacent text carries meaning (WCAG 1.1.1)
+     • Loading state announced via role="status" (WCAG 4.1.3)
+   ─────────────────────────────────────────────────────────────────────── *@
+
+@inject IPageInfoService PageInfoSvc
+
+@* ── Toggle button ── *@
+<button class="pi-btn"
+        @onclick="Toggle"
+        aria-label="@(_open ? "Close page information" : "Open page information")"
+        aria-expanded="@_open"
+        aria-haspopup="dialog"
+        title="Page Information">
+    <svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" fill="currentColor"
+         viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10
+                 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+    </svg>
+</button>
+
+@if (_open)
+{
+    @* ── Backdrop (click to dismiss, Escape handled below) ── *@
+    <div @onclick="Close"
+         role="presentation"
+         aria-hidden="true"
+         style="position:fixed; inset:0; background:rgba(0,0,0,0.50); z-index:1400;"></div>
+
+    @* ── Dialog panel ── *@
+    <div role="dialog"
+         aria-modal="true"
+         aria-labelledby="pi-dialog-title"
+         style="position:fixed; top:50%; right:24px; transform:translateY(-50%);
+                width:380px; max-width:calc(100vw - 32px);
+                z-index:1500; border-radius:16px; overflow:hidden;
+                box-shadow:0 8px 40px rgba(0,0,0,0.30);">
+
+        @if (_loading)
+        {
+            <div role="status" aria-live="polite" aria-label="Loading page information"
+                 style="background:#fff; padding:48px; text-align:center; color:var(--rp-navy);">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Small" />
+                <p style="margin:10px 0 0; font-size:13px; color:#59636e;">Loading…</p>
+            </div>
+        }
+        else if (_info is null)
+        {
+            <div style="background:#fff; padding:32px 24px; text-align:center;">
+                <span aria-hidden="true" style="font-size:2.2rem; display:block; margin-bottom:8px;">📄</span>
+                <h2 id="pi-dialog-title"
+                    style="font-size:15px; font-weight:700; color:#222; margin:0 0 6px;">
+                    Page Not Configured
+                </h2>
+                <p style="font-size:13px; color:#666; margin:0 0 16px; line-height:1.5;">
+                    No metadata found for key
+                    <code style="background:#f6f8fa; padding:1px 6px; border-radius:4px;">@PageKey</code>.
+                    Add it in <strong>Admin → Page Config</strong>.
+                </p>
+                <button @onclick="Close"
+                        aria-label="Close dialog"
+                        style="background:var(--rp-navy); color:#fff; border:none;
+                               border-radius:8px; padding:10px 24px; font-size:14px;
+                               font-weight:600; cursor:pointer; min-height:44px;">
+                    Close
+                </button>
+            </div>
+        }
+        else
+        {
+            @* ── Header ── *@
+            <div style="background:var(--rp-grad); padding:20px 20px 16px; color:#fff; position:relative;">
+
+                <button @onclick:stopPropagation="true" @onclick="Close"
+                        aria-label="Close page information dialog"
+                        style="position:absolute; top:10px; right:10px;
+                               background:rgba(255,255,255,0.22); border:2px solid rgba(255,255,255,.5);
+                               border-radius:50%; width:34px; height:34px; min-width:34px;
+                               cursor:pointer; color:#fff; font-size:17px;
+                               display:flex; align-items:center; justify-content:center;">
+                    <span aria-hidden="true">✕</span>
+                </button>
+
+                <div style="display:flex; align-items:center; gap:12px; padding-right:40px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="36" width="36"
+                         fill="rgba(255,255,255,0.9)" viewBox="0 0 24 24"
+                         aria-hidden="true" focusable="false">
+                        <path d="@GetTypeIconPath(_info.PageType)" />
+                    </svg>
+                    <div>
+                        <h2 id="pi-dialog-title"
+                            style="font-size:17px; font-weight:700; color:#fff; margin:0 0 6px;">
+                            @_info.PageName
+                        </h2>
+                        <div style="display:flex; gap:5px; flex-wrap:wrap;" role="list"
+                             aria-label="Page attributes">
+                            <span role="listitem"
+                                  style="background:rgba(255,255,255,0.22); border:1px solid rgba(255,255,255,0.4);
+                                         border-radius:20px; padding:2px 10px; font-size:11px; font-weight:700; color:#fff;">
+                                @_info.PageType.ToUpper()
+                            </span>
+                            <span role="listitem"
+                                  style="background:@(_info.Status=="ACTIVE"?"rgba(26,127,55,0.75)":"rgba(207,34,46,0.75)");
+                                         border-radius:20px; padding:2px 10px; font-size:11px; font-weight:700; color:#fff;">
+                                <span aria-hidden="true">●</span>
+                                <span> @_info.Status</span>
+                            </span>
+                            <span role="listitem"
+                                  style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.35);
+                                         border-radius:20px; padding:2px 10px; font-size:11px; color:#fff;">
+                                @_info.Version
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Body ── *@
+            <div @onclick:stopPropagation="true"
+                 style="background:#fff; padding:18px 20px; max-height:65vh; overflow-y:auto;"
+                 tabindex="0">
+
+                <div style="background:#EEF2FF; border-left:4px solid var(--rp-navy);
+                            border-radius:0 8px 8px 0; padding:12px 14px; margin-bottom:18px;"
+                     role="note" aria-label="Description">
+                    <p style="font-size:10px; font-weight:700; color:var(--rp-navy);
+                               text-transform:uppercase; letter-spacing:0.6px; margin:0 0 5px;">Description</p>
+                    <p style="font-size:13px; color:#333; line-height:1.65; margin:0;">@_info.Description</p>
+                </div>
+
+                <h3 style="font-size:10px; font-weight:700; color:#888; text-transform:uppercase;
+                           letter-spacing:0.8px; margin:0 0 12px;">Ownership &amp; Contact</h3>
+
+                <dl style="margin:0;">
+                    @InfoRow("🏢", "#7B1FA2", "Owner Vertical", _info.OwnerVertical)
+                    @InfoRow("👤", "#1E3A8A", "Module Owner",   _info.ModuleOwner)
+                    @InfoRow("✉",  "#0288D1", "Mail ID",        _info.MailId)
+                </dl>
+
+                <hr style="border:none; border-top:1px solid #EEE; margin:14px 0;" aria-hidden="true" />
+
+                <h3 style="font-size:10px; font-weight:700; color:#888; text-transform:uppercase;
+                           letter-spacing:0.8px; margin:0 0 12px;">Page Metadata</h3>
+
+                <dl style="margin:0;">
+                    @InfoRow("🏷",  "#EF4444", "IP Number",    _info.IpNumber)
+                    @InfoRow("📅",  "#1f883d", "Created Date", _info.CreatedDate.ToString("dd MMM yyyy"))
+                    @InfoRow("🔖",  "#1E3A8A", "Version",      _info.Version)
+                    @InfoRow("🔑",  "#59636e", "Page Key",     _info.PageKey)
+                </dl>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string PageKey { get; set; } = "";
+
+    private bool _open;
+    private bool _loading;
+    private global::RequestPortal.Web.Features.PageInfo.Models.PageInfo? _info;
+
+    private async Task Toggle()
+    {
+        if (_open) { _open = false; return; }
+        _open = true;
+        if (_info is null)
+        {
+            _loading = true;
+            StateHasChanged();
+            _info    = await PageInfoSvc.GetAsync(PageKey);
+            _loading = false;
+        }
+    }
+
+    private void Close() => _open = false;
+
+    @* dl/dt/dd pattern — semantically correct for labelled values *@
+    private RenderFragment InfoRow(string emoji, string color, string label, string value) =>
+        __builder =>
+        {
+            <div style="display:flex; align-items:flex-start; gap:12px; margin-bottom:12px;">
+                <div style="@($"width:34px; height:34px; border-radius:8px; background:{color}18; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;")"
+                     aria-hidden="true">
+                    @emoji
+                </div>
+                <div>
+                    <dt style="font-size:10px; color:#888; font-weight:600; text-transform:uppercase;
+                                letter-spacing:0.5px; margin:0;">@label</dt>
+                    <dd style="font-size:13px; color:#222; font-weight:500; word-break:break-all;
+                                margin:2px 0 0;">@value</dd>
+                </div>
+            </div>
+        };
+
+    private static string GetTypeIconPath(string type) => type switch
+    {
+        "Dashboard"   => "M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z",
+        "Report"      => "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
+        "Upload"      => "M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z",
+        "Approve"     => "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+        "Maintenance" => "M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z",
+        _             => "M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+    };
+}

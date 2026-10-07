@@ -1,0 +1,154 @@
+@page "/session-expired"
+@layout MyDiary.Web.Components.Layout.LoginLayout
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.WebUtilities
+
+<PageTitle>Session Expired — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    .session-expired-container {
+        min-height: 100vh;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        position: relative;
+    }
+
+    .session-expired-container::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 0;
+    }
+
+    .session-card {
+        position: relative;
+        z-index: 1;
+        background: white;
+        border-radius: 20px;
+        padding: 60px 40px;
+        max-width: 500px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: slideIn 0.5s ease-out;
+    }
+
+    @@keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-30px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .session-icon {
+        font-size: 80px;
+        color: #e31e24;
+        animation: pulse 2s infinite;
+        margin-bottom: 30px;
+    }
+
+    @@keyframes pulse {
+        0%, 100% {
+            transform: scale(1);
+        }
+
+        50% {
+            transform: scale(1.1);
+        }
+    }
+
+    .session-title {
+        color: #2a2f5b;
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 15px;
+    }
+
+    .session-message {
+        color: #666;
+        font-size: 16px;
+        line-height: 1.6;
+        margin-bottom: 30px;
+    }
+
+    .login-button {
+        background: linear-gradient(135deg, #e31e24 0%, #c8102e 100%);
+        color: white;
+        border: none;
+        border-radius: 50px;
+        padding: 15px 50px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(227, 30, 36, 0.3);
+    }
+
+        .login-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(227, 30, 36, 0.4);
+        }
+
+    .info-text {
+        margin-top: 25px;
+        color: #ccc;
+        font-size: 14px;
+    }
+</style>
+
+<div class="session-expired-container">
+    <div class="session-card">
+        <MudIcon Icon="@Icons.Material.Filled.AccessTime" Class="session-icon" />
+
+        <h1 class="session-title">Session Expired</h1>
+
+        <p class="session-message">
+            Your session has expired due to inactivity.
+            Please log in again to continue using My Diary Portal.
+        </p>
+
+        <MudButton Variant="Variant.Filled"
+                   Class="login-button"
+                   OnClick="GoToLogin"
+                   Size="MudBlazor.Size.Large">
+            Login Again
+        </MudButton>
+
+        <p class="info-text">
+            Sessions expire after 24 hours of inactivity
+        </p>
+    </div>
+</div>
+
+@code {
+    private string? _returnUrl;
+
+    protected override void OnInitialized()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("returnUrl", out var returnUrl))
+        {
+            _returnUrl = returnUrl;
+        }
+    }
+
+    private void GoToLogin()
+    {
+        var loginUrl = string.IsNullOrEmpty(_returnUrl)
+            ? "login"
+            : $"login?returnUrl={Uri.EscapeDataString(_returnUrl)}";
+        Navigation.NavigateTo(loginUrl, forceLoad: true);
+    }
+}

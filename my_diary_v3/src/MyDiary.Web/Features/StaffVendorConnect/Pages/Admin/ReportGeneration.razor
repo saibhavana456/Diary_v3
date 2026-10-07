@@ -1,0 +1,108 @@
+@page "/svc/admin/report"
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject IStaffVendorConnectService SvcService
+@inject IJSRuntime JS
+
+<PageTitle>Vendor Report - Staff and Vendor Connect</PageTitle>
+
+<AppAdminOnly>
+
+<PageHeader Title="Report Generation" Subtitle="Parameterized vendor report — powered by SVC_VENDOR_REPORT (SP) and VW_SVC_VENDOR_DETAIL (view)." Crumbs="_crumbs" PageKey="svc-report" />
+
+@if (_loadingCategories)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudGrid>
+            <MudItem xs="12" sm="4" md="3">
+                <MudSelect T="string" @bind-Value="_categoryCode" Label="Category" Variant="Variant.Outlined" @bind-Value:after="RunReportAsync">
+                    @foreach (var c in _categories)
+                    {
+                        <MudSelectItem T="string" Value="@c.CategoryCode">@c.CategoryName</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" md="3">
+                <MudSelect T="string" @bind-Value="_zone" Label="Zone" Variant="Variant.Outlined" @bind-Value:after="RunReportAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var z in _rows.Select(r => r.ZoneName).Where(z => z is not null).Distinct()) { <MudSelectItem T="string" Value="@z">@z</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" md="3" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportAsync" FullWidth="true">
+                    Export to Excel
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_loadingReport)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <MudTable Items="@Filtered" Hover="true" Dense="true" Bordered="true" RowsPerPage="20" FixedHeader="true" Height="500px">
+            <HeaderContent>
+                @foreach (var col in _columns)
+                {
+                    <MudTh>@col.FieldLabel</MudTh>
+                }
+                <MudTh>Status</MudTh>
+                <MudTh>Created By</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                @foreach (var col in _columns)
+                {
+                    <MudTd>@(context.Values.TryGetValue(col.FieldKey, out var v) ? v : "")</MudTd>
+                }
+                <MudTd>@context.Status</MudTd>
+                <MudTd>@context.CreatedBy</MudTd>
+            </RowTemplate>
+            <PagerContent><MudTablePager PageSizeOptions="new[] { 20, 50, 100 }" /></PagerContent>
+        </MudTable>
+    }
+}
+
+</AppAdminOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"), new("Report Generation") };
+    private bool _loadingCategories = true, _loadingReport;
+    private List<SvcCategory> _categories = new();
+    private List<SvcFieldDefinition> _columns = new();
+    private List<SvcVendorRecord> _rows = new();
+    private string _categoryCode = "";
+    private string? _zone;
+
+    private IEnumerable<SvcVendorRecord> Filtered => _zone is null ? _rows : _rows.Where(r => r.ZoneName == _zone);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await SvcService.GetCategoriesAsync("EXTERNAL");
+        _categoryCode = _categories.FirstOrDefault()?.CategoryCode ?? "";
+        _loadingCategories = false;
+        await RunReportAsync();
+    }
+
+    private async Task RunReportAsync()
+    {
+        if (string.IsNullOrEmpty(_categoryCode)) return;
+        _loadingReport = true;
+        (_columns, _rows) = await SvcService.GetVendorReportAsync(_categoryCode, null, null, null);
+        _loadingReport = false;
+        StateHasChanged();
+    }
+
+    private async Task ExportAsync()
+    {
+        var bytes = await SvcService.ExportVendorReportToExcelAsync(_categoryCode, null, null, null);
+        var fileName = $"VendorReport_{_categoryCode}_{DateTime.Now:ddMMyyHHmm}.xlsx";
+        await JS.InvokeVoidAsync("appDownloadFile", fileName, Convert.ToBase64String(bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+}

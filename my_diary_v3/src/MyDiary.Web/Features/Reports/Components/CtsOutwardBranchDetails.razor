@@ -1,0 +1,627 @@
+﻿@page "/reports/ctsOutwardBranchDetails"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Outward Clearing — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+</style>
+
+<MudGrid Spacing="2" Class="pa-4 align-start">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+                <!-- Filters + Export -->
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+
+                    <!-- Zone (hidden for ZONE/REGION/BRANCH) -->
+                    @if (_userScope.Privilege == "CO")
+                {
+                    <MudItem xs="12" sm="2" md="2" Class="mb-2">
+                        <MudSelect T="string"
+                                   Label="Zone"
+                                   Value="@SelectedZone"
+                                   ValueChanged="HandleZoneChanged"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   Style="min-width:160px"
+                                   Disabled="@( !CanSelectZone )">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            @foreach (var z in _zones)
+                            {
+                                <MudSelectItem Value="@z["zone_solid"].ToString()">
+                                    @z["zone_name_eng"].ToString()
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                }
+
+                <!-- Region (hidden for REGION/BRANCH; filtered by Zone) -->
+                @if (_userScope.Privilege is "CO" or "ZONE")
+                {
+                    <MudItem xs="12" sm="2" md="2" Class="mb-2">
+                        <MudSelect T="string"
+                                   Label="Region"
+                                   Value="@SelectedRegion"
+                                   ValueChanged="HandleRegionChanged"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   Style="min-width:160px"
+                                   Disabled="@( !CanSelectRegion )">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            @foreach (var r in _regions)
+                            {
+                                <MudSelectItem Value="@r["region_solid"].ToString()">
+                                    @r["region_name"].ToString()
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                }
+
+                <!-- Branch (hidden for BRANCH; filtered by Region) -->
+                @if (_userScope.Privilege is "CO" or "ZONE" or "REGION")
+                {
+                    <MudItem xs="12" sm="2" md="2" Class="mb-2">
+                        <MudSelect T="string"
+                                   Label="Branch"
+                                   Value="@SelectedBranch"
+                                   ValueChanged="HandleBranchChanged"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   Style="min-width:180px"
+                                   Disabled="@( !CanSelectBranch )">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            @foreach (var b in _branches)
+                            {
+                                <MudSelectItem Value="@b["sol_id"].ToString()">
+                                    @b["branch_name"].ToString()
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                }
+
+                <!-- Business Date -->
+                <MudItem xs="12" sm="2" md="2" Class="mb-2">
+                    <MudSelect T="string"
+                               Label="Business Date"
+                               Value="@SelectedDate"
+                               ValueChanged="HandleDateChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true"
+                               Style="min-width:170px">
+                        <MudSelectItem Value="@("SEL")" Disabled="true">SELECT</MudSelectItem>
+                        @foreach (var d in _dates)
+                        {
+                            if (d.TryGetValue("BUS_DATE", out var rawObj) && rawObj != null)
+                            {
+                                if (rawObj is DateTime dt)
+                                {
+                                    // value with ms to preserve uniqueness across db engines if ever needed
+                                    var value = dt.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                                    var label = dt.ToString("dd-MM-yyyy");
+                                    <MudSelectItem Value="@value">@label</MudSelectItem>
+                                }
+                                else
+                                {
+                                    var raw = rawObj.ToString() ?? "";
+                                    if (TryParseAny(raw, out var parsed))
+                                    {
+                                        var value = parsed.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                                        var label = parsed.ToString("dd-MM-yyyy");
+                                        <MudSelectItem Value="@value">@label</MudSelectItem>
+                                    }
+                                    else
+                                    {
+                                        <MudSelectItem Value="@raw">@FormatDateForSelectLabel(raw)</MudSelectItem>
+                                    }
+                                }
+                            }
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- filler -->
+                <MudItem xs="12" sm="2" md="2" Class="d-none d-sm-flex" />
+
+                <!-- Export (aligned right) -->
+                <MudItem xs="12" sm="4" md="2" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 11px;"
+                               Disabled="@(!_canExport)"
+                               OnClick="OnExportInternal">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+
+            </MudGrid>
+
+            <!-- As On / Status -->
+            <div class="px-4 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                    @_asOnDateLabel
+                </MudText>
+            </div>
+
+            <!-- Data Table -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@(_data.IndexOf(context) + 1)</MudTd>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_cols.Count + 1)" style="text-align:center; padding: 40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // ---- UI / State ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+    private string _title => string.IsNullOrWhiteSpace(Title) ? "Outward Clearing Details" : Title!;
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private bool _canExport => _data.Count > 0;
+
+    // Privilege context (CO / ZONE / REGION / BRANCH) + scope IDs
+    private UserScope _userScope = new(); // Filled in OnInitializedAsync()
+
+    // Filter selections
+    private string SelectedZone { get; set; } = "All";
+    private string SelectedRegion { get; set; } = "All";
+    private string SelectedBranch { get; set; } = "All";
+    private string SelectedDate { get; set; } = "SEL";
+
+    // Lookups
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+    private List<Dictionary<string, object>> _dates = new();
+
+    // Data
+    private List<Dictionary<string, object>> _data = new();
+
+    // ---- Columns (aliases MUST match SELECT) ----
+    private readonly List<ColumnConfig> _cols = new()
+    {
+        new ColumnConfig { Header = "Zone Name",                 PropertyName = "zone",                      Width = "12%" },
+        new ColumnConfig { Header = "Region Name",               PropertyName = "region",                    Width = "12%" },
+        new ColumnConfig { Header = "SOL ID",                    PropertyName = "sol_id",                    Width = "8%"  },
+        new ColumnConfig { Header = "Branch Name",               PropertyName = "branch",                    Width = "16%" },
+
+        new ColumnConfig { Header = "BOFD_RT",                   PropertyName = "bofd_rt",                   Width = "8%"  },
+        new ColumnConfig { Header = "Institution ID",            PropertyName = "inst_id",                   Width = "10%" },
+
+        new ColumnConfig { Header = "Business Date",             PropertyName = "bus_date",                  Width = "10%" },
+        new ColumnConfig { Header = "NPCI Presentment Date",     PropertyName = "npci_presentment_date",     Width = "12%" },
+
+        new ColumnConfig { Header = "Depositor Account",         PropertyName = "depositor_acct",            Width = "14%" },
+        new ColumnConfig { Header = "Cheque No",                 PropertyName = "cheque_no",                 Width = "10%" },
+        new ColumnConfig { Header = "Cheque Date",               PropertyName = "chk_date",                  Width = "10%" },
+
+        new ColumnConfig { Header = "Amount",                    PropertyName = "amount",                    Width = "10%", IsNumeric = true, Format = "N2" },
+
+        new ColumnConfig { Header = "CHQ Accept Returned",       PropertyName = "chq_accept_returned",       Width = "12%" },
+        new ColumnConfig { Header = "Return Reason Code",        PropertyName = "ret_reason_cd",             Width = "12%" },
+        new ColumnConfig { Header = "CHQ Response Date",         PropertyName = "chq_response_date",         Width = "12%" },
+        new ColumnConfig { Header = "NPCI Accept/Reject",        PropertyName = "npci_accept_reject",        Width = "12%" },
+        new ColumnConfig { Header = "CHI Reject Code",           PropertyName = "chi_rej_cd",                Width = "12%" },
+        new ColumnConfig { Header = "ECL File ID",               PropertyName = "ecl_file_id",               Width = "12%" }
+    };
+
+    // --- Enable/Disable flags for cascading dropdowns (ADDED) ---
+    private bool IsDateSelected => !string.IsNullOrWhiteSpace(SelectedDate) && !SelectedDate.Equals("SEL", StringComparison.OrdinalIgnoreCase);
+
+    // Zone enabled only after Date (and only visible for CO as per existing @if)
+    private bool CanSelectZone =>
+        IsDateSelected &&
+        (_userScope.Privilege == "CO");
+
+    // Region enabled only after Zone selection (and visible for CO/ZONE as per existing @if)
+    private bool CanSelectRegion =>
+        IsDateSelected &&
+        (_userScope.Privilege is "CO" or "ZONE") &&
+        !string.Equals(SelectedZone, "All", StringComparison.OrdinalIgnoreCase);
+
+    // Branch enabled only after Region selection (and visible for CO/ZONE/REGION as per existing @if)
+    private bool CanSelectBranch =>
+        IsDateSelected &&
+        (_userScope.Privilege is "CO" or "ZONE" or "REGION") &&
+        !string.Equals(SelectedRegion, "All", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userScope = await GetUserScopeAsync();
+
+        // Default filter values based on privilege
+        switch (_userScope.Privilege)
+        {
+            case "CO":
+                SelectedZone = "All";
+                SelectedRegion = "All";
+                SelectedBranch = "All";
+                break;
+            case "ZONE":
+                SelectedZone = _userScope.ZoneSolid ?? "All";
+                SelectedRegion = "All";
+                SelectedBranch = "All";
+                break;
+            case "REGION":
+                SelectedZone = _userScope.ZoneSolid ?? "All";
+                SelectedRegion = _userScope.RegionSolid ?? "All";
+                SelectedBranch = "All";
+                break;
+            case "BRANCH":
+                SelectedZone = _userScope.ZoneSolid ?? "All";
+                SelectedRegion = _userScope.RegionSolid ?? "All";
+                SelectedBranch = _userScope.BranchSolid ?? "All";
+                break;
+        }
+
+        await Task.WhenAll(LoadLookupsAsync(), LoadData()); // shows "Please select Business Date." until a date is chosen
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        // Zones (only if CO)
+        if (_userScope.Privilege == "CO")
+        {
+            _zones = await ReportService.GetLookupDataAsync(
+                "zone_master",
+                "zone_name_eng, zone_solid",
+                "status='A'",
+                "zone_name_eng"
+            );
+        }
+        else
+        {
+            _zones = new List<Dictionary<string, object>>();
+        }
+
+        // Regions � scope by zone (CO: all or by SelectedZone; others: fixed)
+        var regionWhere = "1=1";
+        var zoneForRegions = _userScope.Privilege == "CO" ? SelectedZone : (_userScope.ZoneSolid ?? "All");
+        if (!string.Equals(zoneForRegions, "All", StringComparison.OrdinalIgnoreCase))
+            regionWhere = $"zone_solid = '{zoneForRegions}'";
+
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            regionWhere,
+            "region_name"
+        );
+
+        // Branches � scope by region
+        var branchWhere = "1=1";
+        var regionForBranches = _userScope.Privilege switch
+        {
+            "REGION" or "BRANCH" => _userScope.RegionSolid ?? "All",
+            _ => SelectedRegion
+        };
+        if (!string.Equals(regionForBranches, "All", StringComparison.OrdinalIgnoreCase))
+            branchWhere = $"region_solid = '{regionForBranches}'";
+
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            // If CONCAT isn't supported, use: UPPER(branch_name)+'  ('+branch_code+')' as branch_name
+            "CONCAT(UPPER(branch_name),'  (',branch_code,')') as branch_name, sol_id",
+            branchWhere,
+            "branch_name"
+        );
+
+        // Business Dates (cts_outward_details)
+        _dates = await ReportService.GetLookupDataAsync(
+            "cts_outward_details",
+            "distinct BUS_DATE",
+            "BUS_DATE is not null",
+            "BUS_DATE"
+        );
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        if (_userScope.Privilege != "CO") return;
+
+        SelectedZone = value ?? "All";
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        var regionWhere = SelectedZone.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"zone_solid = '{SelectedZone}'";
+
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            regionWhere,
+            "region_name"
+        );
+
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "CONCAT(UPPER(branch_name),'  (',branch_code,')') as branch_name, sol_id",
+            "1=1",
+            "branch_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        if (!(_userScope.Privilege is "CO" or "ZONE")) return;
+
+        SelectedRegion = value ?? "All";
+        SelectedBranch = "All";
+
+        var branchWhere = SelectedRegion.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"region_solid = '{SelectedRegion}'";
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "CONCAT(UPPER(branch_name),'  (',branch_code,')') as branch_name, sol_id",
+            branchWhere,
+            "branch_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        if (!(_userScope.Privilege is "CO" or "ZONE" or "REGION")) return;
+
+        SelectedBranch = value ?? "All";
+        await LoadData();
+    }
+
+    private async Task HandleDateChanged(string value)
+    {
+        SelectedDate = value ?? "SEL";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        if (SelectedDate == "SEL" || string.IsNullOrWhiteSpace(SelectedDate))
+        {
+            _data = new();
+            _asOnDateLabel = "Please select Business Date.";
+            _loading = false;
+            StateHasChanged();
+            return;
+        }
+
+        // Parse the selected value; supports values with milliseconds
+        if (!TryParseAny(SelectedDate, out var selectedDt))
+        {
+            _data = new();
+            _asOnDateLabel = $"Invalid date selected: {SelectedDate}";
+            _loading = false;
+            StateHasChanged();
+            return;
+        }
+
+        // ---- SELECT list (aligns with your GridView columns) ----
+        string selectColumns =
+            "bm.zone_name_eng as zone," +
+            "bm.region_name as region," +
+            "bm.SOL_ID as sol_id," +
+            "bm.BRANCH_NAME as branch," +
+            "cts.BOFD_RT as bofd_rt," +
+            "cts.INST_ID as inst_id," +
+            "cts.BUS_DATE as bus_date," +
+            "cts.NPCI_PRESENTMENT_DATE as npci_presentment_date," +
+            "cts.DEPOSITOR_ACCOUNT_NUMBER as depositor_acct," +
+            "cts.CHEQUE_NO as cheque_no," +
+            "cts.CHK_DATE as chk_date," +
+            "CAST(cts.AMOUNT as decimal(18,2)) as amount," +
+            "cts.CHQ_ACCEPT_RETURNED as chq_accept_returned," +
+            "cts.RET_REASON_CD as ret_reason_cd," +
+            "cts.CHQ_RESPONSE_DATE as chq_response_date," +
+            "cts.NPCI_ACCEPT_REJECT as npci_accept_reject," +
+            "cts.CHI_REJ_CD as chi_rej_cd," +
+            "cts.ECL_FILE_ID as ecl_file_id";
+
+        string fromJoin =
+            "cts_outward_details cts " +
+            "LEFT JOIN Branch_Master bm ON cts.solid = bm.SOL_ID";
+
+        var filters = new List<string> { "1=1" };
+
+        // ---- DATE FILTER (robust: match whole day) ----
+        filters.Add($"CAST(cts.BUS_DATE AS date) = '{selectedDt:yyyy-MM-dd}'");
+
+        // ---- Scope filters by privilege and UI selections ----
+        switch (_userScope.Privilege)
+        {
+            case "CO":
+                if (!string.Equals(SelectedZone, "All", StringComparison.OrdinalIgnoreCase))
+                    filters.Add($"bm.zone_solid = '{SelectedZone}'");
+                if (!string.Equals(SelectedRegion, "All", StringComparison.OrdinalIgnoreCase))
+                    filters.Add($"bm.region_solid = '{SelectedRegion}'");
+                if (!string.Equals(SelectedBranch, "All", StringComparison.OrdinalIgnoreCase))
+                    filters.Add($"bm.sol_id = '{SelectedBranch}'");
+                break;
+
+            case "ZONE":
+                if (!string.IsNullOrWhiteSpace(_userScope.ZoneSolid))
+                    filters.Add($"bm.zone_solid = '{_userScope.ZoneSolid}'");
+                if (!string.Equals(SelectedRegion, "All", StringComparison.OrdinalIgnoreCase))
+                    filters.Add($"bm.region_solid = '{SelectedRegion}'");
+                if (!string.Equals(SelectedBranch, "All", StringComparison.OrdinalIgnoreCase))
+                    filters.Add($"bm.sol_id = '{SelectedBranch}'");
+                break;
+
+            case "REGION":
+                if (!string.IsNullOrWhiteSpace(_userScope.RegionSolid))
+                    filters.Add($"bm.region_solid = '{_userScope.RegionSolid}'");
+                if (!string.Equals(SelectedBranch, "All", StringComparison.OrdinalIgnoreCase))
+                    filters.Add($"bm.sol_id = '{SelectedBranch}'");
+                break;
+
+            case "BRANCH":
+                if (!string.IsNullOrWhiteSpace(_userScope.BranchSolid))
+                    filters.Add($"bm.sol_id = '{_userScope.BranchSolid}'");
+                break;
+        }
+
+        var whereClause = "WHERE " + string.Join(" AND ", filters);
+
+        string finalQuery =
+            $"SELECT {selectColumns} " +
+            $"FROM {fromJoin} " +
+            $"{whereClause} " +
+            $"ORDER BY bm.zone_name_eng, bm.region_name, bm.branch_name, cts.BUS_DATE, cts.CHEQUE_NO";
+
+        // Console.WriteLine(finalQuery);
+
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+        _asOnDateLabel = $"Data As On - {selectedDt:dd-MM-yyyy}";
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnExportInternal()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _cols, "CtsOutward");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            $"Cts_Outward_{AppTime.Now:yyyyMMdd_HHmmss}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+        if (IsDateLike(col.PropertyName, val?.ToString())) return FormatDate(val?.ToString() ?? "");
+        return val.ToString()!;
+    }
+
+    private static bool IsDateLike(string colName, string? value)
+        => !string.IsNullOrWhiteSpace(value) && (colName.EndsWith("date", StringComparison.OrdinalIgnoreCase) || DateTime.TryParse(value, out _));
+
+    private static string FormatDate(string raw)
+    {
+        if (DateTime.TryParse(raw, out var dt)) return dt.ToString("dd-MMM-yyyy");
+        return raw;
+    }
+
+    // Helpers for Business Date dropdown (label/value handling)
+    private static bool TryParseAny(string? raw, out DateTime dt)
+    {
+        dt = default;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+
+        var fmts = new[]
+        {
+            "dd-MM-yyyy", "dd/MM/yyyy",
+            "dd-MM-yyyy H:mm", "dd-MM-yyyy HH:mm",
+            "dd-MM-yyyy h:mm tt", "dd-MM-yyyy hh:mm tt",
+            "yyyy-MM-dd HH:mm:ss.fff", "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-ddTHH:mm:ss", "M/d/yyyy h:mm:ss tt", "M/d/yyyy h:mm tt"
+        };
+
+        return DateTime.TryParseExact(raw, fmts, CultureInfo.InvariantCulture,
+                   DateTimeStyles.AssumeLocal | DateTimeStyles.AllowWhiteSpaces,
+                   out dt)
+               || DateTime.TryParse(raw, CultureInfo.InvariantCulture,
+                   DateTimeStyles.AssumeLocal | DateTimeStyles.AllowWhiteSpaces,
+                   out dt);
+    }
+
+    private static string FormatDateForSelectLabel(string raw)
+        => TryParseAny(raw, out var dt) ? dt.ToString("dd-MM-yyyy") : raw;
+
+    // Placeholder: replace with your real session/claims source
+    private async Task<UserScope> GetUserScopeAsync()
+    {
+        await Task.CompletedTask;
+        // RBAC: resolve the logged-in user's scope (fail-closed to BRANCH for unknown privilege).
+        var scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+        return new UserScope
+            {
+                Privilege = scope.Privilege,
+                ZoneSolid = scope.ZoneSolid,
+                RegionSolid = scope.RegionSolid,
+                BranchSolid = scope.BranchSolid
+            };
+    }
+
+    private class UserScope
+    {
+        public string Privilege { get; set; } = "CO";
+        public string? ZoneSolid { get; set; }
+        public string? RegionSolid { get; set; }
+        public string? BranchSolid { get; set; }
+    }
+}

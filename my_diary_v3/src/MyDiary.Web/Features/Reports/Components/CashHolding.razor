@@ -1,0 +1,240 @@
+﻿@page "/reports/cashholding"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Cash Holding — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+
+    // Filter defaults: "1" = All(Summary), "all" = All(...wise)
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private bool _loading = true;
+    private string _asOnDateLabel = string.Empty;
+
+    private ReportConfig _activeConfig = new();
+
+    // These mirror your session fields from WebForms (default to CO if not provided)
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Column sets
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",               PropertyName = "zone_name_eng",        Width = "18%" },
+        new ColumnConfig { Header = "Region",             PropertyName = "region_name",          Width = "18%" },
+        new ColumnConfig { Header = "Branch",             PropertyName = "branch_name",          Width = "28%" },
+        new ColumnConfig { Header = "SOL",                PropertyName = "sol_id",               Width = "10%" },
+        new ColumnConfig { Header = "Cash Holding Today", PropertyName = "Cash_holding_today",   IsNumeric = true, Format = "N2", Width = "13%" },
+        new ColumnConfig { Header = "Limit",              PropertyName = "limit",                IsNumeric = true, Format = "N2", Width = "13%" },
+        new ColumnConfig { Header = "Limit Exceeding",    PropertyName = "limit_exceeding",      IsNumeric = true, Format = "N2", Width = "14%" }
+    };
+
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",               PropertyName = "zone_name_eng",        Width = "16%" },
+        new ColumnConfig { Header = "Region",             PropertyName = "region_name",          Width = "16%" },
+        new ColumnConfig { Header = "Branch",             PropertyName = "branch_name",          Width = "24%" },
+        new ColumnConfig { Header = "SOL",                PropertyName = "sol_id",               Width = "10%" },
+        new ColumnConfig { Header = "Cash Holding Today", PropertyName = "Cash_holding_today",   IsNumeric = true, Format = "N2", Width = "11%" },
+        new ColumnConfig { Header = "Limit",              PropertyName = "limit",                IsNumeric = true, Format = "N2", Width = "11%" },
+        new ColumnConfig { Header = "Limit Exceeding",    PropertyName = "limit_exceeding",      IsNumeric = true, Format = "N2", Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Cash Holding Limit";
+        // If you have claims, uncomment and map:
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) f)
+    {
+        _selectedZone = f.zone;
+        _selectedRegion = f.region;
+        _selectedBranch = f.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        
+        //  - @type => 'co' | 'zone' | 'region' | 'branch'
+        //  - @code => SOLID for corresponding type or blank for 'co'
+        var (procType, procCode, isSummary) = BuildProcParams();
+
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(
+            $"EXEC dbo.get_cash_holding_data @code = '{procCode}', @type = '{procType}'");
+        var dateTask = ReportService.GetAsOnDateAsync("cash_holding_data");
+
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+
+        
+        _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+
+        string date;
+        try
+        {
+            date = dateTask.Result;
+        }
+        catch (Exception)
+        {
+            // Fallback to today's date or empty label.
+            date = AppTime.Now.ToString("dd/MM/yyyy");
+        }
+        _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+                                   
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private (string type, string code, bool isSummary) BuildProcParams()
+    {
+        // Mirrors the DisplayData() privilege logic from CashHoldingLimit.aspx.cs,
+        // but translated into SP calls that always return branch-level rows.
+        // We choose the tightest scope available based on filters & privilege.
+
+        string type = "co";
+        string code = "";
+        bool isSummary = false; // SP returns branch rows; we show detailed unless you post-aggregate
+
+        switch (_userPrivilege.ToUpperInvariant())
+        {
+            case "BRANCH":
+                type = "branch";
+                code = _userBranchSolid;
+                isSummary = false;
+                break;
+
+            case "REGION":
+                // If user picks a specific branch, you could switch to branch;
+                // but SP's region mode already includes all branches in region.
+                type = "region";
+                code = _userRegionSolid;
+                isSummary = false;
+                // If UI selects a specific branch value (not "1"/"all"), prefer branch:
+                if (_selectedBranch != "1" && _selectedBranch != "all")
+                {
+                    type = "branch";
+                    code = _selectedBranch;
+                }
+                break;
+
+            case "ZONE":
+                type = "zone";
+                code = _userZoneSolid;
+                isSummary = false;
+                if (_selectedRegion != "1" && _selectedRegion != "all")
+                {
+                    // Narrow to region if user picks specific region
+                    type = "region";
+                    code = _selectedRegion;
+                }
+                if (_selectedBranch != "1" && _selectedBranch != "all")
+                {
+                    type = "branch";
+                    code = _selectedBranch;
+                }
+                break;
+
+            case "CO":
+            default:
+                // CO users: use filters to decide scope
+                if (_selectedZone == "1")
+                {
+                    // "All(Summary)" at CO � your WebForms shows a single total row,
+                    // but SP doesn't have this mode. We fallback to "co" => all branches.
+                    type = "co"; code = ""; isSummary = true;
+                }
+                else if (_selectedZone == "all")
+                {
+                    // "All(Zonewise)" in WebForms is summarized; SP returns branch rows (co).
+                    // If Region==all & Branch==1 => still co (all branches).
+                    // If Region==all & Branch!=1 => branch (if specific), else co.
+                    // If Region is specific => region/branch accordingly.
+                    type = "co"; code = ""; isSummary = true;
+                    if (_selectedRegion != "1" && _selectedRegion != "all")
+                    {
+                        type = "region"; code = _selectedRegion; isSummary = false;
+                        if (_selectedBranch != "1" && _selectedBranch != "all")
+                        {
+                            type = "branch"; code = _selectedBranch;
+                        }
+                    }
+                    else if (_selectedBranch != "1" && _selectedBranch != "all")
+                    {
+                        type = "branch"; code = _selectedBranch; isSummary = false;
+                    }
+                }
+                else
+                {
+                    // Specific zone chosen
+                    type = "zone"; code = _selectedZone; isSummary = false;
+
+                    if (_selectedRegion != "1" && _selectedRegion != "all")
+                    {
+                        type = "region"; code = _selectedRegion;
+                    }
+                    if (_selectedBranch != "1" && _selectedBranch != "all")
+                    {
+                        type = "branch"; code = _selectedBranch;
+                    }
+                }
+                break;
+        }
+        return (type, code, isSummary);
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "CashHolding");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "CashHolding.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

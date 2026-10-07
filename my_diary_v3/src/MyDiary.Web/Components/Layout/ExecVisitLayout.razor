@@ -1,0 +1,41 @@
+@inherits LayoutComponentBase
+
+@* Chromeless, print-friendly layout for the "Executive Branch Visit" full-page form.
+   No sidebar, no MainLayout AppBar — only a slim header bar carrying the My Diary
+   logo (left) and the UBI logo (right), matching MainLayout's centered-UBI-logo
+   AppBar convention but stripped to just the two logos per the task spec. Modeled
+   on LoginLayout.razor (the only other existing chromeless layout in this codebase) —
+   theme/popover/snackbar providers are declared here because MainLayout, which
+   normally hosts them, is not active on this route. *@
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<div class="execvisit-root">
+    <header class="execvisit-header">
+        <img src="images/logo.png" alt="My Diary" class="execvisit-logo-left" />
+        <span class="execvisit-header-title">Executive Branch Visit</span>
+        <img src="images/UBI_Logo.png" alt="Union Bank of India" class="execvisit-logo-right" />
+    </header>
+    <div class="execvisit-body">
+        @Body
+    </div>
+</div>
+
+<style>
+    .execvisit-root { min-height: 100vh; background: #f4f6f9; }
+    .execvisit-header {
+        display: flex; align-items: center; gap: 12px;
+        padding: 8px 20px; background: #ffffff; border-bottom: 1px solid #ebedf2;
+        position: sticky; top: 0; z-index: 100;
+    }
+    .execvisit-logo-left { height: 34px; object-fit: contain; }
+    .execvisit-logo-right { height: 34px; object-fit: contain; margin-left: auto; }
+    .execvisit-header-title { font-weight: 600; font-size: 1.05rem; color: #2a2f5b; margin-left: 8px; }
+    .execvisit-body { padding: 16px 20px 40px; }
+
+    @@media print {
+        .execvisit-header { position: static; }
+    }
+</style>

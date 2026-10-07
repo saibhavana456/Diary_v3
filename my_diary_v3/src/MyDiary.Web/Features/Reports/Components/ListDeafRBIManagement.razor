@@ -1,0 +1,404 @@
+@page "/reports/ListDeafRBIManagement"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Probable DEA Fund Accounts — My Diary</PageTitle>
+
+    <DynamicDashboard Config="_activeConfig"
+                      Data="_data"
+                      IsLoading="_loading"
+                      AsOnDateLabel="@_asOnDateLabel"
+                      SelectedZone="@_selectedZone"
+                      SelectedRegion="@_selectedRegion"
+                      SelectedBranch="@_selectedBranch"
+                      OnFilterChanged="HandleFilterChanged"
+                      OnExportRequested="HandleExport" />
+
+    @code {
+        [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+        private List<Dictionary<string, object>> _data = new();
+        private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+        private bool _loading = true;
+        private ReportConfig _activeConfig = new();
+
+        
+        private string _userPrivilege = "CO";
+        private string _userZoneSolid = "00000";
+        private string _userRegionSolid = "00000";
+        private string _userBranchSolid = "00000";
+
+        
+
+        private const string FileBaseRaw = @"D:\LiveApllication\MyDiary\";
+    
+        private static readonly string FileBaseSql = FileBaseRaw.Replace(@"\", @"\\");
+        private static string BuildDeafZoneFileExpr(string zoneSolid) =>
+            "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+            " FROM RegionZoneFiles WHERE solid = '" + zoneSolid + "' AND filetype = 'Dormant') AS File_name";
+        private static string BuildDeafRegionFileExpr(string regionSolid) =>
+            "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+            " FROM RegionZoneFiles WHERE solid = '" + regionSolid + "' AND filetype = 'Dormant') AS File_name";
+        private static string BuildDeafZoneFileExprByColumn(string zoneSolidColumnExpr) =>
+            "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+            " FROM RegionZoneFiles WHERE solid = " + zoneSolidColumnExpr + " AND filetype = 'Dormant') AS File_name";
+        private static string BuildDeafRegionFileExprByColumn(string regionSolidColumnExpr) =>
+            "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+            " FROM RegionZoneFiles WHERE solid = " + regionSolidColumnExpr + " AND filetype = 'Dormant') AS File_name";
+
+
+    // --- Column configurations ---
+    private readonly List<ColumnConfig> _summaryCols = new()
+        {
+            new ColumnConfig { Header = "Zone",                       PropertyName = "zone_name_eng",  Width = "20%" },
+            new ColumnConfig { Header = "Region",                     PropertyName = "region_name",    Width = "20%" },
+            new ColumnConfig { Header = "Branch",                     PropertyName = "branch_name",    Width = "20%" },
+            new ColumnConfig { Header = "No of DEAF Accounts",        PropertyName = "DeafCount",      IsNumeric = true, Format = "N0", Width = "15%" },
+            new ColumnConfig { Header = "Total Amount (Rs. in Lacs)", PropertyName = "DeafAmount",     IsNumeric = true, Format = "N2", Width = "15%" },
+             new ColumnConfig { Header = "Download",                    PropertyName = "File_name", IsLink = true, LinkText = "Download File", Width = "10%" }
+
+        };
+
+    private readonly List<ColumnConfig> _detailedCols = new()
+        {
+            new ColumnConfig { Header = "Sol Id",                     PropertyName = "SolId",          Width = "18%" },
+            new ColumnConfig { Header = "Branch Name",                PropertyName = "Branch_Name",    Width = "32%" },
+            new ColumnConfig { Header = "No of DEAF Accounts",        PropertyName = "DeafCount",      IsNumeric = true, Format = "N0", Width = "15%" },
+            new ColumnConfig { Header = "Total Amount (Rs. in Lacs)", PropertyName = "DeafAmount",     IsNumeric = true, Format = "N2", Width = "15%" },
+             new ColumnConfig { Header = "Download",                    PropertyName = "File_name", IsLink = true, LinkText = "Download File", Width = "10%" }
+
+        };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "List Deaf RBI Management";
+
+
+
+        await LoadReport();
+    }
+
+        private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+        {
+            _selectedZone = filters.zone;
+            _selectedRegion = filters.region;
+            _selectedBranch = filters.branch;
+            await LoadReport();
+        }
+
+        private async Task LoadReport()
+        {
+            _loading = true;
+            StateHasChanged();
+
+            string columns = "";
+            string where = "LTRIM(RTRIM(B.region_solid)) <> ''";
+            string groupBy = "";
+            bool isSummary = true;
+
+            try
+            {
+                if (_userPrivilege == "CO")
+                {
+                    if (_selectedZone == "1") // Global summary
+                    {
+                        columns = "SUM(DeafCount) AS DeafCount, " +
+                                  "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                  "'All' AS branch_name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId, '' AS File_name";
+                    }
+                    else if (_selectedZone == "all")
+                    {
+                        if (_selectedRegion == "1")
+                        {
+                            // Zone-wise summary across MANY zones
+                            columns = "SUM(DeafCount) AS DeafCount, " +
+                                      "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                      "'All' AS branch_name, 'All' AS region_name, B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                                      BuildDeafZoneFileExprByColumn("B.Zone_SolId");
+                            groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng";
+                        }
+                        else if (_selectedRegion == "all")
+                        {
+                            if (_selectedBranch == "1")
+                            {
+                                // Region-wise summary across MANY regions
+                                columns = "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                          BuildDeafRegionFileExprByColumn("B.region_SolId");
+                                groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            }
+                            else
+                            {
+                                // Branch-level detailed (group by branch)
+                                isSummary = false;
+                                columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                                          "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "MAX(DeafFileName) AS File_name";
+                                groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                            }
+                        }
+                        else // Specific Region selected
+                        {
+                            where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                            if (_selectedBranch == "1")
+                            {
+                                // Single-region summary
+                                columns = "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                          BuildDeafRegionFileExpr(_selectedRegion);
+                                groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            }
+                            else
+                            {
+                                // Branch-level detailed in region
+                                isSummary = false;
+
+                                if (_selectedBranch != "all")
+                                    where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                                columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                                          "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "MAX(DeafFileName) AS File_name";
+                                groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                            }
+                        }
+                    }
+                    else // Specific Zone selected
+                    {
+                        where += $" AND B.zone_solid = '{_selectedZone}'";
+
+                        if (_selectedRegion == "1")
+                        {
+                            // Single-zone summary
+                            columns = "SUM(DeafCount) AS DeafCount, " +
+                                      "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                      "'All' AS branch_name, 'All' AS region_name, B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                                      BuildDeafZoneFileExpr(_selectedZone);
+                            groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                        }
+                        else if (_selectedRegion == "all")
+                        {
+                            if (_selectedBranch == "1")
+                            {
+                                // Region-wise summary within selected zone (MANY regions)
+                                columns = "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                          BuildDeafRegionFileExprByColumn("B.region_SolId");
+                                groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            }
+                            else
+                            {
+                                // Branch-level detailed in zone
+                                isSummary = false;
+
+                                if (_selectedBranch != "all")
+                                    where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                                columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                                          "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "MAX(DeafFileName) AS File_name";
+                                groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                            }
+                        }
+                        else // Specific Region within Specific Zone
+                        {
+                            where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                            if (_selectedBranch == "1")
+                            {
+                                // Single-region summary
+                                columns = "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                          BuildDeafRegionFileExpr(_selectedRegion);
+                                groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                            }
+                            else
+                            {
+                                // Branch-level detailed
+                                isSummary = false;
+
+                                if (_selectedBranch != "all")
+                                    where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                                columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                                          "SUM(DeafCount) AS DeafCount, " +
+                                          "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                          "MAX(DeafFileName) AS File_name";
+                                groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                            }
+                        }
+                    }
+                }
+                else if (_userPrivilege == "ZONE")
+                {
+                    where += $" AND B.zone_solid = '{_userZoneSolid}'";
+
+                    if (_selectedRegion == "1")
+                    {
+                        // Zone summary user's zone
+                        columns = "SUM(DeafCount) AS DeafCount, " +
+                                  "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                  "'All' AS branch_name, 'All' AS region_name, B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                                  BuildDeafZoneFileExpr(_userZoneSolid);
+                        groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1")
+                        {
+                            // Region-wise summary in zone (MANY regions)
+                            columns = "SUM(DeafCount) AS DeafCount, " +
+                                      "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildDeafRegionFileExprByColumn("B.region_SolId");
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Branch detailed
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                                      "SUM(DeafCount) AS DeafCount, " +
+                                      "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                      "MAX(DeafFileName) AS File_name";
+                            groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                        }
+                    }
+                    else // Specific Region
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1")
+                        {
+                            // Single-region summary
+                            columns = "SUM(DeafCount) AS DeafCount, " +
+                                      "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildDeafRegionFileExpr(_selectedRegion);
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Branch detailed
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                                      "SUM(DeafCount) AS DeafCount, " +
+                                      "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                      "MAX(DeafFileName) AS File_name";
+                            groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                        }
+                    }
+                }
+                else if (_userPrivilege == "REGION")
+                {
+                    where += $" AND B.region_solid = '{_userRegionSolid}'";
+
+                    if (_selectedBranch == "1")
+                    {
+                        // Single-region summary user's region
+                        columns = "SUM(DeafCount) AS DeafCount, " +
+                                  "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                  "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                  BuildDeafRegionFileExpr(_userRegionSolid);
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    }
+                    else
+                    {
+                        // Branch detailed
+                        isSummary = false;
+
+                        if (_selectedBranch != "all")
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                                  "SUM(DeafCount) AS DeafCount, " +
+                                  "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                                  "MAX(DeafFileName) AS File_name";
+                        groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                    }
+                }
+                else if (_userPrivilege == "BRANCH")
+                {
+                    // Branch-level
+                    isSummary = false;
+                    where += $" AND B.SOL_ID = '{_userBranchSolid}'";
+
+                    columns = "B.Sol_Id AS SolId, B.Branch_Name AS Branch_Name, " +
+                              "SUM(DeafCount) AS DeafCount, " +
+                              "ROUND(SUM(DeafAmount) / 100000.0, 2) AS DeafAmount, " +
+                              "MAX(DeafFileName) AS File_name";
+                    groupBy = " GROUP BY B.Sol_Id, B.Branch_Name";
+                }
+
+                
+                string finalQuery =
+                    $"SELECT {columns} " +
+                    $"FROM AccountStatus A " +
+                    $"JOIN Branch_Master B ON A.SolID = B.SOL_ID " +
+                    $"WHERE {where}{groupBy}";
+
+                // Data query and as-on-date are independent - run in parallel
+                var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+                var dateTask = ReportService.GetAsOnDateAsync("AccountStatus");
+                await Task.WhenAll(dataTask, dateTask);
+                _data = dataTask.Result;
+                string date = dateTask.Result;
+                _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+                _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError(ex, ex.Message);
+            }
+            finally
+            {
+                _loading = false;
+                StateHasChanged();
+            }
+        }
+
+        private async Task HandleExport()
+        {
+            var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "ListDeafRBIManagement");
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                "ListDeafRBIManagement.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes)
+            );
+        }
+    }

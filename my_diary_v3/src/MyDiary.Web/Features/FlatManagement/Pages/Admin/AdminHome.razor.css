@@ -1,0 +1,12 @@
+.ah-title {
+    color: #1E3A8A;
+    font-weight: 700;
+}
+
+::deep .ah-card {
+    border-radius: 12px;
+}
+
+::deep .ah-table td {
+    line-height: 1.5;
+}

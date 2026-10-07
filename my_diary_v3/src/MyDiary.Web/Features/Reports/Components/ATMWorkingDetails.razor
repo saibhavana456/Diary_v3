@@ -1,0 +1,395 @@
+﻿@page "/reports/atm-visit-report"
+@using Microsoft.JSInterop
+@using MudBlazor
+@inject IJSRuntime JS
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MyDiary.Web.Features.Reports.Models
+@using MyDiary.Web.Features.Reports.Services
+@using MyDiary.Web.Core.Extensions
+@inject ATRReportService AtmService
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+    <MudText Typo="Typo.h5" Class="text-center mb-4" Style="font-weight:700; color:#1b4a98;">
+        ATM Visit Report (Daily)
+    </MudText>
+
+    <!-- 1. Branch Details -->
+    <MudPaper Elevation="2" Class="pa-4 mb-4" Style="border-radius:12px;">
+        <MudText Typo="Typo.h6" Class="mb-3" Style="font-weight:700; color:#1b4a98;">1. Branch Details</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6"><MudText><b>Branch Name:</b> @Branch.BranchName</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText><b>SOL Id:</b> @Branch.SOLId</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText><b>RO Name:</b> @Branch.ROName</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText><b>ZO Name:</b> @Branch.ZOName</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText><b>Report Date:</b> @Branch.ReportDate.ToString("MM/dd/yyyy")</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText><b>Response Submitted Date:</b> @_submittedDateLabel</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText><b>PF No and Name:</b> @Branch.PFAndOfficialName</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText><b>Date &amp; Time of Entry:</b> @_entryDateTimeLabel</MudText></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <!-- 2. Questionnaire -->
+    <MudPaper Elevation="2" Class="pa-4 mb-4" Style="border-radius:12px;">
+        <MudText Typo="Typo.h6" Class="mb-3" Style="font-weight:700; color:#1b4a98;">2. Questionnaire</MudText>
+
+        <!-- ATM ID Selection -->
+        <MudGrid Spacing="2" Class="mb-4">
+            <MudItem xs="12" sm="4">
+
+                <MudSelect T="string"
+                           Label="Select ATM ID"
+                           Value="Model.ATMId"
+                           ValueChanged="OnATMIdChanged"
+                           ValueExpression="() => Model.ATMId"
+                           Dense="true">
+
+                    <MudSelectItem T="string" Value="@((string)null)">-- Select Id --</MudSelectItem>
+                    @foreach (var id in ATMIds)
+                    {
+                        <MudSelectItem T="string" Value="@id">@id</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+
+        <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="border:1px solid #e2e8f0;">
+            <thead>
+                <tr style="background:#1b4a98; color:white;">
+                    <th style="width:6%; text-align:center;">S.No</th>
+                    <th style="width:44%;">Observation Name</th>
+                    <th style="width:50%; text-align:center;">Action Taken</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="text-align:center;">1</td>
+                    <td>ATM Cleanliness</td>
+                    <td style="text-align:center;">
+                        <MudRadioGroup T="string" @bind-Value="Model.ATM_Cleanliness">
+                            <MudRadio T="string" Value="@("Y")" Color="Color.Primary" Dense="true">Clean</MudRadio>
+                            <MudRadio T="string" Value="@("N")" Color="Color.Error" Dense="true">Not Clean</MudRadio>
+                        </MudRadioGroup>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;">2</td>
+                    <td>ATM Working</td>
+                    <td style="text-align:center;">
+                        <MudRadioGroup T="string" @bind-Value="Model.ATM_Working">
+                            <MudRadio T="string" Value="@("Y")" Color="Color.Primary" Dense="true">Working</MudRadio>
+                            <MudRadio T="string" Value="@("N")" Color="Color.Error" Dense="true">Not Working</MudRadio>
+                        </MudRadioGroup>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;">3</td>
+                    <td>External Device Check</td>
+                    <td style="text-align:center;">
+                        <MudRadioGroup T="string" @bind-Value="Model.External_Device">
+                            <MudRadio T="string" Value="@("Y")" Color="Color.Primary" Dense="true">External device Found</MudRadio>
+                            <MudRadio T="string" Value="@("N")" Color="Color.Error" Dense="true">No external device Found</MudRadio>
+                        </MudRadioGroup>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;">4</td>
+                    <td>Air Conditioner (AC) Status</td>
+                    <td style="text-align:center;">
+                        <MudRadioGroup T="string" @bind-Value="Model.AC_Status">
+                            <MudRadio T="string" Value="@("Y")" Color="Color.Primary" Dense="true">Working</MudRadio>
+                            <MudRadio T="string" Value="@("N")" Color="Color.Error" Dense="true">Not Working</MudRadio>
+                            <MudRadio T="string" Value="@("NA")" Color="Color.Default" Dense="true">Not Installed</MudRadio>
+                        </MudRadioGroup>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;">5</td>
+                    <td>Camera Status</td>
+                    <td style="text-align:center;">
+                        <MudRadioGroup T="string" @bind-Value="Model.Camera_Status">
+                            <MudRadio T="string" Value="@("Y")" Color="Color.Primary" Dense="true">Working</MudRadio>
+                            <MudRadio T="string" Value="@("N")" Color="Color.Error" Dense="true">Not Working</MudRadio>
+                            <MudRadio T="string" Value="@("NA")" Color="Color.Default" Dense="true">Not Installed</MudRadio>
+                        </MudRadioGroup>
+                    </td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+
+        <div class="d-flex justify-center gap-3 mt-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_disableButtons"
+                       OnClick="OnSaveAsync" Class="rounded-pill px-5">
+                Save
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_disableButtons"
+                       OnClick="OnSubmitAsync" Class="rounded-pill px-5">
+                Submit
+            </MudButton>
+        </div>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <MudAlert Severity="@(_isError ? Severity.Error : Severity.Success)" Class="mt-3" ShowCloseIcon="true" CloseIconClicked="() => _message = null">
+            @_message
+        </MudAlert>
+    }
+</MudContainer>
+
+@code
+{
+    private ATMReportModel Model = new();
+    private string _userPF = "";
+    private string _userName = "";
+    private string _branchSolid = "";
+    private string _branchCode = "";
+    private string _regionCode = "";
+    private string _zoneCode = "";
+    private string _submittedDateLabel = "Yet to be Submitted";
+    private string _entryDateTimeLabel = "";
+    private string? _message;
+    private bool _isError;
+    private bool _disableButtons;
+
+    public class ATMReportModel
+    {
+        public string? ATMId { get; set; }
+        public string ATM_Cleanliness { get; set; } = "Y";
+        public string ATM_Working { get; set; } = "Y";
+        public string External_Device { get; set; } = "Y";
+        public string AC_Status { get; set; } = "Y";
+        public string Camera_Status { get; set; } = "Y";
+    }
+
+    public class BranchHeader
+    {
+        public string BranchName { get; set; } = "";
+        public string SOLId { get; set; } = "";
+        public string ROName { get; set; } = "";
+        public string ZOName { get; set; } = "";
+        public DateTime ReportDate { get; set; } = AppTime.Today;
+        public string PFAndOfficialName { get; set; } = "";
+    }
+
+    private BranchHeader Branch = new();
+    private List<string> ATMIds = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var privilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+
+        if (privilege != "BRANCH")
+        {
+            Nav.NavigateTo("reports/not-found?reason=unauthorized&name=ATM Visit Report", replace: true);
+            return;
+        }
+
+        _branchSolid = user.FindFirst("branch_solid")?.Value ?? "";
+        _branchCode = user.FindFirst("branch_code")?.Value ?? "";
+        _regionCode = user.FindFirst("region_code")?.Value ?? "";
+        _zoneCode = user.FindFirst("zone_code")?.Value ?? "";
+        _userPF = user.FindFirst("UserPF")?.Value ?? "";
+        _userName = user.FindFirst("UserName")?.Value ?? "";
+
+        Branch = new BranchHeader
+        {
+            BranchName = user.FindFirst("Branch_name")?.Value ?? "",
+            SOLId = _branchSolid,
+            ROName = user.FindFirst("Region_name")?.Value ?? "",
+            ZOName = user.FindFirst("zone_name")?.Value ?? "",
+            ReportDate = AppTime.Today,
+            PFAndOfficialName = _userPF
+        };
+
+        try
+        {
+            ATMIds = await AtmService.GetATMIdsAsync(_branchSolid);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"[ATMWorkingDetails] Failed to load ATM IDs for SolID={_branchSolid}");
+            ATMIds = new List<string>();
+        }
+    }
+
+    private async Task OnATMIdChanged(string selectedId)
+    {
+        // ✅ Fix 1: Reset state immediately
+        _disableButtons = false;
+        _message = null;
+
+        Model.ATMId = selectedId;
+
+        if (string.IsNullOrWhiteSpace(selectedId))
+        {
+            ResetFormFields();
+            _submittedDateLabel = "Yet to be Submitted";
+            _entryDateTimeLabel = "";
+            return;
+        }
+
+        try
+        {
+            var existing = await AtmService.GetATMReportDataAsync(
+                _branchSolid,
+                DateTime.Today.ToString("MM/dd/yyyy"),  // ✅ unchanged as you requested
+                selectedId);
+
+            if (existing != null)
+            {
+                Model.ATM_Cleanliness = existing.Q1OPT ?? "Y";
+                Model.ATM_Working = existing.Q2OPT ?? "Y";
+                Model.External_Device = existing.Q3OPT ?? "Y";
+                Model.AC_Status = existing.Q4OPT ?? "Y";
+                Model.Camera_Status = existing.Q5OPT ?? "Y";
+
+                if (existing.STATUS == "S")
+                {
+                    _disableButtons = true;
+                    ShowMessage($"Report already submitted for ATM {selectedId}", true);
+                    await InvokeAsync(StateHasChanged);
+                }
+                else
+                {
+                    _disableButtons = false;
+                }
+
+                _submittedDateLabel =
+                    (existing.STATUS == "S" || existing.STATUS == "R" || existing.STATUS == "V")
+                    ? "Submitted"
+                    : "Yet to be Submitted";
+            }
+            else
+            {
+                ResetFormFields();
+                _disableButtons = false;
+                _submittedDateLabel = "Yet to be Submitted";
+                _entryDateTimeLabel = "";
+            }
+        }
+        catch
+        {
+            ResetFormFields();
+            _disableButtons = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnSaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Model.ATMId))
+        {
+            Snackbar.Add("Please select ATM ID.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var existingId = await AtmService.GetExistingReportIdAsync(_branchSolid, AppTime.Today, Model.ATMId);
+            string status = existingId is null ? "E" : "M";
+            string statusDesc = existingId is null ? "ENTERED" : "MODIFIED";
+            string entryMode = existingId is null ? "CUR_INSERT_ENTRY" : "CUR_UPDATE_ENTRY";
+            string reportId = existingId ?? GenerateReportId(_branchSolid, AppTime.Now);
+
+            var input = BuildInputModel(reportId, status, statusDesc, entryMode);
+            var rows = await AtmService.InsertUpdateATMDetailsAsync(input);
+
+            if (rows == 0)
+                Snackbar.Add("Your request could not be performed.", Severity.Error);
+            else
+                Snackbar.Add("ATM Details Saved Successfully.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"[ATMWorkingDetails.OnSaveAsync] Failed for SolID={_branchSolid}, ATMID={Model.ATMId}");
+            Snackbar.Add("An unexpected error occurred.", Severity.Error);
+        }
+    }
+
+    private async Task OnSubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Model.ATMId))
+        {
+            Snackbar.Add("Please select ATM ID.", Severity.Warning);
+            return;
+        }
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Report once Submitted cannot be modified. Are you sure you want to submit?");
+        if (!confirmed) return;
+
+        try
+        {
+            var existingId = await AtmService.GetExistingReportIdAsync(_branchSolid, AppTime.Today, Model.ATMId);
+            string entryMode = existingId is null ? "CUR_INSERT_ENTRY" : "CUR_UPDATE_ENTRY";
+            string reportId = existingId ?? GenerateReportId(_branchSolid, AppTime.Now);
+
+            var input = BuildInputModel(reportId, "S", "SUBMITTED", entryMode);
+            var rows = await AtmService.InsertUpdateATMDetailsAsync(input);
+
+            if (rows == 0)
+                Snackbar.Add("Your request could not be performed.", Severity.Error);
+            else
+            {
+                _disableButtons = true;
+                Snackbar.Add($"ATM Details Submitted. Acknowledgement No: {reportId}", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"[ATMWorkingDetails.OnSubmitAsync] Failed for SolID={_branchSolid}, ATMID={Model.ATMId}");
+            Snackbar.Add("An unexpected error occurred.", Severity.Error);
+        }
+    }
+
+    private ATMReportInputModel BuildInputModel(string reportId, string status, string statusDesc, string entryMode)
+    {
+        return new ATMReportInputModel
+        {
+            ATM_Report_ID = reportId,
+            SolID = _branchSolid,
+            Br_Code = _branchCode,
+            Br_Name = Branch.BranchName,
+            RO_Code = _regionCode,
+            RO_Name = Branch.ROName,
+            ZO_Code = _zoneCode,
+            ZO_Name = Branch.ZOName,
+            Q1OPT = Model.ATM_Cleanliness,
+            Q2OPT = Model.ATM_Working,
+            Q3OPT = Model.External_Device,
+            Q4OPT = Model.AC_Status,
+            Q5OPT = Model.Camera_Status,
+            ATMID = Model.ATMId!,
+            PF_NAME_ENTRY = Branch.PFAndOfficialName,
+            DATE_TIME_ENTRY = AppTime.Now,
+            MandatoryReportDate = AppTime.Today,
+            ENTRY_BY = _userPF,
+            STATUS = status,
+            STATUS_DESC = statusDesc,
+            ENTRY_MODE = entryMode
+        };
+    }
+
+    public static string GenerateReportId(string solId, DateTime now) => $"{now:yyyyMMddHHmmssfff}{solId}";
+
+    private void ShowMessage(string message, bool isError) { _message = message; _isError = isError; }
+
+    private void ResetFormFields()
+    {
+        Model.ATM_Cleanliness = "Y";
+        Model.ATM_Working = "Y";
+        Model.External_Device = "Y";
+        Model.AC_Status = "Y";
+        Model.Camera_Status = "Y";
+    }
+}

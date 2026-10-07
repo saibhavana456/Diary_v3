@@ -1,0 +1,367 @@
+﻿@page "/reports/debit-card-issuance"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Debit Card Issuance — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Column configurations (summary/detailed share the same set for this report)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",        PropertyName = "zone_name_eng", Width = "18%" },
+        new ColumnConfig { Header = "Region",      PropertyName = "region_name",   Width = "18%" },
+        new ColumnConfig { Header = "Branch",      PropertyName = "Branch_Name",   Width = "26%" },
+        new ColumnConfig { Header = "SolID",       PropertyName = "SolId",         Width = "10%" },
+        new ColumnConfig { Header = "FY Debit Card Issuance",    PropertyName = "FY_Count",      IsNumeric = true, Format="N0", Width = "14%" },
+        new ColumnConfig { Header = "No of Debit Card Issuance",       PropertyName = "Count",         IsNumeric = true, Format="N0", Width = "14%" }
+    };
+
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",        PropertyName = "zone_name_eng", Width = "18%" },
+        new ColumnConfig { Header = "Region",      PropertyName = "region_name",   Width = "18%" },
+        new ColumnConfig { Header = "Branch",      PropertyName = "Branch_Name",   Width = "26%" },
+        new ColumnConfig { Header = "SolID",       PropertyName = "SolId",         Width = "10%" },
+        new ColumnConfig { Header = "FY Debit Card Issuance",    PropertyName = "FY_Count",      IsNumeric = true, Format="N0", Width = "14%" },
+        new ColumnConfig { Header = "No of Debit Card Issuance",       PropertyName = "Count",         IsNumeric = true, Format="N0", Width = "14%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Debit Card Issuance";
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone   = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "region_solid <> '00000' and region_solid <> ' ' ";
+        string groupBy = "";
+        bool isSummary = true;
+        string z = _selectedZone?.ToLowerInvariant() ?? "1";
+        string r = _selectedRegion?.ToLowerInvariant() ?? "1";
+        string b = _selectedBranch?.ToLowerInvariant() ?? "1";
+
+        // Helper to set Group By fields quickly
+        void SetGroup(params string[] keys) =>
+            groupBy = keys != null && keys.Length > 0
+                ? $" Group By {string.Join(", ", keys.Where(k => !string.IsNullOrWhiteSpace(k)))}"
+                : "";
+
+        // ---------------- PRIVILEGE: CO ----------------
+        if (_userPrivilege == "CO")
+        {
+            if (z == "1")
+            {
+                // Total of all zones
+                columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                          "Sum(B.Count) FY_Count, 'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As SolId";
+                SetGroup("FromDate", "ToDate");
+            }
+            else if (z == "all")
+            {
+                if (r == "1")
+                {
+                    // Zone-wise summary across all zones
+                    columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "Sum(B.Count) FY_Count, 'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId As SolId";
+                    SetGroup("FromDate", "ToDate", "Zone_SolId", "zone_name_eng");
+                }
+                else if (r == "all")
+                {
+                    if (b == "1")
+                    {
+                        // Region-wise summary across all regions
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                        SetGroup("FromDate", "ToDate", "region_name", "region_SolId", "zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        // Branch-wise across all regions
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                        SetGroup("FromDate", "ToDate", "Zone_Name_Eng", "Region_Name", "Branch_Name", "Sol_ID");
+                    }
+                    else
+                    {
+                        // Specific branch detail
+                        isSummary = false;
+                        columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "B.Count FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                        where += $" and Sol_Id = '{b}'";
+                    }
+                }
+                else
+                {
+                    // Specific Region across all zones
+                    where += $" and region_solid = '{r}'";
+                    if (b == "1")
+                    {
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                        SetGroup("FromDate", "ToDate", "Region_name", "region_SolId", "zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                        SetGroup("FromDate", "ToDate", "Zone_Name_Eng", "Region_Name", "Branch_Name", "Sol_ID");
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "B.Count FY_Count, Branch_Name, 'All' As region_name, 'All' As zone_name_eng, Sol_Id As SolId";
+                        where += $" and Sol_Id = '{b}'";
+                    }
+                }
+            }
+            else
+            {
+                // Specific Zone selected
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (r == "1")
+                {
+                    columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "Sum(B.Count) FY_Count, 'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId As SolId";
+                    SetGroup("FromDate", "ToDate", "Zone_SolId", "zone_name_eng");
+                }
+                else if (r == "all")
+                {
+                    if (b == "1")
+                    {
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                        SetGroup("FromDate", "ToDate", "region_name", "region_SolId", "zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                        SetGroup("FromDate", "ToDate", "Zone_Name_Eng", "Region_Name", "Branch_Name", "Sol_ID");
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "B.Count FY_Count, Branch_Name, 'All' As region_name, 'All' As zone_name_eng, Sol_Id As SolId";
+                        where += $" and Sol_Id = '{b}'";
+                    }
+                }
+                else
+                {
+                    // Particular Region inside particular Zone
+                    where += $" and region_solid = '{r}'";
+                    if (b == "1")
+                    {
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                        SetGroup("FromDate", "ToDate", "Region_name", "region_SolId", "zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "Sum(B.Count) FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                        SetGroup("FromDate", "ToDate", "Zone_Name_Eng", "Region_Name", "Branch_Name", "Sol_ID");
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                                  "B.Count FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                        where += $" and Sol_Id = '{b}'";
+                    }
+                }
+            }
+        }
+        // ---------------- PRIVILEGE: ZONE ----------------
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userZoneSolid}'";
+            if (r == "1")
+            {
+                columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                          "Sum(B.Count) FY_Count,'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As SolId";
+                SetGroup("FromDate", "ToDate");
+            }
+            else if (r == "all")
+            {
+                if (b == "1")
+                {
+                    columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "Sum(B.Count) FY_Count, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                    SetGroup("FromDate", "ToDate", "Region_name", "region_SolId", "zone_name_eng");
+                }
+                else if (b == "all")
+                {
+                    columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "Sum(B.Count) FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                    SetGroup("FromDate", "ToDate", "Zone_Name_Eng", "Region_Name", "Branch_Name", "Sol_ID");
+                }
+                else
+                {
+                    isSummary = false;
+                    columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "B.Count FY_Count, Branch_Name, 'All' As region_name, 'All' As zone_name_eng, Sol_Id As SolId";
+                    where += $" and Sol_Id = '{b}'";
+                }
+            }
+            else
+            {
+                // Specific region in user zone
+                where += $" and region_solid = '{r}'";
+                if (b == "1")
+                {
+                    columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "Sum(B.Count) FY_Count, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                    SetGroup("FromDate", "ToDate", "Region_name", "region_SolId", "zone_name_eng");
+                }
+                else if (b == "all")
+                {
+                    columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "Sum(B.Count) FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                    SetGroup("FromDate", "ToDate", "Zone_Name_Eng", "Region_Name", "Branch_Name", "Sol_ID");
+                }
+                else
+                {
+                    isSummary = false;
+                    columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                              "B.Count FY_Count, Branch_Name, 'All' As region_name, 'All' As zone_name_eng, Sol_Id As SolId";
+                    where += $" and Sol_Id = '{b}'";
+                }
+            }
+        }
+        // ---------------- PRIVILEGE: REGION ----------------
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userRegionSolid}'";
+            if (b == "1")
+            {
+                columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                          "Sum(B.Count) FY_Count, 'All' As Branch_Name, region_name, zone_name_eng, region_solid As SolId";
+                SetGroup("FromDate", "ToDate", "Region_name", "region_SolId", "zone_name_eng");
+            }
+            else if (b == "all")
+            {
+                columns = "Sum(COALESCE(A.Count,0)) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                          "Sum(B.Count) FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+                SetGroup("FromDate", "ToDate", "Zone_Name_Eng", "Region_Name", "Branch_Name", "Sol_ID");
+            }
+            else
+            {
+                isSummary = false;
+                columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                          "B.Count FY_Count, Branch_Name, 'All' As region_name, 'All' As zone_name_eng, Sol_Id As SolId";
+                where += $" and Sol_Id = '{b}'";
+            }
+        }
+        // ---------------- PRIVILEGE: BRANCH ----------------
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" and Sol_Id = '{_userBranchSolid}'";
+            columns = "B.SolId, COALESCE(A.Count,0) Count, Convert(varchar,B.FromDate,103) FromDate, Convert(varchar,B.ToDate,103) ToDate, " +
+                      "B.Count FY_Count, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+        }
+
+        // Execute Query
+        string sql =
+            $"SELECT {columns} " +
+            "FROM DCIssuanceDataReport A " +
+            "RIGHT JOIN DCIssuanceDataFYReport B ON A.SolID = B.SolId AND A.TranDate = B.ToDate " +
+            "JOIN Branch_Master C ON B.SolId = C.Sol_Id " +
+            $"WHERE {where} {groupBy} Order By zone_name_eng, region_name, Branch_Name";
+
+        _data = await ReportService.ExecuteRawQueryAsync(sql);
+        var (fromText, toText, tranText) = await GetHeaderDatesAsync();
+        _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+        _asOnDateLabel = $"FY Debit Card Issuance, from {fromText} to {toText} | Issuance on {tranText}";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task<(string fromDate, string toDate, string tranDate)> GetHeaderDatesAsync()
+    {
+        const string hdrSql =
+            "SELECT Convert(nvarchar, Max(TranDate), 103) AS TranDate," +
+            "       Convert(nvarchar, Max(FromDate), 103) AS FromDate," +
+            "       Convert(nvarchar, Max(ToDate),   103) AS ToDate " +
+            "  FROM DCIssuanceDataReport A " +
+            "  JOIN DCIssuanceDataFYReport B ON A.SolID = B.SolId AND A.TranDate = B.ToDate " +
+            "  JOIN Branch_Master C ON A.SolId = C.Sol_Id";
+
+        var rows = await ReportService.ExecuteRawQueryAsync(hdrSql);
+        if (rows.Count > 0)
+        {
+            var r = rows[0];
+            string fd = r.TryGetValue("FromDate", out var v1) ? v1?.ToString() ?? "" : "";
+            string td = r.TryGetValue("ToDate",   out var v2) ? v2?.ToString() ?? "" : "";
+            string tr = r.TryGetValue("TranDate", out var v3) ? v3?.ToString() ?? "" : "";
+            return (fd, td, tr);
+        }
+
+        var today = AppTime.Now.ToString("dd/MM/yyyy");
+        return (today, today, today);
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "DebitCardIssuance");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "DebitCardIssuance.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

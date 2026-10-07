@@ -1,0 +1,354 @@
+@page "/ecircular/{DeptId:int}"
+@page "/ecircular/{DeptId:int}/{CircularTypePreset}"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@using MyDiary.Web.Features.ECircular.Models
+@using MyDiary.Web.Features.ECircular.Services
+@using MyDiary.Web.Features.Departments.Services
+@using MyDiary.Web.Core.Extensions
+@layout MyDiary.Web.Components.Layout.MainLayout
+@inject IECircularService ECircularService
+@inject IDepartmentService DeptService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>eCircular Search — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    .ecircular-container { padding: 25px; background: rgba(255,255,255,0.95); min-height: 85vh; }
+    .ecircular-hero {
+        background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        color: white; padding: 2rem; margin-bottom: 1.5rem; border-radius: 16px;
+    }
+    .ecircular-hero h1 { font-size: 1.8rem; font-weight: 800; margin: 0; }
+    .ecircular-hero p { opacity: 0.85; margin-top: 0.5rem; font-size: 0.95rem; }
+    .breadcrumb-link { color: white !important; text-decoration: none; }
+    .breadcrumb-link:hover { text-decoration: underline !important; }
+</style>
+
+<div class="ecircular-container">
+
+    @* ===== HERO / BREADCRUMB (matching ActivitiesNew pattern) ===== *@
+    <section class="ecircular-hero">
+        <nav style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;font-size:0.9rem;">
+            <MudLink OnClick='() => Nav.NavigateTo("departmentsnew")'
+                     Underline="Underline.None" Class="breadcrumb-link d-flex align-center" Style="cursor:pointer;">
+                Departments
+            </MudLink>
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" Style="opacity:0.5;" />
+            <MudLink OnClick='() => Nav.NavigateTo($"activitiesnew?DeptID={DeptId}")'
+                     Underline="Underline.None" Class="breadcrumb-link" Style="cursor:pointer;">
+                @_departmentName
+            </MudLink>
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" Style="opacity:0.5;" />
+            <MudText Typo="Typo.body2" Class="breadcrumb-link" Style="opacity:0.9;cursor:default;font-weight:600;">
+                @(string.IsNullOrWhiteSpace(CircularTypePreset) ? "Circulars" : "Policies")
+            </MudText>
+        </nav>
+        <h1>@_pageTitle</h1>
+    </section>
+
+    @* ===== SEARCH FILTERS ===== *@
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudGrid Spacing="3">
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" Label="Circular Type"
+                           @bind-Value="_filter.CircularType"
+                           Clearable="@(!_isCircularTypeDisabled)" Dense="true"
+                           Disabled="@_isCircularTypeDisabled"
+                           aria-label="Circular Type">
+                    @foreach (var item in _lookup.CircularTypes)
+                    {
+                        <MudSelectItem T="string" Value="@item.Id">@item.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField Label="Circular No" @bind-Value="_filter.CircularNo" Dense="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField Label="Subject" @bind-Value="_filter.Subject" Dense="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" Label="Department"
+                           @bind-Value="_filter.DepartmentName"
+                           Clearable="false" Dense="true"
+                           Disabled="@_isDepartmentDisabled"
+                           aria-label="Department">
+                    @foreach (var item in _lookup.Departments)
+                    {
+                        <MudSelectItem T="string" Value="@item.Id">@item.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField Label="Section Name" @bind-Value="_filter.SectionName" Dense="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="int?" Label="Publish Year"
+                           @bind-Value="_filter.PublishYear"
+                           Clearable="true" Dense="true"
+                           aria-label="Publish Year">
+                    @foreach (var year in _lookup.Years.OrderByDescending(x => x))
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)year)">@year</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="int" Label="Page No" Min="0"
+                                 @bind-Value="_filter.PageNo" Dense="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3" Class="d-flex align-end gap-2">
+                <MudButton Color="MudBlazor.Color.Primary" Variant="Variant.Filled"
+                           Disabled="@_loading" OnClick="@SearchAsync">
+                    @if (_loading)
+                    {
+                        <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Submit
+                </MudButton>
+                <MudButton Color="MudBlazor.Color.Secondary" Variant="Variant.Outlined"
+                           Disabled="@_loading" OnClick="@ResetAsync">
+                    Reset
+                </MudButton>
+            </MudItem>
+
+        </MudGrid>
+    </MudPaper>
+
+    @* ===== RESULTS TABLE ===== *@
+    <MudPaper Class="pa-4" Elevation="2">
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+            <MudText Typo="Typo.h6">Results</MudText>
+            <MudSpacer />
+            <MudChip T="string" Color="MudBlazor.Color.Info">Page: @(_result.Items.Count > 0 ? _filter.PageNo + 1 : 0)</MudChip>
+            <MudChip T="string" Color="MudBlazor.Color.Secondary">Total Pages: @_result.TotalPages</MudChip>
+            <MudButton Disabled="@(_filter.PageNo <= 0 || _loading)"
+                       Variant="Variant.Outlined" OnClick="@PrevPage">Previous</MudButton>
+            <MudButton Disabled="@_loading" Color="MudBlazor.Color.Primary"
+                       Variant="Variant.Outlined" OnClick="@NextPage">Next</MudButton>
+        </MudStack>
+
+        <MudTable Items="@_result.Items" Dense="true" Hover="true" Striped="true"
+                  Loading="@_loading" Breakpoint="Breakpoint.Sm"
+                  aria-label="Circular search results">
+
+            <HeaderContent>
+                <MudTh>S.No</MudTh>
+                <MudTh>Circular No</MudTh>
+                <MudTh>Type</MudTh>
+                <MudTh>Publish Date</MudTh>
+                <MudTh>Language</MudTh>
+                <MudTh>Department</MudTh>
+                <MudTh>Section</MudTh>
+                <MudTh>Subject</MudTh>
+                <MudTh>Action</MudTh>
+            </HeaderContent>
+
+            <RowTemplate>
+                <MudTd DataLabel="S.No">@context.Sno</MudTd>
+                <MudTd DataLabel="Circular No">@context.CircularNo</MudTd>
+                <MudTd DataLabel="Type">@context.CircularType</MudTd>
+                <MudTd DataLabel="Publish Date">@context.PublishDate</MudTd>
+                <MudTd DataLabel="Language">@context.Language</MudTd>
+                <MudTd DataLabel="Department">@context.Department</MudTd>
+                <MudTd DataLabel="Section">@context.Section</MudTd>
+                <MudTd DataLabel="Subject">@context.Subject</MudTd>
+                <MudTd DataLabel="Action">
+                    <MudButton Size="MudBlazor.Size.Small"
+                               Color="MudBlazor.Color.Success"
+                               Variant="Variant.Filled"
+                               Disabled="@(_downloadingRowSno == context.Sno)"
+                               OnClick="@(() => DownloadPdfAsync(context))"
+                               aria-label="@($"Download PDF for {context.CircularNo}")">
+                        @if (_downloadingRowSno == context.Sno)
+                        {
+                            <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" Class="mr-1" />
+                        }
+                        <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="MudBlazor.Size.Small" Class="mr-1" />
+                        View
+                    </MudButton>
+                </MudTd>
+            </RowTemplate>
+
+            <NoRecordsContent>
+                <MudText>No circulars found. Submit filters to load results.</MudText>
+            </NoRecordsContent>
+
+        </MudTable>
+
+    </MudPaper>
+
+</div>
+
+@code {
+    [Parameter] public int DeptId { get; set; }
+    [Parameter] public string? CircularTypePreset { get; set; }
+
+    private ECircularFilterLookup _lookup = new();
+    private ECircularSearchRequest _filter = new();
+    private ECircularSearchResponse _result = new();
+    private string _pageTitle = "eCircular Search";
+    private string _departmentName = "";
+    private string _deptCode = "";
+
+    private bool _loading;
+    private string? _downloadingRowSno; // tracks which row is currently downloading
+    private bool _isDepartmentDisabled;
+    private bool _isCircularTypeDisabled;
+    private string _employeePfNo = string.Empty;
+
+    [CascadingParameter]
+    private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Get PF number from session/auth
+            if (AuthState != null)
+            {
+                var authState = await AuthState;
+                _employeePfNo = authState.User?.FindFirst("emplid")?.Value
+                    ?? authState.User?.FindFirst("preferred_username")?.Value
+                    ?? "";
+            }
+
+            // Load filter lookup data
+            _lookup = await ECircularService.GetFilterDataAsync();
+
+            // Resolve department from DeptId (always, even on reload)
+            if (DeptId > 0)
+            {
+                var depts = await DeptService.GetActiveDepartmentsAsync();
+                var dept = depts.FirstOrDefault(d => d.DepartmentID == DeptId);
+                if (dept != null)
+                {
+                    _departmentName = dept.DepartmentName;
+                    _deptCode = dept.DepartmentCode;
+                    _pageTitle = $"eCircular — {_departmentName}";
+
+                    // Pre-select department in the dropdown using the department code directly
+                    var matchedLookup = _lookup.Departments.FirstOrDefault(d =>
+                        d.Id.Equals(_deptCode, StringComparison.OrdinalIgnoreCase)
+                        || d.Name.Contains(_departmentName, StringComparison.OrdinalIgnoreCase));
+
+                    _filter.DepartmentName = matchedLookup?.Id ?? _deptCode;
+                }
+
+                // Always disable department dropdown when DeptId is in the route
+                _isDepartmentDisabled = true;
+            }
+
+            // Pre-select circular type if this is the Policy variant
+            if (!string.IsNullOrWhiteSpace(CircularTypePreset))
+            {
+                var presetMatch = _lookup.CircularTypes.FirstOrDefault(ct =>
+                    ct.Name.Equals(CircularTypePreset, StringComparison.OrdinalIgnoreCase));
+
+                if (presetMatch != null)
+                {
+                    _filter.CircularType = presetMatch.Id;
+                    _isCircularTypeDisabled = true;
+                    _pageTitle = $"Policy — {_departmentName}";
+                }
+            }
+
+            await SearchAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[ECircularSearch] Initialization failed.");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        try
+        {
+            _loading = true;
+            _result = await ECircularService.SearchCircularsAsync(_filter);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+            AppLogger.LogError(ex, "[ECircularSearch] Search error.");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _filter = new ECircularSearchRequest
+        {
+            DepartmentName = _isDepartmentDisabled ? _filter.DepartmentName : "",
+            CircularType = _isCircularTypeDisabled ? _filter.CircularType : ""
+        };
+        await SearchAsync();
+    }
+
+    private async Task NextPage() { _filter.PageNo++; await SearchAsync(); }
+    private async Task PrevPage() { _filter.PageNo = Math.Max(0, _filter.PageNo - 1); await SearchAsync(); }
+
+    /// <summary>
+    /// Opens the watermarked PDF in a new browser tab for viewing.
+    /// Spinner is shown only for the clicked row.
+    /// </summary>
+    private async Task DownloadPdfAsync(ECircularItem item)
+    {
+        if (string.IsNullOrWhiteSpace(_employeePfNo))
+        {
+            Snackbar.Add("Employee PF Number is not available in session.", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(item.CircularLink))
+        {
+            Snackbar.Add("PDF link is missing for this circular.", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            _downloadingRowSno = item.Sno;
+            await InvokeAsync(StateHasChanged);
+
+            // Open a placeholder window immediately to preserve the user gesture
+            await JS.InvokeVoidAsync("openPdfPlaceholder");
+
+            // Get watermarked PDF bytes (entirely in memory, no disk I/O)
+            var pdfBytes = await ECircularService.GetWatermarkedPdfBytesAsync(
+                new ECircularPdfRequest(_employeePfNo.Trim(), item.CircularLink));
+
+            // Load PDF into the already-opened placeholder window
+            var base64 = Convert.ToBase64String(pdfBytes);
+            await JS.InvokeVoidAsync("openPdfInPlaceholder", base64);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+            AppLogger.LogError(ex, "[ECircularSearch] PDF view error.");
+            await JS.InvokeVoidAsync("closePdfPlaceholder");
+        }
+        finally
+        {
+            _downloadingRowSno = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

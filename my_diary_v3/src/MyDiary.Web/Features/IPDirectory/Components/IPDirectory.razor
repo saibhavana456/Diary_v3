@@ -1,0 +1,494 @@
+﻿@page "/ip-directory"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@using MyDiary.Web.Features.IPDirectory.Models
+@using MyDiary.Web.Features.IPDirectory.Services
+@using MyDiary.Web.Services
+@layout MyDiary.Web.Components.Layout.LandingLayout
+@inject IIPDirectoryService DirectoryService
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+
+<style>
+    .main-content-wrapper {
+        padding: 20px;
+        display: flex;
+        flex-direction: column; /* stack: hero on top, row below */
+        gap: 20px; /* space between hero and row (no white strip) */
+        min-height: 85vh;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+    }
+
+    /* Remove bottom margin to avoid white line between sections */
+    .hero-section {
+        background: var(--primary-gradient);
+        color: white;
+        padding: 2rem;
+        border-radius: 16px;
+        margin-bottom: 0; /* was 1.25rem — this caused the white gap */
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    /* New row to hold the two columns */
+    .content-row {
+        display: flex;
+        gap: 20px;
+    }
+
+    /* Optional: responsive stacking */
+    @@media (max-width: 900px) {
+        .content-row {
+            flex-direction: column;
+        }
+
+        .filter-panel {
+            width: 100%;
+        }
+    }
+
+    .filter-panel {
+        width: 280px;
+        background: white;
+        border-radius: 12px;
+        padding: 15px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+
+    /* REPLICATING YOUR EXACT SELECTION STYLE [cite: 16, 32, 33] */
+    .custom-chipset .mud-chip {
+        width: 100%;
+        justify-content: start;
+        padding: 12px 16px;
+        height: auto;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        transition: 0.3s;
+        font-size: 0.9rem;
+        background-color: transparent;
+        color: inherit;
+    }
+
+        .custom-chipset .mud-chip:hover {
+            background-color: #f1f5f9;
+        }
+
+    /* EXACT GRADIENT FROM YOUR DESIGN  */
+    .custom-chipset .mud-chip-selected {
+        background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%) !important;
+        color: white !important;
+        font-weight: 600;
+    }
+
+    .directory-container {
+        flex: 1;
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+
+    .table-container {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-top: 20px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th {
+        background: #f8fafc;
+        padding: 15px;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    td {
+        padding: 15px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .breadcrumb-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    .breadcrumb-link {
+        color: white !important;
+        text-decoration: none;
+        transition: 0.3s;
+    }
+
+        .breadcrumb-link:hover {
+            text-decoration: underline !important;
+        }
+</style>
+<div class="main-content-wrapper">
+    <!-- Breadcrumb + header now INSIDE the same background block -->
+    <div class="hero-section">
+        <nav class="breadcrumb-nav">
+            <!-- Home -->
+            <MudLink OnClick='() => Nav.NavigateTo("")'
+                     Underline="Underline.None"
+                     Class="breadcrumb-link d-flex align-center"
+                     Style="cursor: pointer;">
+                <MudIcon Icon="@Icons.Material.Filled.Home" Size="Size.Small" Class="mr-1" />
+                Home
+            </MudLink>
+
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Style="opacity: 0.5;" />
+
+            <!-- Network -->
+            <MudLink OnClick='() => Nav.NavigateTo("network")'
+                     Underline="Underline.None"
+                     Class="breadcrumb-link"
+                     Style="cursor: pointer;">
+                Network
+            </MudLink>
+
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Style="opacity: 0.5;" />
+
+            <!-- Current page -->
+            <MudText Typo="Typo.body2"
+                     Class="breadcrumb-link"
+                     Style="opacity: 0.9; cursor: default; font-weight: 600;">
+                IP Phone Directory
+            </MudText>
+        </nav>
+
+        <!-- Title -->
+        <MudText Typo="Typo.h4" Style="font-weight: 700;">
+            IP Phone Directory
+        </MudText>
+    </div>
+
+    <!-- New: row that holds LEFT (filter) + RIGHT (directory) -->
+    <div class="content-row">
+        <aside class="filter-panel">
+            <MudText Typo="Typo.h6" Class="mb-4 px-2" Style="font-weight: 700;">IP Phone Directory</MudText>
+
+            <MudChipSet T="string"
+                        SelectedValue="@selectedDept"
+                        SelectedValueChanged="OnDeptChanged"
+                        Mandatory="true"
+                        Class="custom-chipset d-flex flex-column">
+                @foreach (var dept in departments)
+                {
+                    <MudChip Value="@dept"
+                             Text="@GetDeptDisplay(dept)"
+                             Variant="Variant.Text"
+                             Ripple="false" />
+                }
+            </MudChipSet>
+        </aside>
+
+        <section class="directory-container">
+            <div class="d-flex justify-space-between align-center">
+                <MudText Typo="Typo.h5" Style="font-weight:700;color:#1E3A8A;">
+                    @GetHeaderText()
+                </MudText>
+
+                <div class="d-flex align-center gap-2">
+                    @if (canManage)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="OpenAddDialog">
+                            Add Entry
+                        </MudButton>
+                    }
+
+                    <MudTextField T="string"
+                                  Value="@searchString"
+                                  ValueChanged="@OnSearchDebounced"
+                                  Placeholder="Search name or IP..."
+                                  Immediate="true"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Style="width:300px;" />
+                </div>
+            </div>
+            <MudDialog @bind-Visible="showDialog">
+                <DialogContent>
+
+                    <MudTextField Label="Name"
+                                  @bind-Value="editingEntry.Name" />
+
+                    <MudSelect T="string"
+                               Label="Department"
+                               @bind-Value="editingEntry.DepartmentName">
+
+                        @foreach (var dept in departments.Where(x => !string.IsNullOrWhiteSpace(x)))
+                        {
+                            <MudSelectItem Value="@dept">
+                                @GetDeptDisplay(dept)
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField Label="IP Phone"
+                                  @bind-Value="editingEntry.IPPhone"
+                                  InputType="InputType.Number" />
+
+                </DialogContent>
+
+                <DialogActions>
+                    <MudButton OnClick="SaveRecord"
+                               Color="Color.Primary">
+                        Save
+                    </MudButton>
+
+                    <MudButton OnClick="(()=>showDialog=false)">
+                        Cancel
+                    </MudButton>
+                </DialogActions>
+            </MudDialog>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Department</th>
+                            <th>IP Number</th>
+
+                            @if (canManage)
+                            {
+                                <th>Actions</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (entries != null && entries.Any())
+                        {
+                            @foreach (var item in entries)
+                            {
+                                <tr>
+                                    <td>@item.Name</td>
+                                    <td>@item.DepartmentName</td>
+                                    <td>@item.IPPhone</td>
+
+                                    @if (canManage)
+                                    {
+                                        <td>
+                                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                           Color="Color.Primary"
+                                                           OnClick="@(() => OpenEditDialog(item))" />
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td colspan="3" style="text-align: center; padding: 20px; color: #666;">No records found.</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-center mt-6">
+                <MudPagination Color="Color.Primary" Count="@totalPages" Selected="@currentPage" SelectedChanged="PageChanged" />
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private List<IPDirectoryEntry> entries = new();
+    private string searchString = "";
+    private string selectedDept = "";
+    private int currentPage = 1;
+    private int totalPages = 1;
+    private const int pageSize = 20;
+
+    private System.Timers.Timer? _debounceTimer;
+    private bool showDialog;
+    private bool isEdit;
+    private string currentUser = "";
+    private bool canManage;
+    private IPDirectoryEntry editingEntry = new();
+
+    private async Task SaveRecord()
+    {
+        if (string.IsNullOrWhiteSpace(editingEntry.Name))
+        {
+            Snackbar.Add("Name is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editingEntry.DepartmentName))
+        {
+            Snackbar.Add("Department is required.", Severity.Error);
+            return;
+        }
+
+        if (!long.TryParse(editingEntry.IPPhone, out _))
+        {
+            Snackbar.Add("IP Phone must contain numbers only.", Severity.Error);
+            return;
+        }
+
+        bool success;
+
+        if (isEdit)
+        {
+            success =
+
+                       await DirectoryService.UpdateDirectoryEntryAsync(
+                editingEntry,
+                currentUser);
+
+            if (success)
+                Snackbar.Add("Record updated successfully.", Severity.Success);
+        }
+        else
+        {
+            success = await DirectoryService.AddDirectoryEntryAsync(
+                    editingEntry,
+                    currentUser);
+
+            if (success)
+                Snackbar.Add("Record added successfully.", Severity.Success);
+        }
+
+        if (!success)
+        {
+            Snackbar.Add("Failed to save record.", Severity.Error);
+            return;
+        }
+
+        showDialog = false;
+
+        await LoadData();
+    }
+
+    private void OpenAddDialog()
+    {
+        isEdit = false;
+
+        editingEntry = new IPDirectoryEntry();
+
+        showDialog = true;
+    }
+
+    private void OpenEditDialog(IPDirectoryEntry item)
+    {
+        isEdit = true;
+
+        editingEntry = new IPDirectoryEntry
+            {
+                Name = item.Name,
+                DepartmentName = item.DepartmentName,
+                IPPhone = item.IPPhone
+            };
+
+        showDialog = true;
+    }
+
+    private readonly string[] departments =
+    {
+    "",
+    "Branches",
+    "CISO",
+    "Central Office",
+    "DR Site",
+    "Information Technology",
+    "Regional Office",
+    "Training Centres",
+    "Zonal Office"
+};
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState =
+            await AuthStateProvider.GetAuthenticationStateAsync();
+
+        currentUser =
+            authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+        canManage = currentUser == "921604" && currentUser != "";
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var result = await DirectoryService.GetDirectoryAsync(selectedDept, searchString, currentPage, pageSize);
+        if (result != null)
+        {
+            entries = result.Entries;
+            totalPages = (int)Math.Ceiling((double)result.TotalRecords / pageSize);
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnDeptChanged(string value)
+    {
+        selectedDept = value;
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private string GetHeaderText()
+    {
+        var deptLabel = string.IsNullOrEmpty(selectedDept) ? "All Departments" : selectedDept;
+        return GetDeptDisplay(deptLabel);
+    }
+
+    private void OnSearchDebounced(string value)
+    {
+        searchString = value;
+        _debounceTimer?.Stop();
+        _debounceTimer?.Dispose();
+
+        _debounceTimer = new System.Timers.Timer(400);
+        _debounceTimer.Elapsed += async (s, e) =>
+        {
+            _debounceTimer.Stop();
+            currentPage = 1;
+            await InvokeAsync(LoadData);
+        };
+        _debounceTimer.Start();
+    }
+
+    private async Task PageChanged(int i)
+    {
+        currentPage = i;
+        await LoadData();
+    }
+    private static string GetDeptDisplay(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "All Departments";
+
+        // Map only for display
+        return value.Trim() switch
+        {
+            "Training Centres" => "Union Bank Knowledge Centre",
+            _ => value.Trim()
+        };
+    }
+}

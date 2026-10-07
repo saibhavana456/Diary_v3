@@ -1,0 +1,196 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using MyDiary.Web.Features.OperationDashboard.Models
+@using MyDiary.Web.Features.OperationDashboard.Services
+@inject IOperationDashboardService DashboardService
+@inject AuthenticationStateProvider AuthStateProvider
+@using Microsoft.AspNetCore.Components.Web;
+<div class="card mb-4 shadow-sm border-0 bg-light">
+    <div class="card-body py-3">
+        <div class="row g-3 align-items-end">
+
+            <div class="col-12 col-md-3">
+                <label class="form-label fw-bold mb-1 small text-muted">Zone</label>
+                <select class="form-select" @bind:get="selectedZone" @bind:set="OnZoneChanged" disabled="@isZoneDisabled">
+                    <option value="">---Select Zone---</option>
+                    @foreach (var z in zones)
+                    {
+                        <option value="@z.Value">@z.Text</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label fw-bold mb-1 small text-muted">Region</label>
+                <select class="form-select" @bind:get="selectedRegion" @bind:set="OnRegionChanged" disabled="@isRegionDisabled">
+                    <option value="">---Select Region---</option>
+                    @foreach (var r in regions)
+                    {
+                        <option value="@r.Value">@r.Text</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label fw-bold mb-1 small text-muted">Branch</label>
+
+                <select class="form-select"
+                        value="@selectedBranch"
+                        @onchange="OnBranchChanged"
+                        disabled="@isBranchDisabled">
+
+                    <option value="">---Select Branch---</option>
+                    @foreach (var b in branches)
+                    {
+                        <option value="@b.Value">@b.Text</option>
+                    }
+                </select>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<string> OnFilterApplied { get; set; }
+
+    // RBAC Lock Flags
+    private bool isZoneDisabled = false;
+    private bool isRegionDisabled = false;
+    private bool isBranchDisabled = false;
+
+    // Dropdown Data Collections
+    private List<DropdownItemDto> zones = new();
+    private List<DropdownItemDto> regions = new();
+    private List<DropdownItemDto> branches = new();
+
+    // Selected Values
+    private string selectedZone = "";
+    private string selectedRegion = "";
+    private string selectedBranch = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await InitializeHierarchyByClaims();
+
+        // Auto-fetch data on initial load so the user doesn't have to manually click 'Apply'
+        await SubmitFilter();
+    }
+
+    private async Task InitializeHierarchyByClaims()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        // Extract Role and IDs from Claims (Check for standard ClaimTypes first, then raw string names)
+        string userRole = user.FindFirst(ClaimTypes.Role)?.Value?.ToUpper()
+                       ?? user.FindFirst("Role")?.Value?.ToUpper()
+                       ?? "CO";
+
+        string userZoneSolId = user.FindFirst("zone_solid")?.Value ?? "";
+        string userRegionSolId = user.FindFirst("region_solid")?.Value ?? "";
+        string userBranchSolId = user.FindFirst("branch_solid")?.Value ?? "";
+
+        // Everyone needs the Zones list loaded
+        zones = (await DashboardService.GetDropdownDataAsync("ZONE")).ToList();
+
+        if (userRole == "CO" || userRole == "HO")
+        {
+            // CO has full access: Everything is unlocked, defaults to "00000" in SubmitFilter
+            isZoneDisabled = isRegionDisabled = isBranchDisabled = false;
+        }
+        else if (userRole == "ZONE")
+        {
+            isZoneDisabled = true;
+            selectedZone = userZoneSolId;
+
+            // Pre-load the regions for their specific zone
+            regions = (await DashboardService.GetDropdownDataAsync("REGION", selectedZone)).ToList();
+        }
+        else if (userRole == "REGION")
+        {
+            isZoneDisabled = true;
+            isRegionDisabled = true;
+            selectedZone = userZoneSolId;
+            selectedRegion = userRegionSolId;
+
+            // Pre-load regions and branches for their specific hierarchy
+            regions = (await DashboardService.GetDropdownDataAsync("REGION", selectedZone)).ToList();
+            branches = (await DashboardService.GetDropdownDataAsync("BRANCH", selectedRegion)).ToList();
+        }
+        else if (userRole == "BRANCH")
+        {
+            isZoneDisabled = true;
+            isRegionDisabled = true;
+            isBranchDisabled = true;
+            selectedZone = userZoneSolId;
+            selectedRegion = userRegionSolId;
+            selectedBranch = userBranchSolId;
+
+            // Pre-load regions and branches so the disabled dropdowns display the text correctly
+            regions = (await DashboardService.GetDropdownDataAsync("REGION", selectedZone)).ToList();
+            branches = (await DashboardService.GetDropdownDataAsync("BRANCH", selectedRegion)).ToList();
+        }
+    }
+
+    private async Task OnZoneChanged(string value)
+    {
+        selectedZone = value ?? "";
+
+        selectedRegion = "";
+        selectedBranch = "";
+        regions.Clear();
+        branches.Clear();
+
+        if (!string.IsNullOrEmpty(selectedZone))
+        {
+            regions = (await DashboardService.GetDropdownDataAsync("REGION", selectedZone)).ToList();
+        }
+        await SubmitFilter();
+        StateHasChanged();
+    }
+
+    private async Task OnRegionChanged(string value)
+    {
+        selectedRegion = value ?? "";
+
+        selectedBranch = "";
+        branches.Clear();
+
+        if (!string.IsNullOrEmpty(selectedRegion))
+        {
+            branches = (await DashboardService.GetDropdownDataAsync("BRANCH", selectedRegion)).ToList();
+        }
+        await SubmitFilter();
+        StateHasChanged();
+    }
+
+    private async Task OnBranchChanged(ChangeEventArgs e)
+    {
+        selectedBranch = e.Value?.ToString() ?? "";
+
+        // 🔥 Auto trigger filter
+        await SubmitFilter();
+    }
+
+    private async Task SubmitFilter()
+    {
+        // Default base is Central Office
+        string targetSolId = "00000";
+
+        if (!string.IsNullOrEmpty(selectedBranch))
+        {
+            targetSolId = selectedBranch;
+        }
+        else if (!string.IsNullOrEmpty(selectedRegion))
+        {
+            targetSolId = selectedRegion;
+        }
+        else if (!string.IsNullOrEmpty(selectedZone))
+        {
+            targetSolId = selectedZone;
+        }
+
+        await OnFilterApplied.InvokeAsync(targetSolId);
+    }
+}

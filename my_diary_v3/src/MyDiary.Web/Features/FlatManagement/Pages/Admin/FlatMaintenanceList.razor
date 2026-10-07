@@ -1,0 +1,103 @@
+@page "/flatmgmt/admin/flat-maintenance"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminFlatMasterService FlatMasterService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Maintenance - Flat Management System</PageTitle>
+
+<div class="fal-page">
+    <PageHeader Title="Manage Flat Maintenance" Crumbs="_crumbs" PageKey="flatmgmt-admin-flat-maintenance-list" />
+
+    <MudCard Class="fal-card mt-4" Elevation="2">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" sm="8" md="6">
+                    <MudTextField @bind-Value="search" Label="Search By Location" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+
+            <div class="fal-actions">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="HandleSearch" Disabled="@isLoading">
+                    Search
+                </MudButton>
+            </div>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Class="fal-card mt-4" Elevation="2">
+        <MudCardContent Class="pa-0">
+            <MudTable @ref="table" ServerData="@ServerReload" Hover="true" Bordered="true" Dense="true" Class="fal-table"
+                      Loading="@isLoading" RowsPerPage="20">
+                <HeaderContent>
+                    <MudTh>S.No.</MudTh>
+                    <MudTh>Add/View Maintenance</MudTh>
+                    <MudTh>Location</MudTh>
+                    <MudTh>Building Name</MudTh>
+                    <MudTh>Flat No</MudTh>
+                    <MudTh>Category</MudTh>
+                    <MudTh>Flat Details</MudTh>
+                    <MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="row">
+                    <MudTd DataLabel="S.No.">@(pageStartIndex + rows.IndexOf(row) + 1)</MudTd>
+                    <MudTd DataLabel="Add/View Maintenance">
+                        <MudLink Href="@($"flatmgmt/admin/flat-maintenance-manage?flatId={row.FlatId}")">Add/View Maintenance</MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Location">@row.LocationName</MudTd>
+                    <MudTd DataLabel="Building Name">@row.SocietyName</MudTd>
+                    <MudTd DataLabel="Flat No">@row.FlatNo</MudTd>
+                    <MudTd DataLabel="Category">@row.FamilyDetails</MudTd>
+                    <MudTd DataLabel="Flat Details">@row.BhkDetails</MudTd>
+                    <MudTd DataLabel="Status">@row.OccupancyStatus</MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>No flats found.</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new[] { 20, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Manage Flat Maintenance") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private string adminPfNo = "";
+    private string search = "";
+
+    private bool isLoading = true;
+    private List<FlatMasterRow> rows = new();
+    private int pageStartIndex;
+    private MudTable<FlatMasterRow> table = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+    }
+
+    private async Task<TableData<FlatMasterRow>> ServerReload(TableState state, CancellationToken ct)
+    {
+        isLoading = true;
+        var result = await FlatMasterService.GetFlatsAsync(adminPfNo, search, state.Page, state.PageSize);
+        rows = result.Rows.ToList();
+        pageStartIndex = state.Page * state.PageSize;
+        isLoading = false;
+        return new TableData<FlatMasterRow> { TotalItems = result.TotalCount, Items = rows };
+    }
+
+    private async Task HandleSearch() => await table.ReloadServerData();
+}

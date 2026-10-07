@@ -1,0 +1,242 @@
+@page "/bcp-drill"
+@using System.Security.Claims
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Components
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IWebHostEnvironment Env
+
+<PageTitle>BCP / DR Drill Compliance - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="BCP / DR Drill Compliance"
+                Subtitle="Online submission of BCP testing and DR drill compliance (Annexure-I), Regional Office certificate of branch mapping (Annexure-II), review, certificates and MIS."
+                Crumbs="_crumbs" PageKey="bcp-drill-home" />
+
+    @if (_scope is not null)
+    {
+        <div class="d-flex justify-end gap-2 mb-3 flex-wrap">
+            @if (_scope.CanSubmitDrill)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddTask" OnClick="@(() => Nav.NavigateTo("bcp-drill/submit"))">Submit drill (Annexure-I)</MudButton>
+            }
+            @if (_scope.CanCertifyRegion)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.WorkspacePremium" OnClick="@(() => Nav.NavigateTo("bcp-drill/ro-certificate"))">RO certificate (Annexure-II)</MudButton>
+            }
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Insights" OnClick="@(() => Nav.NavigateTo("bcp-drill/mis"))">MIS &amp; reports</MudButton>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AccountTree" OnClick="@(() => Nav.NavigateTo("bcp-drill/mapping"))">Branch mapping</MudButton>
+            @if (_scope.CanViewAudit)
+            {
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.History" OnClick="@(() => Nav.NavigateTo("bcp-drill/audit"))">Audit trail</MudButton>
+            }
+        </div>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+            Signed in at <b>@_scope.DisplayLevel</b> level.
+            @if (_scope.Level == BcpLevel.Branch && !_scope.IsAdmin) { <text>You submit drill compliance for your own branch; your Regional Office reviews it.</text> }
+            else if (_scope.Level == BcpLevel.Region && !_scope.IsAdmin) { <text>You review branch submissions in your region and record the Annexure-II certificate.</text> }
+            else if (!_scope.IsAdmin) { <text>You have monitoring (read-only) access.</text> }
+            else { <text>App Admin: full access.</text> }
+        </MudAlert>
+    }
+
+    <BcpFilterBar Filter="_filter" OnApply="LoadAsync" />
+
+    <MudTabs Elevation="0" Rounded="true" PanelClass="pt-3">
+        <MudTabPanel Text="@($"Submissions ({_drills.Count})")">
+            <MudGrid Spacing="3" Class="mb-2">
+                <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Submissions</MudText><MudText Typo="Typo.h5">@_drills.Count</MudText></MudPaper></MudItem>
+                <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Pending review</MudText><MudText Typo="Typo.h5" Color="Color.Warning">@_drills.Count(d => d.Status == BcpStatus.Submitted)</MudText></MudPaper></MudItem>
+                <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Acknowledged</MudText><MudText Typo="Typo.h5" Color="Color.Success">@_drills.Count(d => d.Status == BcpStatus.Acknowledged)</MudText></MudPaper></MudItem>
+                <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Returned</MudText><MudText Typo="Typo.h5" Color="Color.Error">@_drills.Count(d => d.Status == BcpStatus.Returned)</MudText></MudPaper></MudItem>
+            </MudGrid>
+
+            @if (_loading) { <MudProgressCircular Indeterminate="true" /> }
+            else if (_drills.Count == 0) { <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No drill submissions found for this selection.</MudAlert> }
+            else
+            {
+                <MudTable Items="_drills" Dense="true" Hover="true" Bordered="true" Striped="true" T="BcpDrillEntry" Breakpoint="Breakpoint.Sm" RowsPerPage="25">
+                    <HeaderContent>
+                        <MudTh>Sr</MudTh><MudTh>Branch / SOL</MudTh><MudTh>RO / ZO</MudTh><MudTh>Type</MudTh><MudTh>Drill date</MudTh>
+                        <MudTh>Operations from (BCP branch)</MudTh><MudTh>Status</MudTh><MudTh>Submitted</MudTh><MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Sr">@(_drills.IndexOf(context) + 1)</MudTd>
+                        <MudTd DataLabel="Branch"><div>@context.BranchName</div><div style="font-size:.78rem;opacity:.7">@context.SolId</div></MudTd>
+                        <MudTd DataLabel="RO / ZO"><div>@context.RegionName</div><div style="font-size:.78rem;opacity:.7">@context.ZoneName</div></MudTd>
+                        <MudTd DataLabel="Type">@BcpTypes.Label(context.DrillType)</MudTd>
+                        <MudTd DataLabel="Drill date">@context.DrillDate.ToString("dd-MMM-yyyy")</MudTd>
+                        <MudTd DataLabel="Operations from"><div>@context.AltBranchName</div><div style="font-size:.78rem;opacity:.7">@context.AltSolId</div></MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)" Variant="Variant.Filled">@StatusText(context.Status)</MudChip>
+                            @if (context.Status == BcpStatus.Returned && !string.IsNullOrWhiteSpace(context.ReviewRemarks)) { <div style="font-size:.75rem;opacity:.8">@context.ReviewRemarks</div> }
+                        </MudTd>
+                        <MudTd DataLabel="Submitted"><div>@context.EntryAt?.ToString("dd-MMM-yy HH:mm")</div><div style="font-size:.75rem;opacity:.7">@context.EntryBy</div></MudTd>
+                        <MudTd>
+                            <MudTooltip Text="Download certificate (PDF)"><MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Color="Color.Error" OnClick="@(() => DownloadPdfAsync(context))" /></MudTooltip>
+                            @if (!string.IsNullOrEmpty(context.DocName))
+                            {
+                                <MudTooltip Text="@("Supporting document: " + context.DocName)"><MudIconButton Icon="@Icons.Material.Filled.AttachFile" Size="Size.Small" OnClick="@(() => DownloadDocAsync(context))" /></MudTooltip>
+                            }
+                            @if (CanEdit(context))
+                            {
+                                <MudTooltip Text="Edit / resubmit"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="@(() => Nav.NavigateTo($"bcp-drill/submit/{context.Id}"))" /></MudTooltip>
+                                <MudTooltip Text="Withdraw"><MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" OnClick="@(() => WithdrawAsync(context))" /></MudTooltip>
+                            }
+                            @if (CanReview(context))
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" OnClick="@(() => ReviewAsync(context))">Review</MudButton>
+                            }
+                            <MudTooltip Text="History"><MudIconButton Icon="@Icons.Material.Filled.History" Size="Size.Small" OnClick="@(() => ShowHistoryAsync("DRILL", context.Id.ToString(), "Submission history - " + context.BranchName))" /></MudTooltip>
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" /></PagerContent>
+                </MudTable>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"RO certificates ({_certs.Count})")">
+            @if (_certs.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No Regional Office certificates recorded yet.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_certs" Dense="true" Hover="true" Bordered="true" T="BcpRoCert">
+                    <HeaderContent><MudTh>Cert no.</MudTh><MudTh>Region (RO)</MudTh><MudTh>Zone</MudTh><MudTh>Date</MudTh><MudTh>Signed by</MudTh><MudTh>Recorded</MudTh><MudTh></MudTh></HeaderContent>
+                    <RowTemplate>
+                        <MudTd>RO/@context.RegionCode/@context.Id</MudTd>
+                        <MudTd>@context.RegionName</MudTd>
+                        <MudTd>@context.ZoneName</MudTd>
+                        <MudTd>@context.CertDate.ToString("dd-MMM-yyyy")</MudTd>
+                        <MudTd>@context.SignatoryName</MudTd>
+                        <MudTd>@context.EntryAt?.ToString("dd-MMM-yy HH:mm") @context.EntryBy</MudTd>
+                        <MudTd>
+                            <MudTooltip Text="Download certificate (PDF)"><MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Color="Color.Error" OnClick="@(() => DownloadCertAsync(context))" /></MudTooltip>
+                            <MudTooltip Text="History"><MudIconButton Icon="@Icons.Material.Filled.History" Size="Size.Small" OnClick="@(() => ShowHistoryAsync("CERT", context.Id.ToString(), "Certificate history"))" /></MudTooltip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudTabPanel>
+    </MudTabs>
+</AuthenticatedOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("BCP / DR Drill Compliance") };
+
+    private ClaimsPrincipal _user = new();
+    private BcpScope? _scope;
+    private readonly BcpDrillFilter _filter = new();
+    private bool _loading = true;
+    private List<BcpDrillEntry> _drills = new();
+    private List<BcpRoCert> _certs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _scope = Svc.GetScope(_user);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _drills = await Svc.ListDrillsAsync(_user, _filter);
+            _certs = await Svc.ListCertsAsync(_user, _filter.RegionCode);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Could not load submissions: " + ex.Message, Severity.Error);
+            _drills = new(); _certs = new();
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private bool CanEdit(BcpDrillEntry d) =>
+        _scope is not null && _scope.CanSubmitDrill && _scope.OwnsOffice(d.ZoneCode, d.RegionCode, d.SolId)
+        && (d.Status != BcpStatus.Acknowledged || _scope.IsAdmin);
+
+    private bool CanReview(BcpDrillEntry d) =>
+        _scope is not null && _scope.CanReview && d.Status == BcpStatus.Submitted && _scope.OwnsOffice(d.ZoneCode, d.RegionCode, d.SolId);
+
+    private static Color StatusColor(string s) => s switch { BcpStatus.Acknowledged => Color.Success, BcpStatus.Returned => Color.Error, _ => Color.Warning };
+    private static string StatusText(string s) => s switch { BcpStatus.Acknowledged => "Acknowledged", BcpStatus.Returned => "Returned", _ => "Pending review" };
+
+    private byte[]? Logo(string f) => BcpDocuments.LoadLogo(Env.WebRootPath, f);
+
+    private async Task DownloadPdfAsync(BcpDrillEntry row)
+    {
+        try
+        {
+            var d = await Svc.GetDrillAsync(_user, row.Id);
+            if (d is null) { Snackbar.Add("Submission not found, or outside your scope.", Severity.Warning); return; }
+            var pdf = BcpDocuments.DrillPdf(d, Logo("UBI_Logo.png"), Logo("My_Diary_Log-transparent_small.png"));
+            await JS.InvokeVoidAsync("BlazorDownloadFile", $"BCP_Annexure-I_{d.SolId}_{d.DrillDate:yyyyMMdd}.pdf", "application/pdf", Convert.ToBase64String(pdf));
+        }
+        catch (Exception ex) { Snackbar.Add("Could not generate the PDF: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task DownloadDocAsync(BcpDrillEntry row)
+    {
+        try
+        {
+            var f = await Svc.GetDrillDocAsync(_user, row.Id);
+            if (f is null) { Snackbar.Add("Document not found.", Severity.Warning); return; }
+            await JS.InvokeVoidAsync("BlazorDownloadFile", f.Value.FileName, f.Value.ContentType, Convert.ToBase64String(f.Value.Bytes));
+        }
+        catch (Exception ex) { Snackbar.Add("Download failed: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task DownloadCertAsync(BcpRoCert row)
+    {
+        try
+        {
+            var c = await Svc.GetCertAsync(_user, row.Id);
+            if (c is null) { Snackbar.Add("Certificate not found, or outside your scope.", Severity.Warning); return; }
+            var pdf = BcpDocuments.CertPdf(c, Logo("UBI_Logo.png"), Logo("My_Diary_Log-transparent_small.png"));
+            await JS.InvokeVoidAsync("BlazorDownloadFile", $"BCP_Annexure-II_{c.RegionCode}_{c.CertDate:yyyyMMdd}.pdf", "application/pdf", Convert.ToBase64String(pdf));
+        }
+        catch (Exception ex) { Snackbar.Add("Could not generate the PDF: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task ReviewAsync(BcpDrillEntry row)
+    {
+        var d = await Svc.GetDrillAsync(_user, row.Id);
+        if (d is null) { Snackbar.Add("Submission not found.", Severity.Warning); return; }
+        var dialog = await DialogService.ShowAsync<BcpReviewDialog>("Review - " + d.BranchName,
+            new DialogParameters<BcpReviewDialog> { { x => x.Drill, d } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var res = await dialog.Result;
+        if (res is not null && !res.Canceled) await LoadAsync();
+    }
+
+    private async Task WithdrawAsync(BcpDrillEntry d)
+    {
+        var ok = await DialogService.ShowMessageBox("Withdraw submission",
+            $"Withdraw the {BcpTypes.Label(d.DrillType)} submission of {d.BranchName} dated {d.DrillDate:dd-MMM-yyyy}? This is recorded in the audit trail.",
+            yesText: "Withdraw", cancelText: "Keep");
+        if (ok != true) return;
+        try { await Svc.DeleteDrillAsync(_user, d.Id); Snackbar.Add("Submission withdrawn.", Severity.Success); await LoadAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ShowHistoryAsync(string entity, string id, string title)
+    {
+        await DialogService.ShowAsync<BcpHistoryDialog>(title,
+            new DialogParameters<BcpHistoryDialog> { { x => x.Entity, entity }, { x => x.EntityId, id } },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+    }
+}

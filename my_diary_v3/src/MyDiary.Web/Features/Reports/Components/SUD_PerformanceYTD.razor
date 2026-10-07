@@ -1,0 +1,352 @@
+@using MyDiary.Web.Core.Extensions
+
+@page "/reports/SUD_PerformanceYTD"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>SUD Performance YTD — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Column configurations with fixed widths
+    private List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "20%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "20%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name", Width = "20%" },
+        new ColumnConfig { Header = "Sol ID", PropertyName = "sol_id", IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Retail- Premium (EPI)", PropertyName = "RetailEPI", IsNumeric = true, Width = "150%" },
+        new ColumnConfig { Header = "Retail-No Of Policies", PropertyName = "RetailNOP", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Credit Life-Premium", PropertyName = "CLPremium", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Credit Life-No of Lives", PropertyName = "CLNOL", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "PMJJBY-No of Lives", PropertyName = "PMJJBYNOL", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Fee Income", PropertyName = "FeeIncome", IsNumeric = true, Width = "15%" },
+
+    };
+
+    private List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "10%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name", Width = "10%" },
+        new ColumnConfig { Header = "Solid", PropertyName = "sol_id", Width = "8%" },
+        new ColumnConfig { Header = "Retail- Premium (EPI)", PropertyName = "RetailEPI", Width = "12%" },
+        new ColumnConfig { Header = "YoY Growth in Retail EPI", PropertyName = "RetailEPIYoY", Width = "12%" },
+        new ColumnConfig { Header = "Retail-No Of Policies", PropertyName = "RetailNOP", Width = "8%" },
+        new ColumnConfig { Header = "YoY Growth in Retail NOP", PropertyName = "RetailNOPYoY", IsDate = true, Width = "10%" },
+        new ColumnConfig { Header = "Credit Life-Premium", PropertyName = "CLPremium", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "YoY Growth in CL Premium", PropertyName = "CLPremiumYoY", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Credit Life-No of Lives", PropertyName = "CLNOL", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "PMJJBY-No of Lives", PropertyName = "PMJJBYNOL", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "PMJJBY-No of Lives", PropertyName = "PMJJBYNOL", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Fee Income", PropertyName = "FeeIncome", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "YoY Growth in Fee Income", PropertyName = "FeeIncomeYoY", IsNumeric = true, Width = "15%" }
+
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Sundry Data - OAP";
+
+        // Load User Context
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "region_solid <> '' ";
+        string groupBy = "";
+        bool isSummary = true;
+
+        // EXACT Logic from ListSundryData.aspx.cs
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As sol_id";
+            }
+            else if (_selectedZone == "all") // All(Zonewise)
+            {
+                where += $" and region_solid <> '00000'";
+                if (_selectedRegion == "1")
+                {
+                    columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As sol_id";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    //Display Regionwise Total of All Regions of All Zones
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+
+                    //Display Branchwise Data of All Branches [Region-All, Zone- All]
+                    else if (_selectedBranch == "all")
+                    {
+                        columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+
+                    else // Branchwise Detailed
+                    {
+                        where += $" and b.sol_id = '{_selectedBranch}'";
+
+                        isSummary = false;
+                        columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                    }
+                }
+                else // Specific Region Selected
+                {
+                    where += $" and region_solid <> '00000' and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else if (_selectedBranch == "all")
+                    {
+                        columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                    }
+                }
+            }
+            else // Specific Zone Selected
+            {
+                where += $" and region_solid <> '00000'and zone_solid = '{_selectedZone}'";
+                if (_selectedRegion == "1")
+                {
+                    columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,'All' As region_name,zone_name_eng,'All' As sol_id";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else if (_selectedBranch == "all")
+                    {
+                        columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                }
+                else // Particular Region selected in Particular Zone
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else if (_selectedBranch == "all")
+                    {
+                        columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "DISTINCT  RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                    }
+                }
+            }
+        }
+
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and region_solid <> '00000' and Zone_solid = '{_userZoneSolid}'";
+            // Summary of ZO
+            if (_selectedRegion == "1")
+            {
+                columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                groupBy = " Group By zone_name_eng, Zone_SolId";
+            }
+            else if (_selectedRegion == "all")
+            {
+                //Regionwise Summary
+                if (_selectedBranch == "1")
+                {
+                    columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else if (_selectedBranch == "all")
+                {
+                    columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+            }
+            else // Specific Region
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                //Selected Region Summary
+                if (_selectedBranch == "1")
+                {
+                    columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                //Branchwise Data of Selected Region
+                else if (_selectedBranch == "all")
+                {
+                    columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid <> '00000' and region_solid = '{_userRegionSolid}'";
+            //Region Summary
+            if (_selectedBranch == "1")
+            {
+                columns = "Sum(RetailEPI) As RetailEPI, Sum(RetailNOP) As RetailNOP, Sum(CLPremium) As CLPremium, Sum(CLNOL) As CLNOL,Sum(PMJJBYNOL) As PMJJBYNOL,Sum(FeeIncome) As FeeIncome,'All' As Branch_Name,region_name,zone_name_eng,'All' As sol_id";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+            //Branchwise Data of the Region
+
+            if (_selectedBranch=="all")
+            {
+                columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+            else
+            {
+                isSummary = false;
+                if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" and region_solid <> '00000' and b.sol_id = '{_userBranchSolid}'";
+            columns = "RetailEPI,RetailEPIYoY,RetailNOP,RetailNOPYoY,CLPremium,CLPremiumYoY,CLNOL,PMJJBYNOL,FeeIncome,FeeIncomeYoY,Branch_Name,region_name,zone_name_eng,sol_id As sol_id";
+            //groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+        }
+
+        // Execute Query
+        string finalQuery = $"SELECT {columns} FROM SUDData A JOIN Branch_Master B On A.branchcode = B.Branch_Code WHERE {where} {groupBy}";
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("Sundry_OAP_Agewise");
+        try
+        {
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[SUD_PerformanceYTD] Error: " + ex.Message);
+            _data = dataTask.IsCompletedSuccessfully ? dataTask.Result : new();
+        }
+
+        // Footer and Config Logic
+        string date = dateTask.IsCompletedSuccessfully ? dateTask.Result : AppTime.Now.ToString("dd/MM/yyyy");
+        if (isSummary)
+        {
+            _activeConfig.Columns = _summaryCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+        }
+        else
+        {
+            _activeConfig.Columns = _detailedCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Actuals)";
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "SUD_PerformanceYTD");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "SUD_PerformanceYTD.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

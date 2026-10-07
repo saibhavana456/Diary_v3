@@ -1,0 +1,147 @@
+@page "/reports/not-found"
+@layout MyDiary.Web.Components.Layout.MainLayout
+@using MudBlazor
+@using Microsoft.AspNetCore.WebUtilities
+@inject NavigationManager Nav
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<div class="report-error-container">
+    <MudPaper Elevation="3" Class="report-error-card">
+        <div class="error-icon-wrapper">
+            <MudIcon Icon="@_icon" Style="@($"font-size:4rem; color:{_iconColor};")" />
+        </div>
+
+        <MudText Typo="Typo.h5" Class="mt-4" Style="font-weight:700; color:#1e3a5f;">
+            @_title
+        </MudText>
+
+        <MudText Typo="Typo.body1" Class="mt-2" Style="color:#555; max-width:500px; text-align:center;">
+            @_message
+        </MudText>
+
+        @if (!string.IsNullOrEmpty(_reportName))
+        {
+            <MudChip T="string" Color="Color.Default" Size="Size.Small" Class="mt-3"
+                     Style="font-size:0.8rem;">
+                Requested: @_reportName
+            </MudChip>
+        }
+
+        <div class="mt-6 d-flex gap-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       Class="rounded-pill px-5"
+                       OnClick='() => Nav.NavigateTo(_backHref)'>
+                @_backLabel
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Home"
+                       Class="rounded-pill px-5"
+                       OnClick='() => Nav.NavigateTo("Landing_Dashboard_V2_1")'>
+                Go Home
+            </MudButton>
+        </div>
+    </MudPaper>
+</div>
+
+<style>
+    .report-error-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 60vh;
+        padding: 24px;
+    }
+
+    .report-error-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 48px 40px;
+        border-radius: 20px;
+        max-width: 600px;
+        width: 100%;
+        text-align: center;
+    }
+
+    .error-icon-wrapper {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+
+@code {
+    private string _title = "Report Not Available";
+    private string _message = "The requested report does not exist or has not been configured yet. Please go back and try a different report.";
+    private string _icon = Icons.Material.Filled.SearchOff;
+    private string _iconColor = "#E65100";
+    private string? _reportName;
+
+    // Where the "Back" button navigates. Driven by the "hub" query param so that
+    // errors raised in the Business Hub return to the Business Hub, and errors
+    // raised in the Assurance Hub return to the Assurance Hub.
+    private string _backHref = "Dashboards2";
+    private string _backLabel = "Back to Assurance Corner";
+
+    protected override void OnInitialized()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        if (query.TryGetValue("hub", out var hub))
+        {
+            switch (hub.ToString().ToLower())
+            {
+                case "business":
+                    _backHref = "BusinessHub";
+                    _backLabel = "Back to Business Hub";
+                    break;
+                case "assurance":
+                    _backHref = "Dashboards2";
+                    _backLabel = "Back to Assurance Hub";
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (query.TryGetValue("reason", out var reason))
+        {
+            switch (reason.ToString().ToLower())
+            {
+                case "unauthorized":
+                    _title = "Access Denied";
+                    _message = "You are not authorized to access this report. Please contact your administrator if you believe this is an error.";
+                    _icon = Icons.Material.Filled.Lock;
+                    _iconColor = "#C62828";
+                    break;
+                case "notfound":
+                    _title = "Report Not Found";
+                    _message = "The requested report does not exist. It may have been removed or the link is incorrect.";
+                    _icon = Icons.Material.Filled.SearchOff;
+                    _iconColor = "#E65100";
+                    break;
+                case "notmapped":
+                    _title = "Report Not Configured";
+                    _message = "This report has not been configured yet. It will be available in a future update.";
+                    _icon = Icons.Material.Filled.Construction;
+                    _iconColor = "#F57C00";
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (query.TryGetValue("name", out var name))
+        {
+            _reportName = name.ToString();
+        }
+    }
+}

@@ -1,0 +1,593 @@
+@page "/ro-visit-report"
+@page "/ro-visit-report/{Id:long}"
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using MyDiary.Core.Abstractions
+@using MyDiary.Web.Features.Assurance.Services
+@using global::RequestPortal.Web.Shared
+@using Microsoft.Extensions.Options
+@using MyDiary.Web.Features.Focus360.Models
+@inject IRoVisitRepo RoVisitRepo
+@inject RoVisitMetricsService MetricsSvc
+@inject RoVisitPdfService PdfSvc
+@inject IOptions<GapReportSettings> ReportConfig
+@inject MyDiary.Core.Abstractions.IEmailSender EmailSender
+@* RequestPortal.Core.Abstractions.ICurrentUser (not MyDiary.Core.Abstractions.ICurrentUser) —
+   MainLayout.razor only ever calls RefreshAsync() on this one; the MyDiary.Core variant's
+   SetPrincipal() is never invoked anywhere in the app, so its properties are always null. *@
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject Microsoft.JSInterop.IJSRuntime JS
+
+<PageTitle>ZAH: RO Visit Report</PageTitle>
+<PageHeader PageKey="ro-visit-report" Title="ZAH: RO Visit Report" Crumbs="_crumbs" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    @if (_report.Status == "SUBMITTED")
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Lock">
+            This report has been submitted and can no longer be edited. Use "Download PDF" for the record as submitted.
+        </MudAlert>
+    }
+
+    <MudPaper Class="pa-4 mb-3" Elevation="1">
+        <MudText Typo="Typo.h6" Class="mb-1">क्षेत्रीय कार्यालय निरीक्षण रिपोर्ट / Regional Office Visit Report</MudText>
+        <MudText Typo="Typo.caption" Class="text-muted d-block">(For Zonal Assurance Head)</MudText>
+    </MudPaper>
+
+    <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+
+        @* ══ Tab 1: Visit Details (points 1 + 2) ══════════════════════════════ *@
+        <MudTabPanel Text="1. Visit Details">
+            <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2 rovisit-section-title">1. Regional Office &amp; Visit Details</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Region (SOL ID)" @bind-Value="_report.RegionSolId"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search"
+                                  OnAdornmentClick="FetchRegionDataAsync" @onblur="FetchRegionDataAsync" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Region Name" Value="_report.RegionName" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Zone" @bind-Value="_report.ZoneName" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  HelperText="Not derivable automatically — enter manually" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Regional Head" Value="_report.RegionalHeadName" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="RH Working Since" Value="@(_report.RhWorkingSince?.ToString("dd-MMM-yyyy"))" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Assurance Head" Value="_report.AssuranceHeadName" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="AH Working Since" Value="@(_report.AhWorkingSince?.ToString("dd-MMM-yyyy"))" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Name of Visiting Official" Value="_report.VisitingOfficialName" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Designation" @bind-Value="_report.Designation" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker Label="Date of Visit" @bind-Date="_report.DateOfVisit" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker Label="Report Date" @bind-Date="_report.ReportDate" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2 rovisit-section-title">2. Executive Summary of Visit</MudText>
+            <div style="overflow-x:auto;">
+                <table class="rovisit-table">
+                    <thead><tr><th>Sr.</th><th>Focus Area</th><th>Observation</th><th>Action Required</th><th>Target Date</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in _report.ExecSummary)
+                        {
+                            <tr>
+                                <td>@row.SrNo</td>
+                                <td>@row.FocusArea</td>
+                                <td><MudTextField T="string" @bind-Value="row.Observation" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" /></td>
+                                <td><MudTextField T="string" @bind-Value="row.ActionRequired" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" /></td>
+                                <td><MudDatePicker @bind-Date="row.TargetDate" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @SaveBarFragment
+        </MudTabPanel>
+
+        @* ══ Tab 2: Metrics & Compliance (points 3-9) ═════════════════════════ *@
+        <MudTabPanel Text="2. Metrics & Compliance">
+            <div class="rovisit-panel-grid">
+                @foreach (var panel in RoVisitPanelCatalog.Panels.Where(p => p.PanelCode != "AUDIT_COMP"))
+                {
+                    <div class="rovisit-panel-card @(IsFullWidthPanel(panel.PanelCode) ? "rovisit-panel-full" : "")">
+                        <MudText Typo="Typo.subtitle2" Class="fw-bold mb-2 rovisit-section-title">@(PanelNumberPrefix(panel.PanelCode)) @panel.Title</MudText>
+                        @if (IsSingleValuePanel(panel))
+                        {
+                            @* Single-"Value"-column panels (Credit Monitoring, Deposit Ops, Customer Service) render
+                               as a compact 2-3-per-row grid of label+input pairs instead of one parameter per table
+                               row — the same layout the source document uses for these panels, and much shorter. *@
+                            <div class="rovisit-pair-grid">
+                                @foreach (var row in panel.Rows)
+                                {
+                                    var isAuto = IsAutoFilled(panel.PanelCode, row.RowCode, "VALUE");
+                                    <div class="rovisit-pair-item @(isAuto ? "rovisit-auto" : "")">
+                                        <MudText Typo="Typo.caption" Class="rovisit-pair-label">@row.Label</MudText>
+                                        <MudTextField T="string" Value="@GetCell(panel.PanelCode, row.RowCode, "VALUE")"
+                                                      ValueChanged="@(v => SetCell(panel.PanelCode, row.RowCode, "VALUE", v))"
+                                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="overflow-x:auto;">
+                                <table class="rovisit-table">
+                                    <thead>
+                                        <tr>
+                                            <th>@panel.RowLabelHeader</th>
+                                            @foreach (var col in panel.Columns) { <th>@col.Label</th> }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in panel.Rows)
+                                        {
+                                            <tr>
+                                                <td>@row.Label</td>
+                                                @foreach (var col in panel.Columns)
+                                                {
+                                                    var isAuto = IsAutoFilled(panel.PanelCode, row.RowCode, col.ColCode);
+                                                    <td class="@(isAuto ? "rovisit-auto" : "")">
+                                                        <MudTextField T="string" Value="@GetCell(panel.PanelCode, row.RowCode, col.ColCode)"
+                                                                      ValueChanged="@(v => SetCell(panel.PanelCode, row.RowCode, col.ColCode, v))"
+                                                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        @if (panel.PanelCode == "SUSPENSE_B")
+                        {
+                            <MudTextField T="string" Label="Visiting Official's comments on long outstanding entries"
+                                          @bind-Value="_report.SuspenseComments" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" Class="mt-2" />
+                        }
+                    </div>
+                }
+            </div>
+
+            @SaveBarFragment
+        </MudTabPanel>
+
+        @* ══ Tab 3: Findings & Sign-off (remaining tables + submit) ═══════════ *@
+        <MudTabPanel Text="3. Findings & Sign-off">
+            @{ var auditPanel = RoVisitPanelCatalog.Panels.First(p => p.PanelCode == "AUDIT_COMP"); }
+            <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2 rovisit-section-title">10. @auditPanel.Title</MudText>
+            <div class="rovisit-pair-grid mb-2">
+                @foreach (var row in auditPanel.Rows)
+                {
+                    var isAuto = IsAutoFilled("AUDIT_COMP", row.RowCode, "VALUE");
+                    <div class="rovisit-pair-item @(isAuto ? "rovisit-auto" : "")">
+                        <MudText Typo="Typo.caption" Class="rovisit-pair-label">@row.Label</MudText>
+                        <MudTextField T="string" Value="@GetCell("AUDIT_COMP", row.RowCode, "VALUE")"
+                                      ValueChanged="@(v => SetCell("AUDIT_COMP", row.RowCode, "VALUE", v))"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </div>
+                }
+            </div>
+
+            <MudDivider Class="my-4" />
+
+            <div class="d-flex align-center justify-space-between mb-2">
+                <MudText Typo="Typo.subtitle1" Class="fw-bold rovisit-section-title">11. Key Findings, Action Plan &amp; Escalation</MudText>
+                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddFinding">Add Row</MudButton>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="rovisit-table">
+                    <thead><tr><th>Sr.</th><th>Finding / Observation</th><th>Risk Severity</th><th>Action Required</th><th>Target Date</th><th></th></tr></thead>
+                    <tbody>
+                        @for (int i = 0; i < _report.Findings.Count; i++)
+                        {
+                            var idx = i;
+                            var row = _report.Findings[idx];
+                            <tr>
+                                <td>@row.SrNo</td>
+                                <td><MudTextField T="string" @bind-Value="row.Finding" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" /></td>
+                                <td>
+                                    <MudSelect T="string" @bind-Value="row.RiskSeverity" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                        <MudSelectItem T="string" Value="@("High")">High</MudSelectItem>
+                                        <MudSelectItem T="string" Value="@("Medium")">Medium</MudSelectItem>
+                                        <MudSelectItem T="string" Value="@("Low")">Low</MudSelectItem>
+                                    </MudSelect>
+                                </td>
+                                <td><MudTextField T="string" @bind-Value="row.ActionRequired" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" /></td>
+                                <td><MudDatePicker @bind-Date="row.TargetDate" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                                <td><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="@(() => RemoveFinding(idx))" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <MudDivider Class="my-4" />
+
+            <div class="d-flex align-center justify-space-between mb-2">
+                <MudText Typo="Typo.subtitle1" Class="fw-bold rovisit-section-title">12. Pending Issues Requiring ZO / CO Support</MudText>
+                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddPendingIssue">Add Row</MudButton>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="rovisit-table">
+                    <thead><tr><th>Sr.</th><th>Issue</th><th>Support Required from ZO / CO</th><th>Priority</th><th>Expected Closure</th><th></th></tr></thead>
+                    <tbody>
+                        @for (int i = 0; i < _report.PendingIssues.Count; i++)
+                        {
+                            var idx = i;
+                            var row = _report.PendingIssues[idx];
+                            <tr>
+                                <td>@row.SrNo</td>
+                                <td><MudTextField T="string" @bind-Value="row.Issue" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" /></td>
+                                <td><MudTextField T="string" @bind-Value="row.SupportRequired" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" /></td>
+                                <td>
+                                    <MudSelect T="string" @bind-Value="row.Priority" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                        <MudSelectItem T="string" Value="@("High")">High</MudSelectItem>
+                                        <MudSelectItem T="string" Value="@("Medium")">Medium</MudSelectItem>
+                                        <MudSelectItem T="string" Value="@("Low")">Low</MudSelectItem>
+                                    </MudSelect>
+                                </td>
+                                <td><MudDatePicker @bind-Date="row.ExpectedClosure" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                                <td><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="@(() => RemovePendingIssue(idx))" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2 rovisit-section-title">Overall Assessment by Visiting Official</MudText>
+            <div style="overflow-x:auto;">
+                <table class="rovisit-table">
+                    <thead><tr><th>Area</th><th>Assessment</th><th>Comments</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in _report.Assessment)
+                        {
+                            <tr>
+                                <td>@row.AreaLabel</td>
+                                <td>
+                                    <MudSelect T="string" @bind-Value="row.Assessment" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                        <MudSelectItem T="string" Value="@("Satisfactory")">Satisfactory</MudSelectItem>
+                                        <MudSelectItem T="string" Value="@("Needs Improvement")">Needs Improvement</MudSelectItem>
+                                        <MudSelectItem T="string" Value="@("Unsatisfactory")">Unsatisfactory</MudSelectItem>
+                                    </MudSelect>
+                                </td>
+                                <td><MudTextField T="string" @bind-Value="row.Comments" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <MudTextField T="string" Label="Overall remarks / concluding observations" @bind-Value="_report.OverallRemarks"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Lines="3" Class="mt-3" />
+
+            <MudDivider Class="my-4" />
+
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudText Typo="Typo.body2"><b>Name of Visiting Official:</b> @_report.VisitingOfficialName</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-4">Signature: ______________________</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2">Date: @(_report.ReportDate?.ToString("dd-MMM-yyyy"))</MudText>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudText Typo="Typo.body2"><b>Regional Assurance Head Name:</b> @_report.RahName</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-4">Signature: ______________________</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2">Date: ______________________</MudText>
+                </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Class="text-muted d-block mt-4">
+                (During RO visits, the ZO Assurance Head shall review the bottom 20% branches, identify parameter-wise causes of
+                pendency, and recommend corrective actions to the RO for guiding the concerned branches.)
+            </MudText>
+
+            <div class="d-flex gap-2 mt-4 mb-2">
+                @if (_report.Status != "SUBMITTED")
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="SaveDraft" Disabled="@_busy">Save Draft</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitReport" Disabled="@_busy">Submit</MudButton>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="DownloadPdf" Disabled="@(_report.Id == 0)">
+                    Print PDF
+                </MudButton>
+            </div>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    // Save Draft button repeated on tabs 1 & 2 (per request "save on all tabs, submit on last").
+    private RenderFragment SaveBarFragment => __builder =>
+    {
+        <div class="d-flex gap-2 mt-4">
+            @if (_report.Status != "SUBMITTED")
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="SaveDraft" Disabled="@_busy">Save Draft</MudButton>
+            }
+        </div>
+    };
+}
+
+<style>
+    .rovisit-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .rovisit-table th, .rovisit-table td { border: 1px solid #e0e0e0; padding: 4px 8px; vertical-align: top; }
+    .rovisit-table th { background: #f3f6fc; text-align: left; font-weight: 700; }
+    .rovisit-auto { background: #eef7ee; }
+
+    /* Pack panels 2-per-row on wide screens so tab 2 isn't one long vertical scroll. */
+    .rovisit-panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); gap: 16px; align-items: start; }
+    .rovisit-panel-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; }
+    .rovisit-panel-full { grid-column: 1 / -1; }
+
+    /* Section headers (point number + name) — same light-blue color coding across all 3 tabs. */
+    .rovisit-section-title { color: #1565c0 !important; }
+
+    /* Single-Value panels (Credit Monitoring, Deposit Ops, Customer Service, Audit
+       Compliance): 2-3 label+input pairs per row instead of one long column of rows. */
+    .rovisit-pair-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 12px; }
+    .rovisit-pair-item { border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 8px; }
+    .rovisit-pair-item.rovisit-auto { background: #eef7ee; }
+    .rovisit-pair-label { display: block; line-height: 1.2; margin-bottom: 2px; }
+</style>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+    private bool IsEdit => Id.HasValue;
+    private bool _loading = true, _busy;
+
+    private List<PageHeader.Crumb> _crumbs => new()
+    {
+        new("Assurance 360°", "assurance-360"), new("ZAH: RO Visit Report")
+    };
+
+    private RoVisitReport _report = new();
+    private readonly Dictionary<(string Panel, string Row, string Col), RoVisitMetricCell> _cells = new();
+
+    // Same logo convention as Reports.razor/AssuranceExportService: My Diary logo (left) + UBI logo (right).
+    private string AppLogo => Path.Combine(Environment.CurrentDirectory, ReportConfig.Value.AppLogoPath);
+    private string CoLogo => Path.Combine(Environment.CurrentDirectory, ReportConfig.Value.LogoPath);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (IsEdit)
+        {
+            var existing = await RoVisitRepo.GetReportAsync(Id!.Value);
+            if (existing is not null)
+            {
+                _report = existing;
+                foreach (var c in _report.Metrics) _cells[(c.PanelCode, c.RowCode, c.ColCode)] = c;
+            }
+        }
+        else
+        {
+            _report.VisitingOfficialEmpCode = CurrentUser.EmpCode ?? "";
+            _report.VisitingOfficialName = CurrentUser.Name ?? "";
+            _report.ReportDate = AppTime.Today;
+            _report.ExecSummary = RoVisitPanelCatalog.ExecSummaryFocusAreas
+                .Select(f => new RoVisitExecSummaryRow { SrNo = int.Parse(f.SrNo), FocusArea = f.FocusArea }).ToList();
+            _report.Assessment = RoVisitPanelCatalog.AssessmentAreas
+                .Select(a => new RoVisitAssessmentRow { AreaCode = a.Code, AreaLabel = a.Label }).ToList();
+        }
+        _loading = false;
+    }
+
+    // Tables 3-9 map to panels KYC..CUST_SERVICE (SUSPENSE_A+SUSPENSE_B share "7"), table 10 = AUDIT_COMP.
+    private static readonly Dictionary<string, string> PanelNumbers = new()
+    {
+        ["KYC"] = "3.", ["DATA_CLEANSING"] = "4.", ["CREDIT_MON"] = "5.", ["STRESSED"] = "6.",
+        ["SUSPENSE_A"] = "7.", ["SUSPENSE_B"] = "", ["DEPOSIT_OPS"] = "8.", ["CUST_SERVICE"] = "9.", ["AUDIT_COMP"] = "10.",
+    };
+    private static string PanelNumberPrefix(string panelCode) => PanelNumbers.TryGetValue(panelCode, out var n) ? n : "";
+
+    // Panels with exactly one "VALUE" column (Credit Monitoring, Deposit Ops, Customer
+    // Service, Audit Compliance) render as a compact multi-per-row grid instead of a tall
+    // single-column table — same parameter/value pair layout the source document uses.
+    private static bool IsSingleValuePanel(RoVisitPanelDef panel)
+        => panel.Columns.Count == 1 && panel.Columns[0].ColCode == "VALUE";
+
+    // Credit Monitoring (long pair-grid) and Stressed Accounts (very short table) sit
+    // right after each other in panel order — pairing them side-by-side left a large
+    // empty gap under the short one. Give both their own full-width row instead; the
+    // remaining panels resume normal 2-per-row pairing.
+    private static readonly HashSet<string> FullWidthPanels = new() { "CREDIT_MON", "STRESSED" };
+    private static bool IsFullWidthPanel(string panelCode) => FullWidthPanels.Contains(panelCode);
+
+    private static bool IsAutoFilled(string panel, string row, string col)
+        => RoVisitPanelCatalog.AutoFetchMap.ContainsKey((panel, row, col));
+
+    private string? GetCell(string panel, string row, string col)
+        => _cells.TryGetValue((panel, row, col), out var c) ? c.ValueText : null;
+
+    private void SetCell(string panel, string row, string col, string? value)
+    {
+        if (_cells.TryGetValue((panel, row, col), out var c)) c.ValueText = value;
+        else _cells[(panel, row, col)] = new RoVisitMetricCell { PanelCode = panel, RowCode = row, ColCode = col, ValueText = value };
+    }
+
+    private async Task FetchRegionDataAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_report.RegionSolId)) return;
+
+        var info = await RoVisitRepo.GetRegionInfoAsync(_report.RegionSolId);
+        if (info is not null)
+        {
+            _report.RegionName = info.RegionName;
+            _report.RegionalHeadEmpCode = info.RegionalHeadEmpCode;
+            _report.RegionalHeadName = info.RegionalHeadName;
+            _report.RhWorkingSince = info.RhWorkingSince;
+            _report.AssuranceHeadEmpCode = info.AssuranceHeadEmpCode;
+            _report.AssuranceHeadName = info.AssuranceHeadName;
+            _report.AhWorkingSince = info.AhWorkingSince;
+            _report.RahName = info.AssuranceHeadName;
+            _report.RahEmpCode = info.AssuranceHeadEmpCode;
+        }
+        else
+        {
+            Snackbar.Add("No employee found posted at this SOL ID — Region/Regional-Head/Assurance-Head could not be auto-populated.", Severity.Warning);
+        }
+
+        try
+        {
+            var metrics = await MetricsSvc.GetMetricsAsync(_report.RegionSolId);
+            foreach (var kv in RoVisitPanelCatalog.AutoFetchMap)
+            {
+                var (panel, row, col) = kv.Key;
+                var (paramName, useBaseFy) = kv.Value;
+                var src = metrics.FirstOrDefault(m => string.Equals(m.ParameterName, paramName, StringComparison.OrdinalIgnoreCase));
+                if (src is null) continue;
+                var val = useBaseFy ? src.BaseCurrentFy : src.ActualsAsOn;
+                if (val is null) continue;
+                _cells[(panel, row, col)] = new RoVisitMetricCell { PanelCode = panel, RowCode = row, ColCode = col, ValueText = val.Value.ToString("0.##"), IsAutoFilled = true };
+            }
+            Snackbar.Add("Region details and available metrics auto-populated. Review before submitting.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "RoVisitReportForm: could not fetch metrics");
+            Snackbar.Add(UserFacingError.Generic, Severity.Warning);
+        }
+
+        StateHasChanged();
+    }
+
+    private void AddFinding() => _report.Findings.Add(new RoVisitFindingRow { SrNo = _report.Findings.Count + 1 });
+    private void RemoveFinding(int idx) { _report.Findings.RemoveAt(idx); Renumber(_report.Findings.Select(f => f), (r, n) => r.SrNo = n); }
+
+    private void AddPendingIssue() => _report.PendingIssues.Add(new RoVisitPendingIssueRow { SrNo = _report.PendingIssues.Count + 1 });
+    private void RemovePendingIssue(int idx) { _report.PendingIssues.RemoveAt(idx); Renumber(_report.PendingIssues.Select(p => p), (r, n) => r.SrNo = n); }
+
+    private static void Renumber<T>(IEnumerable<T> items, Action<T, int> setSrNo)
+    {
+        int n = 1;
+        foreach (var item in items) setSrNo(item, n++);
+    }
+
+    private async Task<bool> SaveDraftInternal()
+    {
+        if (string.IsNullOrWhiteSpace(_report.RegionSolId))
+        { Snackbar.Add("Region (SOL ID) is required.", Severity.Warning); return false; }
+
+        // Re-read from CurrentUser at save time rather than trusting whatever was captured
+        // at OnInitializedAsync — on Blazor Server the auth-state claims can still be
+        // settling on first render, so a value captured too early can be empty even though
+        // the user is genuinely logged in.
+        var empCode = CurrentUser.EmpCode;
+        if (string.IsNullOrWhiteSpace(empCode))
+        {
+            Snackbar.Add("Your session doesn't have a valid employee ID (VISITING_OFFICIAL_EMP_CODE would be empty). " +
+                         "Please log out and log back in, then retry.", Severity.Error);
+            return false;
+        }
+
+        _report.VisitingOfficialEmpCode = empCode;
+        if (string.IsNullOrWhiteSpace(_report.VisitingOfficialName))
+            _report.VisitingOfficialName = CurrentUser.Name ?? empCode;
+
+        _report.Metrics = _cells.Values.ToList();
+        _report.CreatedByEmp = empCode;
+
+        if (_report.Id != 0) { await RoVisitRepo.UpdateReportAsync(_report); }
+        else { var id = await RoVisitRepo.InsertReportAsync(_report); _report.Id = id; Id = id; Nav.NavigateTo($"ro-visit-report/{id}", forceLoad: false); }
+        return true;
+    }
+
+    private async Task SaveDraft()
+    {
+        _busy = true;
+        try
+        {
+            if (await SaveDraftInternal())
+                Snackbar.Add("Draft saved.", Severity.Success);
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "RoVisitReportForm: save failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task SubmitReport()
+    {
+        _busy = true;
+        try
+        {
+            if (!await SaveDraftInternal()) return;
+
+            var pdfBytes = PdfSvc.GenerateRoVisitPdf(_report, _report.Metrics, AppLogo, CoLogo);
+            var submittedId = await RoVisitRepo.SubmitReportAsync(_report.Id, pdfBytes, CurrentUser.EmpCode ?? "");
+            _report.Status = "SUBMITTED";
+            Snackbar.Add("Report submitted.", Severity.Success);
+
+            await SendSubmissionEmailAsync(pdfBytes);
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "RoVisitReportForm: submit failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task SendSubmissionEmailAsync(byte[] pdfBytes)
+    {
+        try
+        {
+            var recipients = new List<string>();
+            var regionEmail = await RoVisitRepo.GetSolEmailAsync(_report.RegionSolId, "REGION");
+            if (!string.IsNullOrWhiteSpace(regionEmail)) recipients.Add(regionEmail);
+            if (!string.IsNullOrWhiteSpace(_report.ZoneName))
+            {
+                var zoneEmail = await RoVisitRepo.GetSolEmailAsync(_report.ZoneName, "ZONE");
+                if (!string.IsNullOrWhiteSpace(zoneEmail)) recipients.Add(zoneEmail);
+            }
+
+            if (recipients.Count == 0)
+            {
+                Snackbar.Add("No Zone/Region email configured for this SOL — submission saved but no email was sent. Ask an admin to add one under RP_M_SOL_EMAIL.", Severity.Warning);
+                return;
+            }
+
+            var body = $"<p>A new RO Visit Report has been submitted for Region {_report.RegionName} ({_report.RegionSolId}) " +
+                       $"by {_report.VisitingOfficialName} on {_report.ReportDate:dd-MMM-yyyy}.</p><p>The report is attached as a PDF.</p>";
+            // await EmailSender.SendWithAttachmentAsync(string.Join(",", recipients),
+            //     $"RO Visit Report Submitted — {_report.RegionName} ({_report.RegionSolId})", body,
+            //     pdfBytes, $"RO_Visit_Report_{_report.RegionSolId}_{DateTime.Now:yyyyMMdd}.pdf");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "RoVisitReportForm: submission notification email failed");
+            Snackbar.Add("Report submitted, but the notification email could not be sent.", Severity.Warning);
+        }
+    }
+
+    private async Task DownloadPdf()
+    {
+        try
+        {
+            var bytes = PdfSvc.GenerateRoVisitPdf(_report, _cells.Values.ToList(), AppLogo, CoLogo);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new Microsoft.JSInterop.DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("focus360DownloadStream", $"RO_Visit_Report_{_report.RegionSolId}_{AppTime.Now:yyyyMMdd}.pdf", streamRef);
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "RoVisitReportForm: PDF export failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+}

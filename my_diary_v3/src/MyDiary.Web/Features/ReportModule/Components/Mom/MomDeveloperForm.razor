@@ -1,0 +1,339 @@
+@page "/reports/mom-developer/new"
+@page "/reports/mom-developer/edit/{Id:long}"
+@using MudBlazor
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IMomRepo MomRepo
+@inject IMasterRepo Masters
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IAuditService AuditSvc
+
+<PageTitle>@(IsEdit ? "Edit MoM Type" : "New MoM Type")</PageTitle>
+
+<PageHeader PageKey="mom-developer" Title="@(IsEdit ? "Edit MoM Type" : "New MoM Type")" Crumbs="_crumbs" />
+
+<SuperAdminOnly>
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="long?" Label="Vertical" @bind-Value="_form.VerticalId" Required="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var v in _verticals)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Type Name" @bind-Value="_form.TypeName" Required="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Type Code" @bind-Value="_form.TypeCode" Required="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField T="string" Label="Description" @bind-Value="_form.Description" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Lines="2" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="fw-bold">Filters &amp; Upload Rules</MudText>
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudSwitch T="bool" @bind-Value="_form.EnableZoneRegionScope" Color="Color.Primary" Label="Enable Zone/Region Scope" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSwitch T="bool" @bind-Value="_form.EnableDateRange" Color="Color.Primary" Label="Enable Date Range" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSwitch T="bool" @bind-Value="_form.EnableYear" Color="Color.Primary" Label="Enable Year" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSwitch T="bool" @bind-Value="_form.EnableQuarter" Color="Color.Primary" Label="Enable Quarter" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSwitch T="bool" @bind-Value="_form.EnableMeetingType" Color="Color.Primary" Label="Enable Meeting Type" />
+                </MudItem>
+                @if (_form.EnableMeetingType)
+                {
+                    <MudItem xs="12" md="4">
+                        <MudTextField T="string" Label="Meeting Type Label" @bind-Value="_form.MeetingTypeLabel"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Placeholder="e.g. Union / Category" />
+                    </MudItem>
+                }
+
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="fw-bold">Upload Configuration</MudText>
+                </MudItem>
+
+                <MudItem xs="12" md="3">
+                    <MudNumericField T="int?" Label="Max Supporting Files" @bind-Value="_form.MaxSupportingFiles"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField T="string" Label="Allowed File Types" @bind-Value="_form.AllowedFileTypes"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="pdf" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="Storage Root Path" @bind-Value="_form.StorageRootPath" Required="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="assurance/rlac" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSwitch T="bool" @bind-Value="_form.RequirePrimaryFile" Color="Color.Primary" Label="Require Primary File" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="string" Label="Icon" @bind-Value="_form.IconName" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="string" Value="@("Description")">Description</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Groups")">Groups</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Assignment")">Assignment</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Gavel")">Gavel</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("AccountBalance")">AccountBalance</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField T="int" Label="Sort Order" @bind-Value="_form.SortOrder"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12" Class="d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="@_busy">
+                        @(IsEdit ? "Save" : "Submit")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("reports/mom-developer"))">Cancel</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @if (IsEdit)
+        {
+            <MudPaper Class="pa-4 mt-4" Elevation="1">
+                <MudText Typo="Typo.subtitle2" Class="fw-bold mb-2">Meeting Types</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">
+                    "CO Scope Code" groups meeting types for the CO Scope Assignment page (Item 6): meeting
+                    types sharing the same code become one assignable scope for a narrowed CO user. Leave
+                    blank if this meeting type isn't part of any CO scope split. "Hides RO" means a CO user
+                    assigned to that scope never sees RO-level entries for it — leave off otherwise.
+                </MudText>
+                <MudSimpleTable Dense="true" Striped="true" Style="overflow-x:auto;">
+                    <thead>
+                        <tr><th>Code</th><th>Name</th><th>RO</th><th>ZO</th><th>CO</th><th>Freq/Qtr</th><th>CO Scope Code</th><th>Hides RO</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in _meetingTypes)
+                        {
+                            <tr>
+                                <td>@m.Code</td>
+                                <td>@m.Name</td>
+                                <td>@(m.AppliesAtRo ? "Yes" : "No")</td>
+                                <td>@(m.AppliesAtZo ? "Yes" : "No")</td>
+                                <td>@(m.AppliesAtCo ? "Yes" : "No")</td>
+                                <td>@(m.FrequencyPerQuarter?.ToString() ?? "—")</td>
+                                <td>@(m.CoScopeCode ?? "—")</td>
+                                <td>@(m.CoScopeCode is not null && m.CoScopeHidesRoLevel ? "Yes" : "—")</td>
+                                <td><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditMeetingType(m))" /></td>
+                            </tr>
+                        }
+                        <tr>
+                            <td><MudTextField T="string" @bind-Value="_newMeetingType.Code" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            <td><MudTextField T="string" @bind-Value="_newMeetingType.Name" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            <td><MudCheckBox T="bool" @bind-Value="_newMeetingType.AppliesAtRo" /></td>
+                            <td><MudCheckBox T="bool" @bind-Value="_newMeetingType.AppliesAtZo" /></td>
+                            <td><MudCheckBox T="bool" @bind-Value="_newMeetingType.AppliesAtCo" /></td>
+                            <td style="max-width:100px"><MudNumericField T="int?" @bind-Value="_newMeetingType.FrequencyPerQuarter" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            <td style="max-width:140px"><MudTextField T="string" @bind-Value="_newMeetingType.CoScopeCode" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="e.g. ERD" /></td>
+                            <td><MudCheckBox T="bool" @bind-Value="_newMeetingType.CoScopeHidesRoLevel" /></td>
+                            <td><MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Size="Size.Small" OnClick="AddMeetingTypeAsync" /></td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="1">
+                <MudText Typo="Typo.subtitle2" Class="fw-bold mb-2">Trade Unions</MudText>
+                <MudSimpleTable Dense="true" Striped="true" Style="overflow-x:auto;">
+                    <thead>
+                        <tr><th>Category</th><th>Union Name</th><th>Affiliation</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in _unions)
+                        {
+                            <tr>
+                                <td>@u.Category</td>
+                                <td>@u.UnionName</td>
+                                <td>@u.Affiliation</td>
+                                <td><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditUnion(u))" /></td>
+                            </tr>
+                        }
+                        <tr>
+                            <td><MudTextField T="string" @bind-Value="_newUnion.Category" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            <td><MudTextField T="string" @bind-Value="_newUnion.UnionName" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            <td><MudTextField T="string" @bind-Value="_newUnion.Affiliation" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            <td><MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Size="Size.Small" OnClick="AddUnionAsync" /></td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        }
+    }
+</SuperAdminOnly>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+    private bool IsEdit => Id.HasValue;
+
+    private List<PageHeader.Crumb> _crumbs => new()
+    {
+        new("Reports"), new("MoM Developer", "reports/mom-developer"), new(IsEdit ? "Edit" : "New")
+    };
+
+    private bool _loading = true, _busy;
+    private MomTypeForm _form = new();
+
+    private List<Vertical> _verticals = new();
+    private List<MomMeetingType> _meetingTypes = new();
+    private List<MomUnion> _unions = new();
+
+    private MomMeetingType _newMeetingType = new() { AppliesAtRo = true, AppliesAtZo = true, AppliesAtCo = true };
+    private MomUnion _newUnion = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = (await Masters.ListVerticalsAllAsync()).ToList();
+
+        if (IsEdit)
+        {
+            var t = await MomRepo.GetTypeAsync(Id!.Value);
+            if (t is not null)
+            {
+                _form = new MomTypeForm
+                    {
+                        Id = t.Id,
+                        VerticalId = t.VerticalId,
+                        TypeName = t.TypeName,
+                        TypeCode = t.TypeCode,
+                        Description = t.Description,
+                        EnableZoneRegionScope = t.EnableZoneRegionScope,
+                        EnableDateRange = t.EnableDateRange,
+                        EnableMeetingType = t.EnableMeetingType,
+                        EnableQuarter = t.EnableQuarter,
+                        EnableYear = t.EnableYear,
+                        MeetingTypeLabel = t.MeetingTypeLabel,
+                        MaxSupportingFiles = t.MaxSupportingFiles,
+                        AllowedFileTypes = t.AllowedFileTypes,
+                        StorageRootPath = t.StorageRootPath,
+                        RequirePrimaryFile = t.RequirePrimaryFile,
+                        IconName = t.IconName,
+                        SortOrder = t.SortOrder
+                    };
+            }
+
+            await ReloadSubEditorsAsync();
+        }
+
+        _loading = false;
+    }
+
+    private async Task ReloadSubEditorsAsync()
+    {
+        _meetingTypes = (await MomRepo.ListMeetingTypesAsync(Id!.Value)).ToList();
+        _unions = (await MomRepo.ListUnionsAsync(Id!.Value)).ToList();
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_form.TypeName) || string.IsNullOrWhiteSpace(_form.TypeCode) ||
+            _form.VerticalId is null || string.IsNullOrWhiteSpace(_form.StorageRootPath))
+        { Snackbar.Add("Type name, type code, vertical and storage root path are required.", Severity.Warning); return; }
+
+        _busy = true;
+        try
+        {
+            var actor = CurrentUser.EmpCode ?? "";
+            if (IsEdit)
+            {
+                // Captured before the update so the audit log's "Before" column reflects
+                // what was actually overwritten, not a re-fetch of the (already-new) state.
+                var before = await MomRepo.GetTypeAsync(Id!.Value);
+                await MomRepo.UpdateTypeAsync(Id!.Value, _form);
+                await AuditSvc.LogAsync(AuditEntityNames.MomType, Id!.Value, AuditEntityNames.ActionUpdate, actor,
+                    before, _form);
+                Snackbar.Add("MoM type updated.", Severity.Success);
+            }
+            else
+            {
+                var newId = await MomRepo.InsertTypeAsync(_form, actor);
+                await AuditSvc.LogAsync(AuditEntityNames.MomType, newId, AuditEntityNames.ActionCreate, actor,
+                    null, _form);
+                Snackbar.Add("MoM type created.", Severity.Success);
+                Nav.NavigateTo($"reports/mom-developer/edit/{newId}");
+                return;
+            }
+            Nav.NavigateTo("reports/mom-developer");
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "MomDeveloperForm: save failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    private async Task AddMeetingTypeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newMeetingType.Code) || string.IsNullOrWhiteSpace(_newMeetingType.Name))
+        { Snackbar.Add("Meeting type code and name are required.", Severity.Warning); return; }
+
+        // Blank "CO Scope Code" means "not part of any CO scope split" — store as null, not "".
+        _newMeetingType.CoScopeCode = string.IsNullOrWhiteSpace(_newMeetingType.CoScopeCode) ? null : _newMeetingType.CoScopeCode.Trim();
+        await MomRepo.UpsertMeetingTypeAsync(Id!.Value, _newMeetingType);
+        _newMeetingType = new MomMeetingType { AppliesAtRo = true, AppliesAtZo = true, AppliesAtCo = true };
+        await ReloadSubEditorsAsync();
+    }
+
+    private void EditMeetingType(MomMeetingType m) => _newMeetingType = new MomMeetingType
+        {
+            Id = m.Id,
+            Code = m.Code,
+            Name = m.Name,
+            AppliesAtRo = m.AppliesAtRo,
+            AppliesAtZo = m.AppliesAtZo,
+            AppliesAtCo = m.AppliesAtCo,
+            FrequencyPerQuarter = m.FrequencyPerQuarter,
+            SortOrder = m.SortOrder,
+            IsActive = m.IsActive,
+            CoScopeCode = m.CoScopeCode,
+            CoScopeHidesRoLevel = m.CoScopeHidesRoLevel
+        };
+
+    private async Task AddUnionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newUnion.Category) || string.IsNullOrWhiteSpace(_newUnion.UnionName))
+        { Snackbar.Add("Union category and name are required.", Severity.Warning); return; }
+
+        await MomRepo.UpsertUnionAsync(Id!.Value, _newUnion);
+        _newUnion = new MomUnion();
+        await ReloadSubEditorsAsync();
+    }
+
+    private void EditUnion(MomUnion u) => _newUnion = new MomUnion
+        {
+            Id = u.Id,
+            Category = u.Category,
+            UnionName = u.UnionName,
+            Affiliation = u.Affiliation,
+            SortOrder = u.SortOrder,
+            IsActive = u.IsActive
+        };
+}

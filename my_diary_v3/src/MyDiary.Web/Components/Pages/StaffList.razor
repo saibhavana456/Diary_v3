@@ -1,0 +1,36 @@
+﻿@page "/staff-list"
+@inject MyDiary.Web.Services.IEncryptionService EncryptionService
+@inject NavigationManager Nav
+
+<MudText Typo="Typo.h4">Staff Directory</MudText>
+
+<MudTable Items="_staffMembers" Hover="true">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Action</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Name</MudTd>
+        <MudTd>
+            @{
+                string encryptedId = EncryptionService.Encrypt(context.Id.ToString());
+            }
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility"
+                           Color="MudBlazor.Color.Primary"
+                           Title="View Details"
+                           AriaLabel="@($"View details for {context.Name}")"
+                           Href="@($"staff-details/{encryptedId}")" />
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@code {
+    // Simple helper class for this demo
+    class Staff { public int Id { get; set; } public string Name { get; set; } }
+
+    List<Staff> _staffMembers = new()
+    {
+        new Staff { Id = 101, Name = "Alice Johnson" },
+        new Staff { Id = 102, Name = "Bob Smith" }
+    };
+}

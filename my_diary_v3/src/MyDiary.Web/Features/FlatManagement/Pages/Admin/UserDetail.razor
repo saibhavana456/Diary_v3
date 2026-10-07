@@ -1,0 +1,304 @@
+@page "/flatmgmt/admin/user-detail"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminUserDetailService UserDetailService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Add Admin User - Flat Management System</PageTitle>
+
+<div class="adu-page">
+    <a href="flatmgmt/admin/users" class="adu-back">&laquo; Back to Admin Management</a>
+
+    <PageHeader Title="Add Admin User" Crumbs="_crumbs" PageKey="flatmgmt-admin-user-detail" />
+
+    <MudCard Class="adu-card mt-4" Elevation="2">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="pfNo" Label="PF No. (EMP_ID)*" Variant="Variant.Outlined"
+                                  MaxLength="10" Required="true" @bind-Value:after="HandlePfChanged" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="name" Label="Name" Variant="Variant.Outlined" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="designation" Label="Designation" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="department" Label="Department" Variant="Variant.Outlined" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="email" Label="Email" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="phone" Label="Phone" Variant="Variant.Outlined" MaxLength="10" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField Value="@roZoRoDisplay" Label="RO (Region) Code / Name" Variant="Variant.Outlined" ReadOnly="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField Value="@zoDisplay" Label="ZO (Division) Code / Name" Variant="Variant.Outlined" ReadOnly="true" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.body2" Class="adu-field-label">Admin For*</MudText>
+                    <MudRadioGroup T="string" Value="@scope" ValueChanged="HandleScopeChanged">
+                        <MudRadio T="string" Value="@("RO")" Color="Color.Primary">RO</MudRadio>
+                        <MudRadio T="string" Value="@("ZO")" Color="Color.Primary">ZO</MudRadio>
+                        <MudRadio T="string" Value="@("CO")" Color="Color.Primary">CO</MudRadio>
+                    </MudRadioGroup>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" @bind-Value="status" Label="Status*" Variant="Variant.Outlined" Required="true">
+                        <MudSelectItem Value="@("Active")">Active</MudSelectItem>
+                        <MudSelectItem Value="@("Inactive")">Inactive</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="scopeCode" Label="Selected Scope Code" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="scopeName" Label="Selected Scope Name" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+
+            <div class="adu-actions">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isSaving" OnClick="HandleSave">
+                    @(isSaving ? "Saving..." : "Save Admin")
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Class="ml-2" Disabled="@isSaving" OnClick="HandleReset">
+                    Reset
+                </MudButton>
+            </div>
+        </MudCardContent>
+    </MudCard>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="adu-modal-overlay" @onclick="() => message = null">
+            <div class="adu-modal @(isError ? "adu-modal-error" : "adu-modal-success")" @onclick:stopPropagation="true">
+                <div class="adu-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="adu-modal-text">@message</p>
+                <button type="button" class="adu-btn @(isError ? "adu-btn-secondary" : "adu-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Add Admin User") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery(Name = "emp")]
+    public string? Emp { get; set; }
+
+    [SupplyParameterFromQuery(Name = "type")]
+    public string? Type { get; set; }
+
+    private string adminPfNo = "";
+
+    private string pfNo = "";
+    private string name = "";
+    private string designation = "";
+    private string department = "";
+    private string phone = "";
+    private string email = "";
+    private string roCode = "";
+    private string roName = "";
+    private string zoCode = "";
+    private string zoName = "";
+    private string scope = "";
+    private string scopeCode = "";
+    private string scopeName = "";
+    private string status = "Active";
+
+    private bool isSaving;
+    private string? message;
+    private bool isError;
+
+    private string roZoRoDisplay => $"{roCode} / {roName}";
+    private string zoDisplay => $"{zoCode} / {zoName}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        if (string.Equals(Type, "admin", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(Emp))
+        {
+            var admin = await UserDetailService.GetAdminByEmpIdAsync(Emp.Trim());
+            if (admin is not null)
+            {
+                ApplyFormData(admin, isExistingAdmin: true);
+            }
+            else
+            {
+                pfNo = Emp.Trim();
+                await LoadStaffAsync();
+            }
+        }
+    }
+
+    private void ApplyFormData(AdminUserFormData data, bool isExistingAdmin)
+    {
+        pfNo = data.PfNo;
+        name = data.Name ?? "";
+        designation = data.Designation ?? "";
+        department = data.Department ?? "";
+        phone = data.Phone ?? "";
+        email = data.Email ?? "";
+        roCode = data.RoCode ?? "";
+        roName = data.RoName ?? "";
+        zoCode = data.ZoCode ?? "";
+        zoName = data.ZoName ?? "";
+
+        if (isExistingAdmin)
+        {
+            scope = data.ScopeType ?? "";
+            scopeCode = data.ScopeCode ?? "";
+            scopeName = data.ScopeName ?? "";
+        }
+    }
+
+    // Ports txtPF_TextChanged: clears the previously-fetched fields, looks the PF up in
+    // ORGANISATION.STAFF_DETAILS, and recomputes the scope code/name from whichever RO/ZO/CO radio
+    // is currently selected -- regardless of whether the lookup succeeded, matching legacy.
+    private async Task HandlePfChanged()
+    {
+        ClearFetched();
+
+        if (!string.IsNullOrWhiteSpace(pfNo))
+        {
+            await LoadStaffAsync();
+        }
+
+        UpdateScopeFields();
+    }
+
+    private async Task LoadStaffAsync()
+    {
+        var staff = await UserDetailService.GetStaffByPfAsync(pfNo);
+        if (staff is not null)
+        {
+            ApplyFormData(staff, isExistingAdmin: false);
+        }
+        else
+        {
+            ShowError("PF not found in StaffDetails.");
+        }
+    }
+
+    private void ClearFetched()
+    {
+        name = "";
+        designation = "";
+        department = "";
+        phone = "";
+        email = "";
+        roCode = "";
+        roName = "";
+        zoCode = "";
+        zoName = "";
+        scopeCode = "";
+        scopeName = "";
+    }
+
+    private void HandleScopeChanged(string value)
+    {
+        scope = value;
+        UpdateScopeFields();
+    }
+
+    private void UpdateScopeFields()
+    {
+        if (scope == "RO")
+        {
+            scopeCode = roCode;
+            scopeName = roName;
+        }
+        else if (scope == "ZO")
+        {
+            scopeCode = zoCode;
+            scopeName = zoName;
+        }
+        else
+        {
+            scopeCode = "";
+            scopeName = "";
+        }
+    }
+
+    private async Task HandleSave()
+    {
+        message = null;
+
+        if (string.IsNullOrWhiteSpace(pfNo))
+        {
+            ShowError("Enter PF No.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(scope))
+        {
+            ShowError("Select Admin For (RO/ZO).");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(scopeCode))
+        {
+            ShowError("Selected scope code is empty. Please verify PF and scope.");
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            var request = new AdminUserSaveRequest(
+                EmpId: pfNo.Trim(),
+                Name: string.IsNullOrWhiteSpace(name) ? null : name,
+                Status: status,
+                EnteredBy: adminPfNo,
+                Scope: scope,
+                ScopeCode: scopeCode.Trim(),
+                ScopeName: string.IsNullOrWhiteSpace(scopeName) ? null : scopeName,
+                Phone: string.IsNullOrWhiteSpace(phone) ? null : phone,
+                Email: string.IsNullOrWhiteSpace(email) ? null : email,
+                Designation: string.IsNullOrWhiteSpace(designation) ? null : designation);
+
+            var result = await UserDetailService.SaveAdminAsync(request);
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Error while saving admin user.");
+                return;
+            }
+
+            ShowSuccess("Admin user saved successfully.");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void HandleReset()
+    {
+        pfNo = "";
+        ClearFetched();
+        scope = "";
+        status = "Active";
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

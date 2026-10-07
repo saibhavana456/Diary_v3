@@ -1,0 +1,307 @@
+@page "/reports/unionDigiDocxLeads"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    
+    private string _userPrivilege = "CO";             // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+    private bool _isSummary = true;
+
+    // ----- Column configurations -----
+
+    // Summary grid (Zone/Region/Branch + KPIs)
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new ColumnConfig { Header = "Zone",  PropertyName = "zone_name_eng",                      Width = "24%" },
+        new ColumnConfig { Header = "Region",PropertyName = "region_name",                        Width = "24%" },
+        new ColumnConfig { Header = "Branch",PropertyName = "branch_name",                        Width = "24%" },
+        new ColumnConfig { Header = "No of Applications Processed", PropertyName = "TotalNoOfApplicationsProcessed", IsNumeric = true, Format = "N0", Width = "14%" },
+        new ColumnConfig { Header = "Sanctioned Amount", PropertyName = "AmountSanctioned",       IsNumeric = true, Format = "N2", Width = "14%" }
+    };
+
+    // Detailed list (Branchwise items)
+    private readonly List<ColumnConfig> _detailCols = new()
+    {
+        new ColumnConfig { Header = "Zone Name",             PropertyName = "zone_name_eng", Width = "14%" },
+        new ColumnConfig { Header = "Region Name",           PropertyName = "region_name",   Width = "14%" },
+        new ColumnConfig { Header = "Sol ID",                PropertyName = "SolId",         Width = "8%"  },
+        new ColumnConfig { Header = "Originated Branch Name",PropertyName = "Branch_Name",   Width = "18%" },
+        new ColumnConfig { Header = "Customer Name",         PropertyName = "Inward_CustName", Width = "18%" },
+        new ColumnConfig { Header = "Account No",            PropertyName = "CBS_AccountNo", Width = "12%" },
+        new ColumnConfig { Header = "Scheme",                PropertyName = "SCHEME_CODE",   Width = "8%"  },
+        new ColumnConfig { Header = "Total Amount",          PropertyName = "AmountInLacs",  IsNumeric = true, Format = "N2", Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Leads for Union Digi Docx (Tentative)";
+        /*
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+            _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+            _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+            _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+
+            // If you still use special_privilege "DDE" to control UI visibility,
+            // your DynamicDashboard can accept flags to hide selects.
+            // The query logic below already respects privilege scoping.
+        }
+        */
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var (columns, where, groupBy, orderBy, isSummary) = BuildQuery();
+        _isSummary = isSummary;
+
+        string finalQuery = $"SELECT {columns} " +
+                            "FROM LasApplicationData A " +
+                            "JOIN Branch_Master B ON A.INWARD_ORGINATEBRANCH = B.Branch_Code " +
+                            $"WHERE {where} {groupBy} {orderBy}";
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("LASApplicationData");
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+        string date = dateTask.Result;
+
+        // Choose columns & footer label
+        _activeConfig.Columns = _isSummary ? _summaryCols : _detailCols;
+        _asOnDateLabel = _data.Count > 0
+            ? $"Data As On - {date} (Rs. in Lacs**)"
+            : " ";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Mirrors legacy DDE_Leads branching & filters (last 30 days window, PL/VL schemes).
+    /// Returns (columns, where, groupBy, orderBy, isSummary)
+    /// </summary>
+    private (string columns, string where, string groupBy, string orderBy, bool isSummary) BuildQuery()
+    {
+        // 30-day window (yyyy-MM-dd)
+        var fromDate = AppTime.Now.AddDays(-30).ToString("yyyy-MM-dd");
+
+        
+        //  App_LoanType='P'
+        //  app_status='PA'
+        //  App_fromfinacle='' (blank)
+        //  APP_CREATEDATE >= fromDate
+        //  (SCHEME_CODE like 'PL%' or 'VL%')
+        var baseWhere =
+            "App_LoanType = 'P' " +
+            "and app_status = 'PA' " +
+            "and App_fromfinacle = '' " +
+            $"and APP_CREATEDATE >= '{fromDate}' " +
+            "and (SCHEME_CODE like 'PL%' or SCHEME_CODE like 'VL%')";
+
+        // Metrics expression (summary)
+        var metricsCols =
+            "Count(*) As TotalNoOfApplicationsProcessed, " +
+            "Sum(Case When App_ValuesIn = 'A' Then (LOAN_RECMDAMT)/100000 " +
+            "         When App_ValuesIn = 'C' Then (LOAN_RECMDAMT)*100 " +
+            "         When App_ValuesIn = 'L' Then (LOAN_RECMDAMT) " +
+            "         Else 0 End) As AmountSanctioned";
+
+        // Detail columns (branchwise)
+        var detailCols =
+            "Inward_CustName, CBS_AccountNo, SCHEME_CODE, " +
+            "(Case App_ValuesIn When 'A' Then (LOAN_RECMDAMT)/100000 When 'C' Then (LOAN_RECMDAMT)*100 Else (LOAN_RECMDAMT) End) As AmountInLacs, " +
+            "B.Branch_Name, B.region_name, B.zone_name_eng, B.Sol_ID As SolId";
+
+        string columns = "";
+        string where = baseWhere;
+        string groupBy = "";
+        string orderBy = "";
+        bool isSummary = true;
+
+        // ----- Privilege scoping -----
+        switch (_userPrivilege)
+        {
+            case "CO":
+                break;
+            case "ZONE":
+                where += $" and B.zone_solid = '{_userZoneSolid}'";
+                break;
+            case "REGION":
+                where += $" and B.Region_SolId = '{_userRegionSolid}'";
+                break;
+            case "BRANCH":
+                where += $" and B.sol_id = '{_userBranchSolid}'";
+                isSummary = false;
+                break;
+        }
+
+        // ----- Selection logic (Zone/Region/Branch) -----
+        if (_userPrivilege == "BRANCH")
+        {
+            // Always detailed for branch users
+            columns = detailCols;
+            orderBy = " Order By B.Zone_Name_Eng, B.Region_Name, B.Branch_Name, B.Sol_ID";
+            return (columns, where, groupBy, orderBy, isSummary);
+        }
+
+        if (_selectedZone == "1")
+        {
+            // All(Summary): grand total
+            columns = $"{metricsCols}, 'All' As branch_name, 'All' As region_name, 'All' As zone_name_eng, 'All' As SolId";
+            isSummary = true;
+        }
+        else if (_selectedZone == "all")
+        {
+            if (_selectedRegion == "1")
+            {
+                // Zonewise summary
+                columns = $"{metricsCols}, 'All' As branch_name, 'All' As region_name, B.zone_name_eng, B.Zone_SolId As SolId";
+                groupBy = " Group By B.Zone_SolId, B.zone_name_eng";
+                isSummary = true;
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1")
+                {
+                    // Regionwise summary across all zones
+                    columns = $"{metricsCols}, 'All' As branch_name, B.region_name, B.zone_name_eng, B.Region_SolID As SolId";
+                    groupBy = " Group By B.region_name, B.region_SolId, B.zone_name_eng";
+                    isSummary = true;
+                }
+                else
+                {
+                    // Detailed across all branches
+                    columns = detailCols;
+                    orderBy = " Order By B.Zone_Name_Eng, B.Region_Name, B.Branch_Name, B.Sol_ID";
+                    isSummary = false;
+                }
+            }
+            else
+            {
+                // Specific region selected
+                where += $" and B.Region_SolId = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = $"{metricsCols}, 'All' As branch_name, B.region_name, B.zone_name_eng, B.Region_SolID As SolId";
+                    groupBy = " Group By B.region_name, B.region_SolId, B.zone_name_eng";
+                    isSummary = true;
+                }
+                else
+                {
+                    if (_selectedBranch != "all") where += $" and B.sol_id = '{_selectedBranch}'";
+                    columns = detailCols;
+                    orderBy = " Order By B.Zone_Name_Eng, B.Region_Name, B.Branch_Name, B.Sol_ID";
+                    isSummary = false;
+                }
+            }
+        }
+        else
+        {
+            // Specific Zone selected
+            where += $" and B.zone_solid = '{_selectedZone}'";
+
+            if (_selectedRegion == "1")
+            {
+                columns = $"{metricsCols}, 'All' As branch_name, 'All' As region_name, B.zone_name_eng, B.Zone_SolId As SolId";
+                groupBy = " Group By B.Zone_SolId, B.zone_name_eng";
+                isSummary = true;
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1")
+                {
+                    columns = $"{metricsCols}, 'All' As branch_name, B.region_name, B.zone_name_eng, B.Region_SolID As SolId";
+                    groupBy = " Group By B.region_name, B.region_SolId, B.zone_name_eng";
+                    isSummary = true;
+                }
+                else
+                {
+                    columns = detailCols;
+                    orderBy = " Order By B.Zone_Name_Eng, B.Region_Name, B.Branch_Name, B.Sol_ID";
+                    isSummary = false;
+                }
+            }
+            else
+            {
+                where += $" and B.Region_SolId = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = $"{metricsCols}, 'All' As branch_name, B.region_name, B.zone_name_eng, B.Region_SolID As SolId";
+                    groupBy = " Group By B.region_name, B.region_SolId, B.zone_name_eng";
+                    isSummary = true;
+                }
+                else
+                {
+                    if (_selectedBranch != "all") where += $" and B.sol_id = '{_selectedBranch}'";
+                    columns = detailCols;
+                    orderBy = " Order By B.Zone_Name_Eng, B.Region_Name, B.Branch_Name, B.Sol_ID";
+                    isSummary = false;
+                }
+            }
+        }
+
+        return (columns, where, groupBy, orderBy, isSummary);
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "UnionDigiDocx_Leads");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "UnionDigiDocx_Leads.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

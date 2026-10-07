@@ -1,0 +1,209 @@
+@using Microsoft.JSInterop
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.Shared.Services
+@inject IQuickLinksService QuickLinksService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+
+@* Reusable Quick Links grid panel — used in both LandingLayout and MainLayout *@
+
+<MudPaper Style="width:320px; border-radius:12px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.15);">
+
+    <!-- Header -->
+    <div style="background:linear-gradient(90deg,#1976d2,#1e88e5); padding:14px 20px;">
+        <h2 style="color:white; font-weight:700; font-size:1rem; margin:0; line-height:1.5;">Quick Links</h2>
+    </div>
+
+    <!-- Content -->
+    @if (_isLoading)
+    {
+        <div class="d-flex justify-center pa-4">
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="Color.Primary" />
+        </div>
+    }
+    else
+    {
+        <div class="ql-grid">
+            @foreach (var ql in _links)
+            {
+                @* Use a plain <button> — MudPaper/Clickable inside MudMenu swallows click events *@
+                <MudButton Variant="Variant.Text"
+                           DisableElevation="true"
+                           OnClick="() => OpenLink(ql)"
+                           DisableRipple="true"
+                           Class="ql-tile"
+                           StopPropagation="true">
+
+                    <MudIcon Icon="@ResolveIcon(ql.IconName)"
+                             Color="@ResolveColor(ql.IconColor)"
+                             Style="font-size:26px;" />
+                    <MudText Class="ql-label">@ql.Label</MudText>
+                </MudButton>
+            }
+        </div>
+    }
+
+    <MudDivider />
+
+    <!-- Footer -->
+
+    <MudButton Variant="Variant.Text"
+               FullWidth="true"
+               Color="Color.Primary"
+               DisableElevation="true"
+               DisableRipple="true"
+               StopPropagation="true"
+               Class="ql-footer-btn"
+               OnClick="GoToAllApps">
+
+        All Applications →
+    </MudButton>
+
+
+</MudPaper>
+
+<style>
+    .ql-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        padding: 12px;
+    }
+
+    .ql-tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        width: 100%;
+        min-height: 76px;
+        padding: 8px 4px;
+        border-radius: 12px;
+        border: 1px solid rgba(0,0,0,.06);
+        background: #fafbfc;
+        cursor: pointer;
+        transition: box-shadow .15s, transform .15s, background .15s;
+        /* Critical: ensure pointer events reach this element */
+        pointer-events: auto;
+    }
+
+        .ql-tile:hover {
+            box-shadow: 0 6px 16px rgba(0,0,0,.12);
+            transform: translateY(-1px);
+            background: #ffffff;
+        }
+
+        .ql-tile:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+    .ql-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-align: center;
+        color: #334155;
+        line-height: 1.2;
+        word-break: break-word;
+        max-width: 72px;
+    }
+
+    .ql-footer-btn {
+        display: block;
+        width: 100%;
+        padding: 10px;
+        text-align: center;
+        color: #1E3A8A;
+        font-weight: 600;
+        font-size: 0.9rem;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: background .15s;
+        pointer-events: auto;
+    }
+
+        .ql-footer-btn:hover {
+            background: #f1f5f9;
+        }
+</style>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<QuickLinkItem> _links = new();
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _links = await QuickLinksService.GetQuickLinksAsync();
+        _isLoading = false;
+    }
+
+
+    private async Task OpenLink(QuickLinkItem ql)
+    {
+        var url = ql.Url?.Trim();
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        if (url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            // Open the external link FIRST — closing the popover before this
+            // can cancel the JS interop call and prevent the tab from opening.
+            await JS.InvokeVoidAsync("window.open", url, "_blank", "noopener,noreferrer");
+            await OnClose.InvokeAsync();
+        }
+        else
+        {
+            await OnClose.InvokeAsync();
+            Nav.NavigateTo(url);
+        }
+    }
+
+    private async Task GoToAllApps()
+    {
+        await OnClose.InvokeAsync();
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
+        Nav.NavigateTo(isAuthenticated ? "app-portal1" : "applications");
+    }
+
+    // Map icon name string → MudBlazor icon path
+    private static string ResolveIcon(string name) => name switch
+    {
+        "AccountBalance"       => Icons.Material.Filled.AccountBalance,
+        "AccountBalanceWallet" => Icons.Material.Filled.AccountBalanceWallet,
+        "Groups"               => Icons.Material.Filled.Groups,
+        "Public"               => Icons.Material.Filled.Public,
+        "SupportAgent"         => Icons.Material.Filled.SupportAgent,
+        "Description"          => Icons.Material.Filled.Description,
+        "AppSettingsAlt"       => Icons.Material.Filled.AppSettingsAlt,
+        "TableChart"           => Icons.Material.Filled.TableChart,
+        "Analytics"            => Icons.Material.Filled.Analytics,
+        "Dashboard"            => Icons.Material.Filled.Dashboard,
+        "Speed"                => Icons.Material.Filled.Speed,
+        "Business"             => Icons.Material.Filled.Business,
+        "VerifiedUser"         => Icons.Material.Filled.VerifiedUser,
+        "Gavel"                => Icons.Material.Filled.Gavel,
+        "Assessment"           => Icons.Material.Filled.Assessment,
+        "Badge"                => Icons.Material.Filled.Badge,
+        "Security"             => Icons.Material.Filled.Security,
+        "FolderOpen"           => Icons.Material.Filled.FolderOpen,
+        _                      => Icons.Material.Filled.Link
+    };
+
+    // Map color string → MudBlazor Color enum
+    private static Color ResolveColor(string color) => color switch
+    {
+        "Error"     => Color.Error,
+        "Warning"   => Color.Warning,
+        "Success"   => Color.Success,
+        "Secondary" => Color.Secondary,
+        "Info"      => Color.Info,
+        "Dark"      => Color.Dark,
+        _           => Color.Primary
+    };
+}

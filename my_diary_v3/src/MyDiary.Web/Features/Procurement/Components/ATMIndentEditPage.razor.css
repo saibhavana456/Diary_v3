@@ -1,0 +1,229 @@
+﻿
+/* Hide from UI */
+#po-print-zone {
+    display: none;
+}
+
+.label-muted {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #6c757d;
+    margin-bottom: 2px;
+    letter-spacing: 0.02rem;
+}
+
+.data-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #212529;
+    word-break: break-word; /* Prevents long location names from breaking layout */
+}
+
+.custom-erp-table thead th {
+    white-space: nowrap !important;
+    vertical-align: middle;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+/* 2. Smaller font for headers to save space */
+.x-small-header {
+    font-size: 0.75rem;
+    letter-spacing: 0.03rem;
+}
+
+/* 3. Slimmer action buttons */
+.btn-xs {
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* 4. Soft colors for read-only sections */
+.bg-success-subtle {
+    background-color: #eefaf2 !important;
+}
+
+.border-success-subtle {
+    border-color: #a3cfbb !important;
+}
+
+.border-primary-subtle {
+    border-color: #9ec5fe !important;
+}
+
+/* 5. Ensure inputs don't look bulky */
+.form-control-sm {
+    padding: 0.2rem 0.4rem;
+}
+
+
+.attachment-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-radius: 6px;
+    min-height: 38px;
+    border: 1px solid transparent;
+}
+
+/* Make textareas and selects feel like part of the same set */
+.form-select, .form-control {
+    transition: all 0.2s ease;
+}
+
+    .form-select:focus, .form-control:focus {
+        background-color: #fff !important;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1);
+        border: 1px solid #86b7fe !important;
+    }
+
+.execution-timeline {
+    position: relative;
+}
+
+.step-item {
+    position: relative;
+    border-left: 2px solid #dee2e6;
+}
+
+    .step-item.last {
+        border-left-color: transparent;
+    }
+
+.step-icon {
+    position: absolute;
+    left: -16px;
+    top: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.85rem;
+    z-index: 10;
+    box-shadow: 0 0 0 5px white;
+}
+
+/* Professional Label Style */
+.label-muted {
+    display: block;
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #8a929a;
+    margin-bottom: 4px;
+    letter-spacing: 0.04rem;
+}
+
+/* Modern Input Styling */
+.form-control-sm, .input-group-text {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.6rem;
+}
+
+.border-dashed {
+    border: 2px dashed #cbd5e0 !important;
+    background-color: #f8fafc;
+}
+
+.bg-light-subtle {
+    background-color: #fbfcfd !important;
+}
+
+.x-small {
+    font-size: 0.7rem;
+}
+
+.info-label {
+    display: block;
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #8a929a;
+    margin-bottom: 2px;
+    letter-spacing: 0.03rem;
+}
+
+.info-value {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #2d3748;
+}
+
+.bg-light-subtle {
+    background-color: #f8fafc !important;
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.4s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+@media print {
+    /* Removes browser headers (URLs/Dates) */
+    @page {
+        size: auto;
+        margin: 15mm; /* Professional margin */
+    }
+
+    body * {
+        visibility: hidden;
+    }
+
+    #po-print-zone, #po-print-zone * {
+        visibility: visible;
+    }
+
+    #po-print-zone {
+        display: block !important;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        font-family: 'Times New Roman', Times, serif; /* Formal document font */
+        background-color: white;
+        color: black;
+    }
+
+    .po-header {
+        border-bottom: 2px solid #003366;
+        margin-bottom: 20px;
+    }
+
+    .po-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 25px 0;
+    }
+
+        .po-table th {
+            background-color: #f2f2f2 !important; /* Light grey for headers */
+            -webkit-print-color-adjust: exact;
+        }
+
+        .po-table th, .po-table td {
+            border: 1px solid black;
+            padding: 10px;
+            text-align: left;
+            font-size: 13px;
+        }
+}
+
+

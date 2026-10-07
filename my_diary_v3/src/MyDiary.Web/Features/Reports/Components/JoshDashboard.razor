@@ -1,0 +1,257 @@
+﻿@page "/reports/josh-dashboard"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>JOSH 2.0 Dashboard — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    // ---- Optional: page title and date passed from URL (?date=yyyy-MM-dd) ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+    [SupplyParameterFromQuery(Name = "date")][Parameter] public string? ReportDateParam { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    private ReportConfig _activeConfig = new();
+
+    // ---- User context (map from claims when available) ----
+    private string _userPrivilege = "CO"; // CO | ZONE | REGION
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ---- Internal state: the selected report date (yyyy-MM-dd) ----
+    private DateTime _selectedDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Josh Dashboard";
+
+        // If/when you wire claims:
+        // var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = auth.User;
+        // if (user.Identity?.IsAuthenticated == true) {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        // Pick report date: use ?date= if provided, else latest available
+        _selectedDate = await ResolveReportDateAsync(ReportDateParam);
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch; // Josh doesn�t filter by branch; safe to ignore
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Build SQL using WebForms logic/semantics (CO/ZONE/REGION; All/Allwise/Specific)
+        string sql = BuildFinalQuery();
+
+        _data = await ReportService.ExecuteRawQueryAsync(sql);
+
+        // Auto-generate columns from the data (so you don't need to hard-code 60+ fields)
+        _activeConfig.Columns = BuildAutoColumns(_data);
+
+        _asOnDateLabel = $"Data As On - {_selectedDate:dd-MM-yyyy}";
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "Josh_Dashboard");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "Josh_Dashboard.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Query builder � parity with josh_dashboard.aspx.cs (DisplayData + ddls behavior)
+    // -------------------------------------------------------------------------------------
+    private string BuildFinalQuery()
+    {
+        // Base date filter � WebForms bound from ddldate; here we use the resolved _selectedDate
+        string where = $"CONVERT(date, report_date) = '{_selectedDate:yyyy-MM-dd}'";
+        string orderBy = " ORDER BY zone_name"; // Adjust if you prefer a different default
+        string select = "SELECT josh.* FROM josh2_dashboard_data AS josh";
+        string join = ""; // join to Branch_Master only in certain Region-wise paths
+        string extra = ""; // e.g., " AND josh.zone_name LIKE 'zonal%'" etc.
+
+        // Normalize dropdown semantics from dashboard filters:
+        // Zone: "1"=All(Summary), "all"=All(Zonewise), else zone_solid
+        // Region: "1"=All(Summary), "all"=All(Regionwise), else region_solid
+        string zone = (_selectedZone ?? "1").ToLowerInvariant();
+        string reg = (_selectedRegion ?? "1").ToLowerInvariant();
+
+        // ===== CO privilege � mirrors WebForms if/else in DisplayData() =====
+        if (_userPrivilege == "CO")
+        {
+            if (zone == "1") // All(Summary) -> Zonal totals
+            {
+                extra = " AND josh.zone_name LIKE 'zonal%'";
+                // gv_zone in WebForms showed these rows
+                // (note: a commented aggregate query existed, but final code used the raw rows) [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+            }
+            else if (zone == "all") // All(Zonewise)
+            {
+                if (reg == "1") // zone-wise �zonal%� rows
+                {
+                    extra = " AND josh.zone_name LIKE 'zonal%'";
+                }
+                else if (reg == "all") // region-wise
+                {
+                    // WebForms: left join Branch_Master, keep non-zonal rows where bm.SOL_ID = bm.region_solid
+                    join = " LEFT JOIN Branch_Master AS bm ON josh.zone_solid = bm.SOL_ID";
+                    extra = " AND josh.zone_name NOT LIKE 'zonal%' AND bm.SOL_ID = bm.region_solid";
+                    // gv_region showed region rows here [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+                }
+                else // specific region selected
+                {
+                    extra = $" AND josh.zone_solid = '{_selectedRegion}'";
+                    // gv_region in WebForms used this path too [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+                }
+            }
+            else // specific zone selected
+            {
+                if (reg == "1")
+                {
+                    extra = $" AND josh.zone_solid = '{_selectedZone}'";
+                    // zone summary of that ZO [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+                }
+                else if (reg == "all")
+                {
+                    // Region-wise within selected zone
+                    join = " LEFT JOIN Branch_Master AS bm ON josh.zone_solid = bm.SOL_ID";
+                    extra = $" AND josh.zone_name NOT LIKE 'zonal%' AND bm.zone_solid = '{_selectedZone}' AND bm.SOL_ID = bm.region_solid";
+                    // gv_region in WebForms for selected ZO + all regions [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+                }
+                else
+                {
+                    // Particular region selected under the zone
+                    extra = $" AND josh.zone_solid = '{_selectedRegion}'";
+                    // WebForms: zone_solid column reused for region_solid values in this path as well [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+                }
+            }
+        }
+        // ===== ZONE privilege � locked to userZoneSolid =====
+        else if (_userPrivilege == "ZONE")
+        {
+            if (reg == "1")
+            {
+                extra = $" AND josh.zone_solid = '{_userZoneSolid}'";
+            }
+            else if (reg == "all")
+            {
+                join = " LEFT JOIN Branch_Master AS bm ON josh.zone_solid = bm.SOL_ID";
+                extra = $" AND josh.zone_name NOT LIKE 'zonal%' AND bm.zone_solid = '{_userZoneSolid}' AND bm.SOL_ID = bm.region_solid";
+            }
+            else
+            {
+                extra = $" AND josh.zone_solid = '{_selectedRegion}'";
+            }
+            // Matches WebForms ZONE section (DisplayData) [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+        }
+        // ===== REGION privilege � locked to userRegionSolid =====
+        else if (_userPrivilege == "REGION")
+        {
+            extra = $" AND josh.zone_solid = '{_userRegionSolid}'";
+            // WebForms REGION path [1](https://unionbanks-my.sharepoint.com/personal/631192_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/josh_dashboard.aspx.cs)
+        }
+
+        return $"{select}{join} WHERE {where}{extra}{orderBy}";
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------------------
+    private async Task<DateTime> ResolveReportDateAsync(string? dateParam)
+    {
+        if (!string.IsNullOrWhiteSpace(dateParam) && DateTime.TryParse(dateParam, out var parsed))
+            return parsed.Date;
+
+        // Fallback to latest date present in the table (WebForms used a dropdown bound to distinct report_date)
+        var rows = await ReportService.ExecuteRawQueryAsync(
+            "SELECT CONVERT(date, MAX(report_date)) AS MaxDate FROM josh2_dashboard_data");
+        if (rows.Count > 0 && rows[0].TryGetValue("MaxDate", out var v) && DateTime.TryParse(v?.ToString(), out var d))
+            return d.Date;
+
+        return AppTime.Today;
+    }
+
+    private static List<ColumnConfig> BuildAutoColumns(List<Dictionary<string, object>> data)
+    {
+        var cols = new List<ColumnConfig>();
+        if (data.Count == 0) return cols;
+
+        // Respect the first row�s keys order; try reasonable numeric/date hints
+        foreach (var kvp in data[0])
+        {
+            var name = kvp.Key;
+            var isNumeric = false; var isDate = false;
+
+            if (kvp.Value != null)
+            {
+                var s = kvp.Value.ToString();
+                if (DateTime.TryParse(s, out _)) isDate = true;
+                else if (decimal.TryParse(s, out _)) isNumeric = true;
+            }
+
+            cols.Add(new ColumnConfig
+                {
+                    Header = ToHeader(name),
+                    PropertyName = name,
+                    IsNumeric = isNumeric,
+                    IsDate = isDate
+                });
+        }
+        return cols;
+
+        static string ToHeader(string key)
+        {
+            // Simple prettifier: underscores -> spaces, title case-ish
+            var h = key.Replace("_", " ").Trim();
+            return char.ToUpper(h[0]) + (h.Length > 1 ? h[1..] : "");
+        }
+    }
+}

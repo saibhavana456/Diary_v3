@@ -1,0 +1,235 @@
+@page "/feedback/new"
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Forms
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IFeedbackRepo FeedbackRepo
+@inject IFeedbackFileStore FileStore
+@inject IEmployeeProfileService ProfileService
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+@* ─────────────────────────────────────────────────────────────────────────
+   Feedback submission — same tabbed shape as the Request Portal's
+   "Raise a Request" page (New.razor: Classify → Describe → Review), except
+   Request Type/Vertical/Department/Activity are fixed to Feedback (per the
+   user's explicit instruction), so step 1 only asks for what's actually
+   Feedback-specific: category + auto-filled identity + IP-Phone.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<PageTitle>Submit Feedback</PageTitle>
+<PageHeader PageKey="feedback-new" Title="Submit Feedback" Crumbs="_crumbs" />
+
+<MudPaper Class="pa-6" Elevation="1">
+    @if (_loadingProfile)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <MudTabs Outlined="true" Position="Position.Top" Rounded="true" PanelClass="pa-4" KeepPanelsAlive="true" @bind-ActivePanelIndex="_step">
+            <MudTabPanel Text="1. Your Details">
+                <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-3">
+                    Your details below are auto-filled from your login profile — please correct them if wrong.
+                </MudAlert>
+                <MudGrid>
+                    <MudItem xs="12" sm="6"><MudTextField T="string" Label="Name" @bind-Value="_name" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField T="string" Label="PF Number" @bind-Value="_pfNumber" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField T="string" Label="Zone" @bind-Value="_zone" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField T="string" Label="Region" @bind-Value="_region" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField T="string" Label="Branch" @bind-Value="_branch" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField T="string" Label="Mobile Number" @bind-Value="_mobile" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField T="string" Label="IP-Phone Number" @bind-Value="_ipPhone" Variant="Variant.Outlined" Required="true" HelperText="Your desk IP-Phone number" /></MudItem>
+                    <MudItem xs="12">
+                        <MudSelect T="FeedbackCategory" Label="Feedback Category" @bind-Value="_category" Variant="Variant.Outlined" Required="true">
+                            <MudSelectItem Value="FeedbackCategory.FunctionalDefects">Functional Defects</MudSelectItem>
+                            <MudSelectItem Value="FeedbackCategory.PerformanceIssues">Performance Issues</MudSelectItem>
+                            <MudSelectItem Value="FeedbackCategory.UiUxImprovements">UI/UX Improvements</MudSelectItem>
+                            <MudSelectItem Value="FeedbackCategory.NewFeatureRequests">New Feature Requests</MudSelectItem>
+                            <MudSelectItem Value="FeedbackCategory.DataIssues">Data Issues</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _step = 1)"
+                                   Disabled="@(!Step1Valid)">Next</MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <MudTabPanel Text="2. Describe">
+                <MudGrid>
+                    <MudItem xs="12">
+                        <MudTextField Label="Describe your feedback" @bind-Value="_description" Lines="6" Required="true"
+                                      Placeholder="Describe the issue or suggestion in detail…" />
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.subtitle2" Class="mb-1">Attachment <span style="color:#59636e;font-weight:400">(optional)</span></MudText>
+                        <MudText Typo="Typo.caption" Class="mb-2" Color="Color.Secondary">Accepted: PDF, JPG, PNG · Max size: 2 MB</MudText>
+
+                        <MudFileUpload T="IBrowserFile" FilesChanged="OnFilePicked" Accept=".pdf,.jpg,.jpeg,.png" MaximumFileCount="1">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AttachFile" Size="Size.Small">
+                                    @(_file is null ? "Attach file" : "Replace attachment")
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+
+                        @if (_file is not null)
+                        {
+                            <div class="rp-file-chip mt-2">
+                                <MudIcon Icon="@FileIcon(_file.Name)" Size="Size.Small" Class="mr-1" />
+                                <span class="rp-file-name">@_file.Name</span>
+                                <span class="rp-file-size">@($"{_file.Size / 1024.0:0.#} KB")</span>
+                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="ClearFile" />
+                            </div>
+                        }
+                        @if (_fileError is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_fileError</MudAlert>
+                        }
+                    </MudItem>
+
+                    <MudItem xs="12" Class="d-flex gap-2 flex-wrap">
+                        <MudButton OnClick="@(() => _step = 0)" Variant="Variant.Outlined">Back</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _step = 2)" Disabled="@(!Step2Valid)">Next</MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <MudTabPanel Text="3. Review">
+                <MudList T="string" Dense="true">
+                    <MudListItem Icon="@Icons.Material.Filled.Category">Category: <b>@CategoryLabel(_category)</b></MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Person">Submitted by: <b>@_name (@_pfNumber)</b></MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.LocationOn">@_zone / @_region / @_branch</MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Phone">Mobile: @_mobile &nbsp; IP-Phone: @_ipPhone</MudListItem>
+                    <MudListItem Icon="@Icons.Material.Filled.Subject">Description: <b>@_description</b></MudListItem>
+                </MudList>
+                <MudButton Class="mt-2" OnClick="@(() => _step = 1)">Back</MudButton>
+                <MudButton Class="mt-2 ml-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit" Disabled="@_busy">
+                    @(_busy ? "Submitting…" : "Submit")
+                </MudButton>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</MudPaper>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("MIS", "MIS"), new("My Feedbacks", "my-feedback"), new("Submit Feedback"),
+    };
+
+    private const long MaxFileBytes = 2 * 1024 * 1024;
+    private static readonly string[] AllowedExts = { ".pdf", ".jpg", ".jpeg", ".png" };
+
+    private int _step;
+    private bool _busy;
+    private bool _loadingProfile = true;
+
+    private string? _name, _pfNumber, _zone, _region, _branch, _mobile, _ipPhone, _description;
+    private FeedbackCategory _category = FeedbackCategory.FunctionalDefects;
+
+    private IBrowserFile? _file;
+    private string? _fileError;
+
+    private bool Step1Valid => !string.IsNullOrWhiteSpace(_ipPhone);
+    private bool Step2Valid => !string.IsNullOrWhiteSpace(_description);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loadingProfile = true;
+        var empCode = CurrentUser.EmpCode ?? "";
+        var profile = await ProfileService.GetProfileAsync(empCode);
+        _name = profile.Name;
+        _pfNumber = profile.PfNumber;
+        _zone = profile.Zone;
+        _region = profile.Region;
+        _branch = profile.Branch;
+        _mobile = profile.MobileNumber;
+        _loadingProfile = false;
+    }
+
+    private void OnFilePicked(IBrowserFile file)
+    {
+        _fileError = null;
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+        if (!AllowedExts.Contains(ext)) { _fileError = $"File type '{ext}' is not allowed. Please upload a PDF, JPG, or PNG."; _file = null; return; }
+        if (file.Size > MaxFileBytes) { _fileError = $"File is too large ({file.Size / 1024.0 / 1024.0:0.##} MB). Maximum allowed is 2 MB."; _file = null; return; }
+        _file = file;
+    }
+
+    private void ClearFile() { _file = null; _fileError = null; }
+
+    private static string FileIcon(string name) => Path.GetExtension(name).ToLowerInvariant() switch
+    {
+        ".pdf" => Icons.Material.Filled.PictureAsPdf,
+        ".png" or ".jpg" or ".jpeg" => Icons.Material.Filled.Image,
+        _ => Icons.Material.Filled.AttachFile
+    };
+
+    private async Task Submit()
+    {
+        if (!Step1Valid || !Step2Valid) { Snackbar.Add("Please fill all required fields.", Severity.Warning); return; }
+        if (_fileError is not null) { Snackbar.Add(_fileError, Severity.Warning); return; }
+
+        _busy = true;
+        try
+        {
+            var empCode = CurrentUser.EmpCode ?? "";
+            var ticket = new FeedbackTicket
+            {
+                EmpCode = empCode,
+                EmpName = _name ?? "",
+                PfNumber = _pfNumber,
+                Zone = _zone,
+                Region = _region,
+                Branch = _branch,
+                MobileNumber = _mobile,
+                IpPhoneNumber = _ipPhone,
+                Category = _category,
+                Description = _description ?? "",
+            };
+            var id = await FeedbackRepo.InsertTicketAsync(ticket);
+
+            if (_file is not null)
+            {
+                await using var stream = _file.OpenReadStream(MaxFileBytes);
+                var (relPath, fileName) = await FileStore.SaveAsync(stream, _file.Name);
+                await FeedbackRepo.InsertAttachmentAsync(new FeedbackAttachment
+                {
+                    TicketId = id,
+                    FileName = fileName,
+                    FilePath = relPath,
+                    Mime = _file.ContentType,
+                    UploadedByEmp = empCode,
+                });
+            }
+
+            var saved = await FeedbackRepo.GetTicketAsync(id);
+            Snackbar.Add($"Feedback submitted — ticket {saved?.TicketNo ?? id.ToString()}.", Severity.Success);
+            Nav.NavigateTo("my-feedback");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "FeedbackSubmit: submission failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string CategoryLabel(FeedbackCategory c) => c switch
+    {
+        FeedbackCategory.FunctionalDefects => "Functional Defects",
+        FeedbackCategory.PerformanceIssues => "Performance Issues",
+        FeedbackCategory.UiUxImprovements => "UI/UX Improvements",
+        FeedbackCategory.NewFeatureRequests => "New Feature Requests",
+        FeedbackCategory.DataIssues => "Data Issues",
+        _ => c.ToString()
+    };
+}

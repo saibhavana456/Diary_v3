@@ -1,0 +1,1257 @@
+﻿@page "/reports/DailyApprovedRates"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject IStaticAssetPathResolver Assets
+@inject IOptions<GapReportSettings> ReportConfig
+@using Microsoft.Extensions.Options
+@using MyDiary.Web.Features.Focus360.Components
+@using MyDiary.Web.Features.Focus360.Models
+@using MyDiary.Web.Features.Focus360.Services
+@using MyDiary.Web.Features.Assurance.Services
+@using MyDiary.Web.Features.Assurance.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@using MyDiary.Web.Features.OperationDashboard.Services
+@using MyDiary.Web.Features.Shared.Components
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Web
+@using System.Data
+@using MyDiary.Web.Core.Extensions
+@inject IGapService GapSvc
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Daily Approved Rates Report — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b !important;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#ffffff;">
+
+            <!-- ✅ Filters -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+
+                <MudItem xs="15" sm="2">
+                    <MudSelect T="string" Label="Zone"
+                               Value="SelectedZone"
+                               ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">
+                                @z["zone_name_eng"]
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="15" sm="2">
+                    <MudSelect T="string" Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">
+                                @r["region_name"]
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="15" sm="2">
+                    <MudSelect T="string" Label="Branch"
+                               Value="SelectedBranch"
+                               ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["sol_id"].ToString()">
+                                @b["branch_name"]
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- From Date -->
+
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Month"
+                               Value="SelectedMonth"
+                               ValueChanged="HandleMonthChanged"
+                               Disabled="DisableMonth"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        <MudSelectItem Value="@("1")">January</MudSelectItem>
+                        <MudSelectItem Value="@("2")">February</MudSelectItem>
+                        <MudSelectItem Value="@("3")">March</MudSelectItem>
+                        <MudSelectItem Value="@("4")">April</MudSelectItem>
+                        <MudSelectItem Value="@("5")">May</MudSelectItem>
+                        <MudSelectItem Value="@("6")">June</MudSelectItem>
+                        <MudSelectItem Value="@("7")">July</MudSelectItem>
+                        <MudSelectItem Value="@("8")">August</MudSelectItem>
+                        <MudSelectItem Value="@("9")">September</MudSelectItem>
+                        <MudSelectItem Value="@("10")">October</MudSelectItem>
+                        <MudSelectItem Value="@("11")">November</MudSelectItem>
+                        <MudSelectItem Value="@("12")">December</MudSelectItem>
+
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="15" sm="2">
+                    <MudDatePicker Label="From Date"
+                                   Date="FromDate"
+                                   DateChanged="HandleFromDateChanged"
+                                   Disabled="DisableDate"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true" />
+                </MudItem>
+
+                <MudItem xs="15" sm="2">
+                    <MudDatePicker Label="To Date"
+                                   Date="ToDate"
+                                   DateChanged="HandleToDateChanged"
+                                   Disabled="DisableDate"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true" />
+                </MudItem>
+                <MudItem xs="15" sm="2"> </MudItem>
+                <MudItem xs="15" sm="2"> </MudItem>
+                <MudItem xs="15" sm="2"> </MudItem>
+                <MudItem xs="15" sm="2"> </MudItem>
+
+                <MudItem xs="15" sm="4" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Error"
+                               Style="font-size:11px;margin-left:10px;"
+                               OnClick="ClearFilters">
+                        Clear Filters
+                    </MudButton>
+                    @if (_canAdd)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Style="background-color: green; color:white; font-size:11px; margin-right:10px;"
+                                   OnClick="ShowAdd">
+                            Add New
+                        </MudButton>
+                    }
+
+                    <MudButton Variant="Variant.Filled"
+                               Style="background-color:#000066; color:white; font-size:11px;"
+                               OnClick="OnExportInternal">
+                        Export
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Filled"
+                               Style="background-color:#0078D7; color:white; font-size:11px; margin-left:10px;"
+                               OnClick="OnExportToWord">
+                        Export Word
+                    </MudButton>
+                </MudItem>
+
+            </MudGrid>
+
+            <!-- ✅ ADD FORM -->
+            @if (_showAdd)
+            {
+                <MudPaper Class="pa-4 mx-4 mt-2 mb-2">
+
+                    <MudGrid Spacing="2">
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Name of the Borrower"
+                                          @bind-Value="_borrower"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="SOL ID"
+                                          Value="_solid"
+                                          ValueChanged="@(async (string value) => await OnSolChanged(value))"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Nature Of Limit"
+                                          @bind-Value="_natureOfLimit"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Limit Sanctioned"
+                                          @bind-Value="_limitSanctioned"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Limit O/S"
+                                          @bind-Value="_limitOutstanding"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Branch"
+                                          @bind-Value="_branch"
+                                          ReadOnly
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Region"
+                                          @bind-Value="_region"
+                                          ReadOnly
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Zone"
+                                          @bind-Value="_zone"
+                                          ReadOnly
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <!-- Row 3 -->
+
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker Label="Date Of Sanction"
+                                           @bind-Date="_dateOfSanction"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Sanction Authority"
+                                          @bind-Value="_sanctionAuthority"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="External Rating"
+                                          @bind-Value="_externalRating"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Internal Rating"
+                                          @bind-Value="_internalRating"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <!-- Row 4 -->
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Amount Proposed"
+                                          @bind-Value="_amountProposed"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Months T-Bill Rate / MCLR"
+                                          @bind-Value="_months"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        @* <MudItem xs="12" md="3">
+                    <MudSelect T="string"
+                    Label="T-Bill / MCLR"
+                    @bind-Value="_interestTable"
+                    Variant="Variant.Outlined"
+                    Margin="Margin.Dense"
+                    Dense="true">
+
+                    <MudSelectItem Value="@("MCLR")">MCLR</MudSelectItem>
+                    <MudSelectItem Value="@("T-BILL")">T-BILL</MudSelectItem>
+
+                    </MudSelect>
+                    </MudItem> *@
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Rate of Interest Previous Transaction"
+                                          @bind-Value="_previousROI"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <!-- Row 5 -->
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Effective ROI at the time of availment"
+                                          @bind-Value="_effectiveROI"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudTextField Label="Tenor"
+                                          @bind-Value="_tenor"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker Label="Likely Date Of Availment"
+                                           @bind-Date="_likelyAvailmentDate"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3" Class="d-flex align-center">
+                            <MudCheckBox T="bool"
+                                         @bind-Value="_isRollover"
+                                         Label="Rollover" />
+                        </MudItem>
+
+                        <!-- Row 6 -->
+
+                        <MudItem xs="12" md="3" Class="d-flex align-center">
+                            <MudCheckBox T="bool"
+                                         @bind-Value="_bulkDepositAccepted"
+                                         Label="Whether Bulk Deposit Accepted from the customer and subsiding as on date" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       Class="mr-2"
+                                       OnClick="SaveRow">
+                                Save
+                            </MudButton>
+
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Error"
+                                       OnClick="CancelAdd">
+                                Cancel
+                            </MudButton>
+                        </MudItem>
+
+                    </MudGrid>
+
+                </MudPaper>
+            }
+
+            <!-- ✅ TABLE -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+
+                    <HeaderContent>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white; width:60px; text-align:center;">
+                            S.No
+                        </MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Branch</MudTh>
+
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Name of the Borrower</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Nature Of Limit</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Limit Sanctioned</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Limit O/S</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Date Of Sanction</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Sanction Authority</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">External Rating</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Internal Rating</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Amount Proposed</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Months T-Bill Rate (Present)/MCLR</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">T-Bill / MCLR</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Rate of Interest Previous Transaction</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Effective ROI at the time of availment</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Tenor</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Likely Date Of Availment</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Rollover</MudTh>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white;">
+                            Whether Bulk Deposit Accepted from the customer and subsiding as on date
+                        </MudTh>
+
+                    </HeaderContent>
+
+
+                    <RowTemplate>
+
+                        <MudTd>@(_data.IndexOf(context) + 1)</MudTd>
+
+                        <MudTd>@context["Branch"]</MudTd>
+
+
+                        <MudTd>@context["BorrowerName"]</MudTd>
+
+                        <MudTd>@context["NatureOfLimit"]</MudTd>
+
+                        <MudTd>@context["LimitSanctioned"]</MudTd>
+
+                        <MudTd>@context["LimitOutstanding"]</MudTd>
+
+                        <MudTd>
+                            @Convert.ToDateTime(context["DateOfSanction"]).ToString("dd-MM-yyyy")
+                        </MudTd>
+
+                        <MudTd>@context["SanctionAuthority"]</MudTd>
+
+                        <MudTd>@context["ExternalRating"]</MudTd>
+
+                        <MudTd>@context["InternalRating"]</MudTd>
+
+                        <MudTd>@context["AmountProposed"]</MudTd>
+
+                        <MudTd>@context["Months"]</MudTd>
+
+                        <MudTd>@context["InterestTable"]</MudTd>
+
+                        <MudTd>@context["PreviousTransactionROI"]</MudTd>
+
+                        <MudTd>@context["EffectiveROI"]</MudTd>
+
+                        <MudTd>@context["Tenor"]</MudTd>
+
+                        <MudTd>
+                            @Convert.ToDateTime(context["LikelyDateOfAvailment"]).ToString("dd-MM-yyyy")
+                        </MudTd>
+
+                        <MudTd>
+                            @(Convert.ToBoolean(context["IsRollover"]) ? "Yes" : "No")
+                        </MudTd>
+
+                        <MudTd>
+                            @(Convert.ToBoolean(context["BulkDepositAccepted"]) ? "Yes" : "No")
+                        </MudTd>
+
+                    </RowTemplate>
+
+                    <NoRecordsContent>
+                        <td colspan="21" style="text-align:center; padding:40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">
+                                No Data Found!
+                            </MudText>
+                        </td>
+                    </NoRecordsContent>
+
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10,25,50,100}" />
+                    </PagerContent>
+
+                </MudTable>
+            </MudItem>
+
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+
+    private bool _loading = true;
+    private bool _showAdd = false;
+    private DateTime? FromDate;
+    private DateTime? ToDate;
+    private string _solid = "";
+    private string SelectedMonth = "All";
+    private string SelectedZone = "All";
+    private string SelectedRegion = "All";
+    private string SelectedBranch = "All";
+    private bool _canAdd = false;
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+    private List<Dictionary<string, object>> _data = new();
+    private bool DisableMonth = false;
+    private bool DisableDate = false;
+    private string _borrower = "";
+
+    private string _branch = "";
+    private string _region = "";
+    private string _zone = "";
+
+    private string _natureOfLimit = "";
+
+    private GapReportSettings _cfg = new();
+
+    private DateTime? _dateOfSanction = AppTime.Today;
+
+    private string _sanctionAuthority = "";
+
+    private string _externalRating = "";
+    private string _internalRating = "";
+
+    private string _limitSanctioned = "";
+    private string _limitOutstanding = "";
+    private string _amountProposed = "";
+    private string _months = "";
+    private string _previousROI = "";
+    private string _effectiveROI = "";
+    private string _tenor = "";
+
+    private string _interestTable = "MCLR";
+
+
+    private DateTime? _likelyAvailmentDate = AppTime.Today;
+
+    private bool _isRollover;
+    private bool _bulkDepositAccepted;
+
+
+    private async Task HandleMonthChanged(string value)
+    {
+        SelectedMonth = value;
+
+        if (value != "All")
+        {
+            FromDate = null;
+            ToDate = null;
+            DisableDate = true;
+        }
+        else
+        {
+            DisableDate = false;
+        }
+
+        await LoadData();
+    }
+
+    private async Task HandleFromDateChanged(DateTime? value)
+{
+    FromDate = value;
+
+    if (FromDate.HasValue || ToDate.HasValue)
+    {
+        SelectedMonth = "All";
+        DisableMonth = true;
+    }
+    else
+    {
+        DisableMonth = false;
+    }
+
+    await LoadData();
+}
+    private async Task HandleToDateChanged(DateTime? value)
+    {
+        ToDate = value;
+
+        if (FromDate.HasValue || ToDate.HasValue)
+        {
+            SelectedMonth = "All";
+            DisableMonth = true;
+        }
+        else
+        {
+            DisableMonth = false;
+        }
+
+        await LoadData();
+    }
+
+    private async Task ClearFilters()
+{
+    SelectedZone = "All";
+    SelectedRegion = "All";
+    SelectedBranch = "All";
+
+    SelectedMonth = "All";
+        FromDate = null;
+        ToDate = null;
+
+    DisableMonth = false;
+    DisableDate = false;
+
+    _regions = await ReportService.GetLookupDataAsync(
+        "region_master",
+        "region_name, region_solid",
+        "1=1",
+        "region_name");
+
+    _branches = await ReportService.GetLookupDataAsync(
+        "branch_master",
+        "branch_name, sol_id",
+        "1=1",
+        "branch_name");
+
+    await LoadData();
+}
+
+    private async Task OnSolChanged(string value)
+    {
+        _solid = value;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        try
+        {
+            string query = $@"
+            SELECT branch_name, region_name, zone_name_eng
+            FROM branch_master
+            WHERE sol_id = '{value}'";
+
+            var result = await ReportService.ExecuteRawQueryAsync(query);
+
+            if (result.Count > 0)
+            {
+                _branch = result[0]["branch_name"]?.ToString() ?? "";
+                _region = result[0]["region_name"]?.ToString() ?? "";
+                _zone = result[0]["zone_name_eng"]?.ToString() ?? "";
+            }
+            else
+            {
+                _branch = "";
+                _region = "";
+                _zone = "";
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[DailyApprovedRates] Unhandled error: " + ex.Message);
+        }
+    }
+
+
+    private readonly List<ColumnConfig> _cols = new()
+{
+    new() { Header = "Branch", PropertyName = "Branch" },
+    new() { Header = "Region", PropertyName = "RegionName" },
+    new() { Header = "Zone", PropertyName = "ZoneName" },
+
+    new() { Header = "Name of the Borrower", PropertyName = "BorrowerName" },
+
+    new() { Header = "Nature Of Limit", PropertyName = "NatureOfLimit" },
+
+    new() { Header = "Limit Sanctioned", PropertyName = "LimitSanctioned" },
+
+    new() { Header = "Limit O/S", PropertyName = "LimitOutstanding" },
+
+    new() { Header = "Date Of Sanction", PropertyName = "DateOfSanction" },
+
+    new() { Header = "Sanction Authority", PropertyName = "SanctionAuthority" },
+
+    new() { Header = "External Rating", PropertyName = "ExternalRating" },
+
+    new() { Header = "Internal Rating", PropertyName = "InternalRating" },
+
+    new() { Header = "Amount Proposed", PropertyName = "AmountProposed" },
+
+    new() { Header = "Months", PropertyName = "Months" },
+
+    new() { Header = "T-Bill / MCLR", PropertyName = "InterestTable" },
+
+    new() { Header = "Previous ROI", PropertyName = "PreviousTransactionROI" },
+
+    new() { Header = "Effective ROI", PropertyName = "EffectiveROI" },
+
+    new() { Header = "Tenor", PropertyName = "Tenor" },
+
+    new() { Header = "Likely Date Of Availment", PropertyName = "LikelyDateOfAvailment" },
+
+    new() { Header = "Rollover", PropertyName = "IsRollover" },
+
+    new() { Header = "Bulk Deposit", PropertyName = "BulkDepositAccepted" }
+};
+
+    private void ClearForm()
+    {
+        _solid = "";
+
+        _borrower = "";
+
+        _branch = "";
+        _region = "";
+        _zone = "";
+
+        _natureOfLimit = "";
+
+
+
+        _dateOfSanction = AppTime.Today;
+
+        _sanctionAuthority = "";
+
+        _externalRating = "";
+        _internalRating = "";
+
+
+
+        _interestTable = "MCLR";
+
+        _limitSanctioned = "";
+        _limitOutstanding = "";
+        _amountProposed = "";
+        _months = "";
+        _previousROI = "";
+        _effectiveROI = "";
+        _tenor = "";
+
+        _likelyAvailmentDate = AppTime.Today;
+
+        _isRollover = false;
+        _bulkDepositAccepted = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // ✅ Get user info
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var department = authState.User.FindFirst("department_desc")?.Value?.ToUpper() ?? "";
+
+        // ✅ Check condition
+        if (department == "LARGE CORPORATE")
+            _canAdd = true;
+
+        // Existing code
+        _zones = await ReportService.GetLookupDataAsync(
+    "zone_master",
+    "zone_name_eng, zone_solid",
+    "1=1",
+    "zone_name_eng");
+
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            "1=1",
+            "region_name");
+
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "branch_name, sol_id",
+            "1=1",
+            "branch_name");
+
+        await LoadData();
+    }
+
+    private void ShowAdd() => _showAdd = true;
+    private void CancelAdd() => _showAdd = false;
+
+    private async Task SaveRow()
+    {
+        // Prevent duplicate entry for same Branch and Date
+        string duplicateCheck = $@"
+    SELECT *
+    FROM DailyApprovedRates
+    WHERE Branch = '{_branch}'
+    AND CAST(DateOfSanction AS DATE) =
+        '{_dateOfSanction:yyyy-MM-dd}'";
+
+        var existing = await ReportService.ExecuteRawQueryAsync(duplicateCheck);
+
+        if (existing.Count > 0)
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                $"An entry already exists for Branch {_branch} on {_dateOfSanction:dd-MM-yyyy}");
+
+            return;
+        }
+
+        string query = $@"
+    INSERT INTO DailyApprovedRates
+    (
+        Branch,
+        RegionName,
+        ZoneName,
+        BorrowerName,
+        NatureOfLimit,
+        LimitSanctioned,
+        LimitOutstanding,
+        DateOfSanction,
+        SanctionAuthority,
+        ExternalRating,
+        InternalRating,
+        AmountProposed,
+        Months,
+        InterestTable,
+        PreviousTransactionROI,
+        EffectiveROI,
+        Tenor,
+        LikelyDateOfAvailment,
+        IsRollover,
+        BulkDepositAccepted
+    )
+    VALUES
+    (
+        '{_branch}',
+        '{_region}',
+        '{_zone}',
+        '{_borrower}',
+        '{_natureOfLimit}',
+    '{_limitSanctioned}',
+    '{_limitOutstanding}',
+        '{_dateOfSanction:yyyy-MM-dd}',
+        '{_sanctionAuthority}',
+        '{_externalRating}',
+        '{_internalRating}',
+    '{_amountProposed}',
+    '{_months}',
+        '{_interestTable}',
+    '{_previousROI}',
+    '{_effectiveROI}',
+    '{_tenor}',
+        '{_likelyAvailmentDate:yyyy-MM-dd}',
+    {(_isRollover ? 1 : 0)},
+    {(_bulkDepositAccepted ? 1 : 0)}
+    )";
+
+        await ReportService.ExecuteRawQueryAsync(query);
+
+        ClearForm();
+
+        _showAdd = false;
+
+        await LoadData();
+    }
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string where = "1=1";
+
+        // ✅ Zone
+        if (SelectedZone != "All")
+            where += $" AND bm.zone_solid='{SelectedZone}'";
+
+        if (SelectedRegion != "All")
+            where += $" AND bm.region_solid='{SelectedRegion}'";
+
+        if (SelectedBranch != "All")
+            where += $" AND bm.sol_id='{SelectedBranch}'";
+
+        // RBAC: clamp to the logged-in user's own scope for non-CO users (fail-closed to BRANCH).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            if (__scope.IsZone) where += $" AND bm.zone_solid = '{__scope.ZoneSolid}'";
+            else if (__scope.IsRegion) where += $" AND bm.region_solid = '{__scope.RegionSolid}'";
+            else if (__scope.IsBranch) where += $" AND bm.sol_id = '{__scope.BranchSolid}'";
+        }
+
+        // ✅ SINGLE DATE FILTER (Exact match 🔥)
+        // Month Filter
+        if (SelectedMonth != "All")
+        {
+            where += $" AND MONTH(DateOfSanction) = {SelectedMonth}";
+        }
+
+        // Date Filter
+        if (FromDate.HasValue)
+        {
+            where +=
+                $" AND CAST(DateOfSanction AS DATE) >= '{FromDate.Value:yyyy-MM-dd}'";
+        }
+
+        if (ToDate.HasValue)
+        {
+            where +=
+                $" AND CAST(DateOfSanction AS DATE) <= '{ToDate.Value:yyyy-MM-dd}'";
+        }
+
+        string query = $@"
+SELECT DISTINCT d.*
+FROM DailyApprovedRates d
+LEFT JOIN branch_master bm
+    ON d.Branch = bm.branch_name
+WHERE {where}
+ORDER BY d.DateOfSanction DESC";
+
+        _data = await ReportService.ExecuteRawQueryAsync(query);
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+
+    private async Task HandleZoneChanged(string val)
+    {
+        SelectedZone = val;
+
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        if (val == "All")
+        {
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                "1=1",
+                "region_name");
+        }
+        else
+        {
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"zone_solid='{val}'",
+                "region_name");
+        }
+
+        _branches.Clear();
+
+        await LoadData();
+    }
+
+
+    private async Task HandleRegionChanged(string val)
+    {
+        SelectedRegion = val;
+
+        SelectedBranch = "All";
+
+        if (val == "All")
+        {
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                "1=1",
+                "branch_name");
+        }
+        else
+        {
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                $"region_solid='{val}'",
+                "branch_name");
+        }
+
+        await LoadData();
+    }
+
+    private async Task HandleBranchChanged(string val)
+    {
+        SelectedBranch = val;
+        await LoadData();
+    }
+
+    private async Task OnExportInternal()
+    {
+        try
+        {
+            var exportData = _data
+                .Select(x => new Dictionary<string, object>(x))
+                .ToList();
+
+            foreach (var row in exportData)
+            {
+                if (row.ContainsKey("DateOfSanction") &&
+                    row["DateOfSanction"] != DBNull.Value)
+                {
+                    row["DateOfSanction"] =
+                        Convert.ToDateTime(row["DateOfSanction"])
+                            .ToString("dd-MM-yyyy");
+                }
+
+                if (row.ContainsKey("LikelyDateOfAvailment") &&
+                    row["LikelyDateOfAvailment"] != DBNull.Value)
+                {
+                    row["LikelyDateOfAvailment"] =
+                        Convert.ToDateTime(row["LikelyDateOfAvailment"])
+                            .ToString("dd-MM-yyyy");
+                }
+
+                if (row.ContainsKey("IsRollover") &&
+                    row["IsRollover"] != DBNull.Value)
+                {
+                    row["IsRollover"] =
+                        Convert.ToBoolean(row["IsRollover"])
+                            ? "Yes"
+                            : "No";
+                }
+
+                if (row.ContainsKey("BulkDepositAccepted") &&
+                    row["BulkDepositAccepted"] != DBNull.Value)
+                {
+                    row["BulkDepositAccepted"] =
+                        Convert.ToBoolean(row["BulkDepositAccepted"])
+                            ? "Yes"
+                            : "No";
+                }
+            }
+
+            var bytes = ReportService.ExportToExcel(
+                exportData,
+                _cols,
+                "DailyApprovedRates");
+
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                "DailyApprovedRates.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(
+                ex,
+                "[DailyApprovedRates] Unhandled error: " + ex.Message);
+        }
+    }
+
+    private async Task OnExportToWord()
+    {
+        try
+        {
+            // 1. Read and convert the logo to Base64 (resolved from the NFS-aware assets root)
+            string logoPath = Assets.Resolve(_cfg.UBILogoPath);
+            string base64Logo = "";
+
+            if (System.IO.File.Exists(logoPath))
+            {
+                byte[] imageBytes = await System.IO.File.ReadAllBytesAsync(logoPath);
+                base64Logo = $"data:image/png;base64,{Convert.ToBase64String(imageBytes)}";
+            }
+
+            var sb = new System.Text.StringBuilder();
+
+            // 2. Word-compatible HTML wrapper with Landscape Layout CSS
+            sb.Append("<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>");
+
+            // Explicitly force Trebuchet MS for the whole document
+            sb.Append("<head><meta charset='utf-8'><title>Daily Approved Rates</title>");
+
+            // 🔥 Word-specific CSS to force Landscape and reduce margins
+            sb.Append("<style>");
+            sb.Append("@page Section1 { size: 841.9pt 595.3pt; mso-page-orientation: landscape; margin: 0.5in 0.5in 0.5in 0.5in; } ");
+            sb.Append("div.Section1 { page: Section1; }");
+            sb.Append("</style>");
+
+            // Obs 3: Trebuchet Font applied to body
+            sb.Append("</head><body style='font-family: \"Trebuchet MS\", Trebuchet, sans-serif;'>");
+
+            // Open the Landscape Section wrapper
+            sb.Append("<div class='Section1'>");
+
+            // 3. Top Header and Approved Box (Using a Table to force same-line layout in MS Word)
+            sb.Append("<table style='width: 100%; border: none; margin-bottom: 15px; font-family: \"Trebuchet MS\", Trebuchet, sans-serif;'>");
+            sb.Append("<tr>");
+
+            // Left column (empty, keeps the center text perfectly balanced)
+            sb.Append("<td style='width: 25%; border: none;'></td>");
+
+            // Center column (Logo and Text)
+            sb.Append("<td style='width: 50%; text-align: center; border: none; vertical-align: top;'>");
+            if (!string.IsNullOrEmpty(base64Logo))
+            {
+                sb.Append($"<img src='{base64Logo}' alt='Union Bank Logo' height='25' width='280' style='vertical-align: middle;' />");
+            }
+            sb.Append("<br/>");
+            // Obs 2: Keep Large Corporate Vertical Hindi/English just below UNION BANK LOGO
+            sb.Append("<span style='font-size: 14px; font-weight: bold;'>लार्ज कॉरपोरेट वर्टिकल / Large Corporate Vertical</span>");
+            sb.Append("</td>");
+
+            // Right column (Obs 1: Approved/Decline above block and MD & CEO below block)
+            sb.Append("<td style='width: 25%; text-align: right; border: none; vertical-align: top;'>");
+            // Using align='right', adding height to style, and extra <br> tags to push the box taller
+            sb.Append("<table align='right' style='width: 140px; border-collapse: collapse; border: none; font-family: \"Trebuchet MS\", Trebuchet, sans-serif;'>");
+            sb.Append("<tr><td style='text-align: center; font-size: 11px; font-weight: bold; border: none; padding-bottom: 5px;'>Approved/Declined</td></tr>");
+            sb.Append("<tr><td style='border: 1px solid black; height: 80px;'><br><br><br><br><br></td></tr>");
+            sb.Append("<tr><td style='text-align: center; font-size: 11px; font-weight: bold; border: none; padding-top: 5px;'>MD & CEO</td></tr>");
+            sb.Append("</table>");
+            sb.Append("</td>");
+
+            sb.Append("</tr>");
+            sb.Append("</table>");
+
+            // NEW FIX: Text above table with Black Font and Red Background Highlight
+            string displayDate =
+    FromDate.HasValue && ToDate.HasValue
+        ? $"{FromDate.Value:dd.MM.yyyy} - {ToDate.Value:dd.MM.yyyy}"
+        : AppTime.Now.ToString("dd.MM.yyyy");
+
+            sb.Append("<table style='width: 100%; border: none; font-family: \"Trebuchet MS\", Trebuchet, sans-serif; font-size: 11px; font-weight: bold; margin-bottom: 5px;'>");
+            sb.Append("<tr>");
+            sb.Append("<td style='text-align: left; border: none; width: 25%; vertical-align: bottom; background-color: red; color: black; padding: 2px;'>संदर्भ : LCV:CO: </td>");
+            sb.Append("<td style='text-align: center; border: none; width: 50%; vertical-align: bottom; background-color: red; color: black; padding: 2px;'>प्रबंध निदेशक एवं मुख्य कार्यपालक अधिकारी को ज्ञापन / MEMORANDUM TO MD & CEO</td>");
+            sb.Append($"<td style='text-align: right; border: none; width: 25%; vertical-align: bottom; background-color: red; color: black; padding: 2px;'>दिनांक : {displayDate}</td>");
+            sb.Append("</tr>");
+            sb.Append("</table>");
+
+            sb.Append("<div style='text-align: right; font-size: 10px; font-weight: bold; font-family: \"Trebuchet MS\", Trebuchet, sans-serif; color: black; margin-bottom: 2px;'>करोड़ में /Rs. in Crore</div>");
+
+            // Main Table with Hindi/English Headers (Force Trebuchet font here as well)
+            sb.Append("<table border='1' style='border-collapse: collapse; width: 100%; font-size: 10px; text-align: center; font-family: \"Trebuchet MS\", Trebuchet, sans-serif;'>");
+            sb.Append("<thead style='background-color: #f2f2f2;'>");
+            sb.Append("<tr>");
+            sb.Append("<th>S.No</th>");
+            sb.Append("<th>शाखा<br/>Branch</th>");
+            sb.Append("<th>उधारकर्ता का नाम<br/>Name of the Borrower</th>");
+            sb.Append("<th>ऋण का प्रकार<br/>Nature Of Limit</th>");
+            sb.Append("<th>मंजूर सीमा<br/>Limit Sanctioned</th>");
+            sb.Append("<th>बकाया<br/>Limit O/S</th>");
+            sb.Append("<th>मंजूरी की तिथि<br/>Date Of Sanction</th>");
+            sb.Append("<th>मंजूरी प्राधिकारी<br/>Sanction Authority</th>");
+            sb.Append("<th>बाहरी रेटिंग<br/>External Rating</th>");
+            sb.Append("<th>आंतरिक रेटिंग<br/>Internal Rating</th>");
+            sb.Append("<th>प्रस्तावित राशि<br/>Amount Proposed</th>");
+            sb.Append("<th>3 Months T-BILL/MCLR</th>");
+            sb.Append("<th>T-Bill / MCLR</th>");
+            sb.Append("<th>पिछले लेनदेन की ब्याज दर<br/>Rate of Interest of Previous Transaction</th>");
+            sb.Append("<th>लागू वास्तविक ब्याज दर (T-Bill/MCLR के आधार पर) लोन लेने के समय<br/>Effective ROI (T Bill/MCLR) at the time of availment</th>");
+            sb.Append("<th>अवधि<br/>Tenor</th>");
+            sb.Append("<th>उपयोग की संभावित तिथि<br/>Likely Date of Availment</th>");
+            sb.Append("<th>Rollover</th>");
+            sb.Append("<th>Bulk Deposit Accepted</th>");
+            sb.Append("</tr>");
+            sb.Append("</thead><tbody>");
+
+            // Populate Table Data
+            int sno = 1;
+            foreach (var item in _data)
+            {
+                string dateSanction = item["DateOfSanction"] != DBNull.Value ? Convert.ToDateTime(item["DateOfSanction"]).ToString("dd-MM-yyyy") : "";
+                string likelyDate = item["LikelyDateOfAvailment"] != DBNull.Value ? Convert.ToDateTime(item["LikelyDateOfAvailment"]).ToString("dd-MM-yyyy") : "";
+                string isRollover = Convert.ToBoolean(item["IsRollover"]) ? "Yes" : "No";
+                string bulkDeposit = Convert.ToBoolean(item["BulkDepositAccepted"]) ? "Yes" : "No";
+
+                sb.Append("<tr>");
+                sb.Append($"<td>{sno++}</td>");
+                sb.Append($"<td>{item["Branch"]}</td>");
+                sb.Append($"<td>{item["BorrowerName"]}</td>");
+                sb.Append($"<td>{item["NatureOfLimit"]}</td>");
+                sb.Append($"<td>{item["LimitSanctioned"]}</td>");
+                sb.Append($"<td>{item["LimitOutstanding"]}</td>");
+                sb.Append($"<td>{dateSanction}</td>");
+                sb.Append($"<td>{item["SanctionAuthority"]}</td>");
+                sb.Append($"<td>{item["ExternalRating"]}</td>");
+                sb.Append($"<td>{item["InternalRating"]}</td>");
+                sb.Append($"<td>{item["AmountProposed"]}</td>");
+                sb.Append($"<td>{item["Months"]}</td>");
+                sb.Append($"<td>{item["InterestTable"]}</td>");
+                sb.Append($"<td>{item["PreviousTransactionROI"]}</td>");
+                sb.Append($"<td>{item["EffectiveROI"]}</td>");
+                sb.Append($"<td>{item["Tenor"]}</td>");
+                sb.Append($"<td>{likelyDate}</td>");
+                sb.Append($"<td>{isRollover}</td>");
+                sb.Append($"<td>{bulkDeposit}</td>");
+                sb.Append("</tr>");
+            }
+            sb.Append("</tbody></table>");
+
+            // Signature Lines (Bottom) - Obs 9 & 10 + Executive Director Fix
+            sb.Append("<br><br><br><br><br>");
+            sb.Append("<table style='width: 100%; font-size: 11px; font-weight: bold; border: none; font-family: \"Trebuchet MS\", Trebuchet, sans-serif;'>");
+
+            // First Row: First 4 Managers
+            sb.Append("<tr style='border: none;'>");
+            sb.Append("<td style='text-align: center; border: none; width: 25%;'>सहायक महाप्रबंधक<br/>ASST. GENERAL MANAGER</td>");
+            sb.Append("<td style='text-align: center; border: none; width: 25%;'>उप महाप्रबंधक<br/>DEPUTY GENERAL MANAGER</td>");
+            sb.Append("<td style='text-align: center; border: none; width: 25%;'>महाप्रबंधक<br/>GENERAL MANAGER</td>");
+            sb.Append("<td style='text-align: center; border: none; width: 25%;'>मुख्य महाप्रबंधक<br/>CHIEF GENERAL MANAGER</td>");
+            sb.Append("</tr>");
+
+            // Second Row: Executive Director centered on the next line
+            sb.Append("<tr style='border: none;'>");
+            // Used colspan='4' to span the whole width and <br> for vertical signature spacing
+            sb.Append("<td colspan='4' style='text-align: center; border: none;'><br><br><br>कार्यपालक निदेशक<br/>EXECUTIVE DIRECTOR</td>");
+            sb.Append("</tr>");
+
+            sb.Append("</table>");
+
+            // Close the Landscape Section wrapper
+            sb.Append("</div>");
+            sb.Append("</body></html>");
+
+            // Download as a .doc file
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+            string base64 = Convert.ToBase64String(bytes);
+
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                "DailyApprovedRates.doc",
+                "application/msword",
+                base64);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[DailyApprovedRates] Word Export error: " + ex.Message);
+        }
+    }
+}

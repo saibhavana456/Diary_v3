@@ -1,0 +1,123 @@
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Components.Layout
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <ErrorBoundary @ref="_errorBoundary">
+            <ChildContent>
+                @if (IsPublicPage(routeData.PageType))
+                {
+                    @* Public portal (landing + pre-login pages) — rendered with a plain
+                       RouteView so they load immediately WITHOUT any session verification. *@
+                    <RouteView RouteData="routeData" DefaultLayout="typeof(LandingLayout)" />
+                }
+                else
+                {
+                    @* Authenticated application — session is verified here. *@
+                    <AuthorizeRouteView RouteData="routeData"
+                                        DefaultLayout="typeof(MainLayout)">
+                        <NotAuthorized>
+                            @* NavigationGuard handles redirect to /login for unauthenticated users;
+                               for authenticated users who simply lack the required policy/role,
+                               show an explicit access-denied message instead of a blank page. *@
+                            <div style="display:flex;align-items:center;justify-content:center;height:60vh;">
+                                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+                                    You do not have permission to access this page.
+                                </MudAlert>
+                            </div>
+                        </NotAuthorized>
+                        <Authorizing>
+                            <div style="display:flex;align-items:center;justify-content:center;height:100vh;">
+                                <MudProgressCircular Indeterminate="true" />
+                            </div>
+                        </Authorizing>
+                    </AuthorizeRouteView>
+                }
+                <FocusOnNavigate RouteData="routeData" Selector="h1" />
+            </ChildContent>
+            <ErrorContent Context="ex">
+                <LayoutView Layout="@(IsPublicPage(routeData.PageType) ? typeof(LandingLayout) : typeof(MainLayout))">
+                    <MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="MudBlazor.Size.Large" Color="MudBlazor.Color.Error" />
+                        <MudText Typo="Typo.h5" Class="mt-4" Color="MudBlazor.Color.Error">Something went wrong</MudText>
+                        <MudText Typo="Typo.body1" Class="mt-2" Style="color:#666;">
+                            An unexpected error occurred. Please try again or navigate to another page.
+                        </MudText>
+                        <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary"
+                                   Class="mt-4 rounded-pill"
+                                   OnClick="RecoverFromError">
+                            Continue
+                        </MudButton>
+                    </MudContainer>
+                </LayoutView>
+            </ErrorContent>
+        </ErrorBoundary>
+    </Found>
+    <NotFound>
+        <PageTitle>Not Found</PageTitle>
+        <LayoutView Layout="typeof(MainLayout)">
+            <MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="MudBlazor.Size.Large" Color="MudBlazor.Color.Default" />
+                <MudText Typo="Typo.h4" Class="mt-4">404 - Not Found</MudText>
+                <MudText Typo="Typo.body1" Class="mt-2">The page you are looking for does not exist.</MudText>
+            </MudContainer>
+        </LayoutView>
+    </NotFound>
+</Router>
+
+<NavigationGuard />
+
+@code {
+    private ErrorBoundary? _errorBoundary;
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Auto-recover error boundary on every navigation — prevents the error page
+        // from persisting when the user navigates to a different URL via sidebar/appbar.
+        _errorBoundary?.Recover();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // Recover the error boundary on any navigation event. This handles cases where
+        // OnParametersSet doesn't fire (e.g., NavigationManager.NavigateTo while the
+        // ErrorBoundary is in its error state, or enhanced navigation scenarios).
+        _errorBoundary?.Recover();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RecoverFromError()
+    {
+        _errorBoundary?.Recover();
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    // Pages laid out with the public LandingLayout or LoginLayout are the pre-login
+    // portal (landing, network, applications, about, login, session-expired, …).
+    // They must never wait on session verification, so they bypass AuthorizeRouteView.
+    private static readonly HashSet<Type> PublicLayouts = new()
+    {
+        typeof(LandingLayout),
+        typeof(LoginLayout),
+        typeof(PublicLayout),
+        typeof(ExecVisitLayout),
+    };
+
+    private static bool IsPublicPage(Type pageType)
+    {
+        var layout = (Attribute.GetCustomAttribute(pageType, typeof(LayoutAttribute)) as LayoutAttribute)?.LayoutType;
+        return layout is not null && PublicLayouts.Contains(layout);
+    }
+}

@@ -1,0 +1,295 @@
+@page "/reports/RBISBObservations"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<MudGrid Class="pa-2">
+    <MudItem xs="12">
+      
+
+      
+        <DynamicDashboard Config="_config"
+                          Data="_data"
+                          IsLoading="_loading"
+                          AsOnDateLabel="@_asOnDateLabel"
+                          SelectedZone="@_selectedZone"
+                          SelectedRegion="@_selectedRegion"
+                          SelectedBranch="@_selectedBranch"
+                          OnFilterChanged="HandleFilterChanged"
+                          ShowStatusFilter="true"
+                          SelectedStatus="@_selectedStatus"
+                          OnStatusChanged="HandleStatusChanged"
+                          OnExportRequested="HandleExport" />
+    </MudItem>
+</MudGrid>
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private int _activeTab = 0; // 0=Summary, 1=Branchwise
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _selectedStatus = "Sel"; // "Sel" = Total (no filter), then "A", "I", "D"
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    private List<Dictionary<string, object>> _data = new();
+    private ReportConfig _config = new();
+
+ 
+    private string _userPrivilege = "CO";      // "CO" | "ZONE" | "REGION" | "BRANCH"
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+   
+
+    // Summary columns (matches gv_mfsummary in WebForms)
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new ColumnConfig { Header = "Zone",                                PropertyName = "zone_name_eng",     Width = "16%" },
+        new ColumnConfig { Header = "Region",                              PropertyName = "region_name",       Width = "16%" },
+        new ColumnConfig { Header = "Branch",                              PropertyName = "branch_name",       Width = "18%" },
+        new ColumnConfig { Header = "Deficiency Description",              PropertyName = "Description",       Width = "30%" },
+        new ColumnConfig { Header = "Total No of Deficiencies Reported by RBI (Based on data of 31-03-2021)", PropertyName = "TotalDeficiency",    IsNumeric = true, Format = "N0", Width="12%" },
+        new ColumnConfig { Header = "Total No of Deficiencies Rectified",  PropertyName = "RectifiedDeficiency",IsNumeric = true, Format = "N0", Width="12%" },
+        new ColumnConfig { Header = "Total No of Deficiencies Pending for Action", PropertyName = "PendingDef", IsNumeric = true, Format = "N0", Width="12%" },
+    };
+
+    // Branchwise columns (matches gdView in WebForms)
+    private readonly List<ColumnConfig> _branchCols = new()
+    {
+        new ColumnConfig { Header = "Zone",                                PropertyName = "zone_name_eng",     Width = "16%" },
+        new ColumnConfig { Header = "Region",                              PropertyName = "region_name",       Width = "16%" },
+        new ColumnConfig { Header = "Branch",                              PropertyName = "branch_name",       Width = "18%" },
+        new ColumnConfig { Header = "Solid",                               PropertyName = "SolID",             Width = "10%" },
+        new ColumnConfig { Header = "Deficiency Description",              PropertyName = "Description",       Width = "30%" },
+        new ColumnConfig { Header = "Total No of Deficiencies Reported by RBI (Based on data of 31-03-2021)", PropertyName = "TotalDeficiency",    IsNumeric = true, Format = "N0", Width="12%" },
+        new ColumnConfig { Header = "Total No of Deficiencies Rectified",  PropertyName = "RectifiedDeficiency",IsNumeric = true, Format = "N0", Width="12%" },
+        new ColumnConfig { Header = "Total No of Deficiencies Pending for Action", PropertyName = "PendingDef", IsNumeric = true, Format = "N0", Width="12%" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _config.Title = Title ?? "RBI Observations - SB Accounts";
+        _config.Columns = _summaryCols;
+
+    
+
+        await LoadDataAsync();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadDataAsync();
+    }
+
+    private async Task HandleStatusChanged(string value)
+    {
+        _selectedStatus = value; 
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+         
+            string fromJoin =
+                " FROM RBISBObservations_Count_new A " +
+                " JOIN RBISBObservations_PointObsMapping M ON A.Deficiency = M.PointNo " +
+                " JOIN Branch_Master B ON A.Solid = B.SOL_ID ";
+
+            // Base WHERE
+            string where = "1=1";
+
+            // Status: (Sel = Total)
+            if (!string.Equals(_selectedStatus, "Sel", StringComparison.OrdinalIgnoreCase))
+                where += $" AND A.acc_status = '{_selectedStatus}'";
+
+            // Privilege 
+            switch (_userPrivilege)
+            {
+                case "ZONE": where += $" AND B.zone_solid = '{_userZoneSolid}'"; break;
+                case "REGION": where += $" AND B.region_solid = '{_userRegionSolid}'"; break;
+                case "BRANCH": where += $" AND B.SOL_ID = '{_userBranchSolid}'"; break;
+            }
+
+          
+            if (_selectedZone != "1" && _selectedZone != "all") where += $" AND B.zone_solid   = '{_selectedZone}'";
+            if (_selectedRegion != "1" && _selectedRegion != "all") where += $" AND B.region_solid = '{_selectedRegion}'";
+            if (_selectedBranch != "1" && _selectedBranch != "all") where += $" AND B.SOL_ID       = '{_selectedBranch}'";
+
+            // Which view (Summary vs Branchwise)
+            bool isSummary = _activeTab == 0;
+
+            string select, groupBy, orderBy;
+
+            if (isSummary)
+            {
+                _config.Columns = _summaryCols;
+
+                bool zoneIsAllSummary = _selectedZone == "1";
+                bool zoneIsAllZonewise = _selectedZone == "all";
+                bool regionIsAllSummary = _selectedRegion == "1";
+                bool regionIsAllRegionwise = _selectedRegion == "all";
+
+                if (zoneIsAllSummary)
+                {
+                    // Global summary (All)
+                    select =
+                        " 'All' AS zone_name_eng, 'All' AS region_name, 'All' AS branch_name, " +
+                        " M.Description AS Description, " +
+                        " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                        " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                        " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+                    groupBy = " GROUP BY M.Description";
+                }
+                else if (zoneIsAllZonewise && regionIsAllSummary)
+                {
+                    // Zonewise summary
+                    select =
+                        " B.zone_name_eng, 'All' AS region_name, 'All' AS branch_name, " +
+                        " M.Description AS Description, " +
+                        " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                        " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                        " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+                    groupBy = " GROUP BY B.zone_name_eng, M.Description";
+                }
+                else if (zoneIsAllZonewise && regionIsAllRegionwise)
+                {
+                    // Regionwise summary across all regions
+                    select =
+                        " B.zone_name_eng, B.region_name, 'All' AS branch_name, " +
+                        " M.Description AS Description, " +
+                        " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                        " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                        " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+                    groupBy = " GROUP BY B.zone_name_eng, B.region_name, M.Description";
+                }
+                else
+                {
+                    // Specific zone (and maybe specific region)
+                    if (_selectedZone != "1" && _selectedZone != "all" && _selectedRegion == "1")
+                    {
+                        // Single zone summary
+                        select =
+                            " B.zone_name_eng, 'All' AS region_name, 'All' AS branch_name, " +
+                            " M.Description AS Description, " +
+                            " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                            " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                            " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+                        groupBy = " GROUP BY B.zone_name_eng, M.Description";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        // All regions under selected zone (region summaries)
+                        select =
+                            " B.zone_name_eng, B.region_name, 'All' AS branch_name, " +
+                            " M.Description AS Description, " +
+                            " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                            " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                            " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+                        groupBy = " GROUP BY B.zone_name_eng, B.region_name, M.Description";
+                    }
+                    else if (_selectedRegion != "1" && _selectedRegion != "all" && _selectedBranch == "1")
+                    {
+                        // Specific region summary
+                        select =
+                            " B.zone_name_eng, B.region_name, 'All' AS branch_name, " +
+                            " M.Description AS Description, " +
+                            " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                            " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                            " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+                        groupBy = " GROUP BY B.zone_name_eng, B.region_name, M.Description";
+                    }
+                    else
+                    {
+                        // Branch list as summary rows (branch present)
+                        select =
+                            " B.zone_name_eng, B.region_name, B.branch_name, " +
+                            " M.Description AS Description, " +
+                            " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                            " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                            " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+                        groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.branch_name, M.Description";
+                    }
+                }
+
+                orderBy = " ORDER BY zone_name_eng, region_name, branch_name, Description";
+            }
+            else
+            {
+                _config.Columns = _branchCols;
+
+                select =
+                    " B.zone_name_eng, B.region_name, B.branch_name, B.Sol_Id AS SolID, " +
+                    " M.Description AS Description, " +
+                    " SUM(ISNULL(A.TotalCount,0)) AS TotalDeficiency, " +
+                    " SUM(ISNULL(A.RectifiedCount,0)) AS RectifiedDeficiency, " +
+                    " (SUM(ISNULL(A.TotalCount,0)) - SUM(ISNULL(A.RectifiedCount,0))) AS PendingDef ";
+
+                groupBy = " GROUP BY B.zone_name_eng, B.region_name, B.branch_name, B.Sol_Id, M.Description";
+                orderBy = " ORDER BY B.zone_name_eng, B.region_name, B.branch_name, B.Sol_Id, M.Description";
+            }
+
+            string sql = $"SELECT {select}{fromJoin}WHERE {where}{groupBy}{orderBy}";
+
+            // Data query and as-on-date are independent - run in parallel
+            var dataTask = ReportService.ExecuteRawQueryAsync(sql);
+            var dateTask = ReportService.GetAsOnDateAsync("RBISBObservations_Count");
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+
+        
+            if (_data.Count == 0) _asOnDateLabel = string.Empty;
+            else
+            {
+                var date = dateTask.Result;
+                _asOnDateLabel = string.IsNullOrWhiteSpace(date) ? string.Empty : $"Data As On - {date} (Rs. in Lacs)";
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, ex.ToString());
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExport()
+    {
+        var fileName = _activeTab == 0 ? "RBISBObservations_Summary.xlsx" : "RBISBObservations_Branchwise.xlsx";
+        var bytes = ReportService.ExportToExcel(_data, _config.Columns, fileName.Replace(".xlsx", ""));
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            fileName,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

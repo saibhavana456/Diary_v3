@@ -1,0 +1,376 @@
+﻿@page "/reports/dsb-transactions"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Doorstep Banking Transactions — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // Default user context; wire to claims if available
+    private string _userPrivilege = "CO";                     // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // Summary columns (zone/region rollups)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",        PropertyName = "zone_name_eng", Width = "20%" },
+        new ColumnConfig { Header = "Region",      PropertyName = "region_name",   Width = "20%" },
+        new ColumnConfig { Header = "Branch",      PropertyName = "Branch_Name",   Width = "25%" },
+        new ColumnConfig { Header = "SolID",       PropertyName = "SolId",         Width = "10%" },
+        new ColumnConfig { Header = "DBS Initiated", PropertyName = "DBSInitiated", IsNumeric = true, Format="N0", Width = "12%" },
+        new ColumnConfig { Header = "DBS Completed", PropertyName = "DBSComplt",    IsNumeric = true, Format="N0", Width = "12%" }
+    };
+
+    // Detailed columns (branchwise)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",        PropertyName = "zone_name_eng", Width = "14%" },
+        new ColumnConfig { Header = "Region",      PropertyName = "region_name",   Width = "14%" },
+        new ColumnConfig { Header = "Branch",      PropertyName = "BRANCH_NAME",   Width = "22%" },
+        new ColumnConfig { Header = "Branch Code", PropertyName = "BRANCH_CODE",   Width = "10%" },
+        new ColumnConfig { Header = "State",       PropertyName = "state",         Width = "10%" },
+        new ColumnConfig { Header = "Service Provider", PropertyName = "serviceprovider", Width = "12%" },
+        new ColumnConfig { Header = "DBS Initiated", PropertyName = "TransactionCount",         IsNumeric = true, Format="N0", Width = "9%" },
+        new ColumnConfig { Header = "DBS Completed", PropertyName = "TransactionCompletedCount", IsNumeric = true, Format="N0", Width = "9%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "DSB Transactions";
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone   = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where   = "1=1";
+        string groupBy = "";
+        string orderBy = " Order By zone_name_eng, region_name, Branch_Name";
+        bool isSummary = true;
+
+        // Normalize for easier comparisons
+        string z = (_selectedZone   ?? "1").ToLowerInvariant();
+        string r = (_selectedRegion ?? "1").ToLowerInvariant();
+        string b = (_selectedBranch ?? "1").ToLowerInvariant();
+
+        // Helper: set GROUP BY
+        void SetGroup(params string[] keys)
+        {
+            var parts = keys.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+            groupBy = parts.Length > 0 ? $" Group By {string.Join(", ", parts)}" : "";
+        }
+
+        // ---------------- PRIVILEGE: CO ----------------
+        if (_userPrivilege == "CO")
+        {
+            if (z == "1")
+            {
+                // Total of all zones
+                columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                          "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                          "'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As SolId";
+                // no key grouping in WebForms; single row summary
+            }
+            else if (z == "all")
+            {
+                if (r == "1")
+                {
+                    // Zone-wise summary
+                    columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                              "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                              "'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                    SetGroup("Zone_SolId, zone_name_eng");
+                }
+                else if (r == "all")
+                {
+                    if (b == "1")
+                    {
+                        // Region-wise summary across all
+                        columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                                  "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                                  "'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        SetGroup("b.region_name, region_SolId, zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        // Branch-wise (detailed)
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                        // No GROUP BY � detailed rows
+                    }
+                    else
+                    {
+                        // Specific branch detail (still detailed)
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                        where += $" and b.sol_id = '{b}'";
+                    }
+                }
+                else
+                {
+                    // Specific Region across all zones
+                    if (b == "1")
+                    {
+                        columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                                  "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                                  "'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        where += $" and region_solid = '{r}'";
+                        SetGroup("b.Region_name, region_SolId, zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                        where += $" and region_solid = '{r}'";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                        where += $" and b.sol_id = '{b}'";
+                    }
+                }
+            }
+            else
+            {
+                // Specific Zone selected
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (r == "1")
+                {
+                    columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                              "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                              "'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                    SetGroup("Zone_SolId, zone_name_eng");
+                }
+                else if (r == "all")
+                {
+                    if (b == "1")
+                    {
+                        columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                                  "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                                  "'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        SetGroup("b.region_name, region_SolId, zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                        where += $" and b.sol_id = '{b}'";
+                    }
+                }
+                else
+                {
+                    // Specific Region inside specific Zone
+                    where += $" and region_solid = '{r}'";
+                    if (b == "1")
+                    {
+                        columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                                  "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                                  "'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        SetGroup("b.Region_name, region_SolId, zone_name_eng");
+                    }
+                    else if (b == "all")
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                                  "a.TransactionCount,a.TransactionCompletedCount";
+                        where += $" and b.sol_id = '{b}'";
+                    }
+                }
+            }
+        }
+        // ---------------- PRIVILEGE: ZONE ----------------
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userZoneSolid}'";
+            if (r == "1")
+            {
+                columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                          "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                          "'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId";
+                SetGroup("zone_name_eng, Zone_SolId");
+            }
+            else if (r == "all")
+            {
+                if (b == "1")
+                {
+                    columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                              "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                              "'All' As Branch_Name,b.region_name,zone_name_eng, region_solid As SolId";
+                    SetGroup("b.Region_name, region_SolId, zone_name_eng");
+                }
+                else if (b == "all")
+                {
+                    isSummary = false;
+                    columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                              "a.TransactionCount,a.TransactionCompletedCount";
+                }
+                else
+                {
+                    isSummary = false;
+                    columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                              "a.TransactionCount,a.TransactionCompletedCount";
+                    where += $" and b.sol_id = '{b}'";
+                }
+            }
+            else
+            {
+                // Specific region within user zone
+                where += $" and region_solid = '{r}'";
+                if (b == "1")
+                {
+                    columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                              "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                              "'All' As Branch_Name,b.region_name,zone_name_eng, region_solid As SolId";
+                    SetGroup("b.Region_name, region_SolId, zone_name_eng");
+                }
+                else if (b == "all")
+                {
+                    isSummary = false;
+                    columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                              "a.TransactionCount,a.TransactionCompletedCount";
+                }
+                else
+                {
+                    isSummary = false;
+                    columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                              "a.TransactionCount,a.TransactionCompletedCount";
+                    where += $" and b.sol_id = '{b}'";
+                }
+            }
+        }
+        // ---------------- PRIVILEGE: REGION ----------------
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userRegionSolid}'";
+            if (b == "1")
+            {
+                columns = "sum(convert(decimal,a.TransactionCount)) as DBSInitiated, " +
+                          "sum(convert(decimal,a.TransactionCompletedCount)) as DBSComplt, " +
+                          "'All' As Branch_Name,b.region_name,zone_name_eng, region_solid As SolId";
+                SetGroup("b.Region_name, region_SolId, zone_name_eng");
+            }
+            else if (b == "all")
+            {
+                isSummary = false;
+                columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                          "a.TransactionCount,a.TransactionCompletedCount";
+            }
+            else
+            {
+                isSummary = false;
+                columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                          "a.TransactionCount,a.TransactionCompletedCount";
+                where += $" and b.sol_id = '{b}'";
+            }
+        }
+        // ---------------- PRIVILEGE: BRANCH ----------------
+        else // BRANCH
+        {
+            isSummary = false;
+            where += $" and b.sol_id = '{_userBranchSolid}'";
+            columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.BRANCH_CODE,a.state,a.serviceprovider," +
+                      "a.TransactionCount,a.TransactionCompletedCount";
+        }
+
+        string finalQuery =
+            "SELECT " + columns +
+            " FROM DSBData A " +
+            " JOIN Branch_Master B On a.branchcode=b.BRANCH_CODE " +
+            $" WHERE {where} {groupBy} {orderBy}";
+
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+        // Data and date queries are independent - fire date in parallel
+        var dateTask = GetAsOnDateAsync();
+        string asOn = await dateTask;
+        _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+        _asOnDateLabel = string.IsNullOrWhiteSpace(asOn)
+            ? ""
+            : $"Data As On - {asOn}";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task<string> GetAsOnDateAsync()
+    {
+        const string sql = "SELECT convert(varchar, max(DataAsOn), 103) AS AsOn FROM DSBData";
+        var rows = await ReportService.ExecuteRawQueryAsync(sql);
+        if (rows.Count > 0 && rows[0].TryGetValue("AsOn", out var v) && v != null)
+            return v.ToString() ?? "";
+        return "";
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "DSBTransactions");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "DSBTransactions.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

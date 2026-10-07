@@ -1,0 +1,208 @@
+@page "/reports/tppd-dashboard"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using MudBlazor
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+@* --- Insurance Grid --- *@
+<DynamicDashboard Config="_insuranceConfig"
+                  Data="_insuranceData"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExportInsurance" />
+
+@* --- Mutual Fund Grid --- *@
+@if (_mfData.Any() || _loading)
+{
+    <div class="mt-4">
+        <DynamicDashboard Config="_mfConfig"
+                          Data="_mfData"
+                          IsLoading="_loading"
+                          AsOnDateLabel="@_asOnDateLabel"
+                          SelectedZone="@_selectedZone"
+                          SelectedRegion="@_selectedRegion"
+                          SelectedBranch="@_selectedBranch"
+                          OnFilterChanged="HandleFilterChanged"
+                          OnExportRequested="HandleExportMF" />
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _insuranceData = new();
+    private List<Dictionary<string, object>> _mfData = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _insuranceConfig = new();
+    private ReportConfig _mfConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Insurance columns
+    private readonly List<ColumnConfig> _insuranceCols = new() {
+        new ColumnConfig { Header = "Zone",                      PropertyName = "zone_name_eng",              Width = "7%" },
+        new ColumnConfig { Header = "Region",                    PropertyName = "region_name",                Width = "8%" },
+        new ColumnConfig { Header = "Branch",                    PropertyName = "branch_name",                Width = "7%" },
+        new ColumnConfig { Header = "Sol ID",                    PropertyName = "SolID",                      Width = "5%" },
+        new ColumnConfig { Header = "Segment",                   PropertyName = "Segment",                    Width = "9%" },
+        new ColumnConfig { Header = "Channel Partner",           PropertyName = "Channel",                    Width = "7%" },
+        new ColumnConfig { Header = "Count Of Policies",         PropertyName = "Count_Of_Policies",          IsNumeric = true, Format = "N0", Width = "8%" },
+        new ColumnConfig { Header = "Premium Target (Lakhs)",    PropertyName = "Premium_Target",             IsNumeric = true, Format = "N2", Width = "9%" },
+        new ColumnConfig { Header = "Premium Achievement (Lakhs)", PropertyName = "Premium_Achievemnt",      IsNumeric = true, Format = "N2", Width = "9%" },
+        new ColumnConfig { Header = "Income Last FY (Lakhs)",    PropertyName = "Income_Achievement_LastFY",  IsNumeric = true, Format = "N2", Width = "9%" },
+        new ColumnConfig { Header = "Income Target (Lakhs)",     PropertyName = "Income_Target",              IsNumeric = true, Format = "N2", Width = "9%" },
+        new ColumnConfig { Header = "Income Achievement (Lakhs)", PropertyName = "Income_Achievement",        IsNumeric = true, Format = "N2", Width = "9%" }
+    };
+
+    // Mutual Fund columns
+    private readonly List<ColumnConfig> _mfCols = new() {
+        new ColumnConfig { Header = "Zone",                              PropertyName = "zone_name_eng",                     Width = "7%" },
+        new ColumnConfig { Header = "Region",                            PropertyName = "region_name",                       Width = "8%" },
+        new ColumnConfig { Header = "Branch",                            PropertyName = "branch_name",                       Width = "7%" },
+        new ColumnConfig { Header = "Sol ID",                            PropertyName = "SolID",                             Width = "5%" },
+        new ColumnConfig { Header = "Segment",                           PropertyName = "Segment",                           Width = "7%" },
+        new ColumnConfig { Header = "Channel Partner",                   PropertyName = "Channel",                           Width = "7%" },
+        new ColumnConfig { Header = "SIP Count Target",                  PropertyName = "SIP_Count_Target",                  IsNumeric = true, Format = "N0", Width = "8%" },
+        new ColumnConfig { Header = "SIP Count Achievement",             PropertyName = "SIP_Count_Achievement",             IsNumeric = true, Format = "N0", Width = "8%" },
+        new ColumnConfig { Header = "LumpSum Target (Lakhs)",            PropertyName = "LumpSum_Net_Purchase_Target",       IsNumeric = true, Format = "N2", Width = "9%" },
+        new ColumnConfig { Header = "LumpSum Achievement (Lakhs)",       PropertyName = "LumpSum_Net_Purchase_Achievemnt",   IsNumeric = true, Format = "N2", Width = "9%" },
+        new ColumnConfig { Header = "Income Last FY (Lakhs)",            PropertyName = "Income_Achievement_LastFY",         IsNumeric = true, Format = "N2", Width = "8%" },
+        new ColumnConfig { Header = "Income Target (Lakhs)",             PropertyName = "Income_Target",                     IsNumeric = true, Format = "N2", Width = "8%" },
+        new ColumnConfig { Header = "Income Achievement (Lakhs)",        PropertyName = "Income_Achievement",                IsNumeric = true, Format = "N2", Width = "9%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _insuranceConfig.Title = Title ?? "Third Party Product Distribution - Insurance";
+        _insuranceConfig.Columns = _insuranceCols;
+        _mfConfig.Title = "Third Party Product Distribution - Mutual Funds";
+        _mfConfig.Columns = _mfCols;
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            string where = "1=1";
+
+            // Zone/Region/Branch filters
+            if (_selectedZone != "1" && _selectedZone != "all")
+                where += $" AND bm.zone_solid = '{_selectedZone}'";
+
+            if (_selectedRegion != "1" && _selectedRegion != "all")
+                where += $" AND bm.region_solid = '{_selectedRegion}'";
+
+            if (_selectedBranch != "1" && _selectedBranch != "all")
+                where += $" AND bm.sol_id = '{_selectedBranch}'";
+
+            // Apply user privilege filters
+            if (_userPrivilege == "ZONE")
+                where += $" AND bm.zone_solid = '{_userZoneSolid}'";
+            else if (_userPrivilege == "REGION")
+                where += $" AND bm.region_solid = '{_userRegionSolid}'";
+            else if (_userPrivilege == "BRANCH")
+                where += $" AND bm.sol_id = '{_userBranchSolid}'";
+
+            // Insurance query
+            string insuranceSql = $@"SELECT bm.zone_name_eng, bm.region_name, bm.branch_name, A.SolID, 
+                A.Segment, A.Channel, A.Count_Of_Policies, A.Premium_Target, A.Premium_Achievemnt, 
+                CAST(A.Income_Achievement_LastFY AS DECIMAL(18,2)) / 100000 AS Income_Achievement_LastFY, 
+                A.Income_Target, 
+                CAST(A.Income_Achievement AS DECIMAL(18,2)) / 100000 AS Income_Achievement
+                FROM TPPD_Insurance A 
+                JOIN Branch_Master bm ON A.SolID = bm.SOL_ID 
+                WHERE {where}
+                ORDER BY bm.zone_name_eng, bm.region_name, bm.branch_name";
+
+            // Data queries and as-on-date are independent - run in parallel
+            var insuranceTask = ReportService.ExecuteRawQueryAsync(insuranceSql);
+
+            // Mutual Fund query
+            string mfSql = $@"SELECT bm.zone_name_eng, bm.region_name, bm.branch_name, A.SolID, 
+                A.Segment, A.Channel, A.SIP_Count_Target, A.SIP_Count_Achievement, 
+                A.LumpSum_Net_Purchase_Target, A.LumpSum_Net_Purchase_Achievemnt, 
+                CAST(A.Income_Achievement_LastFY AS DECIMAL(18,2)) / 100000 AS Income_Achievement_LastFY, 
+                A.Income_Target, 
+                CAST(A.Income_Achievement AS DECIMAL(18,2)) / 100000 AS Income_Achievement
+                FROM TPPD_MutualFund A 
+                JOIN Branch_Master bm ON A.SolID = bm.SOL_ID 
+                WHERE {where}
+                ORDER BY bm.zone_name_eng, bm.region_name, bm.branch_name";
+
+            var mfTask = ReportService.ExecuteRawQueryAsync(mfSql);
+            var dateTask = ReportService.GetAsOnDateAsync("TPPD_Insurance");
+
+            await Task.WhenAll(insuranceTask, mfTask, dateTask);
+
+            _insuranceData = insuranceTask.Result;
+            _mfData = mfTask.Result;
+            string date = dateTask.Result;
+            _asOnDateLabel = $"Data As On - {date}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[TPPDDashboardReport] Error loading data");
+            _insuranceData = new();
+            _mfData = new();
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExportInsurance()
+    {
+        try
+        {
+            var bytes = ReportService.ExportToExcel(_insuranceData, _insuranceConfig.Columns, "TPPD_Insurance");
+            await JS.InvokeVoidAsync("BlazorDownloadFile", "TPPD_Insurance.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "[TPPDDashboardReport] Export Insurance error"); }
+    }
+
+    private async Task HandleExportMF()
+    {
+        try
+        {
+            var bytes = ReportService.ExportToExcel(_mfData, _mfConfig.Columns, "TPPD_MutualFund");
+            await JS.InvokeVoidAsync("BlazorDownloadFile", "TPPD_MutualFund.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "[TPPDDashboardReport] Export MF error"); }
+    }
+}

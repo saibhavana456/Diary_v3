@@ -1,0 +1,192 @@
+@page "/birthday-retirement/{EventType}"
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Web
+@using MyDiary.Web.Features.BirthdayRetirement.Models
+@using MyDiary.Web.Features.BirthdayRetirement.Services
+@inject IBirthdayRetirementService EventService
+@inject NavigationManager NavManager
+
+<PageHeader PageKey="@($"birthday-{EventType}")" Title="@PageTitle"
+            Crumbs="_crumbs" ShowHome="false" />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="12">
+        <div class="mb-4">
+            <MudPaper Elevation="0" Style="background-color:#ffffff;">
+
+                <!-- Filters Section -->
+                <MudGrid Spacing="2" Class="p-2 align-center">
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Zone" Value="@SelectedZone" ValueChanged="OnZoneChangedAsync"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem Value="@("1")">All Zones</MudSelectItem>
+                            @foreach (var zone in Zones)
+                            {
+                                <MudSelectItem Value="@zone.Code">@zone.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Region" Value="@SelectedRegion" ValueChanged="OnRegionChangedAsync"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   Disabled="@(SelectedZone == "1" || SelectedZone == "100000")">
+                            <MudSelectItem Value="@("1")">All Regions</MudSelectItem>
+                            @foreach (var region in Regions)
+                            {
+                                <MudSelectItem Value="@region.Code">@region.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string" Label="Branch" Value="@SelectedBranch" ValueChanged="OnBranchChangedAsync"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   Disabled="@(SelectedRegion == "1")">
+                            <MudSelectItem Value="@("1")">All Branches</MudSelectItem>
+                            <MudSelectItem Value="@("100000")">CENTRAL OFFICE (100000)</MudSelectItem>
+                            @foreach (var branch in Branches)
+                            {
+                                <MudSelectItem Value="@branch.Code">@branch.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudSpacer />
+
+                    <!-- Viewing Badge -->
+                    <MudItem xs="12" sm="2" Class="d-flex align-center justify-end">
+                        <!-- Added T="string" to explicitly define the generic type -->
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small">
+                            Viewing: @(EventType == "birthday" ? "Birthdays" : "Retirements")
+                        </MudChip>
+                    </MudItem>
+                </MudGrid>
+
+                <!-- Main Data Table -->
+                <MudItem xs="12" Class="pa-2">
+                    <MudTable Items="@StaffEvents" Hover="true" Striped="true" Bordered="true" Dense="true"
+                              Elevation="2" Loading="@IsLoading" RowsPerPage="25"
+                              Style="font-size:12px;">
+                        <HeaderContent>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">PF No</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Name</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Posted At</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Designation</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">@(EventType == "birthday" ? "Date of Birth" : "Retirement Date")</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.PfNo</MudTd>
+                            <MudTd>@context.Name</MudTd>
+                            <MudTd>@context.PostedAt</MudTd>
+                            <MudTd>@context.Designation</MudTd>
+                            <MudTd>@context.EventDate</MudTd>
+                        </RowTemplate>
+                        <PagerContent>
+                            <MudTablePager />
+                        </PagerContent>
+                    </MudTable>
+
+                    @if ((StaffEvents == null || !StaffEvents.Any()) && !IsLoading)
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mt-2">No Data Found as on - @AppTime.Now.ToString("dd/MM/yyyy")</MudAlert>
+                    }
+                </MudItem>
+
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter]
+    public string EventType { get; set; }
+
+    private string PageTitle => EventType == "birthday" ? "Today's Birthdays" : "Retirements This Month";
+
+    private List<PageHeader.Crumb> _crumbs => new()
+    {
+        new("Home", "home-dashboard"),
+        new(EventType == "birthday" ? "Birthdays" : "Retirements"),
+    };
+
+    private string SelectedZone { get; set; } = "1";
+    private string SelectedRegion { get; set; } = "1";
+    private string SelectedBranch { get; set; } = "1";
+
+    private bool IsLoading { get; set; } = true;
+    private IEnumerable<StaffEventDto> StaffEvents { get; set; }
+
+    #region Drop-downs
+    private IEnumerable<LocationDropdownDto> Zones { get; set; } = new List<LocationDropdownDto>();
+    private IEnumerable<LocationDropdownDto> Regions { get; set; } = new List<LocationDropdownDto>();
+    private IEnumerable<LocationDropdownDto> Branches { get; set; } = new List<LocationDropdownDto>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Zones = await EventService.GetZonesAsync();
+        StateHasChanged();
+    }
+    protected override async Task OnParametersSetAsync()
+    {
+        if (EventType != "birthday" && EventType != "retirement")
+        {
+            NavManager.NavigateTo("Landing_Dashboard_V2");
+            return;
+        }
+        await LoadDataAsync();
+    }
+
+    // Notice we added the string parameter to these methods
+    private async Task OnZoneChangedAsync(string val)
+    {
+        SelectedZone = val; // Set the value manually
+        SelectedRegion = "1";
+        SelectedBranch = "1";
+        Regions = new List<LocationDropdownDto>();
+        Branches = new List<LocationDropdownDto>();
+
+        if (SelectedZone != "1" && SelectedZone != "100000")
+        {
+            Regions = await EventService.GetRegionsAsync(SelectedZone);
+        }
+
+        await LoadDataAsync();
+    }
+
+    private async Task OnRegionChangedAsync(string val)
+    {
+        SelectedRegion = val; // Set the value manually
+        SelectedBranch = "1";
+        Branches = new List<LocationDropdownDto>();
+
+        if (SelectedRegion != "1")
+        {
+            Branches = await EventService.GetBranchesAsync(SelectedRegion);
+        }
+
+        await LoadDataAsync();
+    }
+
+    // We need to create this new method for the Branch dropdown
+    private async Task OnBranchChangedAsync(string val)
+    {
+        SelectedBranch = val;
+        await LoadDataAsync();
+    }
+    #endregion
+
+    private async Task LoadDataAsync()
+    {
+        IsLoading = true;
+        try
+        {
+            StaffEvents = await EventService.GetStaffEventsAsync(SelectedZone, SelectedRegion, SelectedBranch, EventType);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+        StateHasChanged();
+    }
+}

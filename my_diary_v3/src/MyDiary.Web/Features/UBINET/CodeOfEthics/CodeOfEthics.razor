@@ -1,0 +1,76 @@
+@page "/code-of-ethics"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout MyDiary.Web.Components.Layout.MainLayout
+
+<PageTitle>Code of Ethics — My Diary | Union Bank of India</PageTitle>
+
+<PageHeader Title="Code of Ethics"
+            Subtitle="Download the Code of Ethics document in your preferred language"
+            PageKey="code-of-ethics"
+            Crumbs="_crumbs" />
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+
+    @* Language Downloads Section *@
+    <MudPaper Elevation="2" Class="pa-4 rounded-lg mb-5"
+              Style="border-left: 4px solid var(--rp-navy, #1E3A8A);">
+        <MudText Typo="Typo.h6" Class="mb-4" Style="font-weight:700; color:var(--rp-navy, #1E3A8A); border-bottom:2px solid #eef0f4; padding-bottom:8px;">
+            <MudIcon Icon="@Icons.Material.Filled.Language" Class="mr-2" Style="vertical-align:middle;" />
+            Available Languages
+        </MudText>
+
+        <MudGrid Spacing="3">
+            @foreach (var lang in _languages)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="1" Class="lang-card-item" Style="border-radius:10px; transition: box-shadow 0.2s ease, transform 0.15s ease; border: 1px solid #eef0f4;">
+                        <MudCardContent Class="d-flex align-center justify-center pa-4" Style="min-height:80px;">
+                            <MudLink Href="@lang.Url" Target="_blank"
+                                     Style="color:var(--rp-navy, #1E3A8A); font-weight:600; font-size:1rem; text-decoration:none; display:flex; align-items:center; gap:8px;">
+                                <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" />
+                                @lang.Name
+                            </MudLink>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    </MudPaper>
+
+</MudContainer>
+
+<style>
+    .lang-card-item:hover {
+        box-shadow: 0 4px 20px rgba(30,58,138,0.15) !important;
+        transform: translateY(-2px);
+    }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Knowledge Hub", "circulars"),
+        new("Code of Ethics"),
+    };
+
+    private record LanguageDoc(string Name, string Url);
+
+    private readonly List<LanguageDoc> _languages = new()
+    {
+        new("Hindi", "download/Code of Ethics/Hindi Code of Ethics.pdf"),
+        new("English", "download/Code of Ethics/English Code of Ethics.pdf"),
+        new("Odia", "download/Code of Ethics/Code of Ethics - Odia.pdf"),
+        new("Bengali", "download/Code of Ethics/Bengali Code of Ethics.pdf"),
+        new("Tamil", "download/Code of Ethics/Code of Ethics - Tamil.pdf"),
+        new("Telugu", "download/Code of Ethics/Telugu - Union Bank of India Code of Ethics.pdf"),
+        new("Malayalam", "download/Code of Ethics/Code of Ethics - Malayalam.pdf"),
+        new("Kannada", "download/Code of Ethics/Kannada - Code of Ethics.pdf"),
+        new("Punjabi", "download/Code of Ethics/Code of Ethics - Punjabi.pdf"),
+        new("Gujarati", "download/Code of Ethics/Code of Ethics - Gujarathi.pdf"),
+        new("Marathi", "download/Code of Ethics/Code of Ethics - Marathi.pdf"),
+        new("Assamese", "download/Code of Ethics/Code of Ethics - Assamese.pdf"),
+    };
+}

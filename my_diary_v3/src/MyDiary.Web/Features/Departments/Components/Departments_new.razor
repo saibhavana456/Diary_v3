@@ -1,0 +1,228 @@
+﻿@page "/departments_new"
+@using MyDiary.Web.Features.Departments.Models
+@using MyDiary.Web.Features.Departments.Services
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject IMenuService DeptService
+@using MudBlazor
+@using MyDiary.Web.Features.Menus.Services
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="12">
+        <div id="dept-page-root" class="mb-4">
+
+            <MudCard Class="overflow-hidden h-100" Elevation="2" Style="border-radius:12px;">
+                <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:50px; font-weight:800; letter-spacing:.3px;
+                                      background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    Deparments
+                </MudCardHeader>
+
+                @if (DepartmentList is null)
+                {
+                    <div class="d-flex justify-content-center p-5">
+                        <div class="spinner-border text-danger" role="status"></div>
+                    </div>
+                }
+                else
+                {
+                    <!-- ************** CATEGORY LEVEL (Accordion 1: single-open by default) ************** -->
+                    <MudExpansionPanels Class="mb-3" Elevation="0">
+                        @foreach (var catGroup in DepartmentList.GroupBy(d => d.CATEGORY))
+                        {
+                            var categoryName = catGroup.Key;
+
+                            <MudExpansionPanel Class="mb-2 cat-panel">
+                                <TitleContent>
+                                    <div class="cat-header-text">@categoryName</div>
+                                </TitleContent>
+
+                                <ChildContent>
+                                    <!-- ************** SUB-CATEGORY LEVEL (Accordion 2: single-open) ************** -->
+                                    <MudExpansionPanels Class="px-1" Elevation="0">
+                                        @{
+                                            var subCounter = 1;
+                                        }
+                                        @foreach (var subGroup in catGroup.GroupBy(s => s.SUB_CATEGORY))
+                                        {
+                                            var subName = subGroup.Key;
+                                            var subClass = GetSubPanelClass(subCounter++);  // 1..5 cycling classes
+
+                                            <MudExpansionPanel Class="@($"mb-2 sub-panel {subClass}")">
+                                                <TitleContent>
+                                                    <div class="sub-header-text">@subName</div>
+                                                </TitleContent>
+
+                                                <ChildContent>
+                                                    <div class="row g-3">
+                                                        @foreach (var item in subGroup)
+                                                        {
+                                                            <div class="col-sm-6 col-md-4 col-lg-3">
+                                                                <!-- Tile -->
+                                                                <div class="vertical-card menu-trigger rounded-lg shadow-sm"
+                                                                     tabindex="0" role="button" aria-haspopup="true" aria-expanded="false">
+                                                                    <div class="card-body p-3">
+                                                                        <div class="d-flex align-items-center">
+                                                                            <div class="icon-wrapper me-3">
+                                                                                <MudIcon Icon="@MudBlazor.Icons.Material.Filled.MenuOpen"
+                                                                                         Color="MudBlazor.Color.Inherit"
+                                                                                         Size="MudBlazor.Size.Medium" />
+                                                                            </div>
+                                                                            <div class="content-wrapper">
+                                                                                <p class="vertical-title mb-0">@item.VERTICAL</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </ChildContent>
+                                            </MudExpansionPanel>
+                                        }
+                                    </MudExpansionPanels>
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+                    </MudExpansionPanels>
+                }
+            </MudCard>
+        </div>
+    </MudItem>
+</MudGrid>
+
+<style>
+    /* ===== CATEGORY HEADER COLORS ===== */
+    .cat-panel .mud-expand-panel-header {
+        border: 1px solid #eee;
+        font-weight: 600;
+        color: #1f1f1f; /* collapsed text color */
+        background-color: #fff; /* collapsed background */
+    }
+
+        /* Expanded: handle both variants (header gets .mud-expanded OR panel root gets .mud-panel-expanded) */
+        .cat-panel .mud-expand-panel-header.mud-expanded,
+        .cat-panel .mud-panel-expanded > .mud-expand-panel-header,
+        .cat-panel .mud-expand-panel-header.mud-expand-panel-header-gutters.mud-expanded,
+        .cat-panel .mud-panel-expanded > .mud-expand-panel-header.mud-expand-panel-header-gutters {
+            background-color: #1a027e !important; /* your blue */
+            color: #fff !important;
+            border-color: #1a027e !important;
+        }
+
+        .cat-panel .mud-expand-panel-header .mud-expand-panel-text,
+        .cat-panel .mud-expand-panel-header .mud-icon-root {
+            color: inherit !important;
+        }
+
+    .cat-header-text {
+        font-weight: 700;
+    }
+
+    /* ===== SUB-CATEGORY HEADER COLORS (reset on collapse, color on expand) ===== */
+    .sub-panel .mud-expand-panel-header {
+        border: 1px solid #eee;
+        font-weight: 600;
+        color: #1f1f1f;
+        background-color: #fff;
+    }
+
+    /* Expanded state selectors cover both mechanisms again */
+    .sub-panel.sub-one .mud-expand-panel-header.mud-expanded,
+    .sub-panel.sub-one .mud-panel-expanded > .mud-expand-panel-header {
+        background-color: #ad6969 !important;
+        color: #fff !important;
+        border-color: #ad6969 !important;
+    }
+
+    .sub-panel.sub-two .mud-expand-panel-header.mud-expanded,
+    .sub-panel.sub-two .mud-panel-expanded > .mud-expand-panel-header {
+        background-color: #ba855e !important;
+        color: #fff !important;
+        border-color: #ba855e !important;
+    }
+
+    .sub-panel.sub-three .mud-expand-panel-header.mud-expanded,
+    .sub-panel.sub-three .mud-panel-expanded > .mud-expand-panel-header {
+        background-color: #65a397 !important;
+        color: #fff !important;
+        border-color: #65a397 !important;
+    }
+
+    .sub-panel.sub-four .mud-expand-panel-header.mud-expanded,
+    .sub-panel.sub-four .mud-panel-expanded > .mud-expand-panel-header {
+        background-color: #676096 !important;
+        color: #fff !important;
+        border-color: #676096 !important;
+    }
+
+    .sub-panel.sub-five .mud-expand-panel-header.mud-expanded,
+    .sub-panel.sub-five .mud-panel-expanded > .mud-expand-panel-header {
+        background-color: #9a626d !important;
+        color: #fff !important;
+        border-color: #9a626d !important;
+    }
+
+    .sub-header-text {
+        font-weight: 700;
+    }
+
+    /* ===== TILE STYLES (kept) ===== */
+    .vertical-card {
+        background: linear-gradient(-45deg, #1572e8, #0b5ed7) !important;
+        color: #fff;
+        border: none;
+        transition: transform .2s ease-in-out, box-shadow .18s ease;
+        border-radius: 12px !important;
+        min-height: 70px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 20px 30px rgba(0,0,0,.12), 0 10px 20px rgba(0,0,0,.06);
+    }
+
+        .vertical-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 28px 50px rgba(0,0,0,.20), 0 14px 28px rgba(0,0,0,.14);
+        }
+
+    .icon-wrapper {
+        background: rgba(255, 255, 255, 0.2);
+        padding: 8px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .vertical-title {
+        font-size: .8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        line-height: 1.2;
+    }
+
+    /* tighten panel content padding a bit */
+    .mud-expand-panel .mud-expand-panel-content {
+        padding: 8px 12px 12px 12px;
+    }
+</style>
+
+@code {
+    private List<Department_New>? DepartmentList;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DepartmentList = await DeptService.GetDepartmentsAsync();
+    }
+
+    // 5-color cycle for sub panels
+    private static string GetSubPanelClass(int index) => (index % 5) switch
+    {
+        1 => "sub-one",
+        2 => "sub-two",
+        3 => "sub-three",
+        4 => "sub-four",
+        0 => "sub-five",
+        _ => "sub-one"
+    };
+}

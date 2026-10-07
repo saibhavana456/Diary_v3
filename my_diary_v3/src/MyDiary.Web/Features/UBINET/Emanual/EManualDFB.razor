@@ -1,0 +1,102 @@
+@page "/emanual/dfb-ibd"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@inject NavigationManager Nav
+@layout MyDiary.Web.Components.Layout.MainLayout
+<PageTitle>DFB & IBD – E-Manual</PageTitle>
+
+<PageHeader Title="DFB & IBD – Domestic & International Banking"
+            Subtitle="E-Manual Contents — Union Bank of India"
+            PageKey="emanual-dfb-ibd"
+            Crumbs="_crumbs" />
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+
+    <MudGrid Spacing="3">
+        @foreach (var vol in _volumes)
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudCard Elevation="2" Class="emanual-file-card"
+                         Style="border-radius:12px; height:100%; cursor:pointer; overflow:hidden;"
+                         @onclick="@(() => Nav.NavigateTo(vol.Route))">
+                    <div style="height:4px; background:#0277bd;"></div>
+                    <div style="height:140px; background:linear-gradient(145deg,#e1f5fe,#b3e5fc);
+                                display:flex; flex-direction:column;
+                                align-items:center; justify-content:center; gap:6px;">
+                        <MudIcon Icon="@vol.Icon" Style="font-size:3.2rem; color:#0277bd; opacity:0.85;" />
+                        <MudChip T="string" Size="Size.Small"
+                                 Style="background:#0277bd; color:white; font-weight:700;
+                                        font-size:0.75rem; height:22px;">
+                            @vol.VolumeTag
+                        </MudChip>
+                    </div>
+                    <MudCardContent Class="pa-3">
+                        <MudText Typo="Typo.subtitle2"
+                                 Style="font-weight:700; color:#1a237e; font-size:0.92rem; line-height:1.4;">
+                            @vol.Label
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="color:#666; margin-top:2px;">
+                            @vol.Description
+                        </MudText>
+                    </MudCardContent>
+                    <MudCardActions Class="pa-2 pt-0">
+                        <MudButton FullWidth="true" Variant="Variant.Filled"
+                                   Style="background:#0277bd; color:white; font-size:0.78rem;
+                                          border-radius:8px; font-weight:600;"
+                                   StartIcon="@Icons.Material.Filled.OpenInNew"
+                                   Size="Size.Small"
+                                   OnClick="@(() => Nav.NavigateTo(vol.Route))">
+                            Open
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+
+</MudContainer>
+
+<style>
+    .emanual-file-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .emanual-file-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.14) !important;
+    }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("E-manual Content", "emanual"),
+        new("DFB & IBD"),
+    };
+
+    private record VolumeItem(string VolumeTag, string Label, string Description,
+                               string Route, string Icon);
+
+    private List<VolumeItem> _volumes = new()
+    {
+        new("Volume 1", "Export",
+            "Documentation and procedures for export financing",
+            "emanual/dept/DFD_IBD_V1",
+            Icons.Material.Filled.FlightTakeoff),
+
+        new("Volume 2", "Imports",
+            "Documentation and procedures for import financing",
+            "emanual/dept/DFD_IBD_V2",
+            Icons.Material.Filled.FlightLand),
+
+        new("Volume 3", "NRI",
+            "Non-Resident Indian banking guidelines",
+            "emanual/dept/DFD_IBD_V3",
+            Icons.Material.Filled.PublicOff),
+
+        new("Volume 4", "Others",
+            "Forex, SWIFT, KYC/AML, ECB, FDI, ACU & more",
+            "emanual/dfb-ibd/volume4",
+            Icons.Material.Filled.MoreHoriz),
+    };
+}

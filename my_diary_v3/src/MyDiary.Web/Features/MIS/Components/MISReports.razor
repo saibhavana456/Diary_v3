@@ -1,0 +1,193 @@
+@* @page "/MIS/Reports/{CategoryCode}"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.MIS.Models
+@using MyDiary.Web.Features.MIS.Services
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject IMISService MISService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<style>
+    /* Styles preserved as per your original file */
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .tab-btn {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.08);
+        color: #1f2937;
+        padding: 8px 18px;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.25s ease;
+        text-transform: none !important;
+    }
+
+        .tab-btn.active {
+            background: var(--primary-gradient);
+            color: #fff;
+            box-shadow: 0 10px 26px rgba(30,58,138,0.45);
+            border: none;
+        }
+
+    .app-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        padding: 20px 22px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        transition: all 0.25s ease;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+        .app-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.15);
+        }
+
+    .app-card__body {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .card-title {
+        font-weight: 700;
+        color: #111827;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        max-width: 220px;
+        word-wrap: break-word;
+    }
+
+    .app-info-text {
+        font-size: 0.95rem;
+        color: #374151;
+        margin-bottom: 2px;
+        line-height: 1.4;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .icon-badge {
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .app-divider {
+        height: 1px;
+        background-color: #d1d5db;
+        margin: 10px 0;
+    }
+
+    .go-btn {
+        min-width: 90px;
+        letter-spacing: 1px;
+    }
+
+        .go-btn ::deep .mud-button-label {
+            font-weight: 800;
+        }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+            <MudCard Class="overflow-hidden" Elevation="2" Style="border-top-left-radius: 10px; border-top-right-radius: 10px; border-bottom-left-radius: 0; border-bottom-right-radius: 0;">
+                <MudCardHeader Class="d-flex align-center justify-center text-white" Style="height:50px; font-weight:800; letter-spacing:.3px; background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    @_categoryName — Reports
+                </MudCardHeader>
+            </MudCard>
+
+            <div class="pa-3" style="border-bottom: 1px solid #f1f5f9;">
+                <MudBreadcrumbs Items="_breadcrumbs" Separator=">" Class="pa-0">
+                    <ItemTemplate Context="item">
+                        @if (!string.IsNullOrWhiteSpace(item.Href))
+                        {
+                            <MudLink Href="@item.Href" Style="color:#1E3A8A; font-weight:600; font-size:0.9rem;">@item.Text</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Style="color:#6b7280; font-weight:600; font-size:0.9rem;">@item.Text</MudText>
+                        }
+                    </ItemTemplate>
+                </MudBreadcrumbs>
+            </div>
+
+            @if (_reports.Count > 0)
+            {
+                <MudGrid GutterSize="24px" Class="pa-4">
+                    @foreach (var report in _reports)
+                    {
+                        <MudItem xs="12" sm="6" md="4" lg="4" xl="3" Class="d-flex">
+                            <div class="app-card w-100" @onclick="() => OpenReport(report)" role="button" tabindex="0">
+                                <div class="app-card__body">
+                                    <div class="d-flex align-start gap-4">
+                                        <div class="icon-badge"><MudIcon Icon="@report.Icon" Color="MudBlazor.Color.Success" Style="font-size: 2rem;" /></div>
+                                        <div class="flex-grow-1 text-container"><div class="app-info-text card-title">@report.Name</div></div>
+                                    </div>
+                                    <div class="app-divider"></div>
+                                    <div class="d-flex flex-column gap-1">
+                                        <div class="app-info-text"><b>Category:</b> @_categoryName</div>
+                                        <div class="app-info-text"><b>S_NO:</b> @report.S_NO</div>
+                                    </div>
+                                </div>
+                                <div class="app-card__footer d-flex justify-end">
+                                    <MudButton Variant="Variant.Text" Class="tab-btn active go-btn" EndIcon="@Icons.Material.Filled.ArrowRightAlt" OnClick="() => OpenReport(report)">GO</MudButton>
+                                </div>
+                            </div>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+            else if (!_loading)
+            {
+                <div class="d-flex justify-center pa-6"><MudText Typo="Typo.body1" Style="color:#9ca3af;">No reports available.</MudText></div>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public string CategoryCode { get; set; } = "";
+    [SupplyParameterFromQuery] public string? vertical { get; set; }
+    [SupplyParameterFromQuery] public string? category { get; set; }
+
+    private List<MISModel> _reports = new();
+    private List<BreadcrumbItem> _breadcrumbs = new();
+    private string _verticalName = "";
+    private string _categoryName = "";
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _verticalName = vertical ?? "";
+        _categoryName = category ?? CategoryCode;
+        _breadcrumbs = new List<BreadcrumbItem>
+        {
+            new("MIS", "/MIS", icon: Icons.Material.Filled.Home),
+            new(_verticalName, "/MIS"),
+            new(_categoryName, null, disabled: true)
+        };
+        _loading = true;
+        _reports = await MISService.GetReportsAsync(CategoryCode);
+        _loading = false;
+    }
+
+    private async Task OpenReport(MISReport report)
+    {
+        if (!string.IsNullOrWhiteSpace(report.ExternalUrl))
+            await JS.InvokeVoidAsync("window.open", report.ExternalUrl, "_blank", "noopener,noreferrer");
+    }
+} *@

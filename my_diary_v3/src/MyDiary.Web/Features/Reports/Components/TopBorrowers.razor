@@ -1,0 +1,160 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/topBorrowers"
+@using Microsoft.JSInterop
+@using System.Linq
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Top Borrowers — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    // This page uses "All" (not "1") in WebForms. Keep "all" as the default to mirror it.
+    private string _selectedZone = "all", _selectedRegion = "all", _selectedBranch = "all";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // Privilege context � map these from claims if available
+    // CO | ZONE | REGION | BRANCH
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Columns configuration (match SELECT aliases)
+    private readonly List<ColumnConfig> _cols = new() {
+        new ColumnConfig { Header = "Zone",          PropertyName = "zone_name_eng", Width = "14%" },
+        new ColumnConfig { Header = "Region",        PropertyName = "region_name",   Width = "14%" },
+        new ColumnConfig { Header = "Branch",        PropertyName = "branch_name",   Width = "14%" },
+        new ColumnConfig { Header = "Customer ID",   PropertyName = "CustID",        Width = "10%" },
+        new ColumnConfig { Header = "Customer Name", PropertyName = "CustName",      Width = "16%" },
+        new ColumnConfig { Header = "Contact No.",   PropertyName = "phone",         Width = "12%" },
+        new ColumnConfig { Header = "Address",       PropertyName = "address1",      Width = "18%" },
+        new ColumnConfig { Header = "Total Balance", PropertyName = "TotalBalance",  IsNumeric = true, Format = "N2", Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Top Borrowers";
+        _activeConfig.Columns = _cols;
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) f)
+    {
+        _selectedZone = f.zone;
+        _selectedRegion = f.region;
+        _selectedBranch = f.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Base FROM and SELECT (TOP 25, values in Lacs)
+            string fromJoin =
+                " FROM TopBorrowers a " +
+                " JOIN Branch_Master b ON a.SolID = b.SOL_ID " +
+                " LEFT JOIN CustomerAddress add1 ON a.CustID = add1.cifid ";
+
+            string selectCols =
+                " TOP 25 " +
+                " a.CustID AS CustID, " +
+                " a.CustName, " +
+                " ABS((a.TotalBalance) / 100000.0) AS TotalBalance, " +  // Lacs
+                " b.BRANCH_NAME AS branch_name, b.region_name, b.zone_name_eng, " +
+                " (ISNULL(add1.PhoneNo,'') + '  ' + ISNULL(add1.HomePhNo,'') + '  ' + ISNULL(add1.MobilePhNo,'')) AS phone, " +
+                " (ISNULL(add1.address1,'') + '  ' + ISNULL(add1.address2,'')) AS address1 ";
+
+            string where = " WHERE 1=1 ";
+            string orderBy = " ORDER BY TotalBalance DESC";
+
+            // ---------- Privilege scope ----------
+            switch (_userPrivilege)
+            {
+                case "ZONE":
+                    where += $" AND b.Zone_solid = '{_userZoneSolid}'";
+                    break;
+                case "REGION":
+                    where += $" AND b.region_solid = '{_userRegionSolid}'";
+                    break;
+                case "BRANCH":
+                    where += $" AND b.sol_id = '{_userBranchSolid}'";
+                    break;
+            }
+
+            // ---------- User selections (All = 'all') ----------
+            if (!string.Equals(_selectedZone, "all", StringComparison.OrdinalIgnoreCase))
+                where += $" AND b.zone_solid = '{_selectedZone}'";
+
+            if (!string.Equals(_selectedRegion, "all", StringComparison.OrdinalIgnoreCase))
+                where += $" AND b.region_solid = '{_selectedRegion}'";
+
+            if (!string.Equals(_selectedBranch, "all", StringComparison.OrdinalIgnoreCase))
+                where += $" AND b.sol_id = '{_selectedBranch}'";
+
+        // Data query and as-on-date are independent - run in parallel
+            var finalQuery = $"SELECT {selectCols} {fromJoin}{where}{orderBy}";
+            var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            var dateTask = ReportService.GetAsOnDateAsync("TopBorrowers");
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+
+            var asOn = dateTask.Result;
+            _asOnDateLabel = _data.Count > 0
+                ? $"Data As On - {asOn} (Rs. in Lacs)"
+                : " ";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[TopBorrowers] Unhandled error: " + ex.Message);
+            _data = new();
+            _asOnDateLabel = " ";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _cols, "TopBorrowers");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "TopBorrowers.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

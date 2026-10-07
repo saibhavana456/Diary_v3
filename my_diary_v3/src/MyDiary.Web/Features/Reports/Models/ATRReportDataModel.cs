@@ -1,0 +1,107 @@
+﻿namespace MyDiary.Web.Features.Reports.Models
+{
+    public class ATRReportDataModel
+    {
+        public string ATR_REPORT_ID { get; set; }
+        public string SOLID { get; set; }
+        public string BR_CODE { get; set; }
+        public string BR_NAME { get; set; }
+        public string RO_CODE { get; set; }
+        public string RO_NAME { get; set; }
+        public string ZO_CODE { get; set; }
+        public string ZO_NAME { get; set; }
+        public DateTime MANDATORYREPORTDATE { get; set; }
+        public string PF_NAME_ENTRY { get; set; }
+        public string DATE_TIME_ENTRY { get; set; }
+
+        public string Q1OPT { get; set; }
+        public string Q1COMMENT { get; set; }
+        public string Q2OPT { get; set; }
+        public string Q2COMMENT { get; set; }
+        public string Q3OPT { get; set; }
+        public string Q3COMMENT { get; set; }
+        public string Q4OPT { get; set; }
+        public string Q4COMMENT { get; set; }
+        public string Q5OPT { get; set; }
+        public string Q5COMMENT { get; set; }
+        public string Q6OPT { get; set; }
+        public string Q6COMMENT { get; set; }
+        public string Q7OPT { get; set; }
+        public string Q7COMMENT { get; set; }
+        public string Q8OPT { get; set; }
+        public string Q8COMMENT { get; set; }
+        public string Q9OPT { get; set; }
+        public string Q9COMMENT { get; set; }
+        public string Q10OPT { get; set; }
+        public string Q10COMMENT { get; set; }
+        public string Q11OPT { get; set; }
+        public string Q11COMMENT { get; set; }
+        public string Q12OPT { get; set; }
+        public string Q12COMMENT { get; set; }
+        public string Q13OPT { get; set; }
+        public string Q13COMMENT { get; set; }
+        public string Q14OPT { get; set; }
+        public string Q14COMMENT { get; set; }
+        public string Q15OPT { get; set; }
+        public string Q15COMMENT { get; set; }
+        public string Q16OPT { get; set; }
+        public string Q16COMMENT { get; set; }
+        public string Q17OPT { get; set; }
+        public string Q17COMMENT { get; set; }
+        public string Q18OPT { get; set; }
+        public string Q18COMMENT { get; set; }
+        public string Q19OPT { get; set; }
+        public string Q19COMMENT { get; set; }
+        public string Q20OPT { get; set; }
+        public string Q20COMMENT { get; set; }
+        public string Q21OPT { get; set; }
+        public string Q21COMMENT { get; set; }
+        public string Q22OPT { get; set; }
+        public string Q22COMMENT { get; set; }
+        public string Q23OPT { get; set; }
+        public string Q23COMMENT { get; set; }
+        public string Q24OPT { get; set; }
+        public string Q24COMMENT { get; set; }
+        public string Q25OPT { get; set; }
+        public string Q25COMMENT { get; set; }
+        public string Q26OPT { get; set; }
+        public string Q26COMMENT { get; set; }
+        public string Q27OPT { get; set; }
+        public string Q27COMMENT { get; set; }
+        public string Q28OPT { get; set; }
+        public string Q28COMMENT { get; set; }
+        public string Q29OPT { get; set; }
+        public string Q29COMMENT { get; set; }
+        public string Q30OPT { get; set; }
+        public string Q30COMMENT { get; set; }
+        public string Q31OPT { get; set; }
+        public string Q31COMMENT { get; set; }
+        public string Q32OPT { get; set; }
+        public string Q32COMMENT { get; set; }
+        public string Q33OPT { get; set; }
+        public string Q33COMMENT { get; set; }
+        public string Q34OPT { get; set; }
+        public string Q34COMMENT { get; set; }
+
+        public string QEXT1OPT { get; set; }
+        public string QEXT1COMMENT { get; set; }
+        public string QEXT2OPT { get; set; }
+        public string QEXT2COMMENT { get; set; }
+        public string QEXT3OPT { get; set; }
+        public string QEXT3COMMENT { get; set; }
+        public string QEXT4OPT { get; set; }
+        public string QEXT4COMMENT { get; set; }
+
+        public string ENTRY_BY { get; set; }
+        public DateTime? ENTRY_DATE { get; set; }
+        public string MODIFY_BY { get; set; }
+        public DateTime? MODIFY_DATE { get; set; }
+        public string SUBMIT_BY { get; set; }
+        public DateTime? SUBMIT_DATE { get; set; }
+        public string VERIFIED_BY { get; set; }
+        public DateTime? VERIFIED_DATE { get; set; }
+        public string STATUS { get; set; }
+        public string STATUS_DESC { get; set; }
+        public DateTime? RESPONSESUBMITTEDDATE { get; set; }
+    }
+}

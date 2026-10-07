@@ -1,0 +1,772 @@
+@page "/flatmgmt/admin/grievance-action"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IGrievanceActionService GrievanceService
+@inject IUserFlatService FlatService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Service Request Action - Flat Management System</PageTitle>
+
+<div class="aga-page">
+    <PageHeader Title="Service Request Action" Crumbs="_crumbs" PageKey="flatmgmt-admin-grievance-action" />
+    <a href="flatmgmt/admin/grievances" class="aga-back">&laquo; Back to All Service Requests</a>
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (loadError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">@loadError</MudAlert>
+    }
+    else if (grievance is null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">Service Request not found.</MudAlert>
+    }
+    else
+    {
+        <!-- FLAT DETAILS -->
+        <MudCard Class="aga-card mt-4" Elevation="2">
+            <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Flat Details</MudText></CardHeaderContent></MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Flat No.</MudText>
+                        <MudText Typo="Typo.body1">@(flatResult?.Flat?.FlatNo ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Type / Area</MudText>
+                        <MudText Typo="Typo.body1">@(flatResult?.Flat?.FlatType ?? "-") / @(flatResult?.Flat?.CarpetArea ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Building Name</MudText>
+                        <MudText Typo="Typo.body1">@(flatResult?.Flat?.BuildingName ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Address</MudText>
+                        <MudText Typo="Typo.body1">@(flatResult?.Flat?.Address ?? "-")</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <!-- CURRENT OCCUPANT -->
+        <MudCard Class="aga-card mt-4" Elevation="2">
+            <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Current Occupant Details</MudText></CardHeaderContent></MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@occupantRows" Hover="true" Bordered="true" Dense="true" Class="aga-table">
+                    <HeaderContent>
+                        <MudTh>Employee Details</MudTh>
+                        <MudTh>IP-Phone / Mobile / Email</MudTh>
+                        <MudTh>Occupy / Posting / Retirement</MudTh>
+                        <MudTh>Posting / RO / ZO</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee Details">@context.EmplId<br />@context.Name<br />@context.JobDesc</MudTd>
+                        <MudTd DataLabel="IP-Phone / Mobile / Email">@context.ContactNo<br />@context.EmailId</MudTd>
+                        <MudTd DataLabel="Occupy / Posting / Retirement">
+                            @(context.BeginDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.DeptJoinDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.ExpectedRetirementDate?.ToString("dd-MMM-yyyy") ?? "-")
+                        </MudTd>
+                        <MudTd DataLabel="Posting / RO / ZO">@context.LocationDesc<br />@context.RegionName<br />@context.ZoneName</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText>No Current Occupant</MudText></NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+
+        <!-- SERVICE REQUEST DETAILS -->
+        <MudCard Class="aga-card mt-4" Elevation="2">
+            <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Service Request Details</MudText></CardHeaderContent></MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Reference No.</MudText>
+                        <MudText Typo="Typo.body1">@grievance.RefNo</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Status</MudText>
+                        <MudChip T="string" Color="Color.Info" Size="Size.Small">@(grievance.Status ?? "-")</MudChip>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Category</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.Category ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Service Request Date</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.CreatedOn ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Service Request By</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.CreatedByName ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Attachment</MudText>
+                        @if (!string.IsNullOrWhiteSpace(grievance.AttachmentPath))
+                        {
+                            <MudLink Href="@grievance.AttachmentPath" Target="_blank">View Attachment</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body1">-</MudText>
+                        }
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Subject</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.Subject ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="aga-label">Description</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.Description ?? "-")</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <!-- ADD ACTION -->
+        <MudCard Class="aga-card mt-4" Elevation="2">
+            <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Add Action</MudText></CardHeaderContent></MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" @bind-Value="selectedAction" Label="Action*" Variant="Variant.Outlined" @bind-Value:after="OnActionChanged">
+                            <MudSelectItem Value="@("Select")">Select</MudSelectItem>
+                            <MudSelectItem Value="@("Call For Quotation")">Call For Quotation</MudSelectItem>
+                            <MudSelectItem Value="@("Assigned to Vendor")">Assigned to Vendor</MudSelectItem>
+                            <MudSelectItem Value="@("On site Vendor Visit")">On site Vendor Visit</MudSelectItem>
+                            <MudSelectItem Value="@("Submit Quotation")">Submit Quotation</MudSelectItem>
+                            <MudSelectItem Value="@("Quotation Approval")">Quotation Approval</MudSelectItem>
+                            <MudSelectItem Value="@("Work Started")">Work Started</MudSelectItem>
+                            <MudSelectItem Value="@("Work in Progress")">Work in Progress</MudSelectItem>
+                            <MudSelectItem Value="@("Work Completed")">Work Completed</MudSelectItem>
+                            <MudSelectItem Value="@("Invoice Submitted")">Invoice Submitted</MudSelectItem>
+                            <MudSelectItem Value="@("Payment Completed")">Payment Completed</MudSelectItem>
+                        </MudSelect>
+                        @if (!string.IsNullOrEmpty(actionHint))
+                        {
+                            <MudText Typo="Typo.caption" Class="aga-hint">@actionHint</MudText>
+                        }
+                    </MudItem>
+
+                    @if (selectedAction == "Call For Quotation")
+                    {
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker @bind-Date="quotationRequestDate" Label="Quotation Request Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker @bind-Date="lastSubmissionDate" Label="Last Submission Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Assigned to Vendor")
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudSelect T="string" @bind-Value="selectedVendorId" Label="Select Vendor*" Variant="Variant.Outlined" @bind-Value:after="OnVendorChanged">
+                                <MudSelectItem Value="@("")">-- Select vendor --</MudSelectItem>
+                                @foreach (var v in vendors)
+                                {
+                                    <MudSelectItem Value="@v.VendorId">@v.VendorName</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudDatePicker @bind-Date="expectedVendorVisitDate" Label="Expected Vendor Visit Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+
+                        @if (selectedVendorInfo is not null)
+                        {
+                            <MudItem xs="12">
+                                <MudText Typo="Typo.subtitle2" Class="aga-label">Contact Person Details</MudText>
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudTextField @bind-Value="vendorSpocName" Label="Name" Variant="Variant.Outlined" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudTextField @bind-Value="vendorSpocContact" Label="Mobile" Variant="Variant.Outlined" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudTextField @bind-Value="vendorSpocEmail" Label="Email" Variant="Variant.Outlined" />
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="@isBusy" OnClick="SendReminder">
+                                    Send Reminder to Vendor
+                                </MudButton>
+                            </MudItem>
+                        }
+                    }
+
+                    @if (selectedAction == "On site Vendor Visit")
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudDatePicker @bind-Date="vendorVisitDate" Label="Vendor Visit Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Submit Quotation")
+                    {
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker @bind-Date="quotationDate" Label="Quotation Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudNumericField @bind-Value="quotationAmt" Label="Quotation Amount*" Variant="Variant.Outlined" Format="N2" Min="0m" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Quotation Approval")
+                    {
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker @bind-Date="quotationApprovalDate" Label="Quotation Approval Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudNumericField @bind-Value="quotationApprovalAmt" Label="Quotation Approval Amount*" Variant="Variant.Outlined" Format="N2" Min="0m" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudTextField @bind-Value="quotationApprovalRefNo" Label="Quotation Ref No*" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudTextField @bind-Value="quotationApprovalBy" Label="Quotation Approved By*" Variant="Variant.Outlined" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Work Started")
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudDatePicker @bind-Date="workStartedDate" Label="Work Started Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Work in Progress")
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudDatePicker @bind-Date="workInProgressDate" Label="Work In-Progress Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Work Completed")
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudDatePicker @bind-Date="workCompletedDate" Label="Work Completed Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Invoice Submitted")
+                    {
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="invoiceNo" Label="Invoice No*" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudDatePicker @bind-Date="invoiceDate" Label="Invoice Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudNumericField @bind-Value="invoiceAmt" Label="Invoice Amount*" Variant="Variant.Outlined" Format="N2" Min="0m" />
+                        </MudItem>
+                    }
+
+                    @if (selectedAction == "Payment Completed")
+                    {
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker @bind-Date="paymentDate" Label="Payment Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudNumericField @bind-Value="paymentAmt" Label="Payment Amount*" Variant="Variant.Outlined" Format="N2" Min="0m" />
+                        </MudItem>
+                    }
+                </MudGrid>
+
+                @if (selectedAction == "Work Completed")
+                {
+                    <MudPaper Class="aga-fieldset mt-4" Outlined="true">
+                        <MudText Typo="Typo.subtitle2" Class="aga-label mb-2">Product Details (Work Completed)*</MudText>
+                        <MudGrid>
+                            <MudItem xs="12" md="4">
+                                <MudTextField @bind-Value="productName" Label="Product Name*" Variant="Variant.Outlined" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudNumericField @bind-Value="productQty" Label="Qty*" Variant="Variant.Outlined" Min="0m" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudTextField @bind-Value="productDesc" Label="Description" Variant="Variant.Outlined" />
+                            </MudItem>
+                            <MudItem xs="12" md="2" Class="d-flex align-center">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="AddProduct">Add Row</MudButton>
+                            </MudItem>
+                        </MudGrid>
+
+                        @if (products.Count > 0)
+                        {
+                            <MudTable Items="@products" Dense="true" Bordered="true" Class="mt-2">
+                                <HeaderContent>
+                                    <MudTh>Product Name</MudTh><MudTh>Qty</MudTh><MudTh>Description</MudTh><MudTh></MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>@context.ProductName</MudTd>
+                                    <MudTd>@context.Qty</MudTd>
+                                    <MudTd>@context.Description</MudTd>
+                                    <MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => products.Remove(context))" /></MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    </MudPaper>
+                }
+
+                <MudGrid Class="mt-2">
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.body2" Class="aga-label mb-1">Attach File</MudText>
+                        <InputFile OnChange="OnActionFileSelected" />
+                        <MudText Typo="Typo.caption" Class="aga-hint">Allowed: .jpg, .jpeg, .png, .pdf, .docx (max 2 MB)</MudText>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="remarks" Label="Remarks*" Variant="Variant.Outlined" Lines="3" MaxLength="1000" />
+                    </MudItem>
+                </MudGrid>
+
+                <div class="aga-actions">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isBusy" OnClick="HandleSave">
+                        @(isBusy ? "Saving..." : "Save Action")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Class="ml-2" Disabled="@isBusy" OnClick="ResetForm">Reset</MudButton>
+                </div>
+            </MudCardContent>
+        </MudCard>
+
+        <!-- ACTION HISTORY -->
+        <MudCard Class="aga-card mt-4" Elevation="2">
+            <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Action Taken Details</MudText></CardHeaderContent></MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@actionHistory" Hover="true" Bordered="true" Dense="true" Class="aga-table" RowsPerPage="10">
+                    <HeaderContent>
+                        <MudTh>S.No.</MudTh>
+                        <MudTh>Action Taken</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Details</MudTh>
+                        <MudTh>Remarks</MudTh>
+                        <MudTh>Attachment</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd DataLabel="S.No.">@(actionHistory.IndexOf(row) + 1)</MudTd>
+                        <MudTd DataLabel="Action Taken">@row.ActionTaken</MudTd>
+                        <MudTd DataLabel="Date">@(row.ActionDate?.ToString("dd-MM-yyyy") ?? "-")</MudTd>
+                        <MudTd DataLabel="Details" Class="aga-prewrap">@row.ActionDetails</MudTd>
+                        <MudTd DataLabel="Remarks" Class="aga-prewrap">@row.Remarks</MudTd>
+                        <MudTd DataLabel="Attachment">
+                            @if (!string.IsNullOrWhiteSpace(row.AttachmentPath))
+                            {
+                                <MudLink Href="@row.AttachmentPath" Target="_blank">View</MudLink>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText>No actions recorded yet.</MudText></NoRecordsContent>
+                    <PagerContent><MudTablePager PageSizeOptions="new[] { 10, 25, 50 }" /></PagerContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="aga-modal-overlay" @onclick="() => message = null">
+            <div class="aga-modal @(isError ? "aga-modal-error" : "aga-modal-success")" @onclick:stopPropagation="true">
+                <div class="aga-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="aga-modal-text">@message</p>
+                <button type="button" class="aga-btn @(isError ? "aga-btn-secondary" : "aga-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Service Request Action") };
+    [SupplyParameterFromQuery(Name = "ref")]
+    public string? RefNoParam { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private string adminPfNo = string.Empty;
+    private bool isLoading = true;
+    private string? loadError;
+
+    private GrievanceDetailsInfo? grievance;
+    private FlatAllocationInfo? flatAllocation;
+    private ViewAllocatedFlatResult? flatResult;
+    private List<CurrentOccupantDetails> occupantRows = new();
+    private List<ActionHistoryRow> actionHistory = new();
+
+    private string selectedAction = "Select";
+    private string? actionHint;
+    private string remarks = string.Empty;
+
+    private DateTime? quotationRequestDate, lastSubmissionDate;
+
+    private List<VendorOption> vendors = new();
+    private string selectedVendorId = string.Empty;
+    private VendorInfo? selectedVendorInfo;
+    private string vendorSpocName = string.Empty, vendorSpocContact = string.Empty, vendorSpocEmail = string.Empty;
+    private DateTime? expectedVendorVisitDate;
+
+    private DateTime? vendorVisitDate;
+    private DateTime? quotationDate;
+    private decimal? quotationAmt;
+    private DateTime? quotationApprovalDate;
+    private decimal? quotationApprovalAmt;
+    private string quotationApprovalRefNo = string.Empty, quotationApprovalBy = string.Empty;
+    private DateTime? workStartedDate, workInProgressDate, workCompletedDate;
+
+    private readonly List<ProductRow> products = new();
+    private string productName = string.Empty;
+    private string? productDesc;
+    private decimal? productQty;
+
+    private string invoiceNo = string.Empty;
+    private DateTime? invoiceDate;
+    private decimal? invoiceAmt;
+
+    private DateTime? paymentDate;
+    private decimal? paymentAmt;
+
+    private string? actionAttachmentRelPath;
+
+    private bool isBusy;
+    private string? message;
+    private bool isError;
+
+    private static readonly Dictionary<string, string> ActionHints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "Assigned to Vendor",     "SSD Official Assigned to Vendor (T+1)" },
+        { "On site Vendor Visit",   "(T+1)" },
+        { "Submit Quotation",       "(T+3)" },
+        { "Quotation Approval",     "Quotation to be approved" },
+        { "Work Started",           "Vendor acknowledges and starts work" },
+        { "Work in Progress",       "Work is in progress" },
+        { "Work Completed",         "Vendor completes work and uploads details/photos (& days)" },
+        { "Invoice Submitted",      "Invoice submitted by vendor" },
+        { "Payment Completed",      "Payment processed/completed" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(RefNoParam))
+        {
+            loadError = "Invalid reference.";
+            isLoading = false;
+            return;
+        }
+        var grievanceTask = GrievanceService.GetGrievanceAsync(RefNoParam);
+        var flatAllocTask = GrievanceService.ResolveFlatFromRefNoAsync(RefNoParam);
+        var historyTask = GrievanceService.GetActionHistoryAsync(RefNoParam);
+        await Task.WhenAll(grievanceTask, flatAllocTask, historyTask);
+
+        grievance = grievanceTask.Result;
+        flatAllocation = flatAllocTask.Result;
+        actionHistory = historyTask.Result;
+
+        if (grievance is null)
+        {
+            loadError = "Service Request not found.";
+            isLoading = false;
+            return;
+        }
+
+        if (flatAllocation is null || string.IsNullOrWhiteSpace(flatAllocation.EmplId))
+        {
+            loadError = "User has not been allotted to any flat.";
+            isLoading = false;
+            return;
+        }
+
+        flatResult = await FlatService.GetAllocatedFlatAsync(flatAllocation.EmplId);
+        occupantRows = flatResult?.CurrentOccupant is null
+            ? new List<CurrentOccupantDetails>()
+            : new List<CurrentOccupantDetails> { flatResult.CurrentOccupant };
+
+        isLoading = false;
+    }
+
+    private async Task OnActionChanged()
+    {
+        actionHint = ActionHints.TryGetValue(selectedAction, out var hint) ? hint : null;
+
+        if (selectedAction != "Assigned to Vendor")
+        {
+            selectedVendorId = string.Empty;
+            selectedVendorInfo = null;
+            vendorSpocName = vendorSpocContact = vendorSpocEmail = string.Empty;
+        }
+        else if (vendors.Count == 0)
+        {
+            vendors = await GrievanceService.GetActiveVendorsAsync();
+        }
+    }
+
+    private async Task OnVendorChanged()
+    {
+        if (string.IsNullOrEmpty(selectedVendorId))
+        {
+            selectedVendorInfo = null;
+            vendorSpocName = vendorSpocContact = vendorSpocEmail = string.Empty;
+            return;
+        }
+
+        selectedVendorInfo = await GrievanceService.GetVendorInfoAsync(selectedVendorId);
+        vendorSpocName = selectedVendorInfo?.SpocName ?? string.Empty;
+        vendorSpocContact = selectedVendorInfo?.SpocMobile ?? string.Empty;
+        vendorSpocEmail = selectedVendorInfo?.SpocEmail ?? string.Empty;
+    }
+
+    private async Task SendReminder()
+    {
+        if (grievance is null || selectedVendorInfo is null || string.IsNullOrEmpty(selectedVendorId))
+        {
+            ShowError("Select a vendor first.");
+            return;
+        }
+
+        isBusy = true;
+        try
+        {
+            var vendorInfoForEmail = selectedVendorInfo with { SpocName = vendorSpocName, SpocEmail = vendorSpocEmail, SpocMobile = vendorSpocContact };
+            await GrievanceService.NotifyVendorAssignedAsync(grievance.RefNo, adminPfNo, grievance, vendorInfoForEmail, expectedVendorVisitDate?.ToString("dd/MM/yyyy"));
+            ShowSuccess("Reminder sent to vendor.");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void AddProduct()
+    {
+        if (string.IsNullOrWhiteSpace(productName) || productQty is null)
+        {
+            ShowError("Enter product name and quantity.");
+            return;
+        }
+        products.Add(new ProductRow(productName.Trim(), productQty.Value, productDesc?.Trim()));
+        productName = string.Empty;
+        productDesc = null;
+        productQty = null;
+    }
+
+    private async Task OnActionFileSelected(InputFileChangeEventArgs e)
+        => actionAttachmentRelPath = await SaveUploadAsync(e.File);
+
+    private async Task<string?> SaveUploadAsync(IBrowserFile file)
+    {
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+        var allowed = new[] { ".jpg", ".jpeg", ".png", ".pdf", ".docx" };
+        if (Array.IndexOf(allowed, ext) < 0)
+        {
+            ShowError("Invalid file type.");
+            return null;
+        }
+
+        if (grievance is null || string.IsNullOrWhiteSpace(grievance.RefNo))
+        {
+            ShowError("Service Request is not loaded yet — please wait a moment and try the upload again.");
+            return null;
+        }
+
+        try
+        {
+            await using var readStream = file.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+            using var buffer = new MemoryStream();
+            await readStream.CopyToAsync(buffer);
+            var bytes = buffer.ToArray();
+
+            if (bytes.Length == 0)
+            {
+                ShowError($"'{file.Name}' is empty and was not uploaded.");
+                return null;
+            }
+
+            var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? GuessContentType(ext) : file.ContentType;
+            var stored = await GrievanceService.SaveAttachmentAsync(
+                grievance.RefNo, "ACTION_ATTACHMENT", file.Name, contentType, bytes, adminPfNo);
+
+            ShowSuccess($"'{file.Name}' uploaded successfully.");
+            return stored.DownloadPath;
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Could not save '{file.Name}' to the database: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string GuessContentType(string ext) => ext switch
+    {
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".png" => "image/png",
+        ".pdf" => "application/pdf",
+        ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        _ => "application/octet-stream",
+    };
+
+    private string? ValidateAction()
+    {
+        switch (selectedAction)
+        {
+            case "Select":
+                return "Please select an action.";
+            case "Call For Quotation" when quotationRequestDate is null || lastSubmissionDate is null:
+                return "Please provide Quotation Request Date and Last Submission Date.";
+            case "Assigned to Vendor" when string.IsNullOrEmpty(selectedVendorId):
+                return "Please select a vendor.";
+            case "Assigned to Vendor" when expectedVendorVisitDate is null:
+                return "Please provide Expected Vendor Visit Date.";
+            case "On site Vendor Visit" when vendorVisitDate is null:
+                return "Please provide Vendor Visit Date.";
+            case "Submit Quotation" when quotationDate is null || quotationAmt is null:
+                return "Please provide Quotation Date and Amount.";
+            case "Quotation Approval" when quotationApprovalDate is null || quotationApprovalAmt is null
+                || string.IsNullOrWhiteSpace(quotationApprovalRefNo) || string.IsNullOrWhiteSpace(quotationApprovalBy):
+                return "Please provide Quotation Approval Date, Amount, Ref No, and Approved By.";
+            case "Work Started" when workStartedDate is null:
+                return "Please provide Work Started Date.";
+            case "Work in Progress" when workInProgressDate is null:
+                return "Please provide Work In-Progress Date.";
+            case "Work Completed" when workCompletedDate is null:
+                return "Please provide Work Completed Date.";
+            case "Work Completed" when products.Count == 0:
+                return "Add at least one product before completing work.";
+            case "Invoice Submitted" when string.IsNullOrWhiteSpace(invoiceNo) || invoiceDate is null || invoiceAmt is null:
+                return "Please provide Invoice No, Date and Amount.";
+            case "Payment Completed" when paymentDate is null || paymentAmt is null:
+                return "Please provide Payment Date and Amount.";
+        }
+
+        if (string.IsNullOrWhiteSpace(remarks))
+            return "Please enter remarks.";
+
+        return null;
+    }
+
+    private async Task HandleSave()
+    {
+        message = null;
+        if (grievance is null) return;
+
+        var validationError = ValidateAction();
+        if (validationError is not null)
+        {
+            ShowError(validationError);
+            return;
+        }
+
+        isBusy = true;
+        try
+        {
+            var request = new SaveActionRequest(
+                ActionId: grievance.ActionId,
+                RefNo: grievance.RefNo,
+                ActionTaken: selectedAction,
+                Remarks: remarks.Trim(),
+                EnteredByCode: adminPfNo,
+                AttachmentRelPath: actionAttachmentRelPath,
+                ExpectedVendorVisitDate: expectedVendorVisitDate,
+                VendorVisitDate: vendorVisitDate,
+                QuotationDate: quotationDate,
+                QuotationAmt: quotationAmt,
+                QuotationApprovalDate: quotationApprovalDate,
+                QuotationApprovalAmt: quotationApprovalAmt,
+                QuotationApprovalRefNo: quotationApprovalRefNo,
+                QuotationApprovalBy: quotationApprovalBy,
+                WorkStartedDate: workStartedDate,
+                WorkInProgressDate: workInProgressDate,
+                WorkCompletedDate: workCompletedDate,
+                InvoiceNo: invoiceNo,
+                InvoiceDate: invoiceDate,
+                InvoiceAmt: invoiceAmt,
+                PaymentDate: paymentDate,
+                PaymentAmt: paymentAmt,
+                Products: products.ToList(),
+                VendorFeedback: null,
+                VendorFeedbackRating: null,
+                VendorFeedbackAttachmentRelPath: null,
+                QuotationRequestDate: quotationRequestDate,
+                LastSubmissionDate: lastSubmissionDate,
+                VendorId: string.IsNullOrEmpty(selectedVendorId) ? null : selectedVendorId,
+                VendorName: selectedVendorInfo?.VendorName,
+                VendorMobile: selectedVendorInfo?.VendorMobile,
+                VendorSpocName: vendorSpocName,
+                VendorSpocEmail: vendorSpocEmail,
+                VendorSpocContact: vendorSpocContact);
+
+            var result = await GrievanceService.SaveActionAsync(request);
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Save failed.");
+                return;
+            }
+
+            var savedAction = selectedAction;
+            var savedVendorInfo = selectedVendorInfo;
+            var savedExpectedVisit = expectedVendorVisitDate;
+
+            grievance = await GrievanceService.GetGrievanceAsync(grievance.RefNo);
+            actionHistory = await GrievanceService.GetActionHistoryAsync(grievance!.RefNo);
+            ShowSuccess("Action saved successfully.");
+            ResetForm();
+
+            if (string.Equals(savedAction, "Assigned to Vendor", StringComparison.OrdinalIgnoreCase) && savedVendorInfo is not null)
+            {
+               await GrievanceService.NotifyVendorAssignedAsync(grievance!.RefNo, adminPfNo, grievance, savedVendorInfo, savedExpectedVisit?.ToString("dd/MM/yyyy"));
+            }
+            else
+            {
+                await GrievanceService.NotifyUserStatusUpdateAsync(grievance!.RefNo, adminPfNo, grievance, flatResult?.Flat, savedAction);
+            }
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        selectedAction = "Select";
+        actionHint = null;
+        remarks = string.Empty;
+
+        quotationRequestDate = lastSubmissionDate = null;
+
+        selectedVendorId = string.Empty;
+        selectedVendorInfo = null;
+        vendorSpocName = vendorSpocContact = vendorSpocEmail = string.Empty;
+        expectedVendorVisitDate = null;
+
+        vendorVisitDate = quotationDate = quotationApprovalDate = workStartedDate = workInProgressDate = workCompletedDate = null;
+        quotationAmt = quotationApprovalAmt = null;
+        quotationApprovalRefNo = quotationApprovalBy = string.Empty;
+
+        products.Clear();
+        productName = string.Empty;
+        productDesc = null;
+        productQty = null;
+
+        invoiceNo = string.Empty;
+        invoiceDate = null;
+        invoiceAmt = null;
+
+        paymentDate = null;
+        paymentAmt = null;
+
+        actionAttachmentRelPath = null;
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

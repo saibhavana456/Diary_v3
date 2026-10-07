@@ -1,0 +1,574 @@
+﻿@page "/Dashboards2"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Dashboards.Models
+@using MyDiary.Web.Features.Dashboards.Services
+@using MyDiary.Web.Features.Reports.Models
+@using System.Security.Claims
+@using MyDiary.Web.Features.Shared.Services
+@using global::RequestPortal.Web.Shared
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject IDashboardsService DashboardsServices
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject BreadcrumbState BreadcrumbState
+@implements IDisposable
+
+<PageTitle>Assurance Hub — My Diary | Union Bank of India</PageTitle>
+
+<PageHeader Title="Assurance Hub"
+            Subtitle="Consolidated hub for assurance dashboards, reports, compliance and operations tools"
+            PageKey="assurance-hub"
+            Crumbs="_crumbs" />
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .active-tab-btn {
+        background: var(--primary-gradient) !important;
+        color: white !important;
+        box-shadow: 0 10px 26px rgba(30,58,138,0.45) !important;
+        border: none !important;
+    }
+
+    .tab-btn-base {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.08);
+        color: #1f2937;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: none !important;
+    }
+
+    .app-card-btn {
+        background: rgba(255, 255, 255, 0.95) !important;
+        border-radius: 20px !important;
+        padding: 0 !important;
+        border: 1px solid #e0e0e0 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+        transition: all 0.25s ease !important;
+        height: 100% !important;
+        display: block !important;
+        text-align: left !important;
+        text-transform: none !important;
+    }
+
+        .app-card-btn:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.15) !important;
+        }
+
+    .card-content-wrapper {
+        padding: 20px 22px;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+    }
+
+    .card-title {
+        font-weight: 700;
+        color: #111827;
+        /* multi-line clamp */
+        display: -webkit-box;
+        -webkit-line-clamp: 2; /* show up to 2 lines */
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        white-space: normal !important; /* override .app-info-text nowrap if both classes exist */
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        font-size: 16px !important;
+    }
+
+    .search-bar {
+        max-width: 350px;
+    }
+
+        /* Rounded outline border for MudTextField (Blazor) */
+        .search-bar ::deep .mud-input-outlined-border {
+            border-radius: 15px !important;
+        }
+
+
+
+    .icon-badge {
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .go-btn-style {
+        background: var(--primary-gradient) !important;
+        color: white !important;
+        font-weight: 800 !important;
+    }
+
+    /* Cards grid — 4 cards per row on large screens, responsive on smaller */
+    .assurance-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 24px;
+    }
+
+    @@media (max-width: 1200px) {
+        .assurance-cards-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
+
+    @@media (max-width: 900px) {
+        .assurance-cards-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @@media (max-width: 600px) {
+        .assurance-cards-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* --- Sub-category underlined text links (matches Business page) --- */
+    .sub-tab-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        padding: 8px 16px 0;
+        border-bottom: 2px solid #e5e7eb;
+        align-items: flex-end;
+        margin-bottom: 12px;
+    }
+
+    .sub-tab {
+        padding: 6px 2px 8px;
+        font-size: 0.88rem;
+        font-weight: 500;
+        color: #6b7280;
+        cursor: pointer;
+        text-decoration: none;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s;
+        margin-bottom: -2px;
+        background: none;
+        border-top: none;
+        border-left: none;
+        border-right: none;
+    }
+
+        .sub-tab:hover { color: #1E3A8A; }
+
+        .sub-tab.active {
+            color: #111827;
+            font-weight: 700;
+            border-bottom-color: #1E3A8A;
+        }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+            @* Filter row: categories wrap freely on the left; search+toggle stay pinned top-right *@
+            <div style="display:grid; grid-template-columns:1fr auto; align-items:start;
+                        gap:8px; padding:16px; border-bottom:1px solid #f1f5f9;">
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var cat in _allCategories.Where(c => !string.IsNullOrWhiteSpace(c)))
+                    {
+                        bool isActive = _selectedCategory == cat;
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   Class="@(isActive ? "rounded-pill active-tab-btn px-4" : "rounded-pill tab-btn-base px-4")"
+                                   OnClick="() => OnCategoryChanged(cat)"
+                                   UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = isActive ? "true" : "false" })">
+                            @cat
+                        </MudButton>
+                    }
+                </div>
+
+                @* Search + toggle — always top-right, never wraps *@
+                <div class="d-flex align-center gap-2" style="white-space:nowrap;">
+                    <MudTextField @bind-Value="_searchQuery"
+                                  PlaceHolder="Search Assurance Hub"
+                                  Variant="Variant.Outlined"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Margin="Margin.Dense"
+                                  Class="search-bar"
+                                  Immediate="true" />
+                    <MudToggleGroup T="string" Value="@viewMode" ValueChanged="v => viewMode = v"
+                                    Delimiter="false" Color="Color.Info" Rounded="true"
+                                    aria-label="View mode">
+                        <MudToggleItem Value='@("List")' Icon="@Icons.Material.Filled.List" aria-label="List view" />
+                        <MudToggleItem Value='@("Grid")' Icon="@Icons.Material.Filled.GridView" aria-label="Grid view" />
+                    </MudToggleGroup>
+                </div>
+            </div>
+
+            @* Sub-category tabs — only shown when a category is selected *@
+            @if (_selectedCategory != "All" && _filteredSubCategories.Any())
+            {
+                <div class="px-4 py-2">
+                    <div class="sub-tab-row">
+                        @foreach (var sub in _filteredSubCategories)
+                        {
+                            bool isSubActive = _selectedSubCategory == sub;
+                            <MudButton Variant="Variant.Outlined"
+                                       Size="Size.Small"
+                                       Class="@(isSubActive ? "active sub-tab" : "sub-tab")"
+                                       OnClick="() => OnSubCategoryChanged(sub)"
+                                       UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = isSubActive ? "true" : "false" })">
+                                @sub
+                            </MudButton>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="pa-4">
+                <div aria-live="polite" class="visually-hidden">
+                    @if (!_isLoading)
+                    {
+                        <span>Showing @_selectedCategory results. @FilteredRecords.Count() items found. Content updated below the filter section.</span>
+                    }
+                </div>
+                @if (_isLoading)
+                {
+                    <div class="d-flex justify-center pa-10">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                        <MudText Class="ml-3">Loading Assurance Hub...</MudText>
+                    </div>
+                }
+                else
+                {
+                    @if (!string.IsNullOrEmpty(_loadError))
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-4">@_loadError</MudAlert>
+                    }
+
+                    if (!FilteredRecords.Any())
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mb-4">No items found matching your criteria.</MudAlert>
+                    }
+                    else if (_isProcessing)
+                    {
+                        <div class="d-flex justify-center pa-10">
+                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                            <MudText Class="ml-3">Fetching Secure Ticket...</MudText>
+                        </div>
+                    }
+                    else if (viewMode == "Grid")
+                {
+                    <div class="assurance-cards-grid">
+                        @foreach (var item in FilteredRecords)
+                        {
+                                <MudButton OnClick="() => RedirectTo(item)"
+                                           Class="app-card-btn w-100"
+                                           Ripple="true"
+                                           aria-label="@($"Open {item.Name}")">
+                                    <div class="card-content-wrapper">
+                                        <div class="d-flex align-start gap-4">
+                                            <div class="icon-badge">
+                                                <MudIcon Icon="@item.icons" Color="Color.Success" Style="font-size: 2rem;" />
+                                            </div>
+                                            <div class="flex-grow-1 text-container">
+                                                <div class="app-info-text card-title">@item.Name</div>
+                                            </div>
+                                        </div>
+                                        <MudDivider Class="my-3" />
+                                        <div style="font-size:0.85rem; color:#444; flex-grow: 1;">
+                                            <div class="mb-1"><b>Owner Vertical:</b> @(string.IsNullOrWhiteSpace(item.OwnerVertical) ? "—" : item.OwnerVertical)</div>
+                                            <div class="mb-1"><b>Source:</b> @(string.IsNullOrWhiteSpace(item.Source) ? "—" : item.Source)</div>
+                                            <div><b>Frequency:</b> @(string.IsNullOrWhiteSpace(item.FrequencyOfReportUpdation) ? "—" : item.FrequencyOfReportUpdation)</div>
+                                        </div>
+                                        <div class="d-flex justify-end mt-4">
+                                            <MudButton Class="rounded-pill px-4 go-btn-style"
+                                                       EndIcon="@Icons.Material.Filled.ArrowRightAlt"
+                                                       OnClick="() => RedirectTo(item)"
+                                                       tabindex="-1"
+                                                       aria-hidden="true">
+                                                GO
+                                            </MudButton>
+                                        </div>
+                                    </div>
+                                </MudButton>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <MudTable Items="FilteredRecords.Select((x, i) => new { Item = x, SNo = i + 1 })"
+                              Dense="true" Hover="true" Striped="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh Style="background-color:#2a2f5b; color:white; width:70px;">S.No</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Name</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Owner Vertical</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Source</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Frequency</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.SNo</MudTd>
+
+                            <MudTd>
+                                <MudLink Underline="Underline.None"
+                                         Style="cursor:pointer; font-weight:700; color:#1E3A8A;"
+                                         OnClick="@(() => RedirectTo(context.Item))"
+                                         UserAttributes="@(new Dictionary<string, object>{ ["role"] = "link", ["aria-label"] = $"Open {context.Item.Name}", ["tabindex"] = "0" })">
+                                    @context.Item.Name
+                                </MudLink>
+                            </MudTd>
+
+                            <MudTd>@context.Item.OwnerVertical</MudTd>
+                            <MudTd>@context.Item.Source</MudTd>
+                            <MudTd>@context.Item.FrequencyOfReportUpdation</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Assurance", "assurance-360"),
+        new("Assurance Hub"),
+    };
+
+    // Hub membership (which cards/tabs show here) is entirely DB-driven —
+    // MYDIARYDB.APP_USERS_ROLE_ACCESS_MENU_MASTER.SHOW_IN_ASSURANCE_HUB
+    // (see db/oracle/RP_46_dashboards2_hub_flags.sql). No hardcoded
+    // category allow-list here — GetHubDashboardsAsync() already returns
+    // only the rows flagged for this hub.
+
+    private List<RecordData> _allRecords = new();
+    private List<string> _allCategories = new(), _filteredSubCategories = new();
+    private string _selectedCategory = "All", _selectedSubCategory = "All", _searchQuery = "", viewMode = "Grid";
+    private bool _isProcessing = false;
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    // Records for this hub — already scoped by GetHubDashboardsAsync().
+    private IEnumerable<RecordData> HubRecords => _allRecords;
+
+    private IEnumerable<RecordData> FilteredRecords => HubRecords
+        .Where(x => (_selectedCategory == "All" || x.menuCategory == _selectedCategory) &&
+                    (_selectedSubCategory == "All" || x.menuSubCategory == _selectedSubCategory) &&
+                    (string.IsNullOrEmpty(_searchQuery) || x.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _loadError = null;
+            _allRecords = await DashboardsServices.GetHubDashboardsAsync(DashboardHub.Assurance);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Dashboards2: failed to load data");
+            _loadError = UserFacingError.Generic;
+            _allRecords = new();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+
+        var dbCategories = HubRecords
+            .Select(x => x.menuCategory)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s)
+            .ToList();
+
+        _allCategories = new List<string> { "All" };
+        _allCategories.AddRange(dbCategories);
+
+        OnCategoryChanged("All");
+        ApplyQueryParams();
+
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        ApplyQueryParams();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyQueryParams()
+    {
+        var uri = new Uri(Nav.Uri);
+        var queryParams = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var qCategory = queryParams["category"];
+        var qSubCategory = queryParams["subcategory"];
+        var qSearch = queryParams["search"];
+
+        // Apply search query from navbar if present
+        if (!string.IsNullOrWhiteSpace(qSearch))
+        {
+            _searchQuery = qSearch;
+        }
+
+        if (!string.IsNullOrWhiteSpace(qCategory))
+        {
+            var matchedCat = _allCategories.FirstOrDefault(c => string.Equals(c, qCategory, StringComparison.OrdinalIgnoreCase));
+            if (matchedCat != null)
+            {
+                OnCategoryChanged(matchedCat);
+
+                if (!string.IsNullOrWhiteSpace(qSubCategory))
+                {
+                    var matchedSub = _filteredSubCategories.FirstOrDefault(s => string.Equals(s, qSubCategory, StringComparison.OrdinalIgnoreCase));
+                    if (matchedSub != null)
+                        OnSubCategoryChanged(matchedSub);
+                }
+            }
+        }
+        else
+        {
+            OnCategoryChanged("All");
+        }
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnCategoryChanged(string category)
+    {
+        _selectedCategory = category;
+        _selectedSubCategory = "All";
+
+        if (category == "All")
+        {
+            _filteredSubCategories = new List<string>();
+        }
+        else
+        {
+            var dbSubs = _allRecords
+                .Where(x => string.Equals(x.menuCategory, category, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.menuSubCategory)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s)
+                .ToList();
+
+            _filteredSubCategories = new List<string> { "All" };
+            _filteredSubCategories.AddRange(dbSubs);
+        }
+    }
+
+    private void OnSubCategoryChanged(string sub) => _selectedSubCategory = sub;
+
+    async void RedirectTo(RecordData record)
+    {
+        if (record is null || string.IsNullOrWhiteSpace(record.Name))
+        {
+            Nav.NavigateTo("reports/not-found?reason=notfound&hub=Assurance");
+            return;
+        }
+
+        // ---------------------------------------------------------------
+        // Route is now driven by the MENU_ROUTE column from the database.
+        // Convention:
+        //   - NULL or empty  → Not Found page
+        //   - "EXTERNAL:..." → Open the URL after the prefix in a new tab
+        //   - Anything else  → Internal Blazor route navigation
+        // ---------------------------------------------------------------
+        string? dbRoute = record.MenuRoute?.Trim();
+
+        // No route configured in DB → redirect to Not Found
+        if (string.IsNullOrWhiteSpace(dbRoute))
+        {
+            Nav.NavigateTo($"reports/not-found?reason=notmapped&hub=Assurance&name={Uri.EscapeDataString(record.Name)}");
+            return;
+        }
+
+        // External URLs that should open in a new browser tab
+        if (dbRoute.StartsWith("EXTERNAL:", StringComparison.OrdinalIgnoreCase))
+        {
+            var externalUrl = dbRoute["EXTERNAL:".Length..];
+            await JS.InvokeVoidAsync("open", externalUrl, "_blank");
+            return;
+        }
+
+        // Internal Blazor route
+        string targetRoute = dbRoute;
+
+        // Set breadcrumb: only include category/subcategory if explicitly selected (not "All")
+        string? breadcrumbCat = (_selectedCategory != "All") ? _selectedCategory : null;
+        string? breadcrumbSub = (_selectedSubCategory != "All") ? _selectedSubCategory : null;
+
+        BreadcrumbState.SetFromDashboard(record.Name, breadcrumbCat, breadcrumbSub,
+            sourceLabel: "Assurance Hub", sourceHref: "Dashboards2");
+
+        // Carries the source hub so the error page can route "Back" correctly.
+        var hubParam = "hub=Assurance";
+        var bcParams = $"bc_name={Uri.EscapeDataString(record.Name)}";
+        if (breadcrumbCat != null) bcParams += $"&bc_cat={Uri.EscapeDataString(breadcrumbCat)}";
+        if (breadcrumbSub != null) bcParams += $"&bc_sub={Uri.EscapeDataString(breadcrumbSub)}";
+
+        // Branch-only reports
+        if (targetRoute == "reports/atrreport" || targetRoute == "reports/atm-visit-report")
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var privilege = authState.User.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+            if (privilege != "BRANCH")
+            {
+                Nav.NavigateTo($"reports/not-found?reason=unauthorized&{hubParam}&name={Uri.EscapeDataString(record.Name)}&{bcParams}");
+                return;
+            }
+        }
+        // CO-only reports (Job Master)
+        if (targetRoute == "reports/job-master")
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var privilege = authState.User.FindFirst("privilege")?.Value?.ToUpper() ?? "";
+            var descr = authState.User.FindFirst("department_desc")?.Value?.ToUpper() ?? "";
+
+            if (privilege != "CO" || (descr != "OPERATIONS" && descr != "INFORMATION TECHNOLOGY"))
+            {
+                Nav.NavigateTo($"reports/not-found?reason=unauthorized&{hubParam}&name={Uri.EscapeDataString(record.Name)}&{bcParams}");
+                return;
+            }
+        }
+
+        if (targetRoute == "reports/NPCIDashboard")
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var privilege = authState.User.FindFirst("privilege")?.Value?.ToUpper() ?? "";
+            var descr = authState.User.FindFirst("department_desc")?.Value?.ToUpper() ?? "";
+
+            if (privilege != "CO")
+            {
+                Nav.NavigateTo($"reports/not-found?reason=unauthorized&{hubParam}&name={Uri.EscapeDataString(record.Name)}&{bcParams}");
+                return;
+            }
+        }
+
+        if (targetRoute == "reports/ipnewdirectory")
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var privilege = authState.User.FindFirst("emplid")?.Value?.ToUpper() ?? "";
+
+            if (privilege != "921604" && privilege != "765482")
+            {
+                Nav.NavigateTo($"reports/not-found?reason=unauthorized&{hubParam}&name={Uri.EscapeDataString(record.Name)}&{bcParams}");
+                return;
+            }
+        }
+		// Append breadcrumb context
+		var separator = targetRoute.Contains('?') ? "&" : "?";
+		Nav.NavigateTo($"{targetRoute}{separator}{bcParams}");
+    }
+}

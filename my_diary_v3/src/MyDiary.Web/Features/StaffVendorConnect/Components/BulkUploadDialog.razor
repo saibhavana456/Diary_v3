@@ -1,0 +1,144 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject IStaffVendorConnectService SvcService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudDialog>
+    <TitleContent>Bulk Upload — @CategoryName</TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Download the template, fill it in (one row per vendor — see the Instructions sheet for what each column means), then upload it here.
+        </MudText>
+
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" Class="mb-4" OnClick="DownloadTemplateAsync">
+            Download Template
+        </MudButton>
+
+        <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelectedAsync" Class="mb-3" Disabled="_busy">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.UploadFile" Disabled="_busy">
+                    @(_busy ? "Validating..." : "Upload Filled Template")
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+
+        @if (_result is not null)
+        {
+            @if (_result.FileErrors.Count > 0)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">
+                    @foreach (var e in _result.FileErrors)
+                    {
+                        <div>@e</div>
+                    }
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="@(_result.ErrorCount == 0 ? Severity.Success : Severity.Warning)" Class="mb-3">
+                    @_result.ValidCount row(s) ready to submit@(_result.ErrorCount > 0 ? $", {_result.ErrorCount} row(s) with errors (will be skipped)." : ".")
+                </MudAlert>
+
+                @if (_result.ErrorCount > 0)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.Download" Class="mb-3" OnClick="DownloadExceptionReportAsync">
+                        Download Exception Report
+                    </MudButton>
+                }
+
+                <MudTable Items="@_result.Rows" Dense="true" Bordered="true" FixedHeader="true" Height="320px" Class="mb-2">
+                    <HeaderContent>
+                        <MudTh>Row</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Preview</MudTh>
+                        <MudTh>Errors</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.RowNumber</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small" Color="@(context.IsValid ? Color.Success : Color.Error)">
+                                @(context.IsValid ? "OK" : "ERROR")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>@string.Join(", ", context.Values.Where(v => !string.IsNullOrWhiteSpace(v.Value)).Take(3).Select(v => v.Value))</MudTd>
+                        <MudTd Style="color:var(--mud-palette-error);">@string.Join(" | ", context.Errors)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Close</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SubmitAsync"
+                   Disabled="@(_busy || _result is null || _result.FileErrors.Count > 0 || _result.ValidCount == 0)">
+            @(_submitting ? "Submitting..." : $"Submit {_result?.ValidCount ?? 0} Valid Row(s)")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string CategoryCode { get; set; } = "";
+    [Parameter] public string CategoryName { get; set; } = "";
+    [Parameter] public string ActorPfNo { get; set; } = "";
+
+    private bool _busy, _submitting;
+    private SvcBulkUploadResult? _result;
+
+    private async Task DownloadTemplateAsync()
+    {
+        var bytes = await SvcService.GenerateVendorTemplateAsync(CategoryCode);
+        await JS.InvokeVoidAsync("appDownloadFile", $"{CategoryCode}_BulkUploadTemplate.xlsx", Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task OnFileSelectedAsync(IBrowserFile file)
+    {
+        _busy = true;
+        _result = null;
+        try
+        {
+            await using var stream = file.OpenReadStream(20 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+            _result = await SvcService.ValidateVendorUploadAsync(CategoryCode, ms, ActorPfNo);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DownloadExceptionReportAsync()
+    {
+        if (_result is null) return;
+        var bytes = await SvcService.GenerateExceptionReportAsync(CategoryCode, _result);
+        await JS.InvokeVoidAsync("appDownloadFile", $"{CategoryCode}_ExceptionReport.xlsx", Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_result is null) return;
+        _submitting = true;
+        try
+        {
+            var outcome = await SvcService.SubmitVendorUploadAsync(CategoryCode, _result.Rows, ActorPfNo);
+            Snackbar.Add($"{outcome.ValidCount} record(s) created, {outcome.ErrorCount} skipped.", outcome.ErrorCount == 0 ? Severity.Success : Severity.Warning);
+            MudDialog.Close(DialogResult.Ok(outcome.ValidCount));
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

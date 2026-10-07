@@ -1,0 +1,520 @@
+@using MudBlazor
+@using MyDiary.Web.Features.Shared;
+@using MyDiary.Web.Features.Shared.Models;
+<style>
+
+    .mud-dialog {
+        border-radius: 24px !important;
+        overflow: hidden !important;
+    }
+
+    .mud-paper.mud-dialog {
+        border-radius: 24px !important;
+    }
+
+
+    .page-info-container {
+        width: 430px;
+        border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 15px 40px rgba(0,0,0,.25);
+}
+
+/* ===========================
+   HEADER
+   =========================== */
+
+.page-header {
+
+    background: linear-gradient(
+        135deg,
+        #3346A0 0%,
+        #5B3D93 35%,
+        #96426E 70%,
+        #E84E59 100%
+    );
+
+    color: white;
+
+    padding: 18px;
+
+    position: relative;
+        border-top-left-radius: 24px;
+        border-top-right-radius: 24px;
+}
+
+.page-title-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.header-icon {
+    color: white;
+}
+
+.header-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 10px;
+}
+
+/* ===========================
+   CHIPS
+   =========================== */
+
+.header-chip-row {
+    display: flex;
+    gap: 8px;
+}
+
+.chip-dashboard,
+.chip-version {
+
+    background: rgba(255,255,255,.18);
+
+    border: 1px solid rgba(255,255,255,.35);
+
+    color: white;
+
+    font-size: 11px;
+    font-weight: 700;
+
+    padding: 4px 12px;
+
+    border-radius: 999px;
+}
+
+.chip-active {
+
+    background: #258941;
+
+    color: white;
+
+    font-size: 11px;
+    font-weight: 700;
+
+    padding: 4px 12px;
+
+    border-radius: 999px;
+}
+
+/* ===========================
+   CLOSE BUTTON
+   =========================== */
+
+.page-close {
+
+    position: absolute;
+
+    top: 10px;
+    right: 12px;
+
+    width: 38px;
+    height: 38px;
+
+    border-radius: 50%;
+
+    border: 2px solid rgba(255,255,255,.7);
+
+    background: transparent;
+
+    color: white;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    cursor: pointer;
+
+    transition: all .2s ease;
+}
+
+.page-close:hover {
+
+    background: rgba(255,255,255,.15);
+
+    transform: scale(1.03);
+}
+
+
+
+    .page-close-btn {
+        position: absolute !important;
+        top: 12px;
+        right: 12px;
+        color: #ffffff !important;
+        width: 36px !important;
+        height: 36px !important;
+        /* border-radius: 50% !important; */
+        /* border: 2px solid rgba(255,255,255,0.7); */
+        z-index: 100;
+    }
+
+        .page-close-btn:hover {
+            background: rgba(255,255,255,0.12) !important;
+        }
+
+
+
+/* ===========================
+   BODY
+   =========================== */
+
+.section-box {
+    padding: 18px 20px 0 20px;
+}
+
+.description-box {
+
+    background: #EDF1FB;
+
+    border-left: 4px solid #2545B6;
+
+    border-radius: 8px;
+
+    padding: 16px;
+}
+
+.section-heading {
+
+    font-size: 11px;
+
+    color: #8E8E8E;
+
+    font-weight: 800;
+
+    letter-spacing: 1px;
+
+    margin-bottom: 10px;
+}
+
+.description-text {
+
+    color: #404040;
+
+    font-size: 14px;
+
+    line-height: 1.9;
+}
+
+/* ===========================
+   META
+   =========================== */
+
+.meta-row {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 12px;
+
+    margin-bottom: 14px;
+}
+
+.icon-box {
+
+    width: 38px;
+
+    height: 38px;
+
+    border-radius: 10px;
+
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+}
+
+.bg-purple {
+    background: #F0E8FB;
+}
+
+.bg-blue {
+    background: #EAF4FD;
+}
+
+.bg-pink {
+    background: #FDECEF;
+}
+
+.bg-yellow {
+    background: #FFF3DA;
+}
+
+.meta-title {
+
+    font-size: 10px;
+
+    font-weight: 700;
+
+    color: #9D9D9D;
+
+    text-transform: uppercase;
+}
+
+.meta-value {
+
+    font-size: 14px;
+
+    font-weight: 600;
+
+    color: #333333;
+}
+
+.page-divider {
+
+    border-top: 1px solid #ECECEC;
+
+    margin: 18px 0;
+}
+
+.bottom-space{
+    height:12px;
+}
+
+</style>
+
+<div class="page-info-container">
+
+    <!-- ================= HEADER ================= -->
+
+    <div class="page-header">
+
+       
+
+        <div class="page-title-row">
+
+            <MudIcon Icon="@Icons.Material.Filled.Dashboard"
+                     Class="header-icon"
+                     Size="Size.Large" />
+
+            <div>
+
+                <div class="header-title">
+                    @Model.Title
+                </div>
+
+                <div class="header-chip-row">
+
+                    <span class="chip-dashboard">
+                        @Model.Category
+                    </span>
+
+                    <span class="chip-active">
+                        ● @Model.Status
+                    </span>
+
+                    <span class="chip-version">
+                        @Model.Version
+                    </span>
+
+                </div>
+
+            </div>
+
+            <MudIconButton Icon="@Icons.Material.Filled.Close"
+                           Class="page-close-btn d-flex align-content-end"
+                           OnClick="Close" Style="color:antiquewhite;" />
+
+        </div>
+
+    </div>
+
+    <!-- ================= DESCRIPTION ================= -->
+
+    <div class="section-box">
+
+        <div class="description-box">
+
+            <div class="section-heading">
+                DESCRIPTION
+            </div>
+
+            <div class="description-text">
+                @Model.Description
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ================= OWNERSHIP ================= -->
+
+    <div class="section-box">
+
+        <div class="section-heading">
+            OWNERSHIP & CONTACT
+        </div>
+
+        <div class="meta-row">
+
+            <div class="icon-box bg-purple">
+                <MudIcon Icon="@Icons.Material.Filled.Business" />
+            </div>
+
+            <div>
+
+                <div class="meta-title">
+                    Owner Vertical
+                </div>
+
+                <div class="meta-value">
+                    @Model.OwnerVertical
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="meta-row">
+
+            <div class="icon-box bg-purple">
+                <MudIcon Icon="@Icons.Material.Filled.Person" />
+            </div>
+
+            <div>
+
+                <div class="meta-title">
+                    Module Owner
+                </div>
+
+                <div class="meta-value">
+                    @Model.ModuleOwner
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="meta-row">
+
+            <div class="icon-box bg-blue">
+                <MudIcon Icon="@Icons.Material.Filled.Mail" />
+            </div>
+
+            <div>
+
+                <div class="meta-title">
+                    Mail Id
+                </div>
+
+                <div class="meta-value">
+                    @Model.MailId
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="page-divider"></div>
+
+        <!-- ================= METADATA ================= -->
+
+        <div class="section-heading">
+            PAGE METADATA
+        </div>
+
+        <div class="meta-row">
+
+            <div class="icon-box bg-pink">
+                <MudIcon Icon="@Icons.Material.Filled.Language" />
+            </div>
+
+            <div>
+
+                <div class="meta-title">
+                    IP Number
+                </div>
+
+                <div class="meta-value">
+                    @Model.IpNumber
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="meta-row">
+
+            <div class="icon-box bg-blue">
+                <MudIcon Icon="@Icons.Material.Filled.CalendarMonth" />
+            </div>
+
+            <div>
+
+                <div class="meta-title">
+                    Created Date
+                </div>
+
+                <div class="meta-value">
+                    @Model.CreatedDate?.ToString("dd MMM yyyy")
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="meta-row">
+
+            <div class="icon-box bg-pink">
+                <MudIcon Icon="@Icons.Material.Filled.Sell" />
+            </div>
+
+            <div>
+
+                <div class="meta-title">
+                    Version
+                </div>
+
+                <div class="meta-value">
+                    @Model.PageVersion
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="meta-row">
+
+            <div class="icon-box bg-yellow">
+                <MudIcon Icon="@Icons.Material.Filled.Key" />
+            </div>
+
+            <div>
+
+                <div class="meta-title">
+                    Page Key
+                </div>
+
+                <div class="meta-value">
+                    @Model.PageKey
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="bottom-space"></div>
+
+    </div>
+
+</div>
+
+@code {
+
+    [Parameter]
+    public PageInfoModel Model { get; set; } = new();
+
+    [CascadingParameter]
+    public IMudDialogInstance? MudDialog { get; set; }
+
+    private void Close()
+    {
+        MudDialog?.Close();
+    }
+}
+

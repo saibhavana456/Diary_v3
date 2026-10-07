@@ -1,0 +1,125 @@
+.sg-title {
+    color: #0b4498;
+    font-weight: 700;
+}
+
+::deep .sg-card {
+    border-radius: 12px;
+}
+
+.sg-label {
+    font-weight: 700;
+    color: #667085;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+::deep .sg-table td {
+    line-height: 1.5;
+}
+
+.sg-hint {
+    display: block;
+    color: #667085;
+    margin-top: 4px;
+}
+
+.sg-file-chip {
+    display: block;
+    color: #0b4498;
+    margin-top: 4px;
+}
+
+::deep .sg-actions {
+    display: flex;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.sg-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 24, 40, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1300;
+    animation: sg-fade-in 0.15s ease-out;
+}
+
+.sg-modal {
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px 26px 22px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 12px 32px rgba(16, 24, 40, 0.25);
+    animation: sg-pop-in 0.18s ease-out;
+}
+
+.sg-modal-icon {
+    width: 48px;
+    height: 48px;
+    line-height: 48px;
+    border-radius: 50%;
+    margin: 0 auto 14px;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.sg-modal-success .sg-modal-icon {
+    background: #1c8a4b;
+}
+
+.sg-modal-error .sg-modal-icon {
+    background: #EF4444;
+}
+
+.sg-modal-text {
+    font-size: 0.94rem;
+    color: #1c2126;
+    line-height: 1.5;
+    margin: 0 0 18px;
+    word-break: break-word;
+}
+
+.sg-btn {
+    min-height: 42px;
+    padding: 0 22px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.88rem;
+    cursor: pointer;
+    border: none;
+    min-width: 110px;
+}
+
+.sg-btn-primary {
+    background: linear-gradient(135deg, #2e6fd4 0%, #0b4498 55%, #073169 100%);
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(11, 68, 152, 0.25);
+}
+
+.sg-btn-secondary {
+    background: #fff;
+    border: 1.5px solid #d7dce3;
+    color: #1c2126;
+}
+
+.sg-btn-secondary:hover {
+    border-color: #0b4498;
+    color: #0b4498;
+}
+
+@keyframes sg-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes sg-pop-in {
+    from { opacity: 0; transform: scale(0.92) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}

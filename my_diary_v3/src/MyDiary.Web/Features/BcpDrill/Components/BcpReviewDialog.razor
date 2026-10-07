@@ -1,0 +1,59 @@
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+@* Regional Office review of one branch submission: acknowledge it, or return it to the branch with remarks. *@
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                <MudPaper Elevation="0" Class="pa-3" Style="background:var(--mud-palette-background-gray);border-radius:8px">
+                    <div><b>@Drill.BranchName</b> (@Drill.SolId) &nbsp;|&nbsp; @BcpTypes.Label(Drill.DrillType) on @Drill.DrillDate.ToString("dd-MMM-yyyy")</div>
+                    <div>Operations from: @(Drill.AltBranchName ?? "-") @(Drill.AltSolId is null ? "" : $"({Drill.AltSolId})")</div>
+                    <div>Submitted by @Drill.EntryBy on @Drill.EntryAt?.ToString("dd-MMM-yyyy HH:mm")</div>
+                    @if (!string.IsNullOrWhiteSpace(Drill.Remarks)) { <div>Remarks: @Drill.Remarks</div> }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_remarks" Label="Review remarks" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Lines="3" MaxLength="2000" HelperText="Required when returning to the branch; optional when acknowledging." />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Warning" Variant="Variant.Outlined" OnClick="@(() => SubmitAsync(false))" Disabled="@_busy">Return to branch</MudButton>
+        <MudButton Color="Color.Success" Variant="Variant.Filled" OnClick="@(() => SubmitAsync(true))" Disabled="@_busy">Acknowledge</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter, EditorRequired] public BcpDrillEntry Drill { get; set; } = default!;
+
+    private string? _remarks;
+    private bool _busy;
+
+    private async Task SubmitAsync(bool acknowledge)
+    {
+        _busy = true;
+        try
+        {
+            var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+            await Svc.ReviewDrillAsync(user, Drill.Id, acknowledge, _remarks);
+            Snackbar.Add(acknowledge ? "Submission acknowledged." : "Returned to the branch.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            _busy = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

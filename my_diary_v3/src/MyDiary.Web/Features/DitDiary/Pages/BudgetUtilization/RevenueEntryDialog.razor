@@ -1,0 +1,389 @@
+@* Revenue = PROJECT-wise (same as Capital), 18 expenditure heads.
+   Over-budget WARNS but still saves (client rule). *@
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MudBlazor
+@inherits MudComponentBase
+@inject MyDiary.Web.Features.DitDiary.Interfaces.IBudgetEntryService EntryService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject MyDiary.Web.Features.DitDiary.Services.DitUserSession Session
+@inject ProjectBudgetService BudgetSvc
+
+<MudDialog>
+    <DialogContent>
+        <div style="max-height: 72vh; overflow-y: auto;">
+            <MudGrid Spacing="2">
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="int" Label="Financial Year" Value="@_fyId" ValueChanged="OnFyChanged"
+                               Variant="Variant.Outlined" Dense="true" Disabled="@(PresetProjectId.HasValue)">
+                        @foreach (var fy in _fys)
+                        {
+                            <MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="string" Label="Month" Value="@_month" ValueChanged="OnMonthChanged"
+                               Variant="Variant.Outlined" Dense="true" Disabled="@(PresetProjectId.HasValue)">
+                        @foreach (var m in FyMonths)
+                        {
+                            <MudSelectItem T="string" Value="@m">@m</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudTextField T="string" Label="Section" Value="@SectionNameForProject"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="true" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="int?" Label="Project" Value="@_projectId" ValueChanged="OnProjectChanged"
+                               Variant="Variant.Outlined" Dense="true" Disabled="@(PresetProjectId.HasValue)">
+                        @foreach (var p in _projects)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)p.ProjectId)">@p.ProjectName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                @if (_projectId == null)
+                {
+                    <MudItem xs="12"><MudAlert Severity="Severity.Info" Dense="true">Select a Project to continue.</MudAlert></MudItem>
+                }
+                else if (_alloc == null)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Warning" Dense="true">
+                            No revenue budget has been allotted to this project for FY @_fyLabel.
+                            Allot it from Project Management &rarr; Project List &rarr; Edit &rarr; Budget Management.
+                        </MudAlert>
+                    </MudItem>
+                }
+                else if (_isFuture)
+                {
+                    <MudItem xs="12"><MudAlert Severity="Severity.Info" Dense="true"><b>@_month</b> is a future month - entry opens after the month ends.</MudAlert></MudItem>
+                }
+                else
+                {
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.caption">Total Budget Allotted (FY @_fyLabel)</MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary"><b>&#8377; @_alloc.TotalAllotted.ToString("N2") Cr</b></MudText>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.caption">Utilised so far (FY @_fyLabel)</MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Success"><b>&#8377; @_cumulative.ToString("N2") Cr</b></MudText>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudPaper Class="pa-3" Elevation="1" Style="background-color:#e3f2fd;">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2"><b>Previous Month (@_prevMonthDisplay)</b></MudText>
+                            @if (_prevRows.Count == 0)
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No submission found.</MudText>
+                            }
+                            else
+                            {
+                                <MudGrid Spacing="1">
+                                    @foreach (var r in _prevRows)
+                                    {
+                                        <MudItem xs="6" sm="2">
+                                            <MudText Typo="Typo.caption">@HeadName(r.HeadId)</MudText>
+                                            <MudText Typo="Typo.body2"><b>&#8377; @r.Amount.ToString("N2") Cr</b></MudText>
+                                        </MudItem>
+                                    }
+                                </MudGrid>
+                                <MudText Typo="Typo.subtitle2" Class="mt-2"><b>Total: &#8377; @_prevRows.Sum(x => x.Amount).ToString("N2") Cr</b></MudText>
+                            }
+                        </MudPaper>
+                    </MudItem>
+
+                    @if (_alreadySubmitted)
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-2">Revenue budget for <b>@_month</b> is already submitted.</MudAlert>
+                            <MudPaper Class="pa-3" Elevation="1">
+                                <MudText Typo="Typo.subtitle2" Class="mb-2"><b>Submitted values (@_month)</b></MudText>
+                                <MudSimpleTable Dense="true" Striped="true">
+                                    <tbody>
+                                        @foreach (var r in _currentRows)
+                                        {
+                                            <tr><td>@HeadName(r.HeadId)</td><td><b>&#8377; @r.Amount.ToString("N2") Cr</b></td></tr>
+                                        }
+                                        <tr><td><b>Total</b></td><td><b>&#8377; @_currentRows.Sum(x => x.Amount).ToString("N2") Cr</b></td></tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                                @{
+                                    var just = _currentRows.Select(r => r.Justification).FirstOrDefault(j => !string.IsNullOrWhiteSpace(j));
+                                }
+                                <MudText Typo="Typo.body2" Class="mt-2"><b>Justification:</b> @(string.IsNullOrWhiteSpace(just) ? "-" : just)</MudText>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                    else
+                    {
+                        <MudItem xs="12">
+                            <MudPaper Class="pa-3" Elevation="1" Style="background-color:#fdecea;">
+                                <MudText Typo="Typo.subtitle2" Class="mb-2"><b>Current Month (@_month) - amounts against applicable heads</b></MudText>
+                                <MudGrid Spacing="2">
+                                    @foreach (var h in _heads)
+                                    {
+                                        <MudItem xs="6" sm="2">
+                                            <MudNumericField T="decimal" Label="@h.HeadName" Value="@_amounts[h.HeadId]"
+                                                             ValueChanged="@(v => _amounts[h.HeadId] = v)"
+                                                             Min="0" Format="F2" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                        </MudItem>
+                                    }
+                                </MudGrid>
+                                <MudDivider Class="my-2" />
+                                <MudText Typo="Typo.subtitle2">Total for @_month: <b>&#8377; @EntryTotal.ToString("N2") Cr</b> (auto)</MudText>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudTextField T="string" Value="@_justification"
+                                          ValueChanged="@((string v) => { _justification = v; _justError = false; })"
+                                          Immediate="true"
+                                          Label="Justification (Financial approvals, PO details, Vendor details) *"
+                                          Lines="2" Variant="Variant.Outlined"
+                                          Error="@_justError"
+                                          ErrorText="Justification is required before submitting."
+                                          HelperText="Mandatory — mention the financial approval or PO reference." />
+                        </MudItem>
+                    }
+                }
+            </MudGrid>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        @if (!_alreadySubmitted && !_isFuture)
+        {
+            <MudButton OnClick="Cancel">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Send"
+                       Disabled="@(_projectId == null || _alloc == null || _busy)"
+                       OnClick="Submit">Submit</MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Cancel">Close</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public int? PresetProjectId { get; set; }
+    [Parameter] public string? PresentMonth { get; set; }
+
+    private List<FinancialYear> _fys = new();
+    private List<ProjectsMaster> _projects = new();
+    private List<ExpenditureHead> _heads = new();
+    private List<SecItem> _sections = new();
+    private Dictionary<int, decimal> _amounts = new();
+    private Dictionary<int, string> _headNames = new();
+    private List<RevenueUtilization> _prevRows = new();
+    private List<RevenueUtilization> _currentRows = new();
+
+    private int _fyId;
+    private string _fyLabel = "";
+    private string _month = "";
+    private int? _projectId;
+    private BudgetAllocation? _alloc;
+    private decimal _cumulative;
+    private string _justification = "";
+    private bool _alreadySubmitted, _busy, _isFuture;
+    private bool _justError;
+    private string _prevMonth = "", _prevMonthDisplay = "";
+
+    private decimal EntryTotal => _amounts.Values.Sum();
+
+    private string SectionNameForProject
+    {
+        get
+        {
+            var p = _projects.FirstOrDefault(x => x.ProjectId == _projectId);
+            if (p == null) return "-";
+
+            var s = _sections.FirstOrDefault(x => x.SectionId == p.SECTION_ID);
+            if (s != null) return s.SectionName;
+
+            return string.IsNullOrWhiteSpace(p.IT_OWNER_SEC_NAME) ? "-" : p.IT_OWNER_SEC_NAME!;
+        }
+    }
+
+    private static readonly string[] FyMonths =
+        { "APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER","JANUARY","FEBRUARY","MARCH" };
+
+    private static string Defaultmonth() => DateTime.Now.AddMonths(-1).ToString("MMMM").ToUpperInvariant();
+    private static bool IsFutureMonth(string m) =>
+        Array.IndexOf(FyMonths, m) > Array.IndexOf(FyMonths, DateTime.Now.ToString("MMMM").ToUpperInvariant());
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Session.LoadAsync();
+            _fys = await EntryService.GetFinancialYearsAsync();
+            var cur = await EntryService.GetCurrentFyAsync();
+            _fyId = cur?.FyId ?? _fys.LastOrDefault()?.FyId ?? 0;
+            _fyLabel = cur?.FyLabel ?? "";
+
+            _month = PresentMonth ?? Defaultmonth();
+
+            _heads = await EntryService.GetHeadsAsync();
+            _headNames = _heads.ToDictionary(h => h.HeadId, h => h.HeadName);
+            foreach (var h in _heads) _amounts[h.HeadId] = 0;
+
+            _projects = await EntryService.GetProjectsForSectionAsync(null);
+            _sections = await BudgetSvc.GetAllSectionsAsync();
+            _projectId = PresetProjectId ?? _projects.FirstOrDefault()?.ProjectId;
+
+            await LoadContext();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.InnerException?.Message ?? ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task OnFyChanged(int v)
+    {
+        _fyId = v;
+        _fyLabel = _fys.FirstOrDefault(f => f.FyId == v)?.FyLabel ?? "";
+        await LoadContext();
+    }
+
+    private async Task OnMonthChanged(string v) { _month = v; await LoadContext(); }
+    private async Task OnProjectChanged(int? v) { _projectId = v; await LoadContext(); }
+
+    private async Task LoadContext()
+    {
+        try
+        {
+            _alloc = null; _prevRows = new(); _currentRows = new();
+            _alreadySubmitted = false; _cumulative = 0;
+
+            // Clear anything typed for the previous project / month so figures
+            // can never be carried onto a different project by mistake.
+            foreach (var k in _amounts.Keys.ToList()) _amounts[k] = 0;
+            _justification = ""; _justError = false;
+
+            int idx = Array.IndexOf(FyMonths, _month);
+            _prevMonth = idx > 0 ? FyMonths[idx - 1] : "";
+            _prevMonthDisplay = string.IsNullOrEmpty(_prevMonth) ? "FY start" : _prevMonth;
+            _isFuture = IsFutureMonth(_month);
+
+            if (_projectId == null || _fyId == 0) return;
+
+            _alloc = await EntryService.GetRevenueAllocationAsync(_projectId.Value, _fyId);
+            if (_alloc == null) return;
+
+            _cumulative = await EntryService.GetRevenueCumulativeAsync(_projectId.Value, _fyId);
+            _prevRows = string.IsNullOrEmpty(_prevMonth)
+                ? new()
+                : await EntryService.GetRevenueEntriesAsync(_projectId.Value, _fyId, _prevMonth);
+            _currentRows = await EntryService.GetRevenueEntriesAsync(_projectId.Value, _fyId, _month);
+            _alreadySubmitted = _currentRows.Count > 0;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.InnerException?.Message ?? ex.Message, Severity.Error);
+        }
+        finally { StateHasChanged(); }
+    }
+
+    private string HeadName(int id) => _headNames.TryGetValue(id, out var n) ? n : "-";
+
+    private async Task<bool> ConfirmSubmit()
+    {
+        var proj = _projects.FirstOrDefault(p => p.ProjectId == _projectId);
+
+        var lines = _amounts.Where(a => a.Value > 0)
+                            .Select(a => new KeyValuePair<string, decimal>(HeadName(a.Key), a.Value))
+                            .ToList();
+
+        var parameters = new DialogParameters
+            {
+                ["ProjectName"] = string.IsNullOrWhiteSpace(proj?.ProjectName) ? "-" : proj!.ProjectName!,
+                ["SectionName"] = SectionNameForProject,
+                ["Month"] = _month,
+                ["FyLabel"] = _fyLabel,
+                ["Lines"] = lines,
+                ["Total"] = EntryTotal,
+                ["Allotted"] = _alloc?.TotalAllotted ?? 0m,
+                ["UtilisedSoFar"] = _cumulative,
+                ["Justification"] = _justification ?? ""
+            };
+
+        var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                CloseButton = true,
+                BackdropClick = false
+            };
+
+        var dlg = await DialogService.ShowAsync<RevenueSubmitConfirmDialog>("", parameters, options);
+        var result = await dlg.Result;
+        return result is not null && !result.Canceled;
+    }
+
+    private async Task Submit()
+    {
+        if (_projectId == null || _alloc == null) return;
+
+        if (EntryTotal == 0)
+        {
+            Snackbar.Add("Enter at least one head amount before submitting.", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_justification))
+        {
+            _justError = true;
+            Snackbar.Add("Justification is required before submitting.", Severity.Warning);
+            StateHasChanged();
+            return;
+        }
+
+        // The confirmation dialog already shows the over-budget position in red,
+        // so it is the single place the user confirms from.
+        if (!await ConfirmSubmit()) return;
+
+        _busy = true;
+        try
+        {
+            // CLIENT RULE: exceeding = warning only, still saves.
+            decimal proposed = _cumulative + EntryTotal;
+            bool overBudget = proposed > _alloc.TotalAllotted;
+            decimal exceededBy = overBudget ? proposed - _alloc.TotalAllotted : 0;
+
+            var proj = _projects.FirstOrDefault(p => p.ProjectId == _projectId);
+
+            var rows = _amounts.Where(a => a.Value > 0).Select(kv => new RevenueUtilization
+                {
+                    ProjectId = _projectId.Value,
+                    SectionId = proj?.SECTION_ID ?? 0,
+                    HeadId = kv.Key,
+                    FyId = _fyId,
+                    MonthName = _month,
+                    Amount = kv.Value,
+                    Justification = _justification,
+                    SubmittedBy = Session.User?.PfNumber ?? "UNKNOWN",
+                    SubmissionDate = DateTime.Now
+                }).ToList();
+
+            // A failure here must NOT be reported as success.
+            await EntryService.SubmitRevenueAsync(rows, _fyLabel, proj?.ProjectName ?? "", _alloc, overBudget, exceededBy);
+
+            Snackbar.Add($"Revenue budget for {_month} submitted successfully.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not submit: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

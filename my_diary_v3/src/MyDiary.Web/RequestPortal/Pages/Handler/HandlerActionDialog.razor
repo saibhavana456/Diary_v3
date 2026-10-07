@@ -1,0 +1,111 @@
+@namespace RequestPortal.Web.Pages.Handler
+@inject IRequestService Requests
+@inject ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudSelect T="string" Label="Action" @bind-Value="_action" Required="true">
+            <MudSelectItem T="string" Value="@("forward")">Escalate to next level</MudSelectItem>
+            <MudSelectItem T="string" Value="@("resolve")">Mark as Resolved</MudSelectItem>
+            <MudSelectItem T="string" Value="@("close")">Close (with reason)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("clarify")">Reply / Seek clarification</MudSelectItem>
+            <MudSelectItem T="string" Value="@("cancel")">Cancel request</MudSelectItem>
+        </MudSelect>
+
+        @if (_action == "close")
+        {
+            <MudSelect T="CloseReason" Label="Close reason" @bind-Value="_closeReason" Required="true" Class="mt-3">
+                @foreach (var r in Enum.GetValues<CloseReason>())
+                {
+                    <MudSelectItem T="CloseReason" Value="@r">@PrettyReason(r)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudText Typo="Typo.caption" Class="mt-1" Style="color:#59636e;">
+                Common service-industry close reasons. Pick the one that best fits.
+            </MudText>
+        }
+
+        <MudTextField @bind-Value="_remarks" Label="Remarks" Lines="3" Required="true" Class="mt-3" />
+
+        @if (_action == "forward")
+        {
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:#59636e;">
+                Routes to the next level (capped at L4). Assignees are resolved from the routing matrix.
+            </MudText>
+        }
+        else if (_action == "resolve")
+        {
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:#59636e;">
+                The requester will be notified and may submit feedback or reopen.
+            </MudText>
+        }
+        else if (_action == "clarify")
+        {
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:#59636e;">
+                SLA pauses while the requester provides clarification.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit" Disabled="@_busy">
+            @(_busy ? "..." : "Submit")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public long RequestId { get; set; }
+
+    private string _action = "forward";
+    private string? _remarks;
+    private CloseReason _closeReason = CloseReason.Resolved;
+    private bool _busy;
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_remarks)) { Snackbar.Add("Remarks are required.", Severity.Warning); return; }
+        _busy = true;
+        try
+        {
+            if (_action == "clarify")
+            {
+                await Requests.SeekClarificationAsync(new ClarificationDto(RequestId, _remarks!), CurrentUser.EmpCode ?? "");
+            }
+            else if (_action == "close")
+            {
+                await Requests.ActAsync(new ActionDto(RequestId, _action, _remarks!, CloseReason: _closeReason.ToString()), CurrentUser.EmpCode ?? "");
+            }
+            else
+            {
+                await Requests.ActAsync(new ActionDto(RequestId, _action, _remarks!), CurrentUser.EmpCode ?? "");
+            }
+            Snackbar.Add("Done.", Severity.Success);
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "HandlerActionDialog: action failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private static string PrettyReason(CloseReason r) => r switch
+    {
+        CloseReason.Resolved => "Resolved",
+        CloseReason.NotFeasible => "Not feasible",
+        CloseReason.NotAsPerPolicy => "Not as per policy",
+        CloseReason.OutOfScope => "Out of scope",
+        CloseReason.DuplicateRequest => "Duplicate request",
+        CloseReason.InsufficientInformation => "Insufficient information",
+        CloseReason.WithdrawnByUser => "Withdrawn by user",
+        CloseReason.NoActionRequired => "No action required",
+        CloseReason.ResolvedByOtherMeans => "Resolved by other means",
+        _ => r.ToString()
+    };
+}

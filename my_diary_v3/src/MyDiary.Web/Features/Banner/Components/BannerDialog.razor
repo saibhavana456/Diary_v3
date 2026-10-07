@@ -1,0 +1,138 @@
+@using MudBlazor
+@using MyDiary.Web.Features.Banner.Models
+@inject IJSRuntime JS
+@implements IDisposable
+
+<MudDialog Style="border-radius: 16px; overflow: hidden; max-width: 1100px; width: 90vw;" Class="banner-dialog" DisableSidePadding="true">
+    <DialogContent>
+        <div style="position: relative; padding: 0;">
+            @* Countdown timer — top right *@
+            <div class="banner-countdown">
+                <MudChip T="string" Size="MudBlazor.Size.Small"
+                         Color="MudBlazor.Color.Dark"
+                         Style="font-weight: 700; font-size: 0.8rem; opacity: 0.85;">
+                    @_countdown s
+                </MudChip>
+            </div>
+
+            @* Banner image — clickable. Clicking anywhere on the image redirects to the form/link. *@
+            <div class="banner-image-container"
+                 @onclick="OnBannerClick"
+                 role="button"
+                 tabindex="0"
+                 aria-label="@(Banner.Title ?? "Open promotional link")"
+                 style="cursor: pointer;">
+                <img src="@Banner.ImageUrl"
+                     alt="@(Banner.Title ?? "Promotional banner")"
+                     class="banner-image"
+                     style="pointer-events: none;" />
+            </div>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <div class="d-flex justify-space-between align-center w-100 px-4 py-2">
+            <MudButton Variant="Variant.Filled"
+                       Color="MudBlazor.Color.Primary"
+                       Class="rounded-pill px-5"
+                       OnClick="ProceedToPoll"
+                       StartIcon="@Icons.Material.Filled.Poll">
+                Proceed to Poll
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="MudBlazor.Color.Default"
+                       Class="rounded-pill px-5"
+                       OnClick="Close">
+                Close
+            </MudButton>
+        </div>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .banner-dialog .mud-dialog-content {
+        padding: 0 !important;
+    }
+
+    .banner-countdown {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 10;
+    }
+
+    .banner-image-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 420px;
+        max-height: 85vh;
+        overflow: hidden;
+    }
+
+    .banner-image {
+        width: 100%;
+        height: auto;
+        max-height: 85vh;
+        object-fit: contain;
+        display: block;
+    }
+</style>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public BannerConfig Banner { get; set; } = null!;
+
+    private int _countdown = 10;
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        _timer = new System.Threading.Timer(Tick, null, 1000, 1000);
+    }
+
+    private void Tick(object? state)
+    {
+        _countdown--;
+        if (_countdown <= 0)
+        {
+            _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+            InvokeAsync(() =>
+            {
+                MudDialog.Close(DialogResult.Ok(true));
+                StateHasChanged();
+            });
+        }
+        else
+        {
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task OnBannerClick()
+    {
+        if (!string.IsNullOrWhiteSpace(Banner.RedirectUrl))
+        {
+            await JS.InvokeVoidAsync("open", Banner.RedirectUrl, "_blank");
+        }
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private async Task ProceedToPoll()
+    {
+        if (!string.IsNullOrWhiteSpace(Banner.RedirectUrl))
+        {
+            await JS.InvokeVoidAsync("open", Banner.RedirectUrl, "_blank");
+        }
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private void Close()
+    {
+        MudDialog.Close(DialogResult.Cancel());
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

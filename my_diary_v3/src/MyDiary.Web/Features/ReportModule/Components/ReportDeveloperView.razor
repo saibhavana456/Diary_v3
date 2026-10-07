@@ -1,0 +1,119 @@
+@page "/reports/developer/view/{Id:long}"
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::MyDiary.Web.Shared
+@inject IReportRepo ReportRepo
+@inject NavigationManager Nav
+
+<PageTitle>View Report</PageTitle>
+
+@* <PageHeader PageKey="report-developer" Title="@(_def?.ReportName ?? "View Report")" Crumbs="_crumbs" /> *@
+
+<SuperAdminOnly>
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else if (_def is null)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">Report not found.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudSimpleTable Dense="true" Style="overflow-x:auto;">
+                <tbody>
+                    <tr><th style="width:220px;">Vertical</th><td>@_def.VerticalName</td></tr>
+                    <tr><th>Department</th><td>@_def.DepartmentName</td></tr>
+                    <tr><th>Source</th><td>@SourceLabel(_def.SourceType)</td></tr>
+                    <tr><th>Running From</th><td>@(_def.RunningFrom == ReportSite.Dr ? "DR (Secondary)" : "DC (Primary)")</td></tr>
+                    <tr>
+                        <th>Status</th>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Color="@(_def.IsActive ? Color.Success : Color.Default)">
+                                @(_def.IsActive ? "Live" : "Disabled")
+                            </MudChip>
+                        </td>
+                    </tr>
+
+                    @if (_def.SourceType is ReportSourceType.FilePath or ReportSourceType.Sftp)
+                    {
+                        <tr><th colspan="2" class="fw-bold" style="background:#f4f6fb;">DC — File Type: @_def.FileType</th></tr>
+                        <tr><th>File Path (DC)</th><td>@_def.FilePath</td></tr>
+                    }
+                    @if (_def.SourceType == ReportSourceType.Sftp)
+                    {
+                        <tr><th>SFTP Host (DC)</th><td>@_def.SftpHost</td></tr>
+                        <tr><th>Port (DC)</th><td>@_def.SftpPort</td></tr>
+                        <tr><th>User ID (DC)</th><td>@_def.SftpUser</td></tr>
+                        <tr><th>Password (DC)</th><td>••••••••</td></tr>
+                    }
+                    @if (_def.SourceType is ReportSourceType.OracleDb or ReportSourceType.SqlServerDb)
+                    {
+                        <tr><th>Connection String (DC)</th><td style="word-break:break-all;">@MaskConnectionString(_def.DbConnectionString)</td></tr>
+                    }
+
+                    @if (_def.SourceType is ReportSourceType.FilePath or ReportSourceType.Sftp)
+                    {
+                        <tr><th colspan="2" class="fw-bold" style="background:#f4f6fb;">DR</th></tr>
+                        <tr><th>File Path (DR)</th><td>@_def.FilePathDr</td></tr>
+                    }
+                    @if (_def.SourceType == ReportSourceType.Sftp)
+                    {
+                        <tr><th>SFTP Host (DR)</th><td>@_def.SftpHostDr</td></tr>
+                        <tr><th>Port (DR)</th><td>@_def.SftpPortDr</td></tr>
+                        <tr><th>User ID (DR)</th><td>@_def.SftpUserDr</td></tr>
+                        <tr><th>Password (DR)</th><td>••••••••</td></tr>
+                    }
+                    @if (_def.SourceType is ReportSourceType.OracleDb or ReportSourceType.SqlServerDb)
+                    {
+                        <tr><th>Connection String (DR)</th><td style="word-break:break-all;">@MaskConnectionString(_def.DbConnectionStringDr)</td></tr>
+                        <tr><th>SQL Query</th><td><pre style="white-space:pre-wrap;margin:0;">@_def.SqlQuery</pre></td></tr>
+                    }
+                    <tr><th>Created By</th><td>@_def.CreatedByEmp</td></tr>
+                    <tr><th>Created At</th><td>@_def.CreatedAt.ToString("dd-MMM-yyyy HH:mm")</td></tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <div class="d-flex gap-2 mt-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Edit"
+                           OnClick="@(() => Nav.NavigateTo($"reports/developer/edit/{Id}"))">Edit</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("reports/developer"))">Back to List</MudButton>
+            </div>
+        </MudPaper>
+    }
+</SuperAdminOnly>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Reports"), new("Report Developer", "reports/developer"), new("View")
+    };
+
+    private bool _loading = true;
+    private ReportDef? _def;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _def = await ReportRepo.GetDefAsync(Id);
+        _loading = false;
+    }
+
+    private static string MaskConnectionString(string? cs)
+    {
+        if (string.IsNullOrWhiteSpace(cs)) return "";
+        return System.Text.RegularExpressions.Regex.Replace(cs, @"(Password\s*=\s*)[^;]*", "$1••••••••", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
+    private static string SourceLabel(ReportSourceType t) => t switch
+    {
+        ReportSourceType.FilePath => "Server File Path",
+        ReportSourceType.Sftp => "SFTP",
+        ReportSourceType.OracleDb => "Oracle DB",
+        ReportSourceType.SqlServerDb => "MS SQL Server DB",
+        _ => t.ToString()
+    };
+}

@@ -1,0 +1,953 @@
+@page "/executive-branch-visit"
+@page "/executive-branch-visit/{Id:long}"
+@using MudBlazor
+@using MyDiary.Web.Features.Assurance.Services
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject ExecBranchVisitMetricsService MetricsSvc
+@inject global::RequestPortal.Core.Abstractions.IExecBranchVisitRepo VisitRepo
+@inject NavigationManager Nav
+@* RequestPortal.Core.Abstractions.ICurrentUser (not MyDiary.Core.Abstractions.ICurrentUser) —
+   MainLayout.razor only ever calls RefreshAsync() on this one; the MyDiary.Core variant's
+   SetPrincipal() is never invoked anywhere in the app, so its properties are always null. *@
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject global::RequestPortal.Core.Abstractions.IRoVisitRepo RoVisitRepo
+@inject Microsoft.JSInterop.IJSRuntime JS
+@inject ExecBranchVisitPdfService PdfSvc
+@inject Microsoft.Extensions.Options.IOptions<MyDiary.Web.Features.Focus360.Models.GapReportSettings> ReportConfig
+
+<PageTitle>Executive Branch Visit</PageTitle>
+<PageHeader PageKey="executive-branch-visit" Title="Executive Branch Visit Form" Crumbs="_crumbs" />
+
+@* Screen-reader-only live region — announces Add/Remove Row actions (see
+   AddOpenEndedRowAsync/RemoveOpenEndedRow) without anything visible on screen. *@
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only">@_liveMessage</div>
+
+<MudPaper Class="pa-2 mb-3 d-flex justify-end" Elevation="1">
+    <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+               Disabled="@(_status != "SUBMITTED")" OnClick="DownloadPdfAsync">
+        Save to PDF
+    </MudButton>
+</MudPaper>
+
+<MudTabs @bind-ActivePanelIndex="_activeTab" Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" Class="execvisit-tabs">
+    <MudTabPanel Text="1. Branch & Visit Details">
+        <div class="execvisit-table-wrap">
+            <table class="execvisit-table execvisit-kv-table">
+                <tbody>
+                    <tr class="execvisit-kv-navy">
+                        <td class="execvisit-kv-label"><label for="ebv_branchcode">BRANCH: (Name-SOL)</label></td>
+                        <td>
+                            <input id="ebv_branchcode" type="text" value="@_branchCode" maxlength="20" readonly="@(_status == "SUBMITTED")"
+                                   @onchange="@(e => _branchCode = e.Value?.ToString() ?? "")"
+                                   @onblur="LoadBranchAsync" placeholder="Enter SOL and tab out"
+                                   aria-describedby="@(string.IsNullOrWhiteSpace(_branchName) ? null : "ebv_branchname_hint")" />
+                            @if (!string.IsNullOrWhiteSpace(_branchName))
+                            {
+                                <div class="execvisit-kv-hint" id="ebv_branchname_hint">@_branchName</div>
+                            }
+                        </td>
+                        <td class="execvisit-kv-label"><label for="ebv_dateopening">DATE OF OPENING:</label></td>
+                        <td>@RenderCell("T1_DateOfOpening", column: "Date", label: "Date of Opening")</td>
+                    </tr>
+                    <tr>
+                        <td class="execvisit-kv-label"><label>REGION:</label></td>
+                        <td>@RenderCell("T1_Region", label: "Region")</td>
+                        <td class="execvisit-kv-label"><label>Branch Category: (M/U/SU/R)</label></td>
+                        <td>@RenderCell("T1_BranchCategory", label: "Branch Category")</td>
+                    </tr>
+                    <tr>
+                        <td class="execvisit-kv-label"><label>ZONE:</label></td>
+                        <td>@RenderCell("T1_Zone", label: "Zone")</td>
+                        <td class="execvisit-kv-label"><label>AUDIT RATING:</label></td>
+                        <td>@RenderCell("T1_AuditRating", label: "Audit Rating")</td>
+                    </tr>
+                    <tr>
+                        <td class="execvisit-kv-label"><label for="ebv_bmname">BRANCH MANAGER - Shri/Smt:</label></td>
+                        <td>
+                            <input id="ebv_bmname" type="text" value="@_branchManagerName" readonly aria-label="Branch Manager (auto-filled)"
+                                   class="@(string.IsNullOrWhiteSpace(_branchManagerName) ? "" : "execvisit-auto-input")" />
+                        </td>
+                        <td class="execvisit-kv-label"><label for="ebv_bmsince">SINCE:</label></td>
+                        <td>
+                            <input id="ebv_bmsince" type="text" value="@(_bmWorkingSince?.ToString("dd-MMM-yyyy"))" readonly aria-label="Branch Manager posted since (auto-filled)"
+                                   class="@(_bmWorkingSince.HasValue ? "execvisit-auto-input" : "")" />
+                        </td>
+                    </tr>
+                    <tr class="execvisit-kv-tall">
+                        <td class="execvisit-kv-label"><label for="ebv_visitingofficial">NAME OF THE VISITING OFFICIAL: Shri/Smt</label></td>
+                        <td><input id="ebv_visitingofficial" type="text" value="@_visitingOfficial" readonly aria-label="Name of the Visiting Official (from your login)" class="execvisit-auto-input" /></td>
+                        <td class="execvisit-kv-label"><label>DESIGNATION:</label></td>
+                        <td>@RenderCell("T1_Designation", label: "Designation")</td>
+                    </tr>
+                    <tr>
+                        <td class="execvisit-kv-label"><label for="ebv_dateofvisit">DATE OF VISIT:</label></td>
+                        <td>
+                            <input id="ebv_dateofvisit" type="date" value="@(_dateOfVisit?.ToString("yyyy-MM-dd"))" readonly="@(_status == "SUBMITTED")"
+                                   @onchange="@(e => _dateOfVisit = DateTime.TryParse(e.Value?.ToString(), out var d) ? d : _dateOfVisit)" />
+                        </td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        @if (_loadingMetrics)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mt-2" />
+        }
+        else if (_metricsLoaded && _metrics.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-2" Dense="true">No BUSINESS_360_DATA found for branch @_branchCode — auto-fill fields left blank; enter manually.</MudAlert>
+        }
+        else if (_metricsLoaded)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-2" Dense="true">Auto-populated @_metrics.Count parameter(s) for branch @_branchCode as of @(_metrics.Max(m => m.AsOnDate)?.ToString("dd-MMM-yyyy")). Branch Name and Branch Manager auto-filled from the employee-SOL master where available — Region, Zone, Branch Category, Audit Rating and Date of Opening have no source system in this app yet, so they're manual entry.</MudAlert>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="A. Business">
+        <div class="execvisit-table-title" id="ebv_title_a1">1. Current Business Figures (Amt. in Lacs) — auto-filled where available</div>
+        <div class="execvisit-table-wrap">
+            <table class="execvisit-table" aria-labelledby="ebv_title_a1">
+                <thead>
+                    <tr class="execvisit-period-header">
+                        <th scope="col">Parameter</th>
+                        <th scope="col">2025-26 March (Actual)</th>
+                        <th scope="col">2026-27 March (Target)</th>
+                        <th scope="col">Previous Qtr. (Target)</th>
+                        <th scope="col">Previous Qtr. (Actual)</th>
+                        <th scope="col">Current Qtr. (Target)</th>
+                        <th scope="col">Previous Day Figure</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _businessFigureRows)
+                    {
+                        var isAuto = ExecBranchVisitPanelCatalog.BusinessFiguresMap.ContainsKey(row);
+                        var paramName = isAuto ? ExecBranchVisitPanelCatalog.BusinessFiguresMap[row] : null;
+                        var autoVal = isAuto ? AutoValueFor(paramName!) : null;
+                        var prevDayVal = isAuto ? PrevDayValueFor(paramName!) : null;
+                        var prevQtrVal = isAuto ? PrevQtrValueFor(paramName!) : null;
+                        <tr class="@(isAuto ? "execvisit-auto-row" : "")">
+                            <th scope="row">@row @(isAuto ? " (auto)" : "")</th>
+                            <td>@RenderCell($"A1_{row}_Actual2526", autoVal, label: $"{row}, 2025-26 March Actual")</td>
+                            <td>@RenderCell($"A1_{row}_Target2627", label: $"{row}, 2026-27 March Target")</td>
+                            <td>@RenderCell($"A1_{row}_PrevQtrTarget", label: $"{row}, Previous Quarter Target")</td>
+                            <td>@RenderCell($"A1_{row}_PrevQtrActual", prevQtrVal, label: $"{row}, Previous Quarter Actual")</td>
+                            <td>@RenderCell($"A1_{row}_CurQtrTarget", label: $"{row}, Current Quarter Target")</td>
+                            <td>@RenderCell($"A1_{row}_PrevDay", prevDayVal, label: $"{row}, Previous Day Figure")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @foreach (var t in ExecVisitFormCatalog.SectionA_Extra)
+        {
+            @RenderGenericTable("A", t)
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="B. Physical Infrastructure">
+        @foreach (var t in ExecVisitFormCatalog.SectionB)
+        {
+            @RenderGenericTable("B", t)
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="C. Security">
+        @foreach (var t in ExecVisitFormCatalog.SectionC.Take(2))
+        {
+            @RenderGenericTable("C", t)
+        }
+
+        <div class="execvisit-table-title" id="ebv_title_c_sundry">2.i. Impersonal Accounts — Sundry (auto-filled: No of Entries / Value)</div>
+        @RenderImpersonalTable("C_Sundry", ExecBranchVisitPanelCatalog.SundryMap, "ebv_title_c_sundry", "Sundry")
+
+        <div class="execvisit-table-title" id="ebv_title_c_suspense">2.ii. Impersonal Accounts — Suspense (auto-filled: No of Entries / Value)</div>
+        @RenderImpersonalTable("C_Suspense", ExecBranchVisitPanelCatalog.SuspenseMap, "ebv_title_c_suspense", "Suspense")
+
+        @foreach (var t in ExecVisitFormCatalog.SectionC.Skip(2))
+        {
+            @RenderGenericTable("C", t)
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="D. Credit Monitoring/Recovery">
+        @foreach (var t in ExecVisitFormCatalog.SectionD)
+        {
+            @RenderGenericTable("D", t)
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="E. Audit">
+        @foreach (var t in ExecVisitFormCatalog.SectionE)
+        {
+            @RenderGenericTable("E", t)
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="F. Views of Branch Visiting Officials">
+        @foreach (var t in ExecVisitFormCatalog.SectionF)
+        {
+            @RenderGenericTable("F", t)
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@if (_status == "SUBMITTED")
+{
+    <MudAlert Severity="Severity.Info" Class="mt-3" Dense="true" Icon="@Icons.Material.Filled.Lock">
+        This visit was submitted on @(_visit?.SubmittedAt?.ToString("dd-MMM-yyyy HH:mm")) and is now read-only.
+    </MudAlert>
+}
+
+<MudPaper Class="pa-3 mt-3 d-flex justify-space-between align-center" Elevation="1">
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
+               Disabled="@(_activeTab == 0)" OnClick="@(() => _activeTab--)">Previous</MudButton>
+    <div class="d-flex" style="gap:8px;">
+        @if (_status != "SUBMITTED")
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveAsync">
+                Save
+            </MudButton>
+            @* Submit only appears on the last tab ("F. Views...", index 6) — submitting is a
+               final, whole-form action, not something to offer from every tab along the way. *@
+            @if (_activeTab == 6)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.CheckCircle" OnClick="SubmitAsync">
+                    Submit
+                </MudButton>
+            }
+        }
+        @if (_activeTab < 6)
+        {
+            <MudButton Variant="Variant.Outlined" EndIcon="@Icons.Material.Filled.ArrowForward" OnClick="@(() => _activeTab++)">Next</MudButton>
+        }
+    </div>
+</MudPaper>
+
+<style>
+    /* ── Doc-accurate palette (Final_Branch_Visit_Format_Blue_colour change.docx) ──
+       1F4E79 dark navy  = section/sub-table title bars, white bold text
+       BDD7EE med blue   = column header row + leftmost row-label cell
+       DDEBF7 lt blue    = alternating ("even") data rows, zebra striping
+       FFFFFF white      = alternating ("odd") data rows
+       215E99 darkest    = rare — branch-identity header + time-period column headers
+                            of the Business Figures grid specifically (docx keeps this
+                            shade distinct from the ordinary BDD7EE column headers) */
+    .execvisit-table-title {
+        background: #1F4E79; color: #ffffff; font-weight: 700; font-size: .95rem;
+        padding: 6px 10px; margin: 16px 0 0; border-radius: 4px 4px 0 0;
+    }
+    .execvisit-table-wrap { overflow-x: auto; margin-bottom: 20px; }
+    .execvisit-table { border-collapse: collapse; width: 100%; font-size: .85rem; table-layout: fixed; }
+    .execvisit-table th, .execvisit-table td { border: 1px solid #a9c6e0; padding: 4px 6px; text-align: left; overflow-wrap: break-word; }
+    .execvisit-table th:first-child, .execvisit-table td:first-child { width: 22%; max-width: 260px; }
+    .execvisit-table th:last-child:empty, .execvisit-table td.execvisit-row-delete-cell { width: 40px; }
+    .execvisit-table th { background: #BDD7EE; color: #1F4E79; font-weight: 700; }
+    .execvisit-table thead tr.execvisit-period-header th { background: #215E99; color: #ffffff; }
+    .execvisit-table tbody td:first-child, .execvisit-table tbody th:first-child { background: #BDD7EE; font-weight: 600; color: #1F4E79; text-align: left; }
+    .execvisit-table tbody tr:nth-child(odd) td:not(:first-child) { background: #ffffff; }
+    .execvisit-table tbody tr:nth-child(even) td:not(:first-child) { background: #DDEBF7; }
+    .execvisit-table input, .execvisit-table select { width: 100%; border: none; background: transparent; font-size: .85rem; padding: 2px; box-sizing: border-box; }
+    .execvisit-table select { text-align: center; text-align-last: center; cursor: pointer; }
+    .execvisit-table input[type="number"] { text-align: center; }
+    .execvisit-table input:focus { outline: 1px solid var(--mud-palette-primary); }
+    .execvisit-table input.execvisit-invalid, .execvisit-table select.execvisit-invalid { border: 2px solid #d32f2f !important; background: #fdecea !important; }
+    .execvisit-error-text { display: block; color: #d32f2f; font-size: .72rem; font-weight: 600; margin-top: 2px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    /* Tab 1 — "Branch & Visit Details" key-value table, matching the docx's
+       Preliminary-Details layout: navy top row, light-blue label column, rest white. */
+    .execvisit-kv-table { table-layout: fixed; }
+    .execvisit-kv-table td { width: 25%; vertical-align: middle; }
+    .execvisit-kv-table td.execvisit-kv-label { background: #BDD7EE; color: #1F4E79; font-weight: 700; width: 25%; }
+    .execvisit-kv-table tr.execvisit-kv-navy td.execvisit-kv-label { background: #1F4E79; color: #ffffff; }
+    .execvisit-kv-table tr.execvisit-kv-tall td { vertical-align: top; padding-top: 8px; }
+    .execvisit-kv-table td:not(.execvisit-kv-label) { background: #ffffff; }
+    .execvisit-kv-hint { font-size: .72rem; color: #1F4E79; font-weight: 600; margin-top: 2px; }
+    input.execvisit-auto-input { background: #eaf3e6 !important; color: #256029; font-weight: 600; }
+    .execvisit-auto-row td:first-child { font-weight: 700; }
+    .execvisit-auto-row input[readonly] { background: #eaf3e6; color: #256029; font-weight: 600; }
+    .execvisit-row-delete-cell { background: #ffffff !important; text-align: center; width: 32px; }
+    .execvisit-addrow-bar { display: flex; justify-content: flex-end; margin: -14px 0 18px; }
+
+    /* Selected tab header — light-medium blue, matches the docx column-header shade,
+       reads well against MudBlazor's default tab bar without competing with the navy
+       section-title bars used inside the panels. Scoped to this page's MudTabs only. */
+    .execvisit-tabs .mud-tab.mud-tab-active,
+    .execvisit-tabs .mud-tab-active { background-color: #BDD7EE !important; color: #1F4E79 !important; }
+    .execvisit-tabs .mud-tab.mud-tab-active .mud-tab-slider,
+    .execvisit-tabs .mud-tab-slider { background-color: #1F4E79 !important; }
+
+    @@media print {
+        .execvisit-header, .mud-tabs-toolbar { display: none !important; }
+        .mud-tabs-panels > .mud-tab-panel { display: block !important; }
+        .execvisit-addrow-bar, .execvisit-row-delete-cell { display: none !important; }
+    }
+</style>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private List<PageHeader.Crumb> _crumbs => new()
+    {
+        new("Assurance 360°", "assurance-360"), new("Executive Branch Visit Form")
+    };
+
+    private string _branchCode = "900201";
+    private string? _visitingOfficial;
+    private DateTime? _dateOfVisit = AppTime.Today;
+    private string? _branchName;
+    private string? _branchManagerName;
+    private DateTime? _bmWorkingSince;
+
+    private bool _loadingMetrics;
+    private bool _metricsLoaded;
+    private List<ExecVisitMetric> _metrics = new();
+    private readonly Dictionary<string, string> _manual = new();
+    private int _activeTab;
+
+    // Real Oracle-backed persistence (RP_39: RP_EXEC_BRANCH_VISIT + _FIELD + _OPENROW +
+    // _SUBMITTED) — replaces the earlier sessionStorage stopgap. _visit/_status track the
+    // loaded/saved record; _status=="SUBMITTED" locks Save/Submit and shows every field
+    // readonly (see RenderCell's _status check) since submitted visits are immutable.
+    private ExecBranchVisit? _visit;
+    private string _status = "DRAFT";
+
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            var visit = BuildVisitFromForm();
+            var newId = await VisitRepo.SaveDraftAsync(visit);
+            if (Id == 0)
+            {
+                Id = newId;
+                Nav.NavigateTo($"executive-branch-visit/{newId}", forceLoad: false, replace: true);
+            }
+            Snackbar.Add("Saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "ExecutiveBranchVisit: save failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        var missing = ValidateBeforeSubmit();
+        if (missing.Count > 0)
+        {
+            _missingKeys.Clear();
+            foreach (var m in missing) _missingKeys.Add(m.Key);
+            _activeTab = missing[0].TabIndex; // jump straight to the first tab with something missing
+            Snackbar.Add($"{missing.Count} field(s) still need a value before you can submit. First: {missing[0].Description} (shown now, highlighted in red).", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            // Save whatever's currently on screen first, so Submit always freezes the
+            // latest state rather than whatever was last explicitly Saved.
+            var visit = BuildVisitFromForm();
+            var draftId = await VisitRepo.SaveDraftAsync(visit);
+            Id = draftId;
+
+            var submittedByEmp = CurrentUser?.EmpCode ?? "";
+            await VisitRepo.SubmitAsync(draftId, submittedByEmp);
+
+            _status = "SUBMITTED";
+            _missingKeys.Clear();
+            _visit = await VisitRepo.GetAsync(draftId);
+            Nav.NavigateTo($"executive-branch-visit/{draftId}", forceLoad: false, replace: true);
+            Snackbar.Add("Submitted. This visit is now locked and read-only.", Severity.Success);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "ExecutiveBranchVisit: submit failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private ExecBranchVisit BuildVisitFromForm()
+    {
+        var v = new ExecBranchVisit
+        {
+            Id = Id,
+            BranchCode = _branchCode,
+            BranchName = _branchName,
+            BranchManagerName = _branchManagerName,
+            BmWorkingSince = _bmWorkingSince,
+            VisitingOfficialEmpCode = CurrentUser?.EmpCode ?? "",
+            VisitingOfficialName = _visitingOfficial ?? CurrentUser?.EmpCode ?? "",
+            DateOfVisit = _dateOfVisit,
+            CreatedByEmp = CurrentUser?.EmpCode ?? "",
+            Status = "DRAFT"
+        };
+
+        // Region/Zone/Category/Audit Rating/Date of Opening/Designation are all manual
+        // (Tab 1's own RenderCell fields, keyed T1_*) — pull them out of _manual same as
+        // every other field, rather than duplicating separate bound properties for them.
+        v.RegionName = _manual.GetValueOrDefault("T1_Region");
+        v.ZoneName = _manual.GetValueOrDefault("T1_Zone");
+        v.BranchCategory = _manual.GetValueOrDefault("T1_BranchCategory");
+        v.AuditRating = _manual.GetValueOrDefault("T1_AuditRating");
+        v.Designation = _manual.GetValueOrDefault("T1_Designation");
+        if (DateTime.TryParse(_manual.GetValueOrDefault("T1_DateOfOpening"), out var dopen)) v.DateOfOpening = dopen;
+
+        foreach (var (key, value) in _manual)
+            v.Fields[key] = value;
+
+        foreach (var (key, rows) in _openEndedRows)
+            v.OpenRows[key] = rows.ToList();
+
+        return v;
+    }
+
+    // Walks every field the form can render — Tab 1's manual fields, the Business Figures
+    // grid, and every generic table across B-F (including the two Impersonal Accounts
+    // panels) — using the exact same key-building and auto/manual logic RenderCell and the
+    // various Render*Table methods use, so this can never disagree with what's actually on
+    // screen. A cell that's genuinely auto-filled (autoVal.HasValue) is never required —
+    // it already has a value the user didn't type. One that's *nominally* auto but has no
+    // BUSINESS_360_DATA figure for this branch falls through to manual entry on screen
+    // (see RenderCell), so it's required here too, matching that behavior exactly.
+    private List<(string Key, int TabIndex, string Description)> ValidateBeforeSubmit()
+    {
+        var missing = new List<(string, int, string)>();
+        void Check(string key, int tab, string desc)
+        {
+            if (string.IsNullOrWhiteSpace(_manual.GetValueOrDefault(key))) missing.Add((key, tab, desc));
+        }
+
+        // Tab 0 — Branch & Visit Details
+        Check("T1_DateOfOpening", 0, "Date of Opening");
+        Check("T1_Region", 0, "Region");
+        Check("T1_BranchCategory", 0, "Branch Category");
+        Check("T1_Zone", 0, "Zone");
+        Check("T1_AuditRating", 0, "Audit Rating");
+        Check("T1_Designation", 0, "Designation");
+
+        // Tab 1 — A. Business, Table 1 (Current Business Figures)
+        foreach (var row in _businessFigureRows)
+        {
+            var isAuto = ExecBranchVisitPanelCatalog.BusinessFiguresMap.ContainsKey(row);
+            var paramName = isAuto ? ExecBranchVisitPanelCatalog.BusinessFiguresMap[row] : null;
+            var autoActual = isAuto ? AutoValueFor(paramName!) : null;
+            var autoPrevDay = isAuto ? PrevDayValueFor(paramName!) : null;
+            var autoPrevQtr = isAuto ? PrevQtrValueFor(paramName!) : null;
+
+            if (!autoActual.HasValue) Check($"A1_{row}_Actual2526", 1, $"{row} — 2025-26 March Actual");
+            Check($"A1_{row}_Target2627", 1, $"{row} — 2026-27 March Target");
+            Check($"A1_{row}_PrevQtrTarget", 1, $"{row} — Previous Qtr Target");
+            if (!autoPrevQtr.HasValue) Check($"A1_{row}_PrevQtrActual", 1, $"{row} — Previous Qtr Actual");
+            Check($"A1_{row}_CurQtrTarget", 1, $"{row} — Current Qtr Target");
+            if (!autoPrevDay.HasValue) Check($"A1_{row}_PrevDay", 1, $"{row} — Previous Day Figure");
+        }
+        CheckGenericTables(1, "A", ExecVisitFormCatalog.SectionA_Extra, missing);
+
+        // Tab 2 — B. Physical Infrastructure
+        CheckGenericTables(2, "B", ExecVisitFormCatalog.SectionB, missing);
+
+        // Tab 3 — C. Security (incl. the two auto-fill-aware Impersonal Accounts panels)
+        CheckGenericTables(3, "C", ExecVisitFormCatalog.SectionC.Take(2).ToList(), missing);
+        CheckImpersonal(3, "C_Sundry", "Impersonal Accounts (Sundry)", ExecBranchVisitPanelCatalog.SundryMap, missing);
+        CheckImpersonal(3, "C_Suspense", "Impersonal Accounts (Suspense)", ExecBranchVisitPanelCatalog.SuspenseMap, missing);
+        CheckGenericTables(3, "C", ExecVisitFormCatalog.SectionC.Skip(2).ToList(), missing);
+
+        // Tab 4 — D. Credit Monitoring/Recovery
+        CheckGenericTables(4, "D", ExecVisitFormCatalog.SectionD, missing);
+
+        // Tab 5 — E. Audit
+        CheckGenericTables(5, "E", ExecVisitFormCatalog.SectionE, missing);
+
+        // Tab 6 — F. Views of Branch Visiting Officials
+        CheckGenericTables(6, "F", ExecVisitFormCatalog.SectionF, missing);
+
+        return missing;
+    }
+
+    private void CheckGenericTables(int tabIndex, string sectionCode, IReadOnlyList<ExecVisitTable> tables, List<(string Key, int TabIndex, string Description)> missing)
+    {
+        foreach (var t in tables)
+        {
+            var rows = t.OpenEnded ? GetOpenEndedRows(sectionCode, t) : t.Rows.ToList();
+            foreach (var r in rows)
+            {
+                foreach (var c in t.Columns)
+                {
+                    var key = $"{sectionCode}_{t.Title}_{r}_{c}";
+                    if (string.IsNullOrWhiteSpace(_manual.GetValueOrDefault(key)))
+                        missing.Add((key, tabIndex, $"{t.Title} — {r} — {c}"));
+                }
+            }
+        }
+    }
+
+    private void CheckImpersonal(int tabIndex, string code, string panelLabel, IReadOnlyDictionary<string, string> map, List<(string Key, int TabIndex, string Description)> missing)
+    {
+        var autoEntries = AutoValueFor(map["No of Entries"]);
+        var autoValue = AutoValueFor(map["Value"]);
+        if (!autoEntries.HasValue && string.IsNullOrWhiteSpace(_manual.GetValueOrDefault($"{code}_entries")))
+            missing.Add(($"{code}_entries", tabIndex, $"{panelLabel} — No of Entries"));
+        if (!autoValue.HasValue && string.IsNullOrWhiteSpace(_manual.GetValueOrDefault($"{code}_value")))
+            missing.Add(($"{code}_value", tabIndex, $"{panelLabel} — Value"));
+        foreach (var (suffix, label) in new[] { ("gt180", "Outstanding >180 days"), ("90to180", "Outstanding 90-180 days"), ("lt90", "Outstanding <90 days"), ("remarks", "Remarks") })
+        {
+            var key = $"{code}_{suffix}";
+            if (string.IsNullOrWhiteSpace(_manual.GetValueOrDefault(key)))
+                missing.Add((key, tabIndex, $"{panelLabel} — {label}"));
+        }
+    }
+
+    private async Task LoadExistingVisitAsync(long id)
+    {
+        _visit = await VisitRepo.GetAsync(id);
+        if (_visit is null)
+        {
+            Snackbar.Add($"Visit #{id} not found.", Severity.Warning);
+            return;
+        }
+
+        _status = _visit.Status;
+        _branchCode = _visit.BranchCode;
+        _branchName = _visit.BranchName;
+        _branchManagerName = _visit.BranchManagerName;
+        _bmWorkingSince = _visit.BmWorkingSince;
+        _dateOfVisit = _visit.DateOfVisit;
+        if (!string.IsNullOrWhiteSpace(_visit.VisitingOfficialName)) _visitingOfficial = _visit.VisitingOfficialName;
+
+        _manual.Clear();
+        foreach (var (key, value) in _visit.Fields) _manual[key] = value;
+
+        _openEndedRows.Clear();
+        foreach (var (key, rows) in _visit.OpenRows) _openEndedRows[key] = rows.ToList();
+
+        _metrics = await MetricsSvc.GetMetricsAsync(_branchCode);
+        _metricsLoaded = true;
+    }
+
+    private readonly string[] _businessFigureRows =
+    {
+        "Total Deposits","Current Deposits","Savings Deposits","Term Deposits","Total Advances",
+        "Priority Sector","Agriculture","MSME","Retail","NPA Recovery","Non-Interest Income"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // NOTE: CurrentUser properties are NOT accessed here because
+        // ExecVisitLayout doesn't use MainLayout (which normally calls
+        // CurrentUser.RefreshAsync). In a new-tab scenario, JS interop
+        // isn't available yet during OnInitializedAsync, so the auth
+        // state provider can't read sessionStorage. Auth + user population
+        // is deferred to OnAfterRenderAsync below.
+
+        if (Id > 0)
+        {
+            // Existing draft/submitted visit — load it in full (header, fields, open
+            // rows, status) instead of the default blank-form/demo-branch-code state.
+            await LoadExistingVisitAsync(Id);
+        }
+    }
+
+    private bool _authChecked;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_authChecked)
+        {
+            _authChecked = true;
+
+            // JS interop is now available — force the auth state provider to
+            // read from sessionStorage so CurrentUser can resolve properly.
+            await CurrentUser.RefreshAsync();
+
+            if (string.IsNullOrEmpty(CurrentUser?.EmpCode))
+            {
+                Nav.NavigateTo("login", forceLoad: true);
+                return;
+            }
+
+            // Now that CurrentUser is resolved, populate the visiting official field
+            _visitingOfficial = CurrentUser.Name ?? CurrentUser.EmpCode;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadBranchAsync()
+    {
+        if (_status == "SUBMITTED") return; // locked — branch identity is frozen at submit time
+        if (string.IsNullOrWhiteSpace(_branchCode)) return;
+        _loadingMetrics = true;
+        StateHasChanged();
+
+        _metrics = await MetricsSvc.GetMetricsAsync(_branchCode);
+        _metricsLoaded = true;
+
+        // Branch Name + Branch Manager, same RP_CSBE_ORG_EMPLOYEE lookup the Branch Visit
+        // Report form uses (Region/Zone/Category/Audit Rating/Date of Opening have no
+        // source anywhere in this app, so those 5 fields stay manual — see the alert below).
+        try
+        {
+            var info = await RoVisitRepo.GetBranchInfoAsync(_branchCode);
+            _branchName = info?.BranchName;
+            _branchManagerName = info?.BranchManagerName;
+            _bmWorkingSince = info?.BmWorkingSince;
+        }
+        catch
+        {
+            _branchName = null; _branchManagerName = null; _bmWorkingSince = null;
+        }
+
+        _loadingMetrics = false;
+    }
+
+    private decimal? AutoValueFor(string parameterName) =>
+        _metrics.FirstOrDefault(m => string.Equals(m.ParameterName, parameterName, StringComparison.OrdinalIgnoreCase))?.ActualsAsOn;
+
+    // "Previous Day Figure" / "Previous Qtr. (Actual)" — from GAP_09's PREV_DAY_ACTUAL /
+    // PREV_QTR_ACTUAL, which pick the closest earlier BUSINESS_360_DATA snapshot for that
+    // (branch, parameter). Null if no earlier snapshot exists yet for this branch — the
+    // cell then falls back to manual entry, same as any other un-auto-filled field.
+    private decimal? PrevDayValueFor(string parameterName) =>
+        _metrics.FirstOrDefault(m => string.Equals(m.ParameterName, parameterName, StringComparison.OrdinalIgnoreCase))?.PrevDayActual;
+
+    private decimal? PrevQtrValueFor(string parameterName) =>
+        _metrics.FirstOrDefault(m => string.Equals(m.ParameterName, parameterName, StringComparison.OrdinalIgnoreCase))?.PrevQtrActual;
+
+    private string GetVal(string key) => _manual.TryGetValue(key, out var v) ? v : "";
+
+    private void SetVal(string key, string? val)
+    {
+        _manual[key] = val ?? "";
+        if (!string.IsNullOrWhiteSpace(val)) _missingKeys.Remove(key); // clear the red highlight as soon as it's filled in
+    }
+
+    // Populated by ValidateBeforeSubmit() when Submit is clicked with required fields
+    // still empty — RenderCell reads this to show a red border per field (see
+    // "missingClass" below), so the user can see exactly what's left, not just a count.
+    private readonly HashSet<string> _missingKeys = new();
+
+    // Field-type classifier by column-header text, applied where the generic
+    // (RenderTreeBuilder-based) cell renderer is used across ~100+ table cells in this
+    // file. We stay with plain HTML5-typed <input>/<select> elements here (type=number/
+    // date/select with min/step/maxlength) rather than swapping to MudNumericField/
+    // MudSelect/MudDatePicker per cell — that keeps every generic-table cell going
+    // through the same lightweight RenderCell path (one dictionary-backed key -> value
+    // model, one CSS treatment, one place bindings are wired) instead of forking the
+    // render logic per field type. This is a deliberate consistency tradeoff: it gives
+    // up MudBlazor's richer widgets (spinner buttons, calendar popover) in exchange for
+    // uniform styling/behavior across the whole form.
+    private enum FieldKind { Text, Decimal, Integer, Rating, YesNo, YesNoNa, Date }
+
+    private static FieldKind ClassifyColumn(string? column)
+    {
+        if (string.IsNullOrWhiteSpace(column)) return FieldKind.Text;
+        var c = column.ToLowerInvariant();
+        if (c.Contains("yes/no/na")) return FieldKind.YesNoNa;
+        if (c.Contains("yes/no")) return FieldKind.YesNo;
+        if (c.Contains("date") || c.Contains("since") || c.Contains("closure")) return FieldKind.Date;
+        if (c.Contains("rating")) return FieldKind.Rating;
+        if (c.Contains("amount") || c.Contains("lacs") || c.Contains("value") || c.Contains("%") || c.Contains("percent")) return FieldKind.Decimal;
+        if (c.Contains("no of") || c.Contains("no. of") || c.Contains("number") || c.Contains("no of a/c") || c.StartsWith("no of")) return FieldKind.Integer;
+        return FieldKind.Text;
+    }
+
+
+    // JAWS/screen-reader pass: every generated input/select below now carries an
+    // aria-label built from its row+column context (label, supplied by the caller —
+    // see the call sites in each Render*Table method) since these cells have no
+    // visible per-cell <label>; the row/column headers are the *visual* label, and
+    // aria-label is the programmatic equivalent a screen reader needs in their place.
+    // Falls back to the raw column/key text if a caller didn't pass one, rather than
+    // leaving the field unlabelled.
+    private RenderFragment RenderCell(string key, decimal? autoVal = null, string? column = null, string? label = null) => builder =>
+    {
+        var effectiveLabel = label ?? column ?? key;
+
+        if (autoVal.HasValue)
+        {
+            builder.OpenElement(0, "input");
+            builder.AddAttribute(1, "value", autoVal.Value.ToString("N2"));
+            builder.AddAttribute(2, "readonly", true);
+            builder.AddAttribute(3, "aria-label", $"{effectiveLabel} (auto-filled): {autoVal.Value:N2}");
+            builder.CloseElement();
+            return;
+        }
+
+        // Submitted visits are immutable (RP_EXEC_BRANCH_VISIT.STATUS + the repo-layer
+        // guard in ExecBranchVisitRepo.SaveDraftAsync) — reflect that in the UI too, not
+        // just by disabling Save/Submit, so every field is unmistakably locked.
+        if (_status == "SUBMITTED")
+        {
+            builder.OpenElement(0, "input");
+            builder.AddAttribute(1, "type", "text");
+            builder.AddAttribute(2, "value", GetVal(key));
+            builder.AddAttribute(3, "readonly", true);
+            builder.AddAttribute(4, "aria-label", $"{effectiveLabel} (read-only, submitted)");
+            builder.CloseElement();
+            return;
+        }
+
+        var kind = ClassifyColumn(column);
+        var changed = Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
+            this, e => SetVal(key, e.Value?.ToString()));
+
+        // Set by ValidateBeforeSubmit when Submit is clicked with empty required fields —
+        // cleared as soon as the user edits that specific field (see SetVal below).
+        var missing = _missingKeys.Contains(key);
+        var missingClass = missing ? "execvisit-invalid" : null;
+
+        switch (kind)
+        {
+            case FieldKind.YesNo:
+            case FieldKind.YesNoNa:
+                builder.OpenElement(0, "select");
+                builder.AddAttribute(1, "value", GetVal(key));
+                builder.AddAttribute(2, "onchange", changed);
+                builder.AddAttribute(3, "aria-label", effectiveLabel);
+                builder.AddAttribute(4, "class", missingClass);
+                builder.OpenElement(5, "option"); builder.AddAttribute(6, "value", ""); builder.AddContent(7, "—"); builder.CloseElement();
+                builder.OpenElement(8, "option"); builder.AddAttribute(9, "value", "Yes"); builder.AddContent(10, "Yes"); builder.CloseElement();
+                builder.OpenElement(11, "option"); builder.AddAttribute(12, "value", "No"); builder.AddContent(13, "No"); builder.CloseElement();
+                if (kind == FieldKind.YesNoNa)
+                {
+                    builder.OpenElement(14, "option"); builder.AddAttribute(15, "value", "NA"); builder.AddContent(16, "NA"); builder.CloseElement();
+                }
+                builder.CloseElement();
+                break;
+
+            case FieldKind.Decimal:
+                builder.OpenElement(0, "input");
+                builder.AddAttribute(1, "type", "number");
+                builder.AddAttribute(2, "step", "0.01");
+                builder.AddAttribute(3, "min", "0");
+                builder.AddAttribute(4, "value", GetVal(key));
+                builder.AddAttribute(5, "oninput", changed);
+                builder.AddAttribute(6, "aria-label", $"{effectiveLabel}, amount");
+                builder.AddAttribute(7, "class", missingClass);
+                builder.CloseElement();
+                break;
+
+            case FieldKind.Integer:
+                builder.OpenElement(0, "input");
+                builder.AddAttribute(1, "type", "number");
+                builder.AddAttribute(2, "step", "1");
+                builder.AddAttribute(3, "min", "0");
+                builder.AddAttribute(4, "value", GetVal(key));
+                builder.AddAttribute(5, "oninput", changed);
+                builder.AddAttribute(6, "aria-label", $"{effectiveLabel}, count");
+                builder.AddAttribute(7, "class", missingClass);
+                builder.CloseElement();
+                break;
+
+            case FieldKind.Rating:
+            {
+                // A 1-5 dropdown, not a number spinner — a select can't hold an out-of-range
+                // value in the first place, which is a stronger guarantee than validating a
+                // number input after the fact (and matches the Yes/No fields' own pattern).
+                builder.OpenElement(0, "select");
+                builder.AddAttribute(1, "value", GetVal(key));
+                builder.AddAttribute(2, "onchange", changed);
+                builder.AddAttribute(3, "aria-label", $"{effectiveLabel}, rating 1 to 5");
+                builder.AddAttribute(4, "class", missingClass);
+                builder.OpenElement(5, "option"); builder.AddAttribute(6, "value", ""); builder.AddContent(7, "—"); builder.CloseElement();
+                for (var i = 1; i <= 5; i++)
+                {
+                    builder.OpenElement(8 + i, "option");
+                    builder.AddAttribute(9 + i, "value", i.ToString());
+                    builder.AddContent(10 + i, i.ToString());
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+                break;
+            }
+
+            case FieldKind.Date:
+                builder.OpenElement(0, "input");
+                builder.AddAttribute(1, "type", "date");
+                builder.AddAttribute(2, "value", GetVal(key));
+                builder.AddAttribute(3, "oninput", changed);
+                builder.AddAttribute(4, "aria-label", effectiveLabel);
+                builder.AddAttribute(5, "class", missingClass);
+                builder.CloseElement();
+                break;
+
+            default:
+                builder.OpenElement(0, "input");
+                builder.AddAttribute(1, "type", "text");
+                builder.AddAttribute(2, "maxlength", "200");
+                builder.AddAttribute(3, "value", GetVal(key));
+                builder.AddAttribute(4, "oninput", changed);
+                builder.AddAttribute(5, "aria-label", effectiveLabel);
+                builder.AddAttribute(6, "class", missingClass);
+                builder.CloseElement();
+                break;
+        }
+    };
+
+    // Open-ended tables (docx "Sr.No / description / ..." register-style tables where the
+    // printed page's blank row count is not a business limit — see ExecVisitFormCatalog.cs
+    // for the per-table OpenEnded flag) keep their own growable row list here, keyed by
+    // section+title, seeded with the catalog's starting rows (usually 3).
+    private readonly Dictionary<string, List<string>> _openEndedRows = new();
+
+    private List<string> GetOpenEndedRows(string sectionCode, ExecVisitTable t)
+    {
+        var key = $"{sectionCode}_{t.Title}";
+        if (!_openEndedRows.TryGetValue(key, out var rows))
+        {
+            rows = t.Rows.ToList();
+            _openEndedRows[key] = rows;
+        }
+        return rows;
+    }
+
+    // JAWS: adding a row via the "Add Row" button is otherwise silent — nothing on
+    // screen tells a screen reader user a row appeared, or where their focus went (it
+    // stays parked on the button). Fixed with two things: _liveMessage (rendered into
+    // an aria-live="polite" region so it's announced automatically) and a JS call that
+    // moves actual keyboard focus into the new row's first field (see execbranchvisit.js
+    // — these dynamically-built inputs aren't captured as ElementReferences, so focus is
+    // driven by a data-row-key selector instead).
+    private string _liveMessage = "";
+
+    private async Task AddOpenEndedRowAsync(string sectionCode, ExecVisitTable t)
+    {
+        var rows = GetOpenEndedRows(sectionCode, t);
+        var newLabel = (rows.Count + 1).ToString();
+        rows.Add(newLabel);
+
+        _liveMessage = $"Row {newLabel} added to {t.Title}.";
+        StateHasChanged();
+
+        await Task.Yield(); // let the new row actually render before we try to focus into it
+        await JS.InvokeVoidAsync("execVisitFocusRow", $"{sectionCode}_{t.Title}_{newLabel}");
+    }
+
+    private void RemoveOpenEndedRow(string sectionCode, ExecVisitTable t, int index)
+    {
+        var rows = GetOpenEndedRows(sectionCode, t);
+        if (index < 0 || index >= rows.Count) return;
+        var removedLabel = rows[index];
+        rows.RemoveAt(index);
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (int.TryParse(rows[i], out _)) rows[i] = (i + 1).ToString();
+        }
+        _liveMessage = $"Row {removedLabel} removed from {t.Title}.";
+    }
+
+    private RenderFragment RenderGenericTable(string sectionCode, ExecVisitTable t) =>
+        @<text>
+        @{ var titleId = $"ebv_title_{sectionCode}_{Math.Abs(t.Title.GetHashCode()):x}"; }
+        <div class="execvisit-table-title" id="@titleId">@t.Title</div>
+        @if (t.OpenEnded && _status != "SUBMITTED")
+        {
+            <div class="execvisit-addrow-bar">
+                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => AddOpenEndedRowAsync(sectionCode, t))">Add Row</MudButton>
+            </div>
+        }
+        <div class="execvisit-table-wrap">
+            <table class="execvisit-table" aria-labelledby="@titleId">
+                <thead>
+                    <tr>
+                        <th scope="col">Item</th>
+                        @foreach (var c in t.Columns)
+                        {
+                            <th scope="col">@c</th>
+                        }
+                        @if (t.OpenEnded)
+                        {
+                            <th scope="col"><span class="sr-only">Remove row</span></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @{ var rowList = t.OpenEnded ? GetOpenEndedRows(sectionCode, t) : t.Rows.ToList(); }
+                    @for (var i = 0; i < rowList.Count; i++)
+                    {
+                        var r = rowList[i];
+                        var rowIndex = i;
+                        <tr data-row-key="@($"{sectionCode}_{t.Title}_{r}")">
+                            <th scope="row">@r</th>
+                            @foreach (var c in t.Columns)
+                            {
+                                <td>@RenderCell($"{sectionCode}_{t.Title}_{r}_{c}", column: c, label: $"{t.Title}, {r}, {c}")</td>
+                            }
+                            @if (t.OpenEnded)
+                            {
+                                <td class="execvisit-row-delete-cell">
+                                    @if (rowList.Count > 1 && _status != "SUBMITTED")
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                       aria-label="@($"Remove row {r} from {t.Title}")"
+                                                       OnClick="@(() => RemoveOpenEndedRow(sectionCode, t, rowIndex))" />
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        </text>;
+
+    private RenderFragment RenderImpersonalTable(string code, IReadOnlyDictionary<string, string> map, string? titleId = null, string panelLabel = "Impersonal Account") =>
+        @<text>
+        <div class="execvisit-table-wrap">
+            <table class="execvisit-table" aria-labelledby="@titleId">
+                <thead>
+                    <tr>
+                        <th scope="col">Item</th><th scope="col">No of Entries</th><th scope="col">Value</th>
+                        <th scope="col">Outstanding &gt;180 days</th><th scope="col">Outstanding 90-180 days</th>
+                        <th scope="col">Outstanding &lt;90 days</th><th scope="col">Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="execvisit-auto-row">
+                        <th scope="row">Impersonal Account</th>
+                        <td>@RenderCell($"{code}_entries", AutoValueFor(map["No of Entries"]), label: $"{panelLabel}, No of Entries")</td>
+                        <td>@RenderCell($"{code}_value", AutoValueFor(map["Value"]), label: $"{panelLabel}, Value")</td>
+                        <td>@RenderCell($"{code}_gt180", label: $"{panelLabel}, Outstanding more than 180 days")</td>
+                        <td>@RenderCell($"{code}_90to180", label: $"{panelLabel}, Outstanding 90 to 180 days")</td>
+                        <td>@RenderCell($"{code}_lt90", label: $"{panelLabel}, Outstanding less than 90 days")</td>
+                        <td>@RenderCell($"{code}_remarks", label: $"{panelLabel}, Remarks")</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        </text>;
+
+    private string AppLogo => Path.Combine(Environment.CurrentDirectory, ReportConfig.Value.AppLogoPath);
+    private string CoLogo => Path.Combine(Environment.CurrentDirectory, ReportConfig.Value.LogoPath);
+
+    // "Save to PDF" — only enabled once the visit is SUBMITTED (see the button's
+    // Disabled binding). Renders straight from the frozen submitted record's
+    // Fields/OpenRows via ExecBranchVisitPdfService, in the same section sequence as
+    // Final_Branch_Visit_Format_Blue_colour change.docx/pdf — not a window.print() of
+    // the on-screen tabs, which is what the earlier "Print" button did.
+    private async Task DownloadPdfAsync()
+    {
+        if (_visit is null || _status != "SUBMITTED") return;
+        var bytes = PdfSvc.GeneratePdf(_visit, AppLogo, CoLogo);
+        using var stream = new MemoryStream(bytes);
+        using var streamRef = new Microsoft.JSInterop.DotNetStreamReference(stream);
+        await JS.InvokeVoidAsync("focus360DownloadStream", $"Executive_Branch_Visit_{_visit.BranchCode}_{AppTime.Now:yyyyMMdd}.pdf", streamRef);
+    }
+}

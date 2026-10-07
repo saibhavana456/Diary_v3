@@ -1,0 +1,52 @@
+.tv-back {
+    display: inline-block;
+    margin-bottom: 8px;
+    color: #0b4498;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.tv-back:hover {
+    text-decoration: underline;
+}
+
+.tv-title {
+    color: #0b4498;
+    font-weight: 700;
+}
+
+::deep .tv-card {
+    border-radius: 12px;
+}
+
+.tv-label {
+    font-weight: 700;
+    color: #667085;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+::deep .tv-table td {
+    line-height: 1.5;
+}
+
+::deep .tv-pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.tv-hint {
+    display: block;
+    color: #667085;
+    margin-top: 4px;
+}
+
+.tv-file-chip {
+    display: block;
+    color: #0b4498;
+    margin-top: 4px;
+}
+
+.tv-actions {
+    margin-top: 12px;
+}

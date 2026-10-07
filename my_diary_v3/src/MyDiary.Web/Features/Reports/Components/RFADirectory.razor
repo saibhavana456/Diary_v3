@@ -1,0 +1,1403 @@
+@page "/reports/RedFlaggedAccounts"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+@using MudBlazor
+@using MyDiary.Web.Features.Reports.Models
+@using MyDiary.Web.Features.Reports.Services
+@using MyDiary.Web.Services
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop;
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDialogService DialogService
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+@inject IRFAService RFAService
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>RFA by Other/Our Bank</PageTitle>
+
+<style>
+    .main-content-wrapper {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        min-height: 85vh;
+        background-size: cover;
+        background-position: center;
+    }
+
+    .hero-section {
+        background: var(--primary-gradient);
+        color: white;
+        padding: 2rem;
+        border-radius: 16px;
+        margin-bottom: 0;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .mud-dialog {
+        border-radius: 18px !important;
+        overflow: hidden;
+    }
+
+    .mud-dialog-title {
+        background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        color: white;
+        padding: 18px 24px;
+    }
+
+    .mud-dialog-content {
+        padding-top: 24px !important;
+    }
+
+    .mud-dialog-actions {
+        padding: 16px 24px !important;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .mud-input-control {
+        margin-bottom: 8px;
+    }
+
+    @@media (max-width: 900px) {
+        .filter-panel-top {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .filter-field {
+            min-width: 100%;
+        }
+
+        .filter-meta {
+            margin-left: 0;
+        }
+    }
+
+    .filter-panel-top {
+        background: #fafafa;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 18px 20px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        display: flex;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+
+    .filter-field {
+        display: flex;
+        flex-direction: column;
+        min-width: 150px;
+        flex: 1 1 150px;
+    }
+
+    .filter-field-label {
+        font-weight: 600;
+        color: #64748b;
+        margin-bottom: 6px;
+        font-size: 0.8rem;
+    }
+
+    .filter-meta {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+    }
+
+    .directory-container {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+
+    .table-container {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        overflow-x: auto;
+        margin-top: 20px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1200px;
+    }
+
+    th {
+        background: #2F336B;
+        color: white;
+        padding: 12px 10px;
+        text-align: left;
+        font-weight: 500;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        border: 1px solid #444a8b;
+    }
+
+    td {
+        padding: 10px;
+        border: 1px solid #d1d5db;
+        font-size: 0.85rem;
+        vertical-align: middle;
+    }
+
+    tbody tr:nth-child(even) {
+        background: #f9fafb;
+    }
+
+    tbody tr:hover {
+        background: #eff6ff;
+    }
+
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .upload-mode-card {
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 16px;
+        cursor: pointer;
+        transition: 0.3s;
+        text-align: center;
+    }
+
+        .upload-mode-card:hover {
+            border-color: #1E3A8A;
+            background: #f0f4ff;
+        }
+
+        .upload-mode-card.selected {
+            border-color: #1E3A8A;
+            background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+            color: white;
+        }
+
+    .stat-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .upload-history-table .mud-table-head th {
+        background: #2F336B;
+        color: #FFFFFF !important;
+        font-weight: 600;
+        font-size: 0.9rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+</style>
+
+<div class="main-content-wrapper">
+    <!-- TOP: Filter Bar -->
+    <div class="filter-panel-top">
+        <MudText Typo="Typo.h6" Style="font-weight: 700; margin-right: 8px;">
+            RFA by Other/Our Bank
+        </MudText>
+
+        <div class="filter-field">
+            <span class="filter-field-label">Position as of Date</span>
+
+            <MudAutocomplete T="DateTime?" Value="@selectedDate" ValueChanged="OnDateChanged" SearchFunc="SearchDates" ToStringFunc="@(d => d?.ToString("dd-MM-yyyy"))" Variant="Variant.Outlined"
+                             Margin="Margin.Dense" Clearable="true" Dense="true" MaxItems="20" ResetValueOnEmptyText="true" CoerceText="true" Placeholder="Search date..." />
+        </div>
+
+       <div class="filter-field">
+            <span class="filter-field-label">
+               Initial Upload On
+            </span>
+
+            <MudText Typo="Typo.body1">
+                @(FirstUploadedOn?.ToString("dd-MM-yyyy HH:mm") ?? "-")
+            </MudText>
+        </div>
+
+        <div class="filter-field">
+            <span class="filter-field-label">
+                Last Modified On
+            </span>
+
+            <MudText Typo="Typo.body1">
+                @(LastModifiedOn?.ToString("dd-MM-yyyy HH:mm") ?? "-")
+            </MudText>
+        </div>
+
+
+        @* <div class="filter-field">
+            <span class="filter-field-label">Zonal Office</span>
+            <MudSelect T="string"
+                       Value="@selectedZone"
+                       ValueChanged="OnZoneChanged"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense"
+                       Placeholder="All Zones"
+                       Clearable="true"
+                       Disabled="@(!selectedDate.HasValue)">
+                @foreach (var z in zonalOffices)
+                {
+                    <MudSelectItem Value="@z">@z</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+
+        <div class="filter-field">
+            <span class="filter-field-label">Regional Office</span>
+            <MudSelect T="string"
+                       Value="@selectedRegion"
+                       ValueChanged="OnRegionChanged"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense"
+                       Placeholder="All Regions"
+                       Clearable="true"
+                       Disabled="@(!selectedDate.HasValue)">
+                @foreach (var r in regionalOffices)
+                {
+                    <MudSelectItem Value="@r">@r</MudSelectItem>
+                }
+            </MudSelect>
+        </div> *@
+
+        <!-- Helpful messages based on state -->
+        <div class="filter-meta">
+            @if (!uploadDates.Any())
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="ma-0">
+                    No data uploaded yet.
+                    @if (canManage)
+                    {
+                        <span> Click <strong>Upload Data</strong> to begin.</span>
+                    }
+                    else
+                    {
+                        <span> Please contact CO CCM team to upload data.</span>
+                    }
+                </MudAlert>
+            }
+            else if (!selectedDate.HasValue)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="ma-0">
+                    Select a date to view records.
+                </MudAlert>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Style="color:#64748b;">
+                    Total Records:
+                    <strong style="color:#1E3A8A;">@totalRecords</strong>
+                </MudText>
+            }
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <section class="directory-container">
+            <!-- Header row -->
+            <div class="d-flex justify-space-between align-center flex-wrap gap-3">
+            <MudText Typo="Typo.h5" Style="font-weight:600;color:#1E4BA0;">
+                    @GetHeaderText()
+                </MudText>
+
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    @if (canManage)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Upload"
+                                   OnClick="OpenUploadDialog">
+                            Upload Data
+                        </MudButton>
+
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Info"
+                                   StartIcon="@Icons.Material.Filled.Assessment"
+                                   OnClick="ExportAuditReport">
+                            Audit Report
+                        </MudButton>
+                    }
+
+                    @if (selectedDate.HasValue && entries.Any())
+                    {
+                        @if (canManage)
+                        {
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       StartIcon="@Icons.Material.Filled.Download"
+                                       OnClick="ExportExcel">
+                                Export Excel
+                            </MudButton>
+                        }
+
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                                   OnClick="ConfirmAndExportPdf">
+                            Download PDF
+                        </MudButton>
+
+                    }
+
+                    @if (canManage && selectedDate.HasValue)
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.DeleteForever"
+                                   OnClick="DeleteAllForSelectedDate">
+                            Delete All
+                        </MudButton>
+                    }
+
+                    <MudTextField T="string"
+                                  Value="@searchString"
+                                  ValueChanged="@OnSearchDebounced"
+                                  Placeholder="Search borrower, PAN, CIF..."
+                                  Immediate="true"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Style="width:260px;" />
+                </div>
+            </div>
+
+            @if (canManage && selectedDate.HasValue)
+            {
+                <MudExpansionPanels Class="mt-4 mb-4">
+
+        <MudExpansionPanel Text="Upload Version History">
+
+            @if (uploadHistory.Any())
+            {
+                        <MudTable T="RFAUploadHistoryModel" Items="@uploadHistory" Dense="true" Hover="true" Bordered="true" Class="upload-history-table">
+                    <HeaderContent>
+                        <MudTh>Version</MudTh>
+                        <MudTh>Uploaded By</MudTh>
+                        <MudTh>Uploaded On</MudTh>
+                        <MudTh>Upload Type</MudTh>
+                        <MudTh>File Name</MudTh>
+                        <MudTh>File Size</MudTh>
+                        <MudTh>Action</MudTh>
+                    </HeaderContent>
+
+                    <RowTemplate>
+
+                        <MudTd>
+                            V@(context.VersionNo)
+                        </MudTd>
+
+                        <MudTd>
+                            @context.UploadedBy
+                        </MudTd>
+
+                        <MudTd>
+                            @context.UploadedOn.ToString("dd-MM-yyyy HH:mm")
+                        </MudTd>
+
+                        <MudTd>
+
+                            @if (context.UploadType == "AddNew")
+                            {
+                                        <MudChip T="string" Color="Color.Success">New Entry</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Warning">Modified Entry</MudChip>
+                            }
+
+                        </MudTd>
+
+                        <MudTd>
+                            @context.FileName
+                        </MudTd>
+
+                        <MudTd>
+                            @(Math.Round(
+                                context.FileSize / 1024.0,
+                                2)) KB
+                        </MudTd>
+
+                        <MudTd>
+
+                            <MudButton
+                                Variant="Variant.Filled"
+                                Color="Color.Primary"
+                                Size="Size.Small"
+                                StartIcon="@Icons.Material.Filled.Download"
+                                OnClick="@(() => DownloadVersion(context.UploadId))">
+
+                                Download
+
+                            </MudButton>
+
+                        </MudTd>
+
+                    </RowTemplate>
+
+                </MudTable>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info">
+                    No upload history available.
+                </MudAlert>
+            }
+
+        </MudExpansionPanel>
+
+    </MudExpansionPanels>
+            }
+
+            <!-- Data Table -->
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>S No.</th>
+                            <th>Zonal Office</th>
+                            <th>Regional Office</th>
+                            <th>Branch Name</th>
+                            <th>Branch SOL</th>
+                            <th>Name of Borrower</th>
+                            <th>CIF ID</th>
+                            <th>PAN</th>
+                            <th>Name of Bank</th>
+                            <th>RFA Classification Date</th>
+                            <th>Remarks</th>
+                        <th>Modified On</th>
+                            @if (canManage)
+                            {
+                                <th>Actions</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!selectedDate.HasValue)
+                        {
+                            <tr>
+                                <td colspan="@(canManage ? 13 : 12)"
+                                    style="text-align:center;padding:40px;color:#666;">
+                                    <MudIcon Icon="@Icons.Material.Filled.DateRange"
+                                             Style="font-size:48px;color:#cbd5e1;" />
+                                    <div style="margin-top:10px;">
+                                        Please select a "Position as of Date" to view records.
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        else if (isLoading)
+                        {
+                            <tr>
+                                <td colspan="@(canManage ? 13 : 12)"
+                                    style="text-align:center;padding:30px;">
+                                    <MudProgressCircular Color="Color.Primary"
+                                                         Indeterminate="true" />
+                                    <div style="margin-top:10px;">Loading...</div>
+                                </td>
+                            </tr>
+                        }
+                        else if (entries.Any())
+                        {
+                            int sr = (currentPage - 1) * pageSize;
+                            @foreach (var item in entries)
+                            {
+                                sr++;
+                                <tr>
+                                    <td>@sr</td>
+                                    <td>@item.ZonalOffice</td>
+                                    <td>@item.RegionalOffice</td>
+                                    <td>@item.BranchName</td>
+                                    <td>@item.BranchSOL</td>
+                                    <td>@item.NameOfBorrower</td>
+                                    <td>@item.CIFID</td>
+                                    <td>@item.PAN</td>
+                                    <td>@item.NameOfBank</td>
+                                    <td>
+                                        @(item.DateOfRFAClassification?.ToString("dd-MM-yyyy") ?? "")
+                                    </td>
+                                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                                        title="@item.Remarks">
+                                        @item.Remarks
+                                    </td>
+                                    <td>@(item.ModifiedDate?.ToString("dd-MM-yyyy HH:mm") ?? "")</td>
+                                    @if (canManage)
+                                    {
+                                        <td style="white-space:nowrap;">
+                                           @*  <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                           Color="Color.Primary"
+                                                           Size="Size.Small"
+                                                           OnClick="@(() => OpenEditDialog(item))" /> *@
+                                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                           Color="Color.Error"
+                                                           Size="Size.Small"
+                                                           OnClick="@(() => DeleteEntry(item))" />
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                            <td colspan="@(canManage ? 13 : 12)"
+                                    style="text-align:center;padding:30px;color:#666;">
+                                    No records found.
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (totalPages > 1)
+            {
+                <div class="d-flex justify-center mt-6">
+                    <MudPagination Color="Color.Primary"
+                                   Count="@totalPages"
+                                   Selected="@currentPage"
+                                   SelectedChanged="PageChanged" />
+                </div>
+            }
+        </section>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  UPLOAD DIALOG                                         -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<MudDialog @bind-Visible="showUploadDialog"
+           Options="new DialogOptions()
+           {
+               MaxWidth = MaxWidth.Small,
+               FullWidth = true,
+               CloseButton = true
+           }">
+
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudAvatar Color="Color.Primary" Size="Size.Medium">
+                <MudIcon Icon="@Icons.Material.Filled.CloudUpload" />
+            </MudAvatar>
+            <MudText Typo="Typo.h6" Style="font-weight:700;">
+                Upload RFA Data
+            </MudText>
+        </MudStack>
+    </TitleContent>
+
+    <DialogContent>
+        <MudPaper Class="pa-4" Elevation="0">
+
+            <MudAlert Severity="Severity.Info"
+                      Variant="Variant.Outlined"
+                      Dense="true"
+                      Class="mb-4">
+
+                <MudStack Row="true"
+                          AlignItems="AlignItems.Center"
+                          Justify="Justify.SpaceBetween">
+
+                    <MudText Typo="Typo.body2">
+                        Please download the approved Excel template for uploading.
+                    </MudText>
+
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Download"
+                               OnClick="DownloadTemplate">
+
+                        Download Template
+
+                    </MudButton>
+
+                </MudStack>
+
+            </MudAlert>
+
+            <MudGrid Spacing="3">
+                <!-- Upload Mode Selection -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2"
+                             Style="font-weight:600;">
+                        Upload Mode
+                    </MudText>
+                    <MudRadioGroup T="string"
+                                   @bind-Value="uploadMode">
+                        <MudRadio Value="@("AddNew")"
+                                  Color="Color.Primary">
+                            Add New
+                        </MudRadio>
+                        <MudRadio Value="@("Modify")"
+                                  Color="Color.Secondary">
+                            Modify Existing
+                        </MudRadio>
+                    </MudRadioGroup>
+                </MudItem>
+
+                <!-- Date selection -->
+                <MudItem xs="12">
+                    @if (uploadMode == "AddNew")
+                    {
+                        <MudDatePicker Label="Position as of Date"
+                                       @bind-Date="uploadDate"
+                                       Variant="Variant.Outlined"
+                                       DateFormat="dd-MM-yyyy"
+                                       Required="true"
+                                       Adornment="Adornment.Start"
+                                       AdornmentIcon="@Icons.Material.Filled.CalendarMonth" />
+                    }
+                    else
+                    {
+                        <MudAutocomplete T="DateTime?" Label="Select Existing Date" Value="@uploadModifyDate" ValueChanged="@(d => uploadModifyDate = d)" SearchFunc="SearchDates"
+                                         ToStringFunc="@(d => d?.ToString("dd-MM-yyyy"))" Variant="Variant.Outlined" Required="true" Clearable="true" Dense="true" MaxItems="20" />
+                    }
+                </MudItem>
+
+                <!-- File picker -->
+                <MudItem xs="12">
+                    <InputFile id="rfaExcelFile"
+                               OnChange="OnUploadFileSelected"
+                               accept=".xlsx" />
+                </MudItem>
+
+                @if (uploadFileSelected)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            Selected: @uploadFileName
+                        </MudAlert>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Close"
+                   OnClick="@(() => showUploadDialog = false)">
+            Cancel
+        </MudButton>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Upload"
+                   Disabled="@(!uploadFileSelected || isUploading)"
+                   OnClick="ExecuteUpload">
+            @if (isUploading)
+            {
+                <MudProgressCircular Size="Size.Small"
+                                     Indeterminate="true"
+                                     Color="Color.Surface"
+                                     Class="mr-2" />
+                @:Uploading...
+            }
+            else
+            {
+                @:Upload
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  EDIT RECORD DIALOG                                    -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<MudDialog @bind-Visible="showEditDialog"
+           Options="new DialogOptions()
+           {
+               MaxWidth = MaxWidth.Medium,
+               FullWidth = true,
+               CloseButton = true
+           }">
+
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudAvatar Color="Color.Primary" Size="Size.Medium">
+                <MudIcon Icon="@Icons.Material.Filled.Edit" />
+            </MudAvatar>
+            <MudText Typo="Typo.h6" Style="font-weight:700;">
+                Edit RFA Record
+            </MudText>
+        </MudStack>
+    </TitleContent>
+
+    <DialogContent>
+        <MudPaper Class="pa-4" Elevation="0">
+            <MudGrid Spacing="3">
+                <MudItem xs="6">
+                    <MudTextField Label="Zonal Office"
+                                  @bind-Value="editModel.ZonalOffice"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField Label="Regional Office"
+                                  @bind-Value="editModel.RegionalOffice"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField Label="Branch Name"
+                                  @bind-Value="editModel.BranchName"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField Label="Branch SOL"
+                                  @bind-Value="editModel.BranchSOL"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField Label="Name of Borrower"
+                                  @bind-Value="editModel.NameOfBorrower"
+                                  Variant="Variant.Outlined"
+                                  Required="true"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Person" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField Label="CIF ID"
+                                  @bind-Value="editModel.CIFID"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField Label="PAN"
+                                  @bind-Value="editModel.PAN"
+                                  Variant="Variant.Outlined"
+                                  Required="true"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Badge" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudTextField Label="Name of Bank"
+                                  @bind-Value="editModel.NameOfBank"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudDatePicker Label="Date of RFA Classification"
+                                   @bind-Date="editModel.DateOfRFAClassification"
+                                   Variant="Variant.Outlined"
+                                   DateFormat="dd-MM-yyyy" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField Label="Remarks / Present Status"
+                                  @bind-Value="editModel.Remarks"
+                                  Variant="Variant.Outlined"
+                                  Lines="3" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Close"
+                   OnClick="@(() => showEditDialog = false)">
+            Cancel
+        </MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   OnClick="SaveEditRecord">
+            Update
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    // ── Data ──
+    private List<RFARecordModel> entries = new();
+    private List<RFAUploadDate> uploadDates = new();
+    private List<string> zonalOffices = new();
+    private List<string> regionalOffices = new();
+    private List<RFAUploadHistoryModel> uploadHistory = new();
+
+    private bool versionHistoryExpanded = false;
+
+    // ── Filters ──
+    private DateTime? selectedDate;
+    private string? selectedZone;
+    private string? selectedRegion;
+    private string searchString = "";
+
+    // ── Pagination ──
+    private int currentPage = 1;
+    private int totalPages = 1;
+    private int totalRecords = 0;
+    private const int pageSize = 20;
+
+    // ── State ──
+    private bool isLoading;
+    private System.Timers.Timer? _debounceTimer;
+    private string currentUser = "";
+    private bool canManage;
+
+    // CO CCM users who can upload, edit, and delete records.
+    // All other authenticated users can VIEW data and DOWNLOAD PDF/Excel.
+    // Add/remove PF numbers as needed.
+    private static readonly HashSet<string> CcmAuthorizedUsers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "920968"
+        // Add more CO CCM PF numbers here, e.g.:
+        // "533992",
+        // "650791",
+        // "921604"
+    };
+
+    private DateTime? FirstUploadedOn => uploadHistory.Any() ? uploadHistory.Min(x => x.UploadedOn): null;
+    private DateTime? LastModifiedOn => uploadHistory.Any()? uploadHistory.Max(x => x.UploadedOn): null;
+    private int CurrentVersion => uploadHistory.Any() ? uploadHistory.Max(x => x.VersionNo): 0;
+
+    // ── Upload Dialog ──
+    private bool showUploadDialog;
+    private string uploadMode = "AddNew";
+    private DateTime? uploadDate;
+    private DateTime? uploadModifyDate;
+    private IBrowserFile? uploadFile;
+    private bool uploadFileSelected;
+    private string uploadFileName = "";
+    private bool isUploading;
+
+    // ── Edit Dialog ──
+    private bool showEditDialog;
+    private RFAEditModel editModel = new();
+
+    // ═══════════════════════════════════════════════════
+    //  LIFECYCLE
+    // ═══════════════════════════════════════════════════
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        currentUser = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+        // CO CCM users can upload/edit/delete; everyone else can view & download
+        // canManage = !string.IsNullOrEmpty(currentUser)
+        //             && CcmAuthorizedUsers.Contains(currentUser);
+
+        canManage = await RFAService.HasManageAccessAsync(currentUser);
+
+        uploadDates = await RFAService.GetUploadDatesAsync();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  AVL DATE SEARCHING FOR Position as of Date Field
+    // ═══════════════════════════════════════════════════
+    private Task<IEnumerable<DateTime?>> SearchDates(string value, CancellationToken token)
+    {
+        IEnumerable<DateTime?> dates = uploadDates
+            .Select(x => (DateTime?)x.PositionAsOfDate.Date).Distinct().OrderByDescending(x => x);
+
+        if (string.IsNullOrWhiteSpace(value))
+            return Task.FromResult(dates);
+
+        IEnumerable<DateTime?> filteredDates = dates.Where(d =>
+            d.HasValue &&
+            d.Value.ToString("dd-MM-yyyy")
+                .Contains(value, StringComparison.OrdinalIgnoreCase));
+
+        return Task.FromResult(filteredDates);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  DATA LOADING
+    // ═══════════════════════════════════════════════════
+
+    private async Task LoadData()
+    {
+        if (!selectedDate.HasValue) return;
+
+        isLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        var result = await RFAService.GetRecordsAsync(
+            selectedDate.Value,
+            searchString,
+            selectedZone,
+            selectedRegion,
+            currentPage,
+            pageSize);
+
+        entries = result.Records;
+        totalRecords = result.TotalRecords;
+        totalPages = (int)Math.Ceiling((double)result.TotalRecords / pageSize);
+
+        isLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadFilters()
+    {
+        if (!selectedDate.HasValue) return;
+
+        //zonalOffices = await RFAService.GetZonalOfficesAsync(selectedDate.Value);
+        //regionalOffices = await RFAService.GetRegionalOfficesAsync(selectedDate.Value, selectedZone);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  FILTER HANDLERS
+    // ═══════════════════════════════════════════════════
+
+    // private async Task OnDateChanged(DateTime? value)
+    // {
+    //     selectedDate = value;
+    //     selectedZone = null;
+    //     selectedRegion = null;
+    //     currentPage = 1;
+    //     await LoadFilters();
+    //     await LoadData();
+    // }
+
+    private async Task OnDateChanged(DateTime? value)
+    {
+        try
+        {
+            selectedDate = value;
+
+            selectedZone = null;
+            selectedRegion = null;
+            currentPage = 1;
+
+            if (!selectedDate.HasValue)
+            {
+                entries.Clear();
+                uploadHistory.Clear();
+                zonalOffices.Clear();
+                regionalOffices.Clear();
+
+                totalRecords = 0;
+                totalPages = 1;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+            await LoadFilters();
+            await LoadData();
+
+            uploadHistory = await RFAService.GetUploadHistoryAsync(selectedDate.Value);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "RFADirectory: failed to load data/filters");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task OnZoneChanged(string value)
+    {
+        selectedZone = value;
+        selectedRegion = null;
+        currentPage = 1;
+
+        if (selectedDate.HasValue)
+        {
+            regionalOffices = await RFAService.GetRegionalOfficesAsync(
+                selectedDate.Value, selectedZone);
+        }
+
+        await LoadData();
+    }
+
+    private async Task OnRegionChanged(string value)
+    {
+        selectedRegion = value;
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private void OnSearchDebounced(string value)
+    {
+        searchString = value;
+        _debounceTimer?.Stop();
+        _debounceTimer?.Dispose();
+
+        _debounceTimer = new System.Timers.Timer(400);
+        _debounceTimer.Elapsed += async (s, e) =>
+        {
+            _debounceTimer.Stop();
+            currentPage = 1;
+            await InvokeAsync(LoadData);
+        };
+        _debounceTimer.Start();
+    }
+
+    private async Task PageChanged(int i)
+    {
+        currentPage = i;
+        await LoadData();
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  UPLOAD
+    // ═══════════════════════════════════════════════════
+
+    private void OpenUploadDialog()
+    {
+        uploadMode = "AddNew";
+        uploadDate = null;
+        uploadModifyDate = null;
+        uploadFile = null;
+        uploadFileSelected = false;
+        uploadFileName = "";
+        isUploading = false;
+        showUploadDialog = true;
+    }
+
+    private void OnUploadFileSelected(InputFileChangeEventArgs e)
+    {
+        uploadFile = e.File;
+        uploadFileSelected = true;
+        uploadFileName = e.File.Name;
+        Snackbar.Add($"{uploadFileName} selected.", Severity.Info);
+    }
+
+    private async Task ExecuteUpload()
+    {
+        if (uploadFile == null)
+        {
+            Snackbar.Add("Please select a file.", Severity.Warning);
+            return;
+        }
+
+        DateTime targetDate;
+
+        if (uploadMode == "AddNew")
+        {
+            if (!uploadDate.HasValue)
+            {
+                Snackbar.Add("Please select a Position as of Date.", Severity.Warning);
+                return;
+            }
+            targetDate = uploadDate.Value;
+        }
+        else
+        {
+            if (!uploadModifyDate.HasValue)
+            {
+                Snackbar.Add("Please select an existing date.", Severity.Warning);
+                return;
+            }
+            targetDate = uploadModifyDate.Value;
+        }
+
+        isUploading = true;
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await uploadFile.OpenReadStream(50 * 1024 * 1024).CopyToAsync(ms);
+            ms.Position = 0;
+
+            RFAImportResult result;
+
+            if (uploadMode == "AddNew")
+            {
+                result = await RFAService.ImportAddNewAsync(ms, targetDate, currentUser);
+            }
+            else
+            {
+                result = await RFAService.ImportModifyExistingAsync(ms, targetDate, currentUser);
+            }
+
+            if (result.Success)
+            {
+                showUploadDialog = false;
+
+                // Refresh dates and data
+                uploadDates = await RFAService.GetUploadDatesAsync();
+
+                await OnDateChanged(targetDate);
+
+                // selectedDate = targetDate;
+                // currentPage = 1;
+                // await LoadFilters();
+                // await LoadData();
+
+                await JS.InvokeVoidAsync("resetFileInput", "rfaExcelFile");
+
+                await DialogService.ShowMessageBox("Success", result.Message);
+                uploadHistory = await RFAService.GetUploadHistoryAsync(targetDate);
+            }
+            else
+            {
+                await DialogService.ShowMessageBox("Upload Failed", result.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "RFADirectory: upload failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task DownloadTemplate()
+    {
+        var url = Configuration["RFASettings:TemplateUrl"];
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            await JS.InvokeVoidAsync("open", url, "_blank");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  INLINE EDIT
+    // ═══════════════════════════════════════════════════
+
+    private void OpenEditDialog(RFARecordModel item)
+    {
+        editModel = new RFAEditModel
+            {
+                SNo = item.SNo,
+                UploadId = item.UploadId,
+                PositionAsOfDate = item.PositionAsOfDate,
+                ZonalOffice = item.ZonalOffice ?? "",
+                RegionalOffice = item.RegionalOffice ?? "",
+                BranchName = item.BranchName ?? "",
+                BranchSOL = item.BranchSOL ?? "",
+                NameOfBorrower = item.NameOfBorrower ?? "",
+                CIFID = item.CIFID ?? "",
+                PAN = item.PAN ?? "",
+                NameOfBank = item.NameOfBank ?? "",
+                DateOfRFAClassification = item.DateOfRFAClassification,
+                Remarks = item.Remarks ?? ""
+            };
+        showEditDialog = true;
+    }
+
+    private async Task SaveEditRecord()
+    {
+        if (string.IsNullOrWhiteSpace(editModel.PAN))
+        {
+            Snackbar.Add("PAN is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editModel.NameOfBorrower))
+        {
+            Snackbar.Add("Name of Borrower is required.", Severity.Error);
+            return;
+        }
+
+        var success = await RFAService.UpdateRecordAsync(editModel, currentUser);
+
+        if (success)
+        {
+            Snackbar.Add("Record updated successfully.", Severity.Success);
+            showEditDialog = false;
+            await LoadData();
+        }
+        else
+        {
+            Snackbar.Add("Failed to update record.", Severity.Error);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  DELETE
+    // ═══════════════════════════════════════════════════
+
+    private async Task DeleteEntry(RFARecordModel item)
+    {
+        bool? confirm = await DialogService.ShowMessageBox(
+            "Delete Entry",
+            $"Are you sure you want to delete the record for {item.NameOfBorrower} (PAN: {item.PAN})?",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirm != true) return;
+
+        var success = await RFAService.DeleteRecordAsync(item.SNo, currentUser);
+
+        if (success)
+        {
+            Snackbar.Add("Record deleted successfully.", Severity.Success);
+            await LoadData();
+        }
+        else
+        {
+            Snackbar.Add("Failed to delete record.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAllForSelectedDate()
+    {
+        if (!selectedDate.HasValue) return;
+
+        var dateLabel = selectedDate.Value.ToString("dd-MM-yyyy");
+
+        bool? confirm = await DialogService.ShowMessageBox(
+            "Delete ALL Records",
+            $"This will permanently delete ALL {totalRecords} record(s) for position date {dateLabel}. " +
+            "This action cannot be undone. Are you sure you want to proceed?",
+            yesText: "Delete All",
+            cancelText: "Cancel");
+
+        if (confirm != true) return;
+
+        var success = await RFAService.DeleteAllForDateAsync(selectedDate.Value, currentUser);
+
+        if (success)
+        {
+            Snackbar.Add($"All records for {dateLabel} have been deleted.", Severity.Success);
+
+            uploadDates = await RFAService.GetUploadDatesAsync();
+            selectedDate = null;
+            selectedZone = null;
+            selectedRegion = null;
+            zonalOffices.Clear();
+            regionalOffices.Clear();
+            entries.Clear();
+            totalRecords = 0;
+            totalPages = 1;
+            currentPage = 1;
+
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            Snackbar.Add($"Failed to delete records for {dateLabel}.", Severity.Error);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  EXPORT EXCEL
+    // ═══════════════════════════════════════════════════
+
+    private async Task ExportExcel()
+    {
+        if (!selectedDate.HasValue) return;
+
+        try
+        {
+            var fileBytes = await RFAService.ExportExcelAsync(selectedDate.Value, selectedZone, selectedRegion, searchString);
+            var fileName = $"RFA_Records_{selectedDate.Value:yyyyMMdd}.xlsx";
+
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(fileBytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "RFADirectory: Excel export failed");
+            await DialogService.ShowMessageBox("Export Failed", UserFacingError.Generic);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  EXPORT PDF (with confirmation alert)
+    // ═══════════════════════════════════════════════════
+
+    private async Task ConfirmAndExportPdf()
+    {
+        if (!selectedDate.HasValue) return;
+
+        // BRD requirement: show alert before download
+        bool? confirm = await DialogService.ShowMessageBox(
+            "Download Confirmation",
+            "This file is confidential and traceable. " +
+            "User details will be embedded as watermark.\n\n" +
+            "Do you want to proceed with the download?",
+            yesText: "Download",
+            cancelText: "Cancel");
+
+        if (confirm != true) return;
+
+        try
+        {
+            var fileBytes = await RFAService.ExportPdfAsync(selectedDate.Value, selectedZone, selectedRegion, searchString, currentUser);
+            var fileName = $"RFA_Records_{selectedDate.Value:yyyyMMdd}.pdf";
+
+            await RFAService.LogDownloadAsync(selectedDate.Value,"PDF",currentUser,selectedZone,selectedRegion,searchString);
+
+            await JS.InvokeVoidAsync("BlazorDownloadFile",fileName,"application/pdf",Convert.ToBase64String(fileBytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "RFADirectory: PDF export failed");
+            await DialogService.ShowMessageBox("Export Failed", UserFacingError.Generic);
+        }
+    }
+
+
+    private async Task DownloadVersion(long uploadId)
+    {
+        try
+        {
+            var file =
+                await RFAService
+                    .GetUploadVersionAsync(uploadId);
+
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                file.FileName,
+                file.ContentType,
+                Convert.ToBase64String(file.FileBytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                ex.Message,
+                Severity.Error);
+        }
+    }
+
+    private async Task ExportAuditReport()
+    {
+        try
+        {
+            var fileBytes =
+                await RFAService
+                    .ExportAuditTrailExcelAsync();
+
+            var fileName =
+                $"RFA_AuditTrail_{AppTime.Now:yyyyMMddHHmmss}.xlsx";
+
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(fileBytes));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                ex.Message,
+                Severity.Error);
+        }
+    }
+
+
+    // ═══════════════════════════════════════════════════
+    //  HELPERS
+    // ═══════════════════════════════════════════════════
+
+    private string GetHeaderText()
+    {
+        if (!selectedDate.HasValue)
+            return "RFA Records";
+
+        return $"RFA Records — {selectedDate.Value:dd-MM-yyyy}";
+    }
+}

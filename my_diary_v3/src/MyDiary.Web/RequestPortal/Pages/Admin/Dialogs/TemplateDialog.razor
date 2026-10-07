@@ -1,0 +1,56 @@
+@namespace RequestPortal.Web.Pages.Admin.Dialogs
+@* Notification template \u2014 Event/Channel/Subject/Body/Active *@
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudSelect T="string" Label="Event" @bind-Value="EventCode" Required="true">
+                    @foreach (var e in Enum.GetNames(typeof(NotifEvent)))
+                    {
+                        <MudSelectItem T="string" Value="@e">@e</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="NotifChannel" Label="Channel" @bind-Value="Channel" Required="true">
+                    <MudSelectItem T="NotifChannel" Value="NotifChannel.Email">Email</MudSelectItem>
+                    <MudSelectItem T="NotifChannel" Value="NotifChannel.Sms">SMS</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="Subject" Label="Subject (Scriban-templated)" MaxLength="500" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="Body" Label="Body (Scriban-templated)" Lines="10" Required="true"
+                              HelperText="Variables: {{request.req_no}}, {{request.subject}}, {{actor.name}} \u2014 see SolutionDesign.md" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSwitch T="bool" @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(!IsValid)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public string EventCode { get; set; } = nameof(NotifEvent.Created);
+    [Parameter] public NotifChannel Channel { get; set; } = NotifChannel.Email;
+    [Parameter] public string? Subject { get; set; }
+    [Parameter] public string Body { get; set; } = "";
+    [Parameter] public bool IsActive { get; set; } = true;
+
+    private bool IsValid =>
+        !string.IsNullOrWhiteSpace(EventCode) && !string.IsNullOrWhiteSpace(Body);
+
+    private void Save() => Dialog.Close(DialogResult.Ok(new TemplateFormResult(
+        EventCode, Channel, Subject ?? "", Body, IsActive)));
+    private void Cancel() => Dialog.Cancel();
+
+    public sealed record TemplateFormResult(string EventCode, NotifChannel Channel, string Subject, string Body, bool IsActive);
+}

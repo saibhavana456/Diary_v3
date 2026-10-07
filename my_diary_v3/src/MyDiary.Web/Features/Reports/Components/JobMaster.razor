@@ -1,0 +1,226 @@
+@page "/reports/job-master"
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MudBlazor
+@using System.Globalization
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject AuthenticationStateProvider AuthStateProvider
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+    <MudText Typo="Typo.h5" Class="text-center mb-4" Style="font-weight:700; color:#1b4a98;">
+        Job Master Dashboard
+    </MudText>
+    <div class="d-flex justify-end mb-2">
+        <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+            As on Date: @AppTime.Now.ToString("dd-MMM-yyyy")
+        </MudText>
+    </div>
+
+    @if (!_isAdmin)
+    {
+        <MudAlert Severity="Severity.Warning">You do not have permission to access this page.</MudAlert>
+    }
+    else
+    {
+        @* --- Job Status Grid --- *@
+        <MudPaper Elevation="2" Class="pa-4 mb-4" Style="border-radius:12px;">
+            <MudText Typo="Typo.h6" Class="mb-3" Style="font-weight:700; color:#1b4a98;">Jobs Status</MudText>
+
+            @if (_loadingJobs)
+            {
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            }
+            else
+            {
+                <MudTable Items="_jobData" Dense="true" Striped="true" Bordered="true" Hover="true"
+                          FixedHeader="true" Height="500px" Elevation="0" Style="font-size:12px;"
+                          RowClassFunc="@GetJobRowClass">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width:50px;">S.No</MudTh>
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Job Description</MudTh>
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Tab Name</MudTh>
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Report Name</MudTh>
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Frequency</MudTh>
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Source Data</MudTh>
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Status</MudTh>
+                        <MudTh Style="background-color:#2a2f5b; color:white;">Last Updated Date</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align:center;">@((_jobData.IndexOf(context) + 1))</MudTd>
+                        <MudTd>@GetVal(context, "jobdesc")</MudTd>
+                        <MudTd>@GetVal(context, "tabname")</MudTd>
+                        <MudTd>@GetVal(context, "reportname")</MudTd>
+                        <MudTd>@GetVal(context, "frequency")</MudTd>
+                        <MudTd>@GetVal(context, "sourcedata")</MudTd>
+                        <MudTd>@GetVal(context, "status")</MudTd>
+                        <MudTd>@FormatDate(context, "Last_update_date")</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="8" style="text-align:center; padding:40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No job records found</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[] { 25, 50, 100 }" />
+                    </PagerContent>
+                </MudTable>
+            }
+        </MudPaper>
+
+        @* --- Exception Log Grid --- *@
+        <MudPaper Elevation="2" Class="pa-4 mb-4" Style="border-radius:12px;">
+            <MudText Typo="Typo.h6" Class="mb-3" Style="font-weight:700; color:#1b4a98;">Recent Exceptions (Top 20)</MudText>
+
+            @if (_exceptionData.Any())
+            {
+                <MudTable Items="_exceptionData" Dense="true" Striped="true" Bordered="true" Hover="true"
+                          FixedHeader="true" Height="400px" Elevation="0" Style="font-size:12px;">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width:50px;">S.No</MudTh>
+                        @foreach (var col in _exceptionColumns)
+                        {
+                            <MudTh Style="background-color:#2a2f5b; color:white;">@col</MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align:center;">@((_exceptionData.IndexOf(context) + 1))</MudTd>
+                        @foreach (var col in _exceptionColumns)
+                        {
+                            <MudTd>@(context.ContainsKey(col) ? context[col]?.ToString() : "")</MudTd>
+                        }
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Default">No exceptions found.</MudText>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private bool _isAdmin = false;
+    private bool _loadingJobs = true;
+    private List<Dictionary<string, object>> _jobData = new();
+    private List<Dictionary<string, object>> _exceptionData = new();
+    private List<string> _exceptionColumns = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Wire admin check to actual auth claims — CO (Central Office) privilege = admin
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var privilege = authState.User.FindFirst("privilege")?.Value?.ToUpper() ?? "";
+        _isAdmin = string.Equals(privilege, "CO", StringComparison.OrdinalIgnoreCase)
+                || authState.User.HasClaim("rp_super_admin", "true")
+                || authState.User.HasClaim("rp_app_admin", "true");
+
+        if (_isAdmin)
+        {
+            // Independent data loads — run in parallel
+            await Task.WhenAll(LoadJobData(), LoadExceptionData());
+        }
+    }
+
+    private async Task LoadJobData()
+    {
+        _loadingJobs = true;
+        try
+        {
+            string sql = @"SELECT rn.jobdesc, rn.tabname, rn.reportname, rn.frequency, rn.sourcedata,
+                (CASE WHEN rn.extra1 IS NULL THEN jm.LastRunStatus ELSE rn.extra1 END) AS status,
+                (CASE WHEN rn.extra2 IS NULL THEN jm.LastRunStartDt ELSE CONVERT(datetime, rn.extra2, 105) END) AS Last_update_date,
+                rn.frequency AS freq_code
+                FROM JobMasterReportNames AS rn 
+                LEFT JOIN JobMaster AS jm ON rn.jobtype = jm.JobType
+                WHERE rn.jobdesc IS NOT NULL 
+                ORDER BY jm.frequency, jm.executionorder";
+
+            _jobData = await ReportService.ExecuteRawQueryAsync(sql);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[JobMaster] Error loading job data");
+        }
+        _loadingJobs = false;
+    }
+
+    private async Task LoadExceptionData()
+    {
+        try
+        {
+            string sql = "SELECT TOP 20 * FROM ExceptionLog WHERE 1=1 ORDER BY Id DESC";
+            _exceptionData = await ReportService.ExecuteRawQueryAsync(sql);
+
+            if (_exceptionData.Any())
+            {
+                _exceptionColumns = _exceptionData[0].Keys.ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[JobMaster] Error loading exception data");
+        }
+    }
+
+    private string GetVal(Dictionary<string, object> row, string key)
+    {
+        return row.TryGetValue(key, out var val) ? val?.ToString() ?? "" : "";
+    }
+
+    private string FormatDate(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var val) && val != null)
+        {
+            if (DateTime.TryParse(val.ToString(), out var dt))
+                return dt.ToString("dd/MM/yyyy");
+        }
+        return "";
+    }
+
+    private string GetJobRowClass(Dictionary<string, object> row, int index)
+    {
+        try
+        {
+            var freq = GetVal(row, "freq_code");
+            var dateStr = GetVal(row, "Last_update_date");
+            var jobDesc = GetVal(row, "jobdesc");
+
+            if (string.IsNullOrEmpty(dateStr) || !DateTime.TryParse(dateStr, out var lastUpdate))
+                return "";
+
+            if (freq.Equals("Daily", StringComparison.OrdinalIgnoreCase))
+            {
+                if (lastUpdate.Date < AppTime.Today)
+                    return "mud-error-text";
+            }
+            else if (freq.Equals("Weekly", StringComparison.OrdinalIgnoreCase))
+            {
+                var culture = CultureInfo.CurrentCulture;
+                int firstDayOfWeekIndex = (int)culture.DateTimeFormat.FirstDayOfWeek + 1;
+                var firstDayOfWeek = AppTime.Today.AddDays(-(int)AppTime.Today.DayOfWeek + firstDayOfWeekIndex);
+                var lastSat = firstDayOfWeek.AddDays(-2);
+                var lastSun = firstDayOfWeek.AddDays(-1);
+
+                if (jobDesc == "InsertToDB")
+                {
+                    if (lastUpdate < lastSun) return "mud-error-text";
+                }
+                else
+                {
+                    if (lastUpdate < lastSat) return "mud-error-text";
+                }
+            }
+        }
+        catch (Exception ex) { AppLogger.LogWarning($"JobMaster: error determining row color class — {ex.Message}"); }
+        return "";
+    }
+}

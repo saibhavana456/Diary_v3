@@ -1,0 +1,145 @@
+﻿@page "/reports/mom-developer"
+@using MudBlazor
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IMomRepo MomRepo
+@inject IMasterRepo Masters
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>MoM Developer</PageTitle>
+
+<PageHeader PageKey="mom-developer" Title="MoM Developer" Crumbs="_crumbs" />
+
+<SuperAdminOnly>
+    <MudPaper Elevation="1" Class="pa-3">
+        <div class="d-flex flex-wrap align-end gap-3 mb-3">
+            <MudSelect T="long?" Label="Vertical" Value="_filterVerticalId" ValueChanged="OnFilterVerticalChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width:220px">
+                @foreach (var v in _verticals)
+                {
+                    <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="string" Label="Status" Value="_filterStatus" ValueChanged="OnFilterStatusChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width:180px">
+                <MudSelectItem T="string" Value="@("LIVE")">Live</MudSelectItem>
+                <MudSelectItem T="string" Value="@("DISABLED")">Disabled</MudSelectItem>
+            </MudSelect>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Nav.NavigateTo("reports/mom-developer/new"))">Add</MudButton>
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else if (_types.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No MoM types found for the selected filters.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_types" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Type Name</MudTh><MudTh>Code</MudTh><MudTh>Vertical</MudTh><MudTh>Filters Enabled</MudTh>
+                    <MudTh>Status</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Type Name">
+                        <MudIcon Icon="@IconFor(context.IconName)" Size="Size.Small" Class="mr-1" />@context.TypeName
+                    </MudTd>
+                    <MudTd DataLabel="Code">@context.TypeCode</MudTd>
+                    <MudTd DataLabel="Vertical">@context.VerticalName</MudTd>
+                    <MudTd DataLabel="Filters Enabled">@FiltersSummary(context)</MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                            @(context.IsActive ? "Live" : "Disabled")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Title="View"
+                                       OnClick="@(() => Nav.NavigateTo($"reports/mom-developer/edit/{context.Id}"))" aria-label="View" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Title="Edit"
+                                       OnClick="@(() => Nav.NavigateTo($"reports/mom-developer/edit/{context.Id}"))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       Title="@(context.IsActive ? "Disable" : "Enable")"
+                                       OnClick="@(() => ToggleActive(context))" aria-label="Enable or disable" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</SuperAdminOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Reports"), new("MoM Developer") };
+
+    private bool _loading = true;
+    private List<Vertical> _verticals = new();
+    private List<MomType> _types = new();
+
+    private long? _filterVerticalId;
+    private string? _filterStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = (await Masters.ListVerticalsAllAsync()).ToList();
+        await ReloadTypesAsync();
+        _loading = false;
+    }
+
+    private async Task OnFilterVerticalChangedAsync(long? verticalId)
+    {
+        _filterVerticalId = verticalId;
+        await ReloadTypesAsync();
+    }
+
+    private async Task OnFilterStatusChangedAsync(string? status)
+    {
+        _filterStatus = status;
+        await ReloadTypesAsync();
+    }
+
+    private async Task ReloadTypesAsync()
+    {
+        var all = await MomRepo.ListTypesAsync(_filterVerticalId);
+        _types = _filterStatus switch
+        {
+            "LIVE" => all.Where(t => t.IsActive).ToList(),
+            "DISABLED" => all.Where(t => !t.IsActive).ToList(),
+            _ => all.ToList()
+        };
+    }
+
+    private async Task ToggleActive(MomType t)
+    {
+        await MomRepo.SetTypeActiveAsync(t.Id, !t.IsActive);
+        await ReloadTypesAsync();
+    }
+
+    private static string FiltersSummary(MomType t)
+    {
+        var parts = new List<string>();
+        if (t.EnableZoneRegionScope) parts.Add("Zone/Region");
+        if (t.EnableDateRange) parts.Add("Date Range");
+        if (t.EnableMeetingType) parts.Add(t.MeetingTypeLabel ?? "Meeting Type");
+        if (t.EnableQuarter) parts.Add("Quarter");
+        if (t.EnableYear) parts.Add("Year");
+        return parts.Count == 0 ? "—" : string.Join(", ", parts);
+    }
+
+    private static string IconFor(string iconName) => iconName switch
+    {
+        "Groups" => Icons.Material.Filled.Groups,
+        "Assignment" => Icons.Material.Filled.Assignment,
+        "Gavel" => Icons.Material.Filled.Gavel,
+        "AccountBalance" => Icons.Material.Filled.AccountBalance,
+        _ => Icons.Material.Filled.Description
+    };
+}

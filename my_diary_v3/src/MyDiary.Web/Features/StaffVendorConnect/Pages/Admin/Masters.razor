@@ -1,0 +1,577 @@
+@page "/svc/admin/masters"
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject IStaffVendorConnectService SvcService
+@inject IAuthorizationService AuthzService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Masters - Staff and Vendor Connect</PageTitle>
+
+@if (_accessChecked && !_hasAccess)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="ma-4">
+        App Admin access is required to view this page.
+    </MudAlert>
+}
+else if (_accessChecked)
+{
+
+<PageHeader Title="Masters" Subtitle="Dropdown value lists (states, districts, cities, ...) that back DROPDOWN fields marked 'Master' in Form Builder — one row per value, in a single shared table." Crumbs="_crumbs" PageKey="svc-masters" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="string" @bind-Value="_typeCode" Label="Master Type" Variant="Variant.Outlined" @bind-Value:after="LoadValuesAsync">
+                @if (_isAppAdmin)
+                {
+                    @foreach (var t in _types)
+                    {
+                        <MudSelectItem T="string" Value="@t.MasterTypeCode">@t.MasterTypeName @(t.ParentTypeCode is not null ? $"(under {t.ParentTypeCode})" : "")</MudSelectItem>
+                    }
+                }
+                <MudSelectItem T="string" Value="@VendorCategorySentinel">Vendor Category</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        @if (_typeCode != VendorCategorySentinel)
+        {
+            <MudItem xs="12" sm="6" md="8" Class="d-flex align-center justify-end flex-wrap gap-2">
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.AddCircleOutline" OnClick="OpenAddTypeDialog">
+                    New Master Type
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadValuesAsync" Disabled="@string.IsNullOrEmpty(_typeCode)">
+                    Download
+                </MudButton>
+                <MudFileUpload T="IBrowserFile" FilesChanged="OnUploadFileSelected" Disabled="@string.IsNullOrEmpty(_typeCode)">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.UploadFile" Disabled="@string.IsNullOrEmpty(_typeCode)">
+                            Upload
+                        </MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddValueDialog" Disabled="@string.IsNullOrEmpty(_typeCode)">
+                    Add Value
+                </MudButton>
+            </MudItem>
+        }
+        else
+        {
+            <MudItem xs="12" sm="6" md="8" Class="d-flex align-center justify-end flex-wrap gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddCategoryDialog">
+                    Add Category
+                </MudButton>
+            </MudItem>
+        }
+    </MudGrid>
+
+    @if (_uploadResult is not null)
+    {
+        <MudAlert Severity="@(_uploadResult.ErrorCount == 0 ? Severity.Success : Severity.Warning)" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="@(() => _uploadResult = null)">
+            @_uploadResult.ValidCount value(s) added@(_uploadResult.ErrorCount > 0 ? $", {_uploadResult.ErrorCount} row(s) skipped:" : ".")
+            @if (_uploadResult.ErrorCount > 0)
+            {
+                <ul class="mb-0">
+                    @foreach (var row in _uploadResult.Rows.Where(r => !r.IsValid))
+                    {
+                        <li>Row @row.RowNumber: @string.Join(" | ", row.Errors)</li>
+                    }
+                </ul>
+            }
+        </MudAlert>
+    }
+
+    @if (_typeCode == VendorCategorySentinel)
+    {
+        <MudTable Items="@_categories" Hover="true" Dense="true" Bordered="true">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Group</MudTh>
+                <MudTh>Parent Group</MudTh>
+                <MudTh>Verticals</MudTh>
+                <MudTh>Active</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.CategoryName <MudText Typo="Typo.caption" Class="d-block mud-text-secondary">@context.CategoryCode</MudText></MudTd>
+                <MudTd>@context.GroupType</MudTd>
+                <MudTd>@context.ParentGroup</MudTd>
+                <MudTd>
+                    @if (_categoryVerticals.TryGetValue(context.CategoryCode, out var vids) && vids.Count > 0)
+                    {
+                        @foreach (var vid in vids)
+                        {
+                            <MudChip T="string" Size="Size.Small" Class="mr-1">@(_verticals.FirstOrDefault(v => v.Id == vid)?.Name ?? vid.ToString())</MudChip>
+                        }
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default">All</MudChip>
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudSwitch T="bool" Value="@context.IsActive" ValueChanged="@((bool v) => ToggleCategoryActiveAsync(context, v))" Color="Color.Success" />
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEditCategoryDialog(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_isAppAdmin)
+        {
+            <MudPaper Class="pa-4 mt-6" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Category Admins</MudText>
+                <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+                    Employees listed here (in addition to App Admins) can manage the "Vendor Category" block above,
+                    but cannot grant this access to themselves or anyone else.
+                </MudText>
+                <MudGrid Class="mb-3">
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudTextField @bind-Value="_searchPf" Label="PF Number" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="4" Class="d-flex align-center">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="SearchStaffAsync">Search</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                @if (_searched)
+                {
+                    @if (_searchResult is null)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-3">No staff found for that PF number.</MudAlert>
+                    }
+                    else
+                    {
+                        <MudPaper Class="pa-3 mb-3" Outlined="true">
+                            <MudText><b>@_searchResult.Name</b> (@_searchResult.PfNo)</MudText>
+                            <MudText Typo="Typo.body2">Scale: @_searchResult.ScaleDesc</MudText>
+                            <MudText Typo="Typo.body2">Dept / Location: @_searchResult.DeptDesc, @_searchResult.RegionName / @_searchResult.ZoneName</MudText>
+                            <MudSelect T="long" MultiSelection="true" @bind-SelectedValues="_newAdminVerticalIds" Label="Verticals this admin manages (none selected = all categories, flat admin)" Variant="Variant.Outlined" Class="mt-2" MultiSelectionTextFunc="@FormatNewAdminVerticals">
+                                @foreach (var v in _verticals)
+                                {
+                                    <MudSelectItem T="long" Value="@v.Id">@v.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="AddAdminAsync">Add as Admin</MudButton>
+                        </MudPaper>
+                    }
+                }
+
+                <MudTable Items="@_categoryAdmins" Hover="true" Dense="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Employee</MudTh>
+                        <MudTh>Verticals</MudTh>
+                        <MudTh>Added By</MudTh>
+                        <MudTh>Added At</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.EmpCode</MudTd>
+                        <MudTd>
+                            @if (_adminVerticals.TryGetValue(context.EmpCode, out var avids) && avids.Count > 0)
+                            {
+                                @foreach (var vid in avids)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Class="mr-1">@(_verticals.FirstOrDefault(v => v.Id == vid)?.Name ?? vid.ToString())</MudChip>
+                                }
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">All (flat admin)</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd>@context.AddedBy</MudTd>
+                        <MudTd>@context.AddedAt</MudTd>
+                        <MudTd>
+                            <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" OnClick="@(() => RemoveAdminAsync(context.EmpCode))">Remove</MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        }
+    }
+    else if (string.IsNullOrEmpty(_typeCode))
+    {
+        <MudAlert Severity="Severity.Info">Select or create a master type to manage its values.</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="@_values" Hover="true" Dense="true" Bordered="true">
+            <HeaderContent>
+                <MudTh>Order</MudTh>
+                <MudTh>Value</MudTh>
+                <MudTh>Parent</MudTh>
+                <MudTh>Active</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.DisplayOrder</MudTd>
+                <MudTd>@context.ValueLabel</MudTd>
+                <MudTd>@context.ParentValueLabel</MudTd>
+                <MudTd>
+                    <MudSwitch T="bool" Value="@context.IsActive" ValueChanged="@((bool v) => ToggleActiveAsync(context, v))" Color="Color.Success" />
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEditValueDialog(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+}
+
+<MudDialog @bind-Visible="_typeDialogOpen" Options="_dialogOptions">
+    <TitleContent>New Master Type</TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_newType.MasterTypeCode" Label="Type Code (machine name, e.g. BANK_NAME)" Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="_newType.MasterTypeName" Label="Type Name" Variant="Variant.Outlined" Class="mb-3" />
+        <MudSelect T="string" @bind-Value="_newTypeParent" Label="Parent Type (optional — for cascading dropdowns)" Variant="Variant.Outlined" Clearable="true">
+            @foreach (var t in _types)
+            {
+                <MudSelectItem T="string" Value="@t.MasterTypeCode">@t.MasterTypeName</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _typeDialogOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveTypeAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_valueDialogOpen" Options="_dialogOptions">
+    <TitleContent>@(_editingValue!.MasterId > 0 ? "Edit Value" : "Add Value")</TitleContent>
+    <DialogContent>
+        @if (_editingValue is not null)
+        {
+            <MudTextField @bind-Value="_editingValue.ValueLabel" Label="Value" Variant="Variant.Outlined" Class="mb-3" />
+            @if (_parentTypeCode is not null)
+            {
+                <MudSelect T="long?" Label="@($"Parent ({_parentTypeCode})")" Value="_editingValue.ParentValueId" ValueChanged="@((long? v) => _editingValue.ParentValueId = v)" Variant="Variant.Outlined" Class="mb-3">
+                    @foreach (var p in _parentValues)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)p.MasterId)">@p.ValueLabel</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            <MudNumericField @bind-Value="_editingValue.DisplayOrder" Label="Display Order" Variant="Variant.Outlined" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _valueDialogOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveValueAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_categoryDialogOpen" Options="_dialogOptions">
+    <TitleContent>@(_editingCategoryIsNew ? "Add Category" : "Edit Category")</TitleContent>
+    <DialogContent>
+        @if (_editingCategory is not null)
+        {
+            <MudTextField @bind-Value="_editingCategory.CategoryCode" Label="Category Code (A-Z, 0-9, _ only — cannot be changed later)"
+                          Variant="Variant.Outlined" Class="mb-3" Disabled="@(!_editingCategoryIsNew)" />
+            <MudTextField @bind-Value="_editingCategory.CategoryName" Label="Category Name" Variant="Variant.Outlined" Class="mb-3" />
+            <MudSelect T="string" @bind-Value="_editingCategory.GroupType" Label="Group Type" Variant="Variant.Outlined" Class="mb-3">
+                <MudSelectItem T="string" Value="@("EXTERNAL")">EXTERNAL</MudSelectItem>
+                <MudSelectItem T="string" Value="@("INTERNAL")">INTERNAL</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="_editingCategory.ParentGroup" Label="Parent Group (e.g. SSD, MSME — optional)" Variant="Variant.Outlined" Class="mb-3" />
+            <MudNumericField @bind-Value="_editingCategory.DisplayOrder" Label="Display Order" Variant="Variant.Outlined" Class="mb-3" />
+            <MudSelect T="long" MultiSelection="true" @bind-SelectedValues="_editingCategoryVerticalIds" Label="Verticals (none selected = applies to ALL)" Variant="Variant.Outlined" MultiSelectionTextFunc="@FormatSelectedVerticals">
+                @foreach (var v in _verticals)
+                {
+                    <MudSelectItem T="long" Value="@v.Id">@v.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _categoryDialogOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveCategoryAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+}
+
+@code {
+    private const string VendorCategorySentinel = "__VENDOR_CATEGORY__";
+
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"), new("Masters") };
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _accessChecked;
+    private bool _hasAccess;
+    private bool _isAppAdmin;
+
+    private bool _loading = true;
+    private List<SvcMasterType> _types = new();
+    private List<SvcMasterValue> _values = new();
+    private List<SvcMasterValue> _parentValues = new();
+    private string _typeCode = "";
+    private string? _parentTypeCode;
+    private string _pfNo = "";
+
+    private bool _typeDialogOpen, _valueDialogOpen;
+    private SvcMasterType _newType = new();
+    private string? _newTypeParent;
+    private SvcMasterValue? _editingValue;
+    private SvcBulkUploadResult? _uploadResult;
+
+    // Vendor Category block
+    private List<SvcCategory> _categories = new();
+    private List<SvcVertical> _verticals = new();
+    private Dictionary<string, List<long>> _categoryVerticals = new();
+    private bool _categoryDialogOpen;
+    private bool _editingCategoryIsNew;
+    private SvcCategory? _editingCategory;
+    private IEnumerable<long> _editingCategoryVerticalIds = new List<long>();
+
+    private string FormatSelectedVerticals(List<string> _)
+    {
+        var names = _editingCategoryVerticalIds
+            .Select(id => _verticals.FirstOrDefault(v => v.Id == id)?.Name)
+            .Where(n => n is not null)
+            .ToList();
+        return names.Count == 0 ? "" : string.Join(", ", names);
+    }
+
+    // Category Admins panel (App Admin only)
+    private string _searchPf = "";
+    private bool _searched;
+    private SvcStaffLookupRow? _searchResult;
+    private List<SvcCategoryAdminRow> _categoryAdmins = new();
+    private Dictionary<string, List<long>> _adminVerticals = new();
+    private IEnumerable<long> _newAdminVerticalIds = new List<long>();
+
+    private string FormatNewAdminVerticals(List<string> _)
+    {
+        var names = _newAdminVerticalIds
+            .Select(id => _verticals.FirstOrDefault(v => v.Id == id)?.Name)
+            .Where(n => n is not null)
+            .ToList();
+        return names.Count == 0 ? "" : string.Join(", ", names);
+    }
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            _pfNo = state.User.FindFirst("emplid")?.Value ?? "";
+            _isAppAdmin = (await AuthzService.AuthorizeAsync(state.User, "AppAdmin")).Succeeded;
+            _hasAccess = _isAppAdmin || await SvcService.IsSvcCategoryAdminAsync(state.User);
+        }
+        _accessChecked = true;
+        if (!_hasAccess) { _loading = false; return; }
+
+        _verticals = await SvcService.GetActiveVerticalsAsync();
+
+        if (_isAppAdmin)
+        {
+            _types = await SvcService.GetMasterTypesAsync();
+            _typeCode = _types.FirstOrDefault()?.MasterTypeCode ?? "";
+        }
+        else
+        {
+            // Category-admin-only users only ever see/manage the Vendor Category pseudo entry.
+            _typeCode = VendorCategorySentinel;
+        }
+        await LoadValuesAsync();
+        _loading = false;
+    }
+
+    private async Task LoadValuesAsync()
+    {
+        _uploadResult = null;
+        if (_typeCode == VendorCategorySentinel)
+        {
+            await LoadCategoriesAsync();
+            if (_isAppAdmin) await LoadCategoryAdminsAsync();
+            StateHasChanged();
+            return;
+        }
+        if (string.IsNullOrEmpty(_typeCode)) { _values = new(); return; }
+        _values = await SvcService.GetMasterValuesAsync(_typeCode);
+        _parentTypeCode = _types.FirstOrDefault(t => t.MasterTypeCode == _typeCode)?.ParentTypeCode;
+        _parentValues = _parentTypeCode is not null ? await SvcService.GetMasterValuesAsync(_parentTypeCode) : new();
+        StateHasChanged();
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        _categories = await SvcService.GetCategoriesAsync(null, activeOnly: false);
+        _categoryVerticals.Clear();
+        foreach (var c in _categories)
+            _categoryVerticals[c.CategoryCode] = await SvcService.GetCategoryVerticalIdsAsync(c.CategoryCode);
+    }
+
+    private async Task LoadCategoryAdminsAsync()
+    {
+        _categoryAdmins = await SvcService.ListSvcCategoryAdminsAsync();
+        _adminVerticals.Clear();
+        foreach (var a in _categoryAdmins)
+            _adminVerticals[a.EmpCode] = await SvcService.GetAdminVerticalIdsAsync(a.EmpCode);
+    }
+
+    private void OpenAddTypeDialog()
+    {
+        _newType = new SvcMasterType();
+        _newTypeParent = null;
+        _typeDialogOpen = true;
+    }
+
+    private async Task SaveTypeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newType.MasterTypeCode) || string.IsNullOrWhiteSpace(_newType.MasterTypeName))
+        {
+            Snackbar.Add("Type Code and Name are required.", Severity.Warning);
+            return;
+        }
+        _newType.MasterTypeCode = _newType.MasterTypeCode.Trim().ToUpperInvariant().Replace(' ', '_');
+        _newType.ParentTypeCode = _newTypeParent;
+        await SvcService.UpsertMasterTypeAsync(_newType, _pfNo);
+        Snackbar.Add("Master type created.", Severity.Success);
+        _typeDialogOpen = false;
+        _types = await SvcService.GetMasterTypesAsync();
+        _typeCode = _newType.MasterTypeCode;
+        await LoadValuesAsync();
+    }
+
+    private void OpenAddValueDialog()
+    {
+        _editingValue = new SvcMasterValue { MasterTypeCode = _typeCode, DisplayOrder = (_values.Count + 1) * 10 };
+        _valueDialogOpen = true;
+    }
+
+    private void OpenEditValueDialog(SvcMasterValue value)
+    {
+        _editingValue = new SvcMasterValue
+        {
+            MasterId = value.MasterId, MasterTypeCode = value.MasterTypeCode, ValueLabel = value.ValueLabel,
+            ParentValueId = value.ParentValueId, DisplayOrder = value.DisplayOrder, IsActive = value.IsActive
+        };
+        _valueDialogOpen = true;
+    }
+
+    private async Task SaveValueAsync()
+    {
+        if (_editingValue is null || string.IsNullOrWhiteSpace(_editingValue.ValueLabel))
+        {
+            Snackbar.Add("Value is required.", Severity.Warning);
+            return;
+        }
+        await SvcService.UpsertMasterValueAsync(_editingValue, _pfNo);
+        Snackbar.Add("Value saved.", Severity.Success);
+        _valueDialogOpen = false;
+        await LoadValuesAsync();
+    }
+
+    private async Task ToggleActiveAsync(SvcMasterValue value, bool active)
+    {
+        await SvcService.SetMasterValueActiveAsync(value.MasterId, active, _pfNo);
+        await LoadValuesAsync();
+    }
+
+    private async Task DownloadValuesAsync()
+    {
+        var bytes = await SvcService.ExportMasterValuesAsync(_typeCode);
+        await JS.InvokeVoidAsync("appDownloadFile", $"{_typeCode}_Values.xlsx", Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task OnUploadFileSelected(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        ms.Position = 0;
+        _uploadResult = await SvcService.ImportMasterValuesAsync(_typeCode, ms, _pfNo);
+        await LoadValuesAsync();
+    }
+
+    // ── Vendor Category block ──
+
+    private void OpenAddCategoryDialog()
+    {
+        _editingCategory = new SvcCategory { GroupType = "EXTERNAL", IsActive = true, DisplayOrder = (_categories.Count + 1) * 10 };
+        _editingCategoryIsNew = true;
+        _editingCategoryVerticalIds = new List<long>();
+        _categoryDialogOpen = true;
+    }
+
+    private void OpenEditCategoryDialog(SvcCategory category)
+    {
+        _editingCategory = new SvcCategory
+        {
+            CategoryCode = category.CategoryCode, CategoryName = category.CategoryName, GroupType = category.GroupType,
+            ParentGroup = category.ParentGroup, DisplayOrder = category.DisplayOrder, IsActive = category.IsActive
+        };
+        _editingCategoryIsNew = false;
+        _editingCategoryVerticalIds = _categoryVerticals.TryGetValue(category.CategoryCode, out var vids) ? vids.ToList() : new List<long>();
+        _categoryDialogOpen = true;
+    }
+
+    private async Task SaveCategoryAsync()
+    {
+        if (_editingCategory is null || string.IsNullOrWhiteSpace(_editingCategory.CategoryCode) || string.IsNullOrWhiteSpace(_editingCategory.CategoryName))
+        {
+            Snackbar.Add("Category Code and Name are required.", Severity.Warning);
+            return;
+        }
+        var code = _editingCategory.CategoryCode.Trim().ToUpperInvariant();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Z0-9_]+$"))
+        {
+            Snackbar.Add("Category Code may only contain A-Z, 0-9 and underscore.", Severity.Warning);
+            return;
+        }
+        _editingCategory.CategoryCode = code;
+        await SvcService.UpsertCategoryAsync(_editingCategory, _pfNo);
+        await SvcService.SetCategoryVerticalMapAsync(code, _editingCategoryVerticalIds.ToList(), _pfNo);
+        Snackbar.Add("Category saved.", Severity.Success);
+        _categoryDialogOpen = false;
+        await LoadCategoriesAsync();
+    }
+
+    private async Task ToggleCategoryActiveAsync(SvcCategory category, bool active)
+    {
+        await SvcService.SetCategoryActiveAsync(category.CategoryCode, active, _pfNo);
+        await LoadCategoriesAsync();
+    }
+
+    // ── Category Admins panel ──
+
+    private async Task SearchStaffAsync()
+    {
+        _searched = true;
+        _searchResult = string.IsNullOrWhiteSpace(_searchPf) ? null : await SvcService.GetStaffByPfAsync(_searchPf.Trim());
+        _newAdminVerticalIds = new List<long>();
+    }
+
+    private async Task AddAdminAsync()
+    {
+        if (_searchResult is null) return;
+        await SvcService.AddSvcCategoryAdminAsync(_searchResult.PfNo, _pfNo);
+        await SvcService.SetAdminVerticalIdsAsync(_searchResult.PfNo, _newAdminVerticalIds.ToList(), _pfNo);
+        Snackbar.Add("Added as Category Admin.", Severity.Success);
+        _searched = false;
+        _searchResult = null;
+        _searchPf = "";
+        _newAdminVerticalIds = new List<long>();
+        await LoadCategoryAdminsAsync();
+    }
+
+    private async Task RemoveAdminAsync(string empCode)
+    {
+        await SvcService.RemoveSvcCategoryAdminAsync(empCode);
+        await LoadCategoryAdminsAsync();
+    }
+}

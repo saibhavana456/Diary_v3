@@ -1,0 +1,354 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/buildersMaster"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using System.Linq
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Builders Master — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .thead-dark {
+        background-color: #2a2f5b;
+        color: white;
+    }
+
+        .thead-dark th {
+            border-right: 1px solid #d0d0d0;
+            text-align: center;
+            font-weight: 700;
+        }
+
+    .td-right {
+        text-align: right;
+    }
+
+    .td-left {
+        text-align: left;
+    }
+
+    .td-center {
+        text-align: center;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#fff;">
+
+
+
+            <!-- Filters + Export -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+                <MudItem xs="12" sm="3">
+                    <div role="combobox"
+                         aria-label="Select State"
+                         aria-haspopup="listbox"
+                         aria-expanded="false">
+                        <MudSelect T="string"
+                                   Label="State"
+                                   Value="SelectedState"
+                                   ValueChanged="HandleStateChanged"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   AnchorOrigin="Origin.BottomLeft"
+                                   TransformOrigin="Origin.TopLeft"
+                                   aria-label="Select State">
+                            <MudSelectItem Value="@("All")">All States</MudSelectItem>
+                            @foreach (var s in _states)
+                            {
+                                <MudSelectItem Value="@s["state_code_finacle"].ToString()">
+                                    @s["state_name_eng"].ToString()
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </div>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <div role="combobox"
+                         aria-label="Select City"
+                         aria-haspopup="listbox"
+                         aria-expanded="false">
+                        <MudSelect T="string"
+                                   Label="City"
+                                   Value="SelectedCity"
+                                   ValueChanged="HandleCityChanged"
+                                   Disabled="@_isCityDisabled"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   AnchorOrigin="Origin.BottomLeft"
+                                   TransformOrigin="Origin.TopLeft"
+                                   aria-label="Select City">
+                            <MudSelectItem Value="@("All")">All Cities</MudSelectItem>
+                            @foreach (var city in _cities)
+                            {
+                                <MudSelectItem Value="@city">@city</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </div>
+                </MudItem>
+
+                <MudSpacer />
+
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 11px;"
+                               Disabled="@IsExportDisabled"
+                               OnClick="OnExport">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- As On Label -->
+            <div class="px-4 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                    @_asOnDateLabel
+                </MudText>
+            </div>
+
+            <!-- Data Table -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No.</MudTh>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@((_data?.IndexOf(context) ?? -1) + 1)</MudTd>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_cols.Count + 1)" style="text-align:center; padding: 40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // ---- UI / State ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private string SelectedState { get; set; } = "All";
+    private string SelectedCity  { get; set; } = "All";
+
+    private List<Dictionary<string, object>> _states = new();
+    private List<string> _cities = new();
+    private List<Dictionary<string, object>> _data = new();
+
+    // City dropdown is disabled until a specific state is selected
+    private bool _isCityDisabled => string.Equals(SelectedState, "All", StringComparison.OrdinalIgnoreCase);
+
+    // Computed: prevent export while loading or when empty
+    private bool IsExportDisabled => _loading || (_data?.Count ?? 0) == 0;
+
+    // ---- Columns (match SELECT aliases) ----
+    private readonly List<ColumnConfig> _cols = new()
+    {
+        new ColumnConfig { Header = "NAME",                           PropertyName = "name",       Width = "18%" },
+        new ColumnConfig { Header = "ADDRESS",                        PropertyName = "addr3",      Width = "24%" },
+        new ColumnConfig { Header = "CITY",                           PropertyName = "city",       Width = "12%" },
+        new ColumnConfig { Header = "STATE",                          PropertyName = "state",      Width = "10%" },
+        new ColumnConfig { Header = "PINCODE",                        PropertyName = "pin",        Width = "8%",  IsNumeric = true, Format = "N0" },
+        new ColumnConfig { Header = "MOBILE NO",                      PropertyName = "mobno",      Width = "10%" },
+        new ColumnConfig { Header = "CONTACT PERSON",                 PropertyName = "contper",    Width = "10%" },
+        new ColumnConfig { Header = "CONTACT PERSON MOBILE NO",       PropertyName = "contpermob", Width = "12%" },
+        new ColumnConfig { Header = "EMAILID",                        PropertyName = "email",      Width = "16%" }
+    };
+
+    // Not functionally used but required by DynamicDashboard signature
+    private string _selectedZone = "all", _selectedRegion = "all", _selectedBranch = "all";
+    private ReportConfig _activeConfig = new() { Title = "Builders Master" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeConfig.Title = string.IsNullOrWhiteSpace(Title) ? "Builders Master" : Title!;
+
+        // Load states (dropdown) and default data in parallel — independent calls
+        var statesTask = ReportService.GetLookupDataAsync(
+            "State_Master",
+            "state_name_eng,state_code_finacle",
+            "1=1",
+            "state_name_eng"
+        );
+        var dataTask = LoadData();
+        await Task.WhenAll(statesTask, dataTask);
+        _states = statesTask.Result;
+    }
+
+    private async Task HandleStateChanged(string value)
+    {
+        SelectedState = value;
+
+        // Reset city selection and clear city list when state changes
+        SelectedCity = "All";
+        _cities = new();
+
+        // Load data first (filtered by state only), then populate cities from results
+        await LoadData();
+
+        // Populate city dropdown from the loaded data — shows actual city names
+        if (!string.Equals(value, "All", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadCitiesFromData();
+        }
+    }
+
+    private async Task HandleCityChanged(string value)
+    {
+        SelectedCity = value;
+        await LoadData();
+    }
+
+    /// <summary>
+    /// Loads distinct, non-empty city values from the already-loaded data.
+    /// This ensures the dropdown displays the same city text shown in the table.
+    /// </summary>
+    private void LoadCitiesFromData()
+    {
+        _cities = (_data ?? new())
+            .Select(r => r.TryGetValue("city", out var v) ? v?.ToString()?.Trim() ?? "" : "")
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c)
+            .ToList();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // SELECT & filter (Builders only)
+            string selectColumns =
+                "builder_name as name," +
+                "CONCAT(CONCAT(CONCAT(CONCAT(builder_address1,' '),builder_address2),' '),builder_address3) as addr3," +
+                "builder_city as city," +
+                "builder_state as state," +
+                "builder_pincode as pin," +
+                "CONCAT(CONCAT(CONCAT(CONCAT(builder_off_phoneno,' '),builder_res_phoneno),' '),builder_res_mobno) as mobno," +
+                "builder_contper as contper," +
+                "builder_contper_phmobno as contpermob," +
+                "builder_email as email," +
+                "LastUpdateDate";
+
+            string where = "builder_active = 1";
+
+            if (!string.Equals(SelectedState, "All", StringComparison.OrdinalIgnoreCase))
+                where += $" AND builder_state = '{SelectedState}'";
+
+            if (!string.Equals(SelectedCity, "All", StringComparison.OrdinalIgnoreCase))
+                where += $" AND builder_city = '{SelectedCity}'";
+
+            string finalQuery = $"SELECT {selectColumns} FROM BuilderMaster WHERE {where}";
+            _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+            // As On label
+            if ((_data?.Count ?? 0) > 0)
+            {
+                var maxDate = _data
+                    .Select(r => r.TryGetValue("LastUpdateDate", out var v) ? v?.ToString() : null)
+                    .Select(s => DateTime.TryParse(s, out var d) ? d : (DateTime?)null)
+                    .Where(d => d.HasValue)
+                    .DefaultIfEmpty()
+                    .Max();
+
+                if (maxDate.HasValue)
+                {
+                    _asOnDateLabel = $"Data from LAS, as on : {maxDate:dd/MM/yyyy}";
+                }
+                else
+                {
+                    var asOnRow = (await ReportService.ExecuteRawQueryAsync(
+                        "SELECT CONVERT(varchar, MAX(LastUpdateDate), 103) AS AsOn FROM BuilderMaster WHERE builder_active = 1"))
+                        .FirstOrDefault() ?? new Dictionary<string, object>();
+                    var asOn = asOnRow.TryGetValue("AsOn", out var v) ? v?.ToString() ?? "" : "";
+                    _asOnDateLabel = string.IsNullOrWhiteSpace(asOn) ? "" : $"Data from LAS, as on : {asOn}";
+                }
+            }
+            else
+            {
+                _asOnDateLabel = "";
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[BuildersMaster] Unhandled error: " + ex.Message);
+            _data = new();
+            _asOnDateLabel = "";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _cols, "BuildersMaster");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "BuildersMaster.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+        return val.ToString();
+    }
+}

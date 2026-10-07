@@ -1,0 +1,37 @@
+@namespace RequestPortal.Web.Shared
+@* ───────────────────────────────────────────────────────────────────────
+   AuthenticatedOnly — page-level guard for pages that only need "any
+   logged-in user", enforced the same way SuperAdminOnly enforces its
+   policy: via AuthorizeView inside the page, not a route-level
+   "@attribute [Authorize]".
+
+   That distinction matters here: Login.razor's Developer Bypass path signs
+   the user in by calling AuthProvider.MarkAuthenticatedAsync(staff) — which
+   only updates the custom AuthenticationStateProvider inside the current
+   Blazor circuit — it never calls HttpContext.SignInAsync, so no real
+   ASP.NET Core auth cookie is issued. A route-level "@attribute [Authorize]"
+   is enforced by endpoint-routing middleware against HttpContext.User on
+   every fresh HTTP request (a typed URL, a bookmark, a full navigation),
+   which for a dev-bypass session is never authenticated — so it 302-redirects
+   to /login even though the user is "logged in" as far as the app's own UI
+   is concerned, and Login.razor, seeing AuthProvider already authenticated,
+   bounces straight back to Home, making the whole page unreachable by URL.
+   AuthorizeView instead reads the SAME circuit-local AuthenticationStateProvider
+   the rest of the app already trusts, so it honors dev-bypass sessions
+   exactly like SuperAdminOnly/AuthorizeView Policy="AppAdmin" already do
+   elsewhere in Staff and Vendor Connect.
+   ─────────────────────────────────────────────────────────────────────── *@
+<AuthorizeView>
+    <Authorized>
+        @ChildContent
+    </Authorized>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="ma-4">
+            Please sign in to view this page.
+        </MudAlert>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

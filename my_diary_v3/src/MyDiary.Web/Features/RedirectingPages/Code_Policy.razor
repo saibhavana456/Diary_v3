@@ -1,0 +1,189 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/code_policy"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Components.Layout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout PublicLayout
+@using MyDiary.Web.Features.RedirectingPages.Services
+@inject ICodePolicyService CodePolicyService
+
+<PageTitle>Code And Policy — My Diary | Union Bank of India</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+
+    <!-- Page Header -->
+    <MudPaper Elevation="0" Class="pa-4 mb-4 page-header-banner"
+              Style="background: linear-gradient(135deg, #7b0000 0%, #c0392b 60%, #e74c3c 100%);
+                     color:white; border-radius:12px; border-left: 6px solid #FFD700;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudIcon Icon="@Icons.Material.Filled.Policy"
+                     Style="font-size:2.8rem; color:rgba(255,255,255,0.88);" />
+            <div>
+                <MudText Typo="Typo.h5" Style="font-weight:700; color:white; letter-spacing:0.3px;">
+                    Code &amp; Policy
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.88); margin-top:2px;">
+                    Bank Circulars, Guidelines &amp; Policy Documents
+                </MudText>
+            </div>
+        </MudStack>
+    </MudPaper>
+
+    <!-- Breadcrumb -->
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-5 pa-0" />
+
+    <!-- Main Content Card -->
+    <MudPaper Elevation="2" Class="pa-4" Style="border-radius:12px; border-left: 4px solid #c0392b;">
+
+        <!-- Header row with title and search -->
+        <div class="d-flex justify-space-between align-center mb-3 flex-wrap" style="gap:12px;">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.Folder" Style="color:#c0392b;" />
+                <MudText Typo="Typo.h6" Style="font-weight:700; color:#7b0000;">
+                    Documents & Resources
+                </MudText>
+            </MudStack>
+
+            <!-- Search box -->
+            <MudTextField @bind-Value="_searchText"
+                          Placeholder="Search documents..."
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          AdornmentColor="Color.Default"
+                          Margin="Margin.Dense"
+                          Immediate="true"
+                          DebounceInterval="300"
+                          Style="max-width:300px; min-width:200px;"
+                          Clearable="true"
+                          aria-label="Search documents" />
+        </div>
+
+        <MudDivider Class="mb-3" />
+
+        @if (_isLoading)
+        {
+            <div class="d-flex justify-center align-center flex-column pa-10" style="gap:16px;" role="status" aria-live="polite">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                <MudText Typo="Typo.body2" Style="color:#6b7280;">Loading documents...</MudText>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(_loadError))
+        {
+            <div class="d-flex justify-center pa-10">
+                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_loadError</MudAlert>
+            </div>
+        }
+        else
+        {
+            <MudTable Items="@FilteredItems"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Bordered="false"
+                      Elevation="0"
+                      RowsPerPage="25"
+                      aria-label="Code and Policy documents">
+                <HeaderContent>
+                    <MudTh Style="background-color:#7b0000; color:white; width:60px; text-align:center;">S.No</MudTh>
+                    <MudTh Style="background-color:#7b0000; color:white;">Document Name</MudTh>
+                    <MudTh Style="background-color:#7b0000; color:white; width:110px; text-align:center;">Date</MudTh>
+                    <MudTh Style="background-color:#7b0000; color:white; width:90px; text-align:center;">Download</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @{
+                        int sno = FilteredItems.IndexOf(context) + 1;
+                    }
+                    <MudTd Style="text-align:center; color:#6b7280; font-size:0.85rem;">@sno</MudTd>
+                    <MudTd>
+                        <a href="@context.DownloadUrl"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           style="color:#c0392b; font-weight:500; text-decoration:none; display:inline-flex; align-items:center; gap:6px; transition:color 0.15s;"
+                           aria-label="@($"Download {context.FileName}")">
+                            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" Style="color:#c0392b;" />
+                            @context.FileName
+                        </a>
+                    </MudTd>
+                    <MudTd Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default"
+                                 Style="font-size:0.78rem;">
+                            @(context.Date.HasValue ? context.Date.Value.ToString("dd-MMM-yyyy") : "—")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd Style="text-align:center;">
+                        <MudIconButton Icon="@Icons.Material.Filled.Download"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       Href="@context.DownloadUrl"
+                                       Target="_blank"
+                                       Title="@($"Download {context.FileName}")"
+                                       AriaLabel="@($"Download {context.FileName}")" />
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <td colspan="4" style="text-align:center; padding:40px;">
+                        <MudIcon Icon="@Icons.Material.Filled.SearchOff" Style="font-size:2.5rem; color:#9ca3af;" />
+                        <MudText Typo="Typo.subtitle1" Style="color:#6b7280; margin-top:8px;">
+                            @(string.IsNullOrEmpty(_searchText) ? "No documents found." : $"No documents matching \"{_searchText}\".")
+                        </MudText>
+                    </td>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new int[] { 25, 50, 100 }"
+                                   InfoFormat="{first_item}-{last_item} of {all_items}" />
+                </PagerContent>
+            </MudTable>
+        }
+    </MudPaper>
+
+</MudContainer>
+
+@code {
+    private List<CodePolicyDocument> _allItems = new();
+    private bool _isLoading = true;
+    private string? _loadError;
+    private string? _searchText;
+
+    private List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Home", href: "", icon: Icons.Material.Filled.Home),
+        new BreadcrumbItem("Code & Policy", href: null, disabled: true),
+    };
+
+    /// <summary>
+    /// Returns the filtered list based on the search text.
+    /// Searches across FileName field (case-insensitive).
+    /// </summary>
+    private List<CodePolicyDocument> FilteredItems
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_searchText))
+                return _allItems;
+
+            var term = _searchText.Trim();
+            return _allItems.Where(d =>
+                (d.FileName != null && d.FileName.Contains(term, StringComparison.OrdinalIgnoreCase))
+            ).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _allItems = await CodePolicyService.GetAllDocumentsAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[Code_Policy] Error loading documents");
+            _loadError = UserFacingError.Generic;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

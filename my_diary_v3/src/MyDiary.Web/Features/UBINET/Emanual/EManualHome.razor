@@ -1,0 +1,165 @@
+@page "/emanual"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Components.Layout
+@using global::RequestPortal.Web.Shared
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout MyDiary.Web.Components.Layout.MainLayout
+
+<PageTitle>E-manual Content — My Diary | Union Bank of India</PageTitle>
+
+<PageHeader Title="E-manual Content"
+            Subtitle="Digital reference manuals and operating instructions, organised by department"
+            PageKey="emanual"
+            Crumbs="_crumbs" />
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+
+    <!-- Department Cards Grid -->
+    <MudGrid Spacing="3">
+        @foreach (var dept in _departments)
+        {
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="emanual-dept-card" Style="border-radius:12px; height:100%; cursor:pointer;"
+                         @onclick="() => NavigateTo(dept.Route)">
+                    <!-- Coloured top accent -->
+                    <div style="height:5px; background:@dept.AccentColor; border-radius:12px 12px 0 0;"></div>
+                    <MudCardContent Class="pa-4">
+                        <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                            <!-- Icon circle -->
+                            <div style="width:64px; height:64px; border-radius:50%;
+                                        background:@dept.IconBg;
+                                        display:flex; align-items:center; justify-content:center;
+                                        box-shadow: 0 3px 12px @(dept.AccentColor + "55");">
+                                <MudIcon Icon="@dept.Icon" Style=@($"font-size:2rem; color:{dept.AccentColor};") />
+                            </div>
+                            <MudText Typo="Typo.subtitle1"
+                                     Style="font-weight:700; color:#1a237e; text-align:center; line-height:1.35;">
+                                @dept.Label
+                            </MudText>
+                            @if (!string.IsNullOrEmpty(dept.SubLabel))
+                            {
+                                <MudText Typo="Typo.caption"
+                                         Style="color:#666; text-align:center; margin-top:-6px;">
+                                    @dept.SubLabel
+                                </MudText>
+                            }
+                        </MudStack>
+                    </MudCardContent>
+                    <MudCardActions Class="pa-3 pt-0" Style="justify-content:center;">
+                        <MudButton Variant="Variant.Text"
+                                   Style=@($"color:{dept.AccentColor}; font-size:0.8rem; font-weight:600;")
+                                   EndIcon="@Icons.Material.Filled.ArrowForward"
+                                   Size="Size.Small">
+                            View Manuals
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+
+</MudContainer>
+
+<style>
+    .emanual-dept-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .emanual-dept-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
+    }
+</style>
+
+@code {
+    [Inject] NavigationManager Nav { get; set; } = default!;
+
+    private void NavigateTo(string route) => Nav.NavigateTo(route);
+
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Knowledge Hub", "circulars"),
+        new("E-manual Content"),
+    };
+
+    private record DeptCard(string Label, string SubLabel, string Route,
+                             string Icon, string AccentColor, string IconBg);
+
+    private List<DeptCard> _departments = new()
+    {
+        new("ABD", "Agricultural Banking Division",
+            "emanual/dept/ABD",
+            Icons.Material.Filled.Agriculture,
+            "#2e7d32", "#e8f5e9"),
+
+        new("Audit", "",
+            "emanual/dept/Audit",
+            Icons.Material.Filled.FactCheck,
+            "#1565c0", "#e3f2fd"),
+
+        new("CCM", "Credit Monitoring",
+            "emanual/dept/CCM",
+            Icons.Material.Filled.MonitorHeart,
+            "#6a1b9a", "#f3e5f5"),
+
+        new("Compliance", "",
+            "emanual/dept/Compliance",
+            Icons.Material.Filled.GppGood,
+            "#00695c", "#e0f2f1"),
+
+        new("CRD", "Credit Recovery",
+            "emanual/dept/CRD",
+            Icons.Material.Filled.AccountBalance,
+            "#e65100", "#fff3e0"),
+
+        new("DFB & IBD", "Domestic & International Banking",
+            "emanual/dfb-ibd",
+            Icons.Material.Filled.CurrencyExchange,
+            "#0277bd", "#e1f5fe"),
+
+        new("DIT", "Digital & Information Technology",
+            "emanual/dit",
+            Icons.Material.Filled.Computer,
+            "#4527a0", "#ede7f6"),
+
+        new("Document E-Manual", "",
+            "emanual/document",
+            Icons.Material.Filled.FileCopy,
+            "#37474f", "#eceff1"),
+
+        new("HR E-Manual", "Human Resources",
+            "emanual/hr",
+            Icons.Material.Filled.People,
+            "#880e4f", "#fce4ec"),
+
+        new("Legal Services", "",
+            "emanual/dept/Legal",
+            Icons.Material.Filled.Gavel,
+            "#4e342e", "#efebe9"),
+
+        new("MSME", "Micro, Small & Medium Enterprises",
+            "emanual/dept/MSME",
+            Icons.Material.Filled.Storefront,
+            "#f57f17", "#fffde7"),
+
+        new("Operations", "",
+            "emanual/dept/Operations",
+            Icons.Material.Filled.Settings,
+            "#455a64", "#eceff1"),
+
+        new("Retail Banking & Govt. Business", "",
+            "emanual/dept/Retailbanking_govt",
+            Icons.Material.Filled.AccountBalanceWallet,
+            "#b71c1c", "#ffebee"),
+
+        new("Risk Management", "",
+            "emanual/dept/Risk_Management",
+            Icons.Material.Filled.Shield,
+            "#bf360c", "#fbe9e7"),
+
+        new("Strategy", "",
+            "emanual/dept/Strategy",
+            Icons.Material.Filled.TrendingUp,
+            "#1a237e", "#e8eaf6"),
+    };
+}

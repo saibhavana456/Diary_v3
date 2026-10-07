@@ -1,0 +1,184 @@
+@page "/recon/annexure4/ro-checker"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using System.Globalization
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@using MyDiary.Web.Features.Recon.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IReconAnnexure4Service ReconService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Annexure 4 — RO Checker</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudText Typo="Typo.h5" Class="mb-1">Annexure 4 — RO Checker</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+        Region @_regionSolId — @_reportMonth @_reportYear
+    </MudText>
+
+    @if (_record is null)
+    {
+        <MudAlert Severity="Severity.Warning">No consolidated RO record found for this month. RO Operations must forward it first.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Aggregated Totals (Sundry / Suspense / POB / Inter-Bank)</MudText>
+            <MudSimpleTable Dense="true">
+                <thead>
+                    <tr><th>Category</th><th>Upto 3M</th><th>3-6M</th><th>Over 6M</th><th>New Over 6M</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Sundry (Entries)</td><td>@_record.SunUpto3MEntries</td><td>@_record.SunThree6MEntries</td>
+                        <td>@_record.SunOver6MEntries</td><td>@_record.SunNewOver6MEntries</td>
+                    </tr>
+                    <tr>
+                        <td>Suspense (Entries)</td><td>@_record.SusUpto3MEntries</td><td>@_record.SusThree6MEntries</td>
+                        <td>@_record.SusOver6MEntries</td><td>@_record.SusNewOver6MEntries</td>
+                    </tr>
+                    <tr>
+                        <td>POB (Entries)</td><td>@_record.PobUpto3MEntries</td><td>@_record.PobThree6MEntries</td>
+                        <td>@_record.PobOver6MEntries</td><td>@_record.PobNewOver6MEntries</td>
+                    </tr>
+                    <tr>
+                        <td>Inter-Bank (Entries)</td><td>@_record.IbkUpto3MEntries</td><td>@_record.IbkThree6MEntries</td>
+                        <td>@_record.IbkOver6MEntries</td><td>@_record.IbkNewOver6MEntries</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-4 d-block">
+            Forwarded by RO Operations (@_record.RoOperationsUserId) on @_record.RoOperationsActionDate?.ToString("dd-MM-yyyy HH:mm")
+        </MudText>
+
+        <MudStack Row="true" Spacing="3">
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="_forwarding" OnClick="Forward">
+                @(_forwarding ? "Forwarding..." : "Forward to ZO Operations")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                       Disabled="_downloading" OnClick="DownloadConsolidatedPdf">
+                @(_downloading ? "Generating..." : "Download Consolidated PDF")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.CloudDownload"
+                       Disabled="_exportingExcel" OnClick="ExportConsolidatedExcel">
+                @(_exportingExcel ? "Generating..." : "Export Consolidated (Excel)")
+            </MudButton>
+        </MudStack>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private bool _forwarding;
+    private bool _downloading;
+    private bool _exportingExcel;
+    private string _empId = "", _regionSolId = "", _regionName = "", _zoneName = "";
+    private string _reportMonth = "", _reportYear = "";
+    private ReconAnnexure4? _record;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _empId = user.FindFirst("emplid")?.Value ?? "";
+        _regionSolId = user.FindFirst("region_solid")?.Value ?? "";
+        _regionName = user.FindFirst("region_name")?.Value ?? _regionSolId;
+        _zoneName = user.FindFirst("zone_name")?.Value ?? "";
+
+        _reportMonth = DateTime.Now.AddMonths(-1).ToString("MMMM", CultureInfo.InvariantCulture);
+        _reportYear = DateTime.Now.AddMonths(-1).ToString("yyyy", CultureInfo.InvariantCulture);
+
+        await Load();
+        _loading = false;
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            _record = await ReconService.GetRoCheckerViewAsync(_empId, _regionSolId, _reportMonth, _reportYear);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task Forward()
+    {
+        _forwarding = true;
+        try
+        {
+            await ReconService.ForwardToZoAsync(_empId, _regionSolId, _reportMonth, _reportYear);
+            Snackbar.Add("Forwarded to ZO Operations.", Severity.Success);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _forwarding = false;
+        }
+    }
+
+    private async Task DownloadConsolidatedPdf()
+    {
+        if (_record is null) return;
+        _downloading = true;
+        try
+        {
+            var roster = await ReconService.GetBranchRosterAsync(_empId, _regionSolId, _reportMonth, _reportYear);
+            var unbalanced = await ReconService.GetUnbalancedBranchCountAsync(_empId, _regionSolId, _reportMonth, _reportYear);
+            var breakup = await ReconService.GetInterbankBreakupForRegionAsync(_empId, _regionSolId, _reportMonth, _reportYear);
+            var bytes = ReconPdfExportService.GenerateConsolidatedPdf(
+                _record, "Region", _regionName, "Zone", _zoneName,
+                roster.Count, unbalanced, "Branch", roster, breakup);
+            var fileName = $"Annexure4_Consolidated_RO_{_regionSolId}_{_reportMonth}{_reportYear}.pdf";
+            await JS.InvokeVoidAsync("appDownloadFile", fileName, Convert.ToBase64String(bytes), "application/pdf");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"PDF generation failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _downloading = false;
+        }
+    }
+
+    private async Task ExportConsolidatedExcel()
+    {
+        if (_record is null) return;
+        _exportingExcel = true;
+        try
+        {
+            var roster = await ReconService.GetBranchRosterAsync(_empId, _regionSolId, _reportMonth, _reportYear);
+            var unbalanced = await ReconService.GetUnbalancedBranchCountAsync(_empId, _regionSolId, _reportMonth, _reportYear);
+            var bytes = ReconExcelExportService.GenerateConsolidatedExcel(
+                _record, "Region", _regionName, "Zone", _zoneName,
+                roster.Count, unbalanced, "Branch", roster);
+            var fileName = $"Annexure4_Consolidated_RO_{_regionSolId}_{_reportMonth}{_reportYear}.xlsx";
+            await JS.InvokeVoidAsync("appDownloadFile", fileName, Convert.ToBase64String(bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excel export failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _exportingExcel = false;
+        }
+    }
+}

@@ -1,0 +1,227 @@
+@page "/deposits/admin/dmd-approvers"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@inject IDmdRbacService DmdRbacService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+
+<PageTitle>DMD Approver Allocation</PageTitle>
+<PageHeader PageKey="bdd-dmd-approver-allocation" Title="DMD Approver Allocation" Crumbs="_crumbs" />
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+    Branch/RO/ZO roles are assigned automatically from each employee's existing attributes — nothing to do
+    here for those. <b>DMD Approver</b> is a department-specific Corporate Office desk role (NOT the
+    generic CoUser/CoHead) and needs explicit assignment below.
+</MudAlert>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    @if (_canManageVerticalAdmins)
+    {
+        <MudPaper Elevation="1" Class="pa-3 mb-4">
+            <div class="d-flex flex-wrap align-center mb-3">
+                <MudText Typo="Typo.h6">DMD Vertical Admins</MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenAddAdminDialog">Add Vertical Admin</MudButton>
+            </div>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                A DMD Vertical Admin may assign/revoke the DMD Approver role below, without full
+                Application Admin rights. Restricted to App/Super Admins to grant.
+            </MudText>
+            @if (_verticalAdmins.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No DMD Vertical Admins assigned yet — only App/Super Admins can assign the DMD Approver role until one is added.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@_verticalAdmins" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Employee Code</MudTh><MudTh>Assigned By</MudTh><MudTh>Assigned At</MudTh><MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee Code">@context.EmpCode</MudTd>
+                        <MudTd DataLabel="Assigned By">@context.AssignedByEmp</MudTd>
+                        <MudTd DataLabel="Assigned At">@context.AssignedAtUtc.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           Title="Revoke" OnClick="@(() => RevokeAdminAsync(context.EmpCode))" aria-label="Revoke" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+
+    <MudPaper Elevation="1" Class="pa-3 mb-4">
+        <div class="d-flex flex-wrap align-center mb-3">
+            <MudText Typo="Typo.h6">DMD Approver Assignments</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenAddRoleDialog" Disabled="@(!_canManageApprovers)">Assign DMD Approver</MudButton>
+        </div>
+        @if (!_canManageApprovers)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-2">
+                You are not a DMD Vertical Admin (or App/Super Admin) — you can view assignments but not change them.
+            </MudAlert>
+        }
+        @if (_approvers.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No DMD Approvers assigned yet.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_approvers" Dense="true" Hover="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Employee Code</MudTh><MudTh>Assigned By</MudTh><MudTh>Assigned At</MudTh><MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Employee Code">@context.EmpCode</MudTd>
+                    <MudTd DataLabel="Assigned By">@context.AssignedByEmp</MudTd>
+                    <MudTd DataLabel="Assigned At">@context.AssignedAtUtc.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       Disabled="@(!_canManageApprovers)" Title="Revoke"
+                                       OnClick="@(() => RevokeRoleAsync(context.Id))" aria-label="Revoke" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+<MudDialog @bind-Visible="_addAdminOpen" Options="_dialogOptions">
+    <TitleContent>Add DMD Vertical Admin</TitleContent>
+    <DialogContent>
+        <MudTextField T="string" Label="Employee Code (PF Number)" @bind-Value="_newAdminEmpCode"
+                       Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addAdminOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAdminAsync" Disabled="@_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_addRoleOpen" Options="_dialogOptions">
+    <TitleContent>Assign DMD Approver</TitleContent>
+    <DialogContent>
+        <MudTextField T="string" Label="Employee Code (PF Number)" @bind-Value="_newRoleEmpCode"
+                       Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3">
+            Assigning replaces any existing active DMD Approver assignment for this employee.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addRoleOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveRoleAsync" Disabled="@_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("DMD Approver Allocation") };
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _loading = true, _saving;
+    private bool _canManageApprovers;
+    private bool _canManageVerticalAdmins;
+    private List<DmdVerticalAdmin> _verticalAdmins = new();
+    private List<DmdApproverAssignment> _approvers = new();
+
+    private bool _addAdminOpen;
+    private string _newAdminEmpCode = "";
+
+    private bool _addRoleOpen;
+    private string _newRoleEmpCode = "";
+
+    private string ActorEmpCode => CurrentUser.EmplId ?? "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _canManageApprovers = await DmdRbacService.CanManageApproversAsync(ActorEmpCode);
+        _canManageVerticalAdmins = await DmdRbacService.CanManageVerticalAdminsAsync(ActorEmpCode);
+        _verticalAdmins = (await DmdRbacService.ListVerticalAdminsAsync()).Where(a => a.IsActive).ToList();
+        _approvers = (await DmdRbacService.ListApproverAssignmentsAsync()).Where(a => a.IsActive).ToList();
+    }
+
+    private void OpenAddAdminDialog() { _newAdminEmpCode = ""; _addAdminOpen = true; }
+
+    private async Task SaveAdminAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newAdminEmpCode))
+        {
+            Snackbar.Add("Employee code is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await DmdRbacService.GrantVerticalAdminAsync(ActorEmpCode, _newAdminEmpCode.Trim());
+            Snackbar.Add("DMD Vertical Admin added.", Severity.Success);
+            _addAdminOpen = false;
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Save failed: {ex.Message}", Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task RevokeAdminAsync(string empCode)
+    {
+        try
+        {
+            await DmdRbacService.RevokeVerticalAdminAsync(ActorEmpCode, empCode);
+            Snackbar.Add("DMD Vertical Admin revoked.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Revoke failed: {ex.Message}", Severity.Error); }
+    }
+
+    private void OpenAddRoleDialog() { _newRoleEmpCode = ""; _addRoleOpen = true; }
+
+    private async Task SaveRoleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newRoleEmpCode))
+        {
+            Snackbar.Add("Employee code is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await DmdRbacService.AssignApproverAsync(ActorEmpCode, _newRoleEmpCode.Trim());
+            Snackbar.Add("DMD Approver assigned.", Severity.Success);
+            _addRoleOpen = false;
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Save failed: {ex.Message}", Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task RevokeRoleAsync(long assignmentId)
+    {
+        try
+        {
+            await DmdRbacService.RevokeApproverAsync(ActorEmpCode, assignmentId);
+            Snackbar.Add("DMD Approver revoked.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Revoke failed: {ex.Message}", Severity.Error); }
+    }
+}

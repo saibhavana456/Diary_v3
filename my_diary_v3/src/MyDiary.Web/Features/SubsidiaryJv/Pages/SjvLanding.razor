@@ -1,0 +1,165 @@
+@page "/sjv"
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.SubsidiaryJv.Models
+@using MyDiary.Web.Features.SubsidiaryJv.Services
+@inject ISubsidiaryJvService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<PageTitle>Subsidiaries and JV Corner - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="Subsidiaries and JV Corner" Subtitle="One place. All insights. Complete control." Crumbs="_crumbs" PageKey="sjv-landing" />
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <div class="sjv-summary mb-5">
+            <div class="sjv-sum sjv-sum-total">
+                <MudIcon Icon="@Icons.Material.Filled.Apartment" Class="sjv-sum-icon" />
+                <div><div class="sjv-sum-title">Total Entities</div><div class="sjv-sum-num">@_entities.Count</div></div>
+            </div>
+            <div class="sjv-sum sjv-sum-sub">
+                <MudIcon Icon="@Icons.Material.Filled.Groups" Class="sjv-sum-icon" />
+                <div><div class="sjv-sum-title">Subsidiaries (@Count("SUBSIDIARY"))</div><div class="sjv-sum-names">@Names("SUBSIDIARY")</div></div>
+            </div>
+            <div class="sjv-sum sjv-sum-jv">
+                <MudIcon Icon="@Icons.Material.Filled.Handshake" Class="sjv-sum-icon" />
+                <div><div class="sjv-sum-title">Joint Ventures (@Count("JOINT_VENTURE"))</div><div class="sjv-sum-names">@Names("JOINT_VENTURE")</div></div>
+            </div>
+            <div class="sjv-sum sjv-sum-jv">
+                <MudIcon Icon="@Icons.Material.Filled.PieChart" Class="sjv-sum-icon" />
+                <div><div class="sjv-sum-title">Associates (@Count("ASSOCIATE"))</div><div class="sjv-sum-names">@Names("ASSOCIATE")</div></div>
+            </div>
+            <div class="sjv-sum sjv-sum-oth">
+                <MudIcon Icon="@Icons.Material.Filled.PieChart" Class="sjv-sum-icon" />
+                <div><div class="sjv-sum-title">Others (@Count("OTHER"))</div><div class="sjv-sum-names">@Names("OTHER")</div></div>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap align-center mb-3">
+            <MudText Typo="Typo.h6">Our Subsidiaries &amp; Joint Ventures</MudText>
+            <MudSpacer />
+            @if (_isAdmin)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.AdminPanelSettings" Class="mr-3" OnClick="@(() => Nav.NavigateTo("sjv/admin"))">Admin</MudButton>
+            }
+            <MudText Typo="Typo.body2" Class="mr-2">View as:</MudText>
+            <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                <MudButton Variant="@(_cards ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" StartIcon="@Icons.Material.Filled.GridView" OnClick="@(() => _cards = true)">Cards</MudButton>
+                <MudButton Variant="@(!_cards ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" StartIcon="@Icons.Material.Filled.TableRows" OnClick="@(() => _cards = false)">Table</MudButton>
+            </MudButtonGroup>
+        </div>
+
+        @if (_entities.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No entities have been set up yet. The Super Admin defines entities and the JV/Subsidiary admin fills in their data from the Admin page.</MudAlert>
+        }
+        else if (_cards)
+        {
+            <div class="sjv-grid">
+                @foreach (var (e, idx) in _entities.Select((x, i) => (x, i + 1)))
+                {
+                    <div class="sjv-card" style="cursor:pointer" @onclick="() => Open(e)">
+                        <div class="sjv-card-no">@idx</div>
+                        <div class="sjv-card-logo">
+                            @if (e.HasLogo)
+                            {
+                                <img src="@($"{Nav.BaseUri}sjv/logo/{e.EntityCode}")" alt="@e.EntityName logo" style="max-height:44px;max-width:100%;object-fit:contain" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@IconFor(e)" Size="Size.Large" />
+                            }
+                        </div>
+                        <div class="sjv-card-name">@e.EntityName</div>
+                        <div class="sjv-card-type @(e.EntityType == "JOINT_VENTURE" ? "jv" : "")">@e.TypeLabel</div>
+                        <div class="sjv-card-row"><span>Net Profit</span></div>
+                        <div class="sjv-card-val">@Cr(e.LatestNetProfit) @if (e.NetProfitGrowthPct is decimal g) { <span class="sjv-growth @(g < 0 ? "neg" : "")">@(g < 0 ? "▼" : "▲") @Math.Abs(g).ToString("0.0")%</span> }</div>
+                        <div class="sjv-card-row"><span>Net Worth</span></div>
+                        <div class="sjv-card-val">@Cr(e.LatestNetWorth)</div>
+                        <div class="sjv-card-row"><span>CEO</span></div>
+                        <div class="sjv-card-val2">@(e.CeoName ?? "-")</div>
+                        <div class="sjv-card-row"><span>Status</span></div>
+                        <div class="sjv-card-val2">@(e.Status ?? "Active")</div>
+                        <div style="margin-top:auto;padding-top:12px"><MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="@(() => Open(e))">View Dashboard</MudButton></div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <MudTable Items="@_entities" Hover="true" Dense="true" Bordered="true" OnRowClick="@((TableRowClickEventArgs<SjvEntity> a) => Open(a.Item))" T="SjvEntity" Style="cursor:pointer">
+                <HeaderContent>
+                    <MudTh>#</MudTh><MudTh>Entity</MudTh><MudTh>Type</MudTh><MudTh>Net Profit</MudTh><MudTh>Growth</MudTh><MudTh>Net Worth</MudTh><MudTh>CEO</MudTh><MudTh>Status</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@(_entities.IndexOf(context) + 1)</MudTd>
+                    <MudTd>@context.EntityName</MudTd>
+                    <MudTd>@context.TypeLabel</MudTd>
+                    <MudTd>@Cr(context.LatestNetProfit)</MudTd>
+                    <MudTd>@(context.NetProfitGrowthPct is decimal g ? (g < 0 ? "▼ " : "▲ ") + Math.Abs(g).ToString("0.0") + "%" : "-")</MudTd>
+                    <MudTd>@Cr(context.LatestNetWorth)</MudTd>
+                    <MudTd>@(context.CeoName ?? "-")</MudTd>
+                    <MudTd>@(context.Status ?? "Active")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    }
+</AuthenticatedOnly>
+
+<style>
+    .sjv-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+    .sjv-sum { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 12px; border: 1px solid rgba(0,0,0,.08); }
+    .sjv-sum-total { background: #eef2ff; } .sjv-sum-sub { background: #fff1f2; } .sjv-sum-jv { background: #eff6ff; } .sjv-sum-oth { background: #fff7ed; }
+    .sjv-sum-icon { font-size: 2.4rem !important; color: var(--mud-palette-primary); }
+    .sjv-sum-title { font-weight: 600; color: #1e3a8a; }
+    .sjv-sum-num { font-size: 2rem; font-weight: 800; color: #1e3a8a; line-height: 1; }
+    .sjv-sum-names { font-size: .8rem; opacity: .8; }
+    .sjv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); grid-auto-rows: 1fr; gap: 14px; }
+    .sjv-card { display: flex; flex-direction: column; height: 100%; position: relative; cursor: pointer; border-radius: 12px; padding: 16px; background: #fff; border: 1px solid rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s; text-align: center; }
+    .sjv-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .sjv-card-no { position: absolute; top: 8px; left: 12px; font-size: .75rem; opacity: .6; }
+    .sjv-card-logo { color: var(--mud-palette-primary); margin: 6px 0; }
+    .sjv-card-name { font-weight: 700; min-height: 4.2em; display: flex; align-items: center; justify-content: center; line-height: 1.3; }
+    .sjv-card-type { font-size: .82rem; opacity: .75; margin: 2px auto 8px; height: 26px; line-height: 26px; }
+    .sjv-card-type.jv { background: #eff6ff; border-radius: 6px; padding: 0 10px; display: block; color: #1e40af; opacity: 1; }
+    .sjv-card-row { text-align: left; font-size: .75rem; opacity: .65; margin-top: 8px; }
+    .sjv-card-val { text-align: left; font-weight: 700; font-size: 1.05rem; }
+    .sjv-card-val2 { text-align: left; font-weight: 600; }
+    .sjv-growth { color: #16a34a; font-size: .78rem; font-weight: 600; margin-left: 6px; }
+    .sjv-growth.neg { color: #dc2626; }
+    .mud-theme-dark .sjv-card, .cc-dark .sjv-card { background: #1c1f24; border-color: #2a2e35; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Subsidiaries and JV Corner") };
+    private bool _loading = true, _cards = true, _isAdmin;
+    private List<SjvEntity> _entities = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _entities = await Svc.GetEntitiesAsync();
+        _isAdmin = await Svc.IsAdminAsync(state.User);
+        _loading = false;
+    }
+
+    private int Count(string type) => _entities.Count(e => e.EntityType == type);
+    private string Names(string type) { var n = _entities.Where(e => e.EntityType == type).Select(e => e.ShortName ?? e.EntityName).ToList(); return n.Count == 0 ? "-" : string.Join(", ", n); }
+    private static string Cr(decimal? v) => v.HasValue ? "₹ " + v.Value.ToString("N0") + " Cr" : "-";
+    private void Open(SjvEntity e) => Nav.NavigateTo($"sjv/entity/{e.EntityCode}");
+    
+
+    private static string IconFor(SjvEntity e) => e.EntityType switch
+    {
+        "SUBSIDIARY" => Icons.Material.Filled.Groups,
+        "JOINT_VENTURE" => Icons.Material.Filled.Handshake,
+        "ASSOCIATE" => Icons.Material.Filled.PieChart,
+        "OTHER" => Icons.Material.Filled.Business,
+        _ => Icons.Material.Filled.Business
+    };
+}

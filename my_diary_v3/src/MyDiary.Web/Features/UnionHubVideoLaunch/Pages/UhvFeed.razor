@@ -1,0 +1,217 @@
+@page "/union-hub/video-launch"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.DataProtection
+@using MyDiary.Web.Api
+@using MyDiary.Web.Features.UnionHubVideoLaunch.Services
+@using MyDiary.Web.Features.UnionHubVideoLaunch.Models.DTO
+@using global::RequestPortal.Core.Abstractions
+@inject IUnionHubVideoLaunchService Uhv
+@inject ICurrentUser CurrentUser
+@inject global::MyDiary.Core.Abstractions.ICurrentUser MdCurrentUser
+@inject IDataProtectionProvider DataProtection
+@inject NavigationManager Nav
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<PageTitle>UBI Products</PageTitle>
+
+<PageHeader Title="UBI Products" Subtitle="Product launch videos, images, infographics and PPTs posted by Union Hub Admins."
+            Crumbs="@(new List<PageHeader.Crumb> { new("Union Hub", "union-hub"), new("UBI Products") })" />
+
+<div class="uhv-toolbar">
+    <MudSelect T="long?" Label="Filter by Vertical" Value="_verticalFilter" ValueChanged="OnVerticalFilterChanged" Clearable="true" Class="uhv-filter">
+        <MudSelectItem T="long?" Value="null">All Verticals</MudSelectItem>
+        @foreach (var v in _verticals)
+        {
+            <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+        }
+    </MudSelect>
+    <AuthorizeView Policy="AppAdmin">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddCircle"
+                       OnClick='@(() => Nav.NavigateTo("union-hub/video-launch/new"))'>Post a Launch</MudButton>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@if (_loading)
+{
+    <div class="ev-empty"><p>Loading launches…</p></div>
+}
+else if (!_launches.Any())
+{
+    <div class="ev-empty"><p>No product launches published yet.</p></div>
+}
+else
+{
+    @foreach (var launch in VisibleLaunches)
+    {
+        <article class="ev-card uhv-card">
+            <div class="ev-post-head">
+                <div class="ev-avatar ev-avatar-md ev-ring-blue">@Initials(launch.VerticalName)</div>
+                <div class="ev-post-meta">
+                    <p class="ev-post-author">@launch.ProductName</p>
+                    <p class="ev-post-time">@launch.VerticalName · Launch @launch.LaunchDate.ToString("dd-MMM-yyyy") · Posted by PF @launch.CreatedByEmp</p>
+                </div>
+                <span class="ev-chip ev-chip-blue">@launch.VerticalName</span>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(launch.Description))
+            {
+                <p class="ev-post-text">@launch.Description</p>
+            }
+
+            @if (launch.HasVideo)
+            {
+                @* controlsList="nodownload" + disabled picture-in-picture + suppressed context menu are a
+                   UX-level deterrent only (documented in UhvMediaController) — not real DRM. *@
+                <video class="uhv-video" controls controlsList="nodownload noremoteplayback" disablepictureinpicture
+                       oncontextmenu="return false;" src="@VideoUrl(launch.Id)">
+                    Your browser does not support inline video.
+                </video>
+            }
+
+            @if (launch.Attachments.Any())
+            {
+                <div class="uhv-attachments">
+                    @foreach (var a in launch.Attachments)
+                    {
+                        <a class="uhv-attach-chip" href="@AttachmentUrl(a.Id, false)" target="_blank" rel="noopener">
+                            @AttachIcon(a.Kind) @a.FileName
+                        </a>
+                    }
+                </div>
+            }
+
+            <div class="ev-actions" style="display:flex;">
+                <button class="ev-act @(launch.LikedByMe ? "ev-liked" : "")" @onclick="@(() => ToggleLike(launch))">
+                    <span class="ev-heart">@(launch.LikedByMe ? "♥" : "♡")</span> Likes · @launch.LikeCount
+                </button>
+                <button class="ev-act ev-hover-blue" @onclick="@(() => launch.ShowComments = !launch.ShowComments)">
+                    💬 Comments · @launch.Comments.Count
+                </button>
+            </div>
+
+            @if (launch.ShowComments)
+            {
+                <div class="ev-comments">
+                    @foreach (var c in launch.Comments)
+                    {
+                        <div class="ev-comment">
+                            <div class="ev-avatar ev-avatar-sm">@Initials(c.EmpName)</div>
+                            <div class="ev-comment-bubble">
+                                <p class="ev-comment-author">@c.EmpName</p>
+                                <p class="ev-comment-text">@c.CommentText</p>
+                            </div>
+                        </div>
+                    }
+                    <div class="ev-comment-compose">
+                        <div class="ev-avatar ev-avatar-sm ev-ring-blue">@Initials(EffectiveName)</div>
+                        <input class="ev-comment-input" placeholder="Write a comment…"
+                               @bind="launch.Draft" @bind:event="oninput"
+                               @onkeydown="@(e => OnCommentKey(e, launch))" />
+                        <button class="ev-comment-send" @onclick="@(() => AddComment(launch))">Post</button>
+                    </div>
+                </div>
+            }
+        </article>
+    }
+
+    @if (_visibleCount < _launches.Count)
+    {
+        <div class="d-flex justify-center my-4">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="ShowMore">
+                View More (@(_launches.Count - _visibleCount) more)
+            </MudButton>
+        </div>
+    }
+}
+
+<style>
+    .uhv-toolbar { display:flex; align-items:center; gap:16px; margin-bottom:16px; }
+    .uhv-filter { max-width:280px; }
+    .uhv-card { padding:20px 24px; margin-bottom:16px; }
+    .uhv-video { width:100%; max-height:480px; border-radius:12px; background:#000; margin-bottom:12px; }
+    .uhv-attachments { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+    .uhv-attach-chip { display:inline-flex; align-items:center; gap:6px; font-size:.78rem; font-weight:600;
+        color:#1E3A8A; background:#e8f0fe; border-radius:999px; padding:5px 12px; text-decoration:none; }
+    .uhv-attach-chip:hover { background:#d7e4fb; }
+    .ev-liked { color:#c8102e; font-weight:700; }
+</style>
+
+@code {
+    private sealed class DraftHolder { }
+    private bool _loading = true;
+    private long? _verticalFilter;
+    private List<UhvVertical> _verticals = new();
+    private List<UhvLaunch> _launches = new();
+    private const int PageSize = 3;
+    private int _visibleCount = PageSize;
+
+    // Interpretive fallback discovered during live verification: RequestPortal.Core's
+    // ICurrentUser.EmpCode resolves via an AD-sam -> RP_USER lookup that comes back empty
+    // for the "Developer Bypass" test login (which authenticates via MyDiary's own
+    // emplid/employee_name claims, not an AD sam), which crashed ToggleLike/AddComment on
+    // a NOT NULL constraint. Falling back to MyDiary.Core.Abstractions.ICurrentUser.EmplId
+    // (the claim Developer Bypass actually sets) keeps this working for both login paths.
+    private string EffectiveEmpCode => CurrentUser.EmpCode ?? MdCurrentUser.EmplId ?? "UNKNOWN";
+    private string EffectiveName => CurrentUser.Name ?? MdCurrentUser.Name ?? EffectiveEmpCode;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = await Uhv.ListVerticalsAsync();
+        await LoadFeedAsync();
+    }
+
+    private async Task LoadFeedAsync()
+    {
+        _loading = true;
+        _launches = await Uhv.ListPublishedAsync(_verticalFilter, EffectiveEmpCode, default);
+        _visibleCount = PageSize;
+        _loading = false;
+    }
+
+    private async Task OnVerticalFilterChanged(long? value)
+    {
+        _verticalFilter = value;
+        await LoadFeedAsync();
+    }
+
+    private IEnumerable<UhvLaunch> VisibleLaunches => _launches.Take(_visibleCount);
+    private void ShowMore() => _visibleCount += PageSize;
+
+    private string VideoUrl(long launchId) => UhvMediaController.BuildVideoUrl(DataProtection, launchId, EffectiveEmpCode);
+    private string AttachmentUrl(long attachmentId, bool download) => UhvMediaController.BuildAttachmentUrl(DataProtection, attachmentId, EffectiveEmpCode, download);
+
+    private static string AttachIcon(string kind) => kind switch
+    {
+        "IMAGE" => "🖼️", "INFOGRAPHIC" => "📊", "PPT" => "📑", _ => "📎"
+    };
+
+    private async Task ToggleLike(UhvLaunch launch)
+    {
+        await Uhv.ToggleLikeAsync(launch.Id, EffectiveEmpCode);
+        launch.LikedByMe = !launch.LikedByMe;
+        launch.LikeCount += launch.LikedByMe ? 1 : -1;
+    }
+
+    private void OnCommentKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, UhvLaunch launch)
+    { if (e.Key == "Enter") _ = AddComment(launch); }
+
+    private async Task AddComment(UhvLaunch launch)
+    {
+        var text = (launch.Draft ?? "").Trim();
+        if (text.Length == 0) return;
+        await Uhv.AddCommentAsync(launch.Id, EffectiveEmpCode, EffectiveName, text);
+        launch.Comments.Add(new UhvComment { EmpCode = EffectiveEmpCode, EmpName = EffectiveName, CommentText = text, CreatedAt = DateTime.Now });
+        launch.Draft = "";
+    }
+
+    private static string Initials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+    }
+}

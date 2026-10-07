@@ -1,0 +1,496 @@
+﻿@page "/reports/login-report"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Login Report — My Diary</PageTitle>
+
+@* --- Row 1: Zone → Region → Branch → Export (matching ASPX order) --- *@
+<MudPaper Class="pa-4 mb-2" Elevation="1">
+    <MudGrid Spacing="2" Class="align-center">
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="Zone" Value="_selectedZone" ValueChanged="OnZoneChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                @foreach (var z in _zones)
+                {
+                    <MudSelectItem Value="@z.Code">@z.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="Region" Value="_selectedRegion" ValueChanged="OnRegionChanged"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Disabled="@(_selectedZone == "1")">
+                <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                @foreach (var r in _regions)
+                {
+                    <MudSelectItem Value="@r.Code">@r.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="Branch" @bind-Value="_selectedBranch"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Disabled="@(_selectedRegion == "1")">
+                <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                @foreach (var b in _branches)
+                {
+                    <MudSelectItem Value="@b.Code">@b.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudSpacer />
+        <MudItem xs="12" sm="2" Class="d-flex justify-end">
+            <MudButton Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Download"
+                       Style="background-color:#000066; color:white; font-size:11px;"
+                       OnClick="HandleExport">
+                Export To Excel
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@* --- Row 2: From Date → To Date → View Report (matching ASPX order) --- *@
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid Spacing="2" Class="align-center">
+        <MudItem xs="12" sm="3">
+            <MudDatePicker Label="From Date" @bind-Date="_fromDate" Variant="Variant.Outlined" Dense="true" DateFormat="dd/MM/yyyy" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudDatePicker Label="To Date" @bind-Date="_toDate" Variant="Variant.Outlined" Dense="true" DateFormat="dd/MM/yyyy" />
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudButton Variant="Variant.Filled" Style="background-color:#000066; color:white; font-size:12px;"
+                       OnClick="LoadReport">
+                View Report
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@* --- As On Date --- *@
+<div class="px-4 d-flex justify-end mb-2">
+    <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+        @_asOnDateLabel
+    </MudText>
+</div>
+
+@* --- Data Table --- *@
+<MudItem xs="12" Class="pa-4">
+    @if (_loading)
+    {
+        <div class="d-flex justify-center pa-10">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            <MudText Class="ml-3">Loading login data...</MudText>
+        </div>
+    }
+    else if (_data.Count > 0)
+    {
+        <MudTable Items="_data" Dense="true" Striped="true" Bordered="true" Hover="true" FixedHeader="true"
+                  Height="600px" Elevation="2" Style="font-size:12px;">
+            <HeaderContent>
+                <MudTh Style="background-color:#2a2f5b; color:white; width:50px;">S.No</MudTh>
+                @foreach (var col in _activeColumns)
+                {
+                    <MudTh Style="background-color:#2a2f5b; color:white;">@col.Header</MudTh>
+                }
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd Style="text-align:center;">@((_data.IndexOf(context) + 1))</MudTd>
+                @foreach (var col in _activeColumns)
+                {
+                    <MudTd Style="@(col.IsNumeric ? "text-align:right;" : "")">@GetVal(context, col.PropertyName)</MudTd>
+                }
+            </RowTemplate>
+            <NoRecordsContent>
+                <td colspan="@(_activeColumns.Count + 1)" style="text-align:center; padding:40px;">
+                    <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                </td>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 25, 50, 100 }" />
+            </PagerContent>
+        </MudTable>
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Color="Color.Default" Class="text-center pa-4">No Data Found!</MudText>
+    }
+</MudItem>
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private List<ColumnConfig> _activeColumns = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    private List<(string Code, string Name)> _zones = new();
+    private List<(string Code, string Name)> _regions = new();
+    private List<(string Code, string Name)> _branches = new();
+
+    private DateTime? _fromDate = AppTime.Today;
+    private DateTime? _toDate = AppTime.Today;
+
+    // Summary columns (like gv_hrcsummary)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",                 PropertyName = "zone_name_eng",   Width = "20%" },
+        new ColumnConfig { Header = "Region",              PropertyName = "region_name",      Width = "20%" },
+        new ColumnConfig { Header = "Branch",              PropertyName = "BRANCH_NAME",      Width = "20%" },
+        new ColumnConfig { Header = "Total Logins",        PropertyName = "TotalLogin",       IsNumeric = true, Format = "N0", Width = "13%" },
+        new ColumnConfig { Header = "Not Logged In Brs",   PropertyName = "NotLoggedInBrs",   IsNumeric = true, Format = "N0", Width = "13%" },
+        new ColumnConfig { Header = "Logged In Brs",       PropertyName = "LoggedInBrs",      IsNumeric = true, Format = "N0", Width = "13%" }
+    };
+
+    // Detail columns (like gv_view)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",             PropertyName = "zone_name_eng",    Width = "18%" },
+        new ColumnConfig { Header = "Region",           PropertyName = "region_name",      Width = "18%" },
+        new ColumnConfig { Header = "Branch",           PropertyName = "BRANCH_NAME",      Width = "18%" },
+        new ColumnConfig { Header = "Sol ID",           PropertyName = "sol_id",           Width = "10%" },
+        new ColumnConfig { Header = "Last Login Time",  PropertyName = "maxlogintime",     Width = "18%" },
+        new ColumnConfig { Header = "Number of Login",  PropertyName = "cntsol",           IsNumeric = true, Format = "N0", Width = "13%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeColumns = _summaryCols;
+
+        // Zone load and report data are independent — run in parallel
+        var zonesTask = ReportService.ExecuteRawQueryAsync(
+            "SELECT zone_solid, zone_name_eng FROM zone_master WHERE status='A' ORDER BY zone_name_eng");
+        var reportTask = LoadReport();
+
+        try
+        {
+            await Task.WhenAll(zonesTask, reportTask);
+            var zoneData = zonesTask.Result;
+            _zones = zoneData.Select(r => (
+                Code: r["zone_solid"]?.ToString() ?? "",
+                Name: r["zone_name_eng"]?.ToString() ?? ""
+            )).ToList();
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "[LoginReport] Error loading zones"); }
+    }
+
+    private async Task OnZoneChanged(string value)
+    {
+        _selectedZone = value;
+        _selectedRegion = "1";
+        _selectedBranch = "1";
+        _regions.Clear();
+        _branches.Clear();
+
+        if (value != "1" && value != "all")
+        {
+            var regionData = await ReportService.ExecuteRawQueryAsync(
+                $"SELECT region_solid, region_name FROM region_master WHERE zone_solid='{value}' ORDER BY region_name");
+            _regions = regionData.Select(r => (
+                Code: r["region_solid"]?.ToString() ?? "",
+                Name: r["region_name"]?.ToString() ?? ""
+            )).ToList();
+        }
+        await LoadReport();
+    }
+
+    private async Task OnRegionChanged(string value)
+    {
+        _selectedRegion = value;
+        _selectedBranch = "1";
+        _branches.Clear();
+
+        if (value != "1" && value != "all")
+        {
+            var branchData = await ReportService.ExecuteRawQueryAsync(
+                $"SELECT SOL_ID, CONCAT(UPPER(branch_name),'  (',branch_code,')') AS Branch_Name FROM branch_master WHERE region_solid='{value}' ORDER BY branch_name");
+            _branches = branchData.Select(r => (
+                Code: r["SOL_ID"]?.ToString() ?? "",
+                Name: r["Branch_Name"]?.ToString() ?? ""
+            )).ToList();
+        }
+        await LoadReport();
+    }
+
+    private string GetVal(Dictionary<string, object> row, string key)
+    {
+        return row.TryGetValue(key, out var val) ? val?.ToString() ?? "" : "";
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            string fromDateStr = (_fromDate ?? AppTime.Today).ToString("yyyy-MM-dd");
+            string toDateStr = (_toDate ?? AppTime.Today).ToString("yyyy-MM-dd 23:59:59");
+
+            string where = "B.Del_Flg = 'N'";
+            string groupBy = "";
+            bool isSummary = true;
+
+            // Apply user privilege filters
+            if (_userPrivilege == "ZONE")
+                where += $" AND B.zone_solid = '{_userZoneSolid}'";
+            else if (_userPrivilege == "REGION")
+                where += $" AND B.region_solid = '{_userRegionSolid}'";
+            else if (_userPrivilege == "BRANCH")
+                where += $" AND B.sol_id = '{_userBranchSolid}'";
+
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1") // All(Summary)
+                {
+                    isSummary = true;
+                    string summaryQuery = $@"SELECT 'All' AS zone_name_eng, 'All' AS region_name, 'All' AS BRANCH_NAME, 
+                        ISNULL(SUM(LoginCount),0) AS TotalLogin,
+                        SUM(CASE WHEN LoginCount IS NULL THEN 1 ELSE 0 END) AS NotLoggedInBrs,
+                        SUM(CASE WHEN LoginCount IS NOT NULL THEN 1 ELSE 0 END) AS LoggedInBrs
+                        FROM Branch_Master B 
+                        LEFT JOIN (
+    SELECT *
+    FROM Login_Report
+    WHERE CAST(LoginTime AS DateTime) BETWEEN '{fromDateStr}' AND '{toDateStr}'
+) A ON B.SOL_ID = A.solid
+                        WHERE {where}";
+
+                    _data = await ReportService.ExecuteRawQueryAsync(summaryQuery);
+                    _activeColumns = _summaryCols;
+                    _asOnDateLabel = $"Login Data From {(_fromDate ?? AppTime.Today):dd-MMM-yyyy} To {(_toDate ?? AppTime.Today):dd-MMM-yyyy}";
+                    _loading = false;
+                    StateHasChanged();
+                    return;
+                }
+                else if (_selectedZone == "all")
+                {
+                    if (_selectedRegion == "1") // Zonewise summary
+                    {
+                        groupBy = " GROUP BY B.zone_name_eng";
+                        where += BuildZoneRegionBranchSummary("zone");
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1") // Regionwise summary
+                        {
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name";
+                        }
+                        else if (_selectedBranch == "all") // ✅ IMPORTANT FIX
+                        {
+                            // ✅ All Zone + All Region + All Branch → detailed branch-wise data
+                            isSummary = false;
+                            // no additional filters
+                        }
+                        else
+                        {
+                            isSummary = false;
+                            where += $" AND B.sol_id = '{_selectedBranch}'";
+                        }
+                    }
+                    else // Specific region
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+                        if (_selectedBranch == "1")
+                        {
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name";
+                            where += BuildZoneRegionBranchSummary("region");
+                        }
+                        else
+                        {
+                            isSummary = false;
+                            if (_selectedBranch != "all") where += $" AND B.sol_id = '{_selectedBranch}'";
+                        }
+                    }
+                }
+                else // Specific zone
+                {
+                    where += $" AND B.zone_solid = '{_selectedZone}'";
+                    if (_selectedRegion == "1") // Zone summary
+                    {
+                        groupBy = " GROUP BY B.zone_name_eng";
+                        where += BuildZoneRegionBranchSummary("zone");
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1") // Regionwise
+                        {
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name";
+                            where += BuildZoneRegionBranchSummary("region");
+                        }
+                        else
+                        {
+                            isSummary = false;
+                        }
+                    }
+                    else // Specific region
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+                        if (_selectedBranch == "1")
+                        {
+                            groupBy = " GROUP BY B.zone_name_eng, B.region_name";
+                            where += BuildZoneRegionBranchSummary("region");
+                        }
+                        else
+                        {
+                            isSummary = false;
+                            if (_selectedBranch != "all") where += $" AND B.sol_id = '{_selectedBranch}'";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                if (_selectedRegion == "1")
+                {
+                    groupBy = " GROUP BY B.zone_name_eng";
+                    where += BuildZoneRegionBranchSummary("zone");
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        groupBy = " GROUP BY B.zone_name_eng, B.region_name";
+                        where += BuildZoneRegionBranchSummary("region");
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" AND B.sol_id = '{_selectedBranch}'";
+                    }
+                }
+                else
+                {
+                    where += $" AND B.region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        groupBy = " GROUP BY B.zone_name_eng, B.region_name";
+                        where += BuildZoneRegionBranchSummary("region");
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" AND B.sol_id = '{_selectedBranch}'";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                if (_selectedBranch == "1")
+                {
+                    groupBy = " GROUP BY B.zone_name_eng, B.region_name";
+                    where += BuildZoneRegionBranchSummary("region");
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" AND B.sol_id = '{_selectedBranch}'";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                isSummary = false;
+            }
+
+            string finalQuery;
+            if (isSummary)
+            {
+                string selectCols;
+                if (groupBy.Contains("region_name"))
+                {
+                    selectCols = "B.zone_name_eng, B.region_name, 'All' AS BRANCH_NAME";
+                }
+                else
+                {
+                    selectCols = "B.zone_name_eng, 'All' AS region_name, 'All' AS BRANCH_NAME";
+                }
+
+                finalQuery = $@"SELECT {selectCols}, 
+                    ISNULL(SUM(LoginCount),0) AS TotalLogin,
+                    SUM(CASE WHEN LoginCount IS NULL THEN 1 ELSE 0 END) AS NotLoggedInBrs,
+                    SUM(CASE WHEN LoginCount IS NOT NULL THEN 1 ELSE 0 END) AS LoggedInBrs
+                    FROM Branch_Master B 
+                    LEFT JOIN (
+    SELECT *
+    FROM Login_Report
+    WHERE CAST(LoginTime AS DateTime) BETWEEN '{fromDateStr}' AND '{toDateStr}'
+) A ON B.SOL_ID = A.solid
+                    WHERE {where}{groupBy}";
+
+                _activeColumns = _summaryCols;
+            }
+            else
+            {
+                finalQuery = $@"SELECT B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id, 
+                    MAX(A.LoginTime) AS maxlogintime, COUNT(A.solid) AS cntsol
+                    FROM Branch_Master B 
+                    LEFT JOIN (SELECT * FROM Login_Report 
+                        WHERE CAST(LoginTime AS DateTime) BETWEEN '{fromDateStr}' AND '{toDateStr}') A ON B.SOL_ID = A.solid
+                    WHERE {where}
+                    GROUP BY B.zone_name_eng, B.region_name, B.BRANCH_NAME, B.sol_id";
+
+                _activeColumns = _detailedCols;
+            }
+
+            _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+            _asOnDateLabel = $"Login Data From {(_fromDate ?? AppTime.Today):dd-MMM-yyyy} To {(_toDate ?? AppTime.Today):dd-MMM-yyyy}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "LoginReport.LoadReport");
+            _data = new();
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private string BuildZoneRegionBranchSummary(string level)
+    {
+        // Helper — returns empty string, used as a marker for grouping logic
+        return "";
+    }
+
+    private async Task HandleExport()
+    {
+        try
+        {
+            var bytes = ReportService.ExportToExcel(_data, _activeColumns, "LoginReport");
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                "LoginReport.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes)
+            );
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "LoginReport.HandleExport");
+        }
+    }
+}

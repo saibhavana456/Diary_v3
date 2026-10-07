@@ -1,0 +1,76 @@
+@namespace RequestPortal.Web.Pages.Admin.Dialogs
+@* Delegation \u2014 From user, To user, Role, ValidFrom..ValidTo, Reason *@
+@inject IUserRepo UserRepo
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudAutocomplete T="AppUser"
+                                 Label="From user"
+                                 SearchFunc="SearchUsers"
+                                 @bind-Value="FromUser"
+                                 ToStringFunc="@(u => u is null ? "" : $"{u.Name} \u00b7 {u.AdSamAccountName}")"
+                                 Required="true" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudAutocomplete T="AppUser"
+                                 Label="To user (delegate)"
+                                 SearchFunc="SearchUsers"
+                                 @bind-Value="ToUser"
+                                 ToStringFunc="@(u => u is null ? "" : $"{u.Name} \u00b7 {u.AdSamAccountName}")"
+                                 Required="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSelect T="string?" Label="Role" @bind-Value="SelectedRoleCode" Required="true">
+                    @foreach (var r in Roles)
+                    {
+                        <MudSelectItem T="string?" Value="@r.Code.ToString()">@r.Name (@r.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudDatePicker Label="Valid from" @bind-Date="ValidFrom" Required="true" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudDatePicker Label="Valid to" @bind-Date="ValidTo" Required="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="Reason" Label="Reason (optional)" MaxLength="500" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(!IsValid)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<AppRole> Roles { get; set; } = Array.Empty<AppRole>();
+
+    [Parameter] public AppUser? FromUser { get; set; }
+    [Parameter] public AppUser? ToUser { get; set; }
+    [Parameter] public string? SelectedRoleCode { get; set; }
+    [Parameter] public DateTime? ValidFrom { get; set; } = AppTime.Today;
+    [Parameter] public DateTime? ValidTo { get; set; } = AppTime.Today.AddDays(7);
+    [Parameter] public string? Reason { get; set; }
+
+    private bool IsValid =>
+        FromUser is not null && ToUser is not null && FromUser.EmpCode != ToUser.EmpCode &&
+        !string.IsNullOrEmpty(SelectedRoleCode) && ValidFrom.HasValue && ValidTo.HasValue && ValidTo > ValidFrom;
+
+    private async Task<IEnumerable<AppUser>> SearchUsers(string value, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return Array.Empty<AppUser>();
+        return await UserRepo.SearchAsync(value, 20);
+    }
+
+    private void Save() => Dialog.Close(DialogResult.Ok(new DelegationFormResult(
+        FromUser!.EmpCode ?? "", ToUser!.EmpCode ?? "", SelectedRoleCode!, ValidFrom!.Value, ValidTo!.Value, Reason)));
+    private void Cancel() => Dialog.Cancel();
+
+    public sealed record DelegationFormResult(string FromEmpCode, string ToEmpCode, string RoleCode, DateTime ValidFrom, DateTime ValidTo, string? Reason);
+}

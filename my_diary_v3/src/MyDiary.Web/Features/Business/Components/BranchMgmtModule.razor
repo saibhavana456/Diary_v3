@@ -1,0 +1,60 @@
+@using MudBlazor
+
+<MudGrid GutterSize="24px">
+    @foreach (var card in _cards)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3" Class="d-flex">
+            <div class="app-card-btn" style="width:100%;">
+                <div class="card-content-wrapper">
+                    <div class="d-flex align-start gap-4">
+                        <div class="icon-badge">
+                            <MudIcon Icon="@card.Icon" Style="@($"font-size:2rem; color:{card.IconColor};")" />
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="card-title">@card.Title</div>
+                        </div>
+                    </div>
+                    <MudDivider Class="my-3" />
+                    <div style="font-size:0.85rem; color:#444; flex-grow:1;">
+                        @foreach (var item in card.Items)
+                        {
+                            <div class="mb-1"><b>@item.Key:</b> @item.Value</div>
+                        }
+                    </div>
+                    <div class="d-flex justify-end mt-4">
+                        <MudButton Class="rounded-pill px-4 go-btn-style"
+                                   EndIcon="@Icons.Material.Filled.ArrowRightAlt">
+                            GO
+                        </MudButton>
+                    </div>
+                </div>
+            </div>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private record CardData(string Title, string Icon, string IconColor, List<KeyValuePair<string, string>> Items);
+
+    private readonly List<CardData> _cards = new()
+    {
+        new("Branch Basic Details", Icons.Material.Filled.Business, "#1565C0", new()
+        {
+            new("Branch Opening Date", "15-Mar-2005"),
+            new("Branch License No.", "LIC/RBI/2005/4821"),
+            new("Premises Lease Expiry", "31-Dec-2027"),
+        }),
+        new("Audit Details", Icons.Material.Filled.FactCheck, "#E65100", new()
+        {
+            new("Concurrent Audit", "Completed - Mar 2026"),
+            new("Management Audit", "Scheduled - Jun 2026"),
+            new("Last Audit Date", "12-Jan-2026"),
+        }),
+        new("Compliance", Icons.Material.Filled.Shield, "#2E7D32", new()
+        {
+            new("COR Status", "No pending observations"),
+            new("RBI Compliance", "Up to date"),
+            new("Last COR Date", "28-Feb-2026"),
+        }),
+    };
+}

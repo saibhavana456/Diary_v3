@@ -1,0 +1,594 @@
+﻿@using MyDiary.Web.Core.Extensions
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Core.Services.Authentication
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Web.Auth.CustomAuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+
+    /* 1. Display Sort Icon by default */
+    .mud-table-sort-label .mud-button-root .mud-icon-root {
+        opacity: 1 !important;
+        color: rgba(255, 255, 255, 0.7) !important;
+    }
+
+    .mud-table-sort-label.mud-table-sort-label-active .mud-button-root .mud-icon-root {
+        color: white !important;
+    }
+
+    /* 2. Auto-assign S.No using CSS Counters so it stays sequential after sorting */
+    .auto-index-table {
+        counter-reset: rowNumber;
+    }
+
+        .auto-index-table tbody tr:has(td:nth-child(2)) {
+            counter-increment: rowNumber;
+        }
+
+            .auto-index-table tbody tr:has(td:nth-child(2)) td:first-child::before {
+                content: counter(rowNumber);
+            }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <div id="report-page-root" class="mb-4">
+            <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+                @* --- LEVEL 2: Filters (Dropdowns Left, Export Right) --- *@
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Zone" Value="SelectedZone" ValueChanged="HandleZoneChanged"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   Disabled="@_isZoneDisabled"
+                                   UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Zone" } })">
+                            <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                            <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                            <MudSelectItem Value="@("00000")">CENTRAL OFFICE</MudSelectItem>
+                            @foreach (var z in _zones)
+                            {
+                                <MudSelectItem Value="@z["zone_solid"].ToString()">@z["zone_name_eng"].ToString()</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Region" Value="SelectedRegion" ValueChanged="HandleRegionChanged"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   Disabled="@(_isRegionDisabled || SelectedZone == "1" || SelectedZone == "all")"
+                                   UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Region" } })">
+                            <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                            <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                            @foreach (var r in _regions)
+                            {
+                                <MudSelectItem Value="@r["region_solid"].ToString()">@r["region_name"].ToString()</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Branch" Value="SelectedBranch" ValueChanged="HandleBranchChanged"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   Disabled="@(_isBranchDisabled || SelectedRegion == "1" || SelectedRegion == "all")"
+                                   UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Branch" } })">
+                            <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                            <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                            @foreach (var b in _branches)
+                            {
+                                <MudSelectItem Value="@b["SOL_ID"].ToString()">@b["Branch_Name"].ToString()</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    @if (ShowStatusFilter)
+                    {
+                        <MudItem xs="12" sm="2">
+                            <MudSelect T="string"
+                                       Label="Account Type"
+                                       Variant="Variant.Outlined"
+                                       Dense="true"
+                                       Margin="Margin.Dense"
+                                       Value="SelectedStatus"
+                                       ValueChanged="HandleStatusChanged"
+                                       UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Account Type" } })">
+                                <MudSelectItem Value="@("Sel")">Select</MudSelectItem>
+                                <MudSelectItem Value="@("A")">Active</MudSelectItem>
+                                <MudSelectItem Value="@("I")">Inactive</MudSelectItem>
+                                <MudSelectItem Value="@("D")">Dormant</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    }
+
+                    @* Search  *@
+                    @if (ShowSearch)
+                    {
+                        <MudItem xs="12" sm="3">
+                            <MudTextField T="string"
+                                          Label="Search by Cust ID"
+                                          @bind-Value="SearchCustId"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true"
+                                          MaxLength="15"
+                                          Immediate="true"
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.Search"
+                                          OnKeyDown="OnSearchKeyDown" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3" Class="d-flex align-center">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.ManageSearch"
+                                       Class="me-2"
+                                       OnClick="HandleSearchClicked">
+                                Search
+                            </MudButton>
+
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Disabled="@string.IsNullOrWhiteSpace(SearchCustId)"
+                                       StartIcon="@Icons.Material.Filled.Clear"
+                                       OnClick="HandleClearSearch">
+                                Clear
+                            </MudButton>
+                        </MudItem>
+                    }
+
+
+                    <MudSpacer />
+
+                    <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                        <MudButton Variant="Variant.Filled" StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                                   Style="background-color: #000066; color: white; font-size: 11px;"
+                                   OnClick="OnExportInternal">Export To Excel</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                @* --- LEVEL 3: Table Section --- *@
+                <div class="px-4 d-flex justify-end">
+                    <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">@AsOnDateLabel</MudText>
+                </div>
+
+                <MudItem xs="12" Class="pa-4">
+                    <MudTable Items="Data" Loading="IsLoading" Dense="true" Striped="true" Bordered="true" FixedHeader="@(Data != null && Data.Count > 25)"
+                              Height="@GetTableHeight()" Elevation="2" Class="fixed-table auto-index-table" Style="font-size:12px;" RowsPerPage="@GetRowsPerPage()"
+                              UserAttributes="@(new Dictionary<string, object>{ ["aria-label"] = "Dashboard Results Table. Values shown in Rupees in Crores." })">
+                        <HeaderContent>
+                            <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                            @foreach (var col in Config.Columns)
+                            {
+                                <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+                                    <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                        @col.Header
+                                    </MudTableSortLabel>
+                                </MudTh>
+                            }
+                        </HeaderContent>
+                        <RowTemplate>
+                            @* S.No is now auto-filled via CSS counter class *@
+                            <MudTd Style="text-align: center;"></MudTd>
+                            @foreach (var col in Config.Columns)
+                            {
+                                if (col.IsLink)
+                                {
+                                    <MudTd Style="text-align:left;">
+                                        @{
+                                            var href = context.TryGetValue(col.PropertyName, out var v)
+                                            ? v?.ToString()
+                                            : null;
+                                        }
+
+                                        @if (!string.IsNullOrWhiteSpace(href))
+                                        {
+
+                                            <MudLink Href="@href" Class=" text-center">
+                                                Download file
+                                            </MudLink>
+                                        }
+                                        else
+                                        {
+                                            <span>—</span>
+                                        }
+                                    </MudTd>
+                                }
+                                else
+                                {
+                                    <MudTd Style="@(col.IsNumeric ? "text-align:right;" : "text-align:left;")">
+                                        @FormatValue(context, col)
+                                    </MudTd>
+                                }
+                            }
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <td colspan="@(Config.Columns.Count + 1)" style="text-align:center; padding: 40px;">
+                                <MudText Typo="Typo.subtitle1" Color="Color.Error">No record found</MudText>
+                            </td>
+                        </NoRecordsContent>
+                        <PagerContent>
+                            <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                        </PagerContent>
+                    </MudTable>
+                </MudItem>
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public ReportConfig Config { get; set; } = new();
+    [Parameter] public List<Dictionary<string, object>> Data { get; set; } = new();
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string AsOnDateLabel { get; set; } = string.Empty;
+
+    [Parameter] public string SelectedZone { get; set; } = "1";
+    [Parameter] public string SelectedRegion { get; set; } = "1";
+    [Parameter] public string SelectedBranch { get; set; } = "1";
+
+    [Parameter] public EventCallback<(string zone, string region, string branch)> OnFilterChanged { get; set; }
+    [Parameter] public EventCallback OnExportRequested { get; set; }
+
+    [Parameter] public string SelectedStatus { get; set; } = "Sel";
+    [Parameter] public EventCallback<string> OnStatusChanged { get; set; }
+    [Parameter] public bool ShowStatusFilter { get; set; } = false;
+
+    // Lookups
+    private List<Dictionary<string, object>> _zones = new(), _regions = new(), _branches = new();
+    private bool _isZoneDisabled = false;
+    private bool _isRegionDisabled = false;
+    private bool _isBranchDisabled = false;
+
+    // Internal user context - loaded automatically
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // Store names for display in disabled dropdowns
+    private string _userZoneName = "";
+    private string _userRegionName = "";
+    private string _userBranchName = "";
+
+    [Parameter] public bool ShowSearch { get; set; } = false;
+    [Parameter] public string? SearchCustId { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string?> OnSearchRequested { get; set; }
+
+
+    private int GetRowsPerPage()
+    {
+        if (Data == null)
+            return 0;
+
+        return Data.Count < 25 ? Data.Count : 25;
+    }
+
+    private string GetTableHeight()
+    {
+        if (Data == null || Data.Count == 0)
+            return "200px"; // minimal height for empty state
+
+        int totalRows = Data.Count;
+
+        // If all rows fit on one page (≤ 25), don't constrain height —
+        // let the table auto-size to its content. Setting an explicit height
+        // with FixedHeader causes ~90px of extra whitespace (pager + internal padding).
+        if (totalRows <= 25)
+            return "auto";
+
+        // If > 25 → fixed height with scroll (accounts for header + pager)
+        return "750px";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load user context from claims automatically
+        await LoadUserContext();
+
+        try
+        {
+            var zoneTask = ReportService.GetLookupDataAsync("zone_master", "*", "status='A'", "zone_name_eng");
+            if (await Task.WhenAny(zoneTask, Task.Delay(5000)) == zoneTask)
+                _zones = await zoneTask;
+        }
+        catch (Exception ex) {
+            AppLogger.LogError(ex, "[DynamicDashboard] Unhandled error: " + ex.Message);
+            Snackbar.Add("Failed to load zone data. Please retry.", Severity.Error);
+        }
+
+        // Apply role-based preselection and disabling
+        try
+        {
+            await ApplyRoleBasedFilters();
+        }
+        catch (Exception ex) {
+            AppLogger.LogError(ex, "[DynamicDashboard] Unhandled error: " + ex.Message);
+            Snackbar.Add("Failed to apply filters. Please retry.", Severity.Error);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // If search UI is hidden but value is present, clear once and notify parent (optional)
+        if (!ShowSearch && !string.IsNullOrWhiteSpace(SearchCustId))
+        {
+            SearchCustId = string.Empty;
+            if (OnSearchRequested.HasDelegate)
+                await OnSearchRequested.InvokeAsync(null);
+        }
+
+        if (!ShowStatusFilter && SelectedStatus != "Sel")
+            SelectedStatus = "Sel";
+    }
+
+    private async Task LoadUserContext()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+            _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+            _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+            _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+
+            // Load names from claims
+            _userZoneName = user.FindFirst("zone_name")?.Value ?? "";
+            _userRegionName = user.FindFirst("region_name")?.Value ?? "";
+            _userBranchName = user.FindFirst("branch_name")?.Value ?? "";
+        }
+    }
+
+    private async Task<List<Dictionary<string, object>>> SafeLookupAsync(string table, string cols, string condition, string order)
+    {
+        try
+        {
+            var task = ReportService.GetLookupDataAsync(table, cols, condition, order);
+            if (await Task.WhenAny(task, Task.Delay(5000)) == task)
+                return await task;
+        }
+        catch (Exception ex) {
+            AppLogger.LogError(ex, "[DynamicDashboard] Error loading lookup data: " + ex.Message);
+            Snackbar.Add("Failed to load report data. Please retry.", Severity.Error);
+        }
+        return new();
+    }
+
+    private async Task ApplyRoleBasedFilters()
+    {
+        switch (_userPrivilege?.ToUpper())
+        {
+            case "ZONE":
+                SelectedZone = _userZoneSolid;
+                _isZoneDisabled = true;
+                _isRegionDisabled = false;
+                _isBranchDisabled = false;
+
+                if (!string.IsNullOrEmpty(_userZoneSolid) && _userZoneSolid != "00000")
+                {
+                    if (!_zones.Any(z => z["zone_solid"].ToString() == _userZoneSolid))
+                    {
+                        _zones.Insert(0, new Dictionary<string, object>
+                        {
+                            { "zone_solid", _userZoneSolid },
+                            { "zone_name_eng", _userZoneName }
+                        });
+                    }
+                    _regions = await SafeLookupAsync("region_master", "*", $"zone_solid='{_userZoneSolid}'", "region_name");
+                }
+                break;
+
+            case "REGION":
+                SelectedZone = _userZoneSolid;
+                SelectedRegion = _userRegionSolid;
+                _isZoneDisabled = true;
+                _isRegionDisabled = true;
+                _isBranchDisabled = false;
+
+                if (!string.IsNullOrEmpty(_userZoneSolid) && _userZoneSolid != "00000")
+                {
+                    if (!_zones.Any(z => z["zone_solid"].ToString() == _userZoneSolid))
+                    {
+                        _zones.Insert(0, new Dictionary<string, object>
+                        {
+                            { "zone_solid", _userZoneSolid },
+                            { "zone_name_eng", _userZoneName }
+                        });
+                    }
+                    _regions = await SafeLookupAsync("region_master", "*", $"zone_solid='{_userZoneSolid}'", "region_name");
+                }
+
+                if (!string.IsNullOrEmpty(_userRegionSolid) && _userRegionSolid != "00000")
+                {
+                    if (!_regions.Any(r => r["region_solid"].ToString() == _userRegionSolid))
+                    {
+                        _regions.Insert(0, new Dictionary<string, object>
+                        {
+                            { "region_solid", _userRegionSolid },
+                            { "region_name", _userRegionName }
+                        });
+                    }
+                    _branches = await SafeLookupAsync("branch_master", "CONCAT(UPPER(branch_name),' (',branch_code,')') As Branch_Name, SOL_ID", $"region_solid='{_userRegionSolid}'", "BRANCH_NAME");
+                }
+                break;
+
+            case "BRANCH":
+                SelectedZone = _userZoneSolid;
+                SelectedRegion = _userRegionSolid;
+                SelectedBranch = _userBranchSolid;
+                _isZoneDisabled = true;
+                _isRegionDisabled = true;
+                _isBranchDisabled = true;
+
+                if (!string.IsNullOrEmpty(_userZoneSolid) && _userZoneSolid != "00000")
+                {
+                    if (!_zones.Any(z => z["zone_solid"].ToString() == _userZoneSolid))
+                    {
+                        _zones.Insert(0, new Dictionary<string, object>
+                        {
+                            { "zone_solid", _userZoneSolid },
+                            { "zone_name_eng", _userZoneName }
+                        });
+                    }
+                    _regions = await SafeLookupAsync("region_master", "*", $"zone_solid='{_userZoneSolid}'", "region_name");
+                }
+
+                if (!string.IsNullOrEmpty(_userRegionSolid) && _userRegionSolid != "00000")
+                {
+                    if (!_regions.Any(r => r["region_solid"].ToString() == _userRegionSolid))
+                    {
+                        _regions.Insert(0, new Dictionary<string, object>
+                        {
+                            { "region_solid", _userRegionSolid },
+                            { "region_name", _userRegionName }
+                        });
+                    }
+                    _branches = await SafeLookupAsync("branch_master", "CONCAT(UPPER(branch_name),' (',branch_code,')') As Branch_Name, SOL_ID", $"region_solid='{_userRegionSolid}'", "BRANCH_NAME");
+                }
+
+                if (!string.IsNullOrEmpty(_userBranchSolid) && _userBranchSolid != "00000")
+                {
+                    if (!_branches.Any(b => b["SOL_ID"].ToString() == _userBranchSolid))
+                    {
+                        _branches.Insert(0, new Dictionary<string, object>
+                        {
+                            { "SOL_ID", _userBranchSolid },
+                            { "Branch_Name", _userBranchName }
+                        });
+                    }
+                }
+                break;
+
+            case "CO":
+            default:
+                _isZoneDisabled = false;
+                _isRegionDisabled = false;
+                _isBranchDisabled = false;
+                break;
+        }
+
+        if (OnFilterChanged.HasDelegate)
+        {
+            await OnFilterChanged.InvokeAsync((SelectedZone, SelectedRegion, SelectedBranch));
+        }
+    }
+
+    private async Task HandleZoneChanged(string v)
+    {
+        if (_isZoneDisabled) return;
+
+        SelectedZone = v; SelectedRegion = "1"; SelectedBranch = "1";
+        if (v != "1" && v != "all")
+        {
+            try
+            {
+                var task = ReportService.GetLookupDataAsync("region_master", "*", $"zone_solid='{v}'", "region_name");
+                if (await Task.WhenAny(task, Task.Delay(5000)) == task)
+                    _regions = await task;
+            }
+            catch (Exception ex) {
+                AppLogger.LogError(ex, "[DynamicDashboard] Error loading regions: " + ex.Message);
+                Snackbar.Add("Failed to load regions. Please retry.", Severity.Error);
+            }
+        }
+        else
+            _regions.Clear();
+        _branches.Clear();
+        await OnFilterChanged.InvokeAsync((SelectedZone, SelectedRegion, SelectedBranch));
+    }
+
+    private async Task HandleRegionChanged(string v)
+    {
+        if (_isRegionDisabled) return;
+
+        SelectedRegion = v; SelectedBranch = "1";
+        if (v != "1" && v != "all")
+        {
+            try
+            {
+                var task = ReportService.GetLookupDataAsync("branch_master", "CONCAT(UPPER(branch_name),' (',branch_code,')') As Branch_Name, SOL_ID", $"region_solid='{v}'", "BRANCH_NAME");
+                if (await Task.WhenAny(task, Task.Delay(5000)) == task)
+                    _branches = await task;
+            }
+            catch (Exception ex) {
+                AppLogger.LogError(ex, "[DynamicDashboard] Error loading branches: " + ex.Message);
+                Snackbar.Add("Failed to load branches. Please retry.", Severity.Error);
+            }
+        }
+        else
+            _branches.Clear();
+        await OnFilterChanged.InvokeAsync((SelectedZone, SelectedRegion, SelectedBranch));
+    }
+
+    private async Task HandleBranchChanged(string v)
+    {
+        if (_isBranchDisabled) return; // Don't allow changes if disabled
+
+        SelectedBranch = v;
+        await OnFilterChanged.InvokeAsync((SelectedZone, SelectedRegion, SelectedBranch));
+    }
+
+    private async Task HandleStatusChanged(string value)
+    {
+        SelectedStatus = value;
+        if (OnStatusChanged.HasDelegate)
+            await OnStatusChanged.InvokeAsync(value);
+
+        await OnFilterChanged.InvokeAsync((SelectedZone, SelectedRegion, SelectedBranch));
+    }
+
+    private async Task OnExportInternal() => await OnExportRequested.InvokeAsync();
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "—";
+        if (col.IsDate && DateTime.TryParse(val.ToString(), out var dt)) return dt.ToString("dd/MM/yyyy");
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return string.IsNullOrWhiteSpace(col.Format) ? d.ToString() : d.ToString(col.Format);
+        return val.ToString();
+    }
+
+
+    private async Task HandleSearchClicked()
+    {
+        var value = string.IsNullOrWhiteSpace(SearchCustId) ? null : SearchCustId!.Trim();
+        if (OnSearchRequested.HasDelegate)
+            await OnSearchRequested.InvokeAsync(value);
+
+        if (OnFilterChanged.HasDelegate)
+            await OnFilterChanged.InvokeAsync((SelectedZone, SelectedRegion, SelectedBranch));
+    }
+
+    private async Task HandleClearSearch()
+    {
+        SearchCustId = string.Empty;
+        if (OnSearchRequested.HasDelegate)
+            await OnSearchRequested.InvokeAsync(null);
+
+        if (OnFilterChanged.HasDelegate)
+            await OnFilterChanged.InvokeAsync((SelectedZone, SelectedRegion, SelectedBranch));
+    }
+
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await HandleSearchClicked();
+    }
+}

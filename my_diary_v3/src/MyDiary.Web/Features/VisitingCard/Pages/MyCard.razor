@@ -1,0 +1,297 @@
+@page "/my-card"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.VisitingCard.Services
+@using global::RequestPortal.Web.Shared
+@using QRCoder
+@inject IVCardService VCardService
+@inject IVisitingCardMessagingService MessagingService
+@inject MyDiary.Web.Core.Services.Storage.ISessionStorageService SessionStorage
+@inject ISnackbar Snackbar
+
+<PageTitle>Visiting Card</PageTitle>
+
+<PageHeader Title="My Visiting Card" Subtitle="Your digital contact card — share it or download it as a contact file." Crumbs="_crumbs" PageKey="my-visiting-card" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Class="my-6" />
+}
+else if (_card is null)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Filled">
+        No visiting card is set up for your employee ID yet. Contact your administrator.
+    </MudAlert>
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-6" Elevation="2">
+                @if (_settings.ShowProfile)
+                {
+                    <div class="vcard-profile">
+                        <div class="vcard-photo-wrap">
+                            @if (!string.IsNullOrWhiteSpace(_card.PhotoDataUri))
+                            {
+                                <MudImage Src="@_card.PhotoDataUri" Class="vcard-photo" ObjectFit="ObjectFit.Cover" />
+                            }
+                            else
+                            {
+                                <MudAvatar Class="vcard-photo" Size="Size.Large" Color="Color.Primary">
+                                    @(_card.EmpName?.Length > 0 ? _card.EmpName[0].ToString() : "?")
+                                </MudAvatar>
+                            }
+                            <MudFileUpload T="IBrowserFile" FilesChanged="OnPhotoPickedAsync" Accept=".jpg,.jpeg,.png">
+                                <ActivatorContent>
+                                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.PhotoCamera" Class="mt-2" Disabled="@_uploadingPhoto">
+                                        @(_uploadingPhoto ? "Uploading…" : "Change photo")
+                                    </MudButton>
+                                </ActivatorContent>
+                            </MudFileUpload>
+                        </div>
+                        <div>
+                            <MudText Typo="Typo.h5" Class="fw-bold">@_card.EmpName</MudText>
+                            <MudText Typo="Typo.body1" Color="Color.Secondary">@_card.PositionDesignation</MudText>
+                            <MudText Typo="Typo.body2">@_card.OrganizationName</MudText>
+                        </div>
+                    </div>
+                    <MudDivider Class="my-4" />
+                }
+
+                @if (_settings.ShowContact)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Contact Details</MudText>
+                    <MudGrid Class="mb-2">
+                        <MudItem xs="12" sm="6"><MudText Typo="Typo.caption" Color="Color.Secondary">Region / Zone</MudText><MudText>@_card.Region / @_card.Zone</MudText></MudItem>
+                        <MudItem xs="12" sm="6"><MudText Typo="Typo.caption" Color="Color.Secondary">Mobile</MudText><MudText>@_card.MobileNo</MudText></MudItem>
+                        <MudItem xs="12" sm="6"><MudText Typo="Typo.caption" Color="Color.Secondary">Email</MudText><MudText>@_card.EmailId</MudText></MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Location</MudText>
+                            @if (!string.IsNullOrWhiteSpace(_card.UserLocation))
+                            {
+                                <MudLink Href="@GoogleMapsLink" Target="_blank">@_card.UserLocation</MudLink>
+                            }
+                            else
+                            {
+                                <MudText>-</MudText>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                    <MudDivider Class="my-4" />
+                }
+
+                <div class="d-flex flex-wrap gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" Href="@VcfDownloadHref" Download="@($"{_card.EmpName}.vcf")">
+                        Save as Contact
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Chat" OnClick="SendWhatsAppAsync" Disabled="@_sending">
+                        Send to my WhatsApp
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Sms" OnClick="SendSmsAsync" Disabled="@_sending">
+                        Send to my SMS
+                    </MudButton>
+                </div>
+            </MudPaper>
+
+            @if (_settings.ShowProducts && _rates.Count > 0)
+            {
+                <MudPaper Class="pa-6 mt-4" Elevation="2">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Rates &amp; Products</MudText>
+                    <MudTable Items="_rates" Dense="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Product</MudTh>
+                            <MudTh>Rate</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Product">@context.ProductName</MudTd>
+                            <MudTd DataLabel="Rate">@context.InterestText</MudTd>
+                            <MudTd>
+                                @if (!string.IsNullOrWhiteSpace(context.EnquiryUrl))
+                                {
+                                    <MudLink Href="@context.EnquiryUrl" Target="_blank">Enquire</MudLink>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudPaper>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-6 text-center" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Class="mb-3">Scan to Save Contact</MudText>
+                @if (_qrDataUri is not null)
+                {
+                    <MudImage Src="@_qrDataUri" Class="vcard-qr" />
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+<style>
+    .vcard-profile { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+    .vcard-photo-wrap { display: flex; flex-direction: column; align-items: center; }
+    .vcard-photo { width: 96px; height: 96px; border-radius: 50%; }
+    .vcard-qr { width: 220px; height: 220px; margin: 0 auto; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("My Visiting Card") };
+
+    private bool _loading = true;
+    private bool _uploadingPhoto;
+    private bool _sending;
+    private VisitingCardDto? _card;
+    private VisitingCardSettings _settings = new(true, true, true);
+    private IReadOnlyList<VisitingCardProductRate> _rates = Array.Empty<VisitingCardProductRate>();
+    private string? _qrDataUri;
+
+    private string GoogleMapsLink =>
+        $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(_card?.UserLocation ?? "")}";
+
+    private string VcfDownloadHref
+    {
+        get
+        {
+            if (_card is null) return "#";
+            var vcf = BuildVCardText(_card);
+            return "data:text/vcard;charset=utf-8," + Uri.EscapeDataString(vcf);
+        }
+    }
+
+    // Resolved once per page load — SessionStorage's "UserId" is the app's real,
+    // working source for the logged-in employee's PF/emp number (same one
+    // UserAvatar.razor and the pre-migration VCard redirect used). NOTE:
+    // MyDiary.Core.Abstractions.ICurrentUser.EmplId is NOT usable here — its
+    // backing SetPrincipal() is never called anywhere in the app, so it's always
+    // null (see the same warning comment in Features/Assurance's visit-report pages).
+    private string _employeeId = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _employeeId = await SessionStorage.GetAsync<string>("UserId") ?? "";
+        _card = await VCardService.GetEmployeeCardAsync(_employeeId);
+        _settings = await VCardService.GetCardSettingsAsync();
+        _rates = await VCardService.GetActiveProductRatesAsync();
+
+        if (_card is not null)
+        {
+            var vcf = BuildVCardText(_card);
+            _qrDataUri = GenerateQrDataUri(vcf);
+        }
+
+        _loading = false;
+    }
+
+    private async Task OnPhotoPickedAsync(IBrowserFile? file)
+    {
+        if (file is null || _card is null) return;
+
+        if (!file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            Snackbar.Add("Only image files are allowed.", Severity.Warning);
+            return;
+        }
+        const long maxBytes = 1 * 1024 * 1024;
+        if (file.Size > maxBytes)
+        {
+            Snackbar.Add("Image is too large (max 1 MB).", Severity.Warning);
+            return;
+        }
+
+        _uploadingPhoto = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            var ok = await VCardService.UploadPhotoAsync(_employeeId, ms.ToArray(), file.ContentType);
+            if (ok)
+            {
+                Snackbar.Add("Photo updated.", Severity.Success);
+                _card = await VCardService.GetEmployeeCardAsync(_employeeId);
+            }
+            else
+            {
+                Snackbar.Add("Failed to update photo. Please try again.", Severity.Error);
+            }
+        }
+        finally
+        {
+            _uploadingPhoto = false;
+        }
+    }
+
+    private async Task SendWhatsAppAsync()
+    {
+        _sending = true;
+        try
+        {
+            var result = await MessagingService.SendWhatsAppAsync(_employeeId);
+            Snackbar.Add(result.Message ?? (result.Success ? "Sent." : "Failed."),
+                result.Success ? Severity.Success : Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private async Task SendSmsAsync()
+    {
+        _sending = true;
+        try
+        {
+            var result = await MessagingService.SendSmsAsync(_employeeId);
+            Snackbar.Add(result.Message ?? (result.Success ? "Sent." : "Failed."),
+                result.Success ? Severity.Success : Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private static string BuildVCardText(VisitingCardDto c)
+    {
+        string Esc(string? v) => (v ?? "").Replace("\\", "\\\\").Replace("\n", "\\n").Replace(";", "\\;").Replace(",", "\\,");
+
+        var lines = new List<string>
+        {
+            "BEGIN:VCARD",
+            "VERSION:3.0",
+            $"FN:{Esc(c.EmpName)}",
+            $"N:{Esc(c.EmpName)};;;;",
+            $"ORG:Union Bank of India;{Esc(c.OrganizationName)}",
+        };
+        if (!string.IsNullOrWhiteSpace(c.PositionDesignation)) lines.Add($"TITLE:{Esc(c.PositionDesignation)}");
+        if (!string.IsNullOrWhiteSpace(c.MobileNo)) lines.Add($"TEL;TYPE=CELL,WORK,VOICE:{Esc(c.MobileNo)}");
+        if (!string.IsNullOrWhiteSpace(c.EmailId)) lines.Add($"EMAIL;TYPE=INTERNET,WORK:{Esc(c.EmailId)}");
+        if (!string.IsNullOrWhiteSpace(c.UserLocation)) lines.Add($"ADR;TYPE=WORK:;;{Esc(c.UserLocation)};;;;");
+        lines.Add($"UID:{Guid.NewGuid()}");
+        lines.Add("END:VCARD");
+
+        return string.Join("\r\n", lines) + "\r\n";
+    }
+
+    /// <summary>
+    /// Self-contained QR — encodes the vCard text directly (scannable by any phone
+    /// camera to add the contact) rather than a URL, since there is no public
+    /// no-login share page in this pass (see plan). Revisit once one exists.
+    /// </summary>
+    private static string GenerateQrDataUri(string payload)
+    {
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M);
+        var pngQr = new PngByteQRCode(data);
+        var bytes = pngQr.GetGraphic(8);
+        return $"data:image/png;base64,{Convert.ToBase64String(bytes)}";
+    }
+}

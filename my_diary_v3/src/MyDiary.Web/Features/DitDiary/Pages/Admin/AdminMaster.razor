@@ -1,0 +1,252 @@
+@page "/dit/admin"
+@page "/dit/admin/{View}"
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@inject IAdminMasterService AdminService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject DitUserSession Session
+
+@if (!_authOk)
+{
+    <div class="d-flex justify-center pa-10"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></div>
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6">
+        <div class="d-flex justify-space-between align-center mb-6">
+            <MudText Typo="Typo.h4"><b>Admin Master — @(_currentView == "Department" ? "Departments" : "Sections")</b></MudText>
+            <div class="d-flex align-center gap-4">
+                <MudSwitch T="bool" @bind-Value="_showInactive" Color="Color.Primary" Label="Only Inactive" />
+                @if (IsAdmin)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="OnAddClicked" Size="Size.Large">Add New @_currentView</MudButton>
+                }
+            </div>
+        </div>
+
+        @if (!IsAdmin)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Only an Administrator can edit the details of a  Departments and Sections
+            </MudAlert>
+        }
+
+        <MudPaper Class="pa-4" Elevation="3" Style="border-radius:12px;">
+            @if (_loading)
+            {
+                <div class="d-flex justify-center pa-10"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></div>
+            }
+            else if (_currentView == "Department")
+            {
+                <MudTable Items="@VisibleDepartments" Hover="true" Striped="true" Elevation="0" Height="500px" FixedHeader="true">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Office Type</MudTh>
+                        <MudTh>Description</MudTh><MudTh>Status</MudTh>
+                       
+                            <MudTh Style="text-align:right">Actions</MudTh>
+                        
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.DEPT_CODE</MudTd>
+                        <MudTd><b>@context.DEPT_NAME</b></MudTd>
+                        <MudTd>@context.OFFICE_TYPE</MudTd>
+                        <MudTd>@context.DESCRIPTION</MudTd>
+                        <MudTd><MudChip T="string" Size="Size.Small" Color="@(context.STATUS == "Active" ? Color.Success : Color.Default)">@context.STATUS</MudChip></MudTd>
+                        
+                        
+                            <MudTd Style="text-align:right">
+                                 @if (IsAdmin)
+                                 {
+                                <MudTooltip Text="Edit"><MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" OnClick="@(() => OnEditClicked(context))" /></MudTooltip>
+                                 }
+                                <MudIconButton Icon="@(context.STATUS == "Active" ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                               Color="@(context.STATUS == "Active" ? Color.Success : Color.Error)"
+                                               OnClick="@(() => OnToggleClicked(context))" />
+                            </MudTd>
+                        
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudTable Items="@VisibleSections" Hover="true" Striped="true" Elevation="0" Height="500px" FixedHeader="true">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh><MudTh>Section Name</MudTh><MudTh>Department</MudTh>
+                        <MudTh>Status</MudTh>
+                        
+                        
+                            <MudTh Style="text-align:right">Actions</MudTh>
+                        
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.SECTION_CODE</MudTd>
+                        <MudTd><b>@context.NAME</b></MudTd>
+                        <MudTd>@context.Department?.DEPT_NAME</MudTd>
+                        <MudTd><MudChip T="string" Size="Size.Small" Color="@(context.STATUS == "Active" ? Color.Success : Color.Default)">@context.STATUS</MudChip></MudTd>
+                        
+                        
+                            <MudTd Style="text-align:right">
+                               
+                                
+                                <MudIconButton Icon="@Icons.Material.Filled.Groups" Color="Color.Info" Title="Team" OnClick="@(() => OnTeamClicked(context))" />
+                            @if (IsAdmin)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" OnClick="@(() => OnEditClicked(context))" />
+                            }
+                                <MudIconButton Icon="@(context.STATUS == "Active" ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                               Color="@(context.STATUS == "Active" ? Color.Success : Color.Error)"
+                                               OnClick="@(() => OnToggleClicked(context))" />
+                            </MudTd>
+                        
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudContainer>
+}
+
+@code {
+    // Departments and Sections are bank masters - only an administrator may change them.
+    private bool IsAdmin => Session.User?.IsAdmin == true;
+
+    private string _currentView = "Department";
+    private bool _loading = true;
+    private bool _showInactive = false;
+    private List<Department> _departments = new();
+    private List<Section> _sections = new();
+
+    private IEnumerable<Department> VisibleDepartments =>
+        _showInactive ? _departments.Where(d => d.STATUS == "Inactive") : _departments;
+    private IEnumerable<Section> VisibleSections =>
+        _showInactive ? _sections.Where(s => s.STATUS == "Inactive") : _sections;
+
+    [Parameter] public string? View { get; set; }
+    protected override void OnParametersSet()
+    {
+        _currentView = string.Equals(View, "sections", StringComparison.OrdinalIgnoreCase)
+              ? "Section" : "Department";
+    }
+
+    private bool _authChecked, _authOk;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _authChecked) return;
+        _authChecked = true;
+        await Session.LoadAsync();
+        await Session.EnsureScopeAsync(AdminService);
+
+        var u = Session.User;
+        if (u == null || (!u.IsAdmin && !u.HasScope)) { Nav.NavigateTo("dit/project/details"); return; }
+
+        _authOk = true;
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+
+        try
+        {
+            _departments = await AdminService.GetDepartmentsAsync(true);
+            _sections = await AdminService.GetSectionsAsync(true);
+            var u = Session.User;
+            if (u is not null && !u.IsAdmin)
+            {
+                _departments = _departments.Where(d => u.DeptIds.Contains(d.DEPT_ID)).ToList();
+                _sections = _sections.Where(s => u.SectionIds.Contains(s.SECTION_ID)).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Load failed: {ex.Message}", Severity.Error);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnAddClicked()
+    {
+        var p = new DialogParameters { ["EntityType"] = _currentView, ["IsNew"] = true };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        var dlg = await DialogService.ShowAsync<AdminEntryDialog>($"Add {_currentView}", p, o);
+        var r = await dlg.Result;
+        if (!r.Canceled && r.Data != null)
+        {
+            try
+            {
+                if (_currentView == "Department") await AdminService.SaveDepartmentAsync((Department)r.Data, true);
+                else await AdminService.SaveSectionAsync((Section)r.Data, true);
+                await LoadData();
+                Snackbar.Add($"{_currentView} created successfully", Severity.Success);
+            }
+            catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        }
+    }
+
+    private async Task OnEditClicked(object entity)
+    {
+        var p = new DialogParameters { ["EntityType"] = _currentView, ["EntityData"] = entity, ["IsNew"] = false };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+        var dlg = await DialogService.ShowAsync<AdminEntryDialog>($"Edit {_currentView}", p, o);
+        var r = await dlg.Result;
+        if (!r.Canceled && r.Data != null)
+        {
+            try
+            {
+                if (_currentView == "Department") await AdminService.SaveDepartmentAsync((Department)r.Data, false);
+                else await AdminService.SaveSectionAsync((Section)r.Data, false);
+                await LoadData();
+                Snackbar.Add("Changes saved successfully", Severity.Success);
+            }
+            catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        }
+    }
+
+    private async Task OnToggleClicked(object entity)
+    {
+        long id = 0; string name = ""; bool deactivating = false;
+        if (entity is Department d) { id = d.DEPT_ID; name = d.DEPT_NAME; deactivating = d.STATUS == "Active"; }
+        else if (entity is Section s) { id = s.SECTION_ID; name = s.NAME; deactivating = s.STATUS == "Active"; }
+
+        var p = new DialogParameters
+            {
+                ["Title"] = deactivating ? "Deactivate" : "Activate",
+                ["Message"] = $"Are you sure you want to {(deactivating ? "deactivate" : "activate")} '{name}'?",
+                ["SubMessage"] = deactivating
+                    ? "Soft change – data is kept, only hidden from the active list. (For a department, its sections are deactivated too.)"
+                    : "This will make the record active again.",
+                ["ConfirmText"] = deactivating ? "Deactivate" : "Activate",
+                ["ConfirmColor"] = deactivating ? Color.Error : Color.Success,
+                ["Icon"] = deactivating ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle,
+                ["IconColor"] = deactivating ? Color.Error : Color.Success
+            };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true };
+        var dlg = await DialogService.ShowAsync<ConfirmDialog>(string.Empty, p, o);
+        var res = await dlg.Result;
+
+        if (!res.Canceled && res.Data is bool ok && ok)
+        {
+            try
+            {
+                if (entity is Department) await AdminService.ToggleDepartmentStatusAsync(id);
+                else await AdminService.ToggleSectionStatusAsync(id);
+                await LoadData();
+                Snackbar.Add("Status updated", Severity.Info);
+            }
+            catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        }
+    }
+
+    private async Task OnTeamClicked(Section section)
+    {
+        var p = new DialogParameters { ["SectionId"] = section.SECTION_ID, ["SectionName"] = section.NAME };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = true };
+        var dlg = await DialogService.ShowAsync<TeamDialog>($"Team — {section.NAME}", p, o);
+        await dlg.Result;
+    }
+}

@@ -1,0 +1,78 @@
+@page "/svc/vendor/categories"
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject IStaffVendorConnectService SvcService
+@inject NavigationManager Nav
+
+<PageTitle>Vendor Categories - Staff and Vendor Connect</PageTitle>
+
+<AuthenticatedOnly>
+
+<PageHeader Title="Vendor Records" Subtitle="Choose a category to view or add vendor records." Crumbs="_crumbs" PageKey="svc-vendor-categories" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" @bind-Value="_verticalId" Label="Vertical" Variant="Variant.Outlined" @bind-Value:after="LoadCategoriesAsync">
+                <MudSelectItem T="long?" Value="@((long?)null)">All</MudSelectItem>
+                @foreach (var v in _verticals)
+                {
+                    <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+
+    @foreach (var group in _categories.GroupBy(c => c.ParentGroup ?? "Other"))
+    {
+        <div class="svc-group-heading">@group.Key</div>
+        <div class="svc-cat-grid mb-6">
+            @foreach (var cat in group)
+            {
+                <div class="svc-cat-card" @onclick="@(() => Nav.NavigateTo($"svc/vendor/{cat.CategoryCode}"))">
+                    <MudIcon Icon="@Icons.Material.Filled.Business" Class="svc-cat-card-icon" />
+                    <div class="svc-cat-card-title">@cat.CategoryName</div>
+                </div>
+            }
+        </div>
+    }
+}
+
+</AuthenticatedOnly>
+
+<style>
+    .svc-group-heading { font-size: .8rem; font-weight: 700; letter-spacing: .06em; color: var(--mud-palette-text-secondary); margin-bottom: 12px; }
+    .svc-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    .svc-cat-card { cursor: pointer; border-radius: 12px; padding: 20px; background: #fff; border: 1px solid rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s; text-align: center; }
+    .svc-cat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .mud-theme-dark .svc-cat-card, .cc-dark .svc-cat-card { background: #1c1f24; border-color: #2a2e35; }
+    .svc-cat-card-icon { font-size: 2rem; color: var(--mud-palette-primary); margin-bottom: 8px; }
+    .svc-cat-card-title { font-weight: 600; font-size: 1rem; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"), new("Vendor Records") };
+    private bool _loading = true;
+    private List<SvcCategory> _categories = new();
+    private List<SvcVertical> _verticals = new();
+    private long? _verticalId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = await SvcService.GetActiveVerticalsAsync();
+        await LoadCategoriesAsync();
+        _loading = false;
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        _categories = await SvcService.GetCategoriesForVerticalAsync("EXTERNAL", _verticalId);
+        StateHasChanged();
+    }
+}

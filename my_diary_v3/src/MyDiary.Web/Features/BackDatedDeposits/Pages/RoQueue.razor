@@ -1,0 +1,215 @@
+@page "/deposits/ro-queue"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IBackDatedDepositRepo DepositRepo
+@inject IBackDatedDepositWorkflowService WorkflowService
+@inject IAttachmentStore AttachmentStore
+@inject ISnackbar Snackbar
+
+<PageTitle>Pending at RO - Back-Dated Deposit Approvals</PageTitle>
+<PageHeader Title="Pending at RO" Subtitle="Recommend, seek clarification, or return proposals raised by your branches." Crumbs="_crumbs" PageKey="bdd-ro" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_items.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No proposals pending at RO.</MudAlert>
+}
+else
+{
+    <MudTable Items="_items" Hover="true" Dense="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>Ref No</MudTh><MudTh>Branch</MudTh><MudTh>Type</MudTh><MudTh>Purpose</MudTh>
+            <MudTh>Customer</MudTh><MudTh>Submitted</MudTh><MudTh>Action</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.RefNo</MudTd>
+            <MudTd>@context.BranchName</MudTd>
+            <MudTd>@context.DepositType</MudTd>
+            <MudTd>@context.Purpose</MudTd>
+            <MudTd>@context.CustomerName</MudTd>
+            <MudTd>@context.CreatedAt.ToString("dd-MMM-yyyy")</MudTd>
+            <MudTd>
+                <MudButton Size="Size.Small" Color="Color.Success" Variant="Variant.Filled" OnClick="@(() => OpenAction(context, "Recommend"))">Recommend</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" OnClick="@(() => OpenAction(context, "Clarify"))">Seek Clarification</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" OnClick="@(() => OpenAction(context, "Return"))">Return</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@if (_active is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true" AutoClose="false">
+
+        <MudPaper Class="pa-4 mx-auto mt-12"
+                  Style="max-width:600px;width:100%;">
+
+            <MudText Typo="Typo.h6">
+                @_actionMode - @_active.RefNo
+            </MudText>
+
+            <MudDivider Class="my-3" />
+
+            @if (_isSubmitting)
+            {
+                <div class="d-flex flex-column align-center justify-center pa-6">
+                    <MudProgressCircular Indeterminate="true"
+                                         Color="Color.Primary"
+                                         Size="Size.Large" />
+
+                    <MudText Class="mt-3">
+                        Processing...
+                    </MudText>
+                </div>
+            }
+            else
+            {
+                <MudTextField @bind-Value="_remarks"
+                              Label="Remarks"
+                              Lines="3"
+                              Variant="Variant.Outlined"
+                              Class="mb-3" />
+
+                @if (_actionMode == "Recommend")
+                {
+                    <MudTextField @bind-Value="_spocName"
+                                  Label="SPOC Name"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudTextField @bind-Value="_spocEmail"
+                                  Label="SPOC Email"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudTextField @bind-Value="_spocMobile"
+                                  Label="SPOC Mobile"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudTextField @bind-Value="_spocIp"
+                                  Label="SPOC IP"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudFileUpload T="IBrowserFile"
+                                   FilesChanged="@(f => _file = f)">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined">
+                                @(_file?.Name ??
+                                    "Upload Supporting Document (mandatory)")
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                }
+            }
+
+            <MudDivider Class="my-3" />
+
+            <div class="d-flex justify-end gap-2">
+
+                <MudButton Disabled="_isSubmitting"
+                           OnClick="CloseDialog">
+                    Cancel
+                </MudButton>
+
+                <MudButton Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           Disabled="_isSubmitting"
+                           OnClick="ConfirmAsync">
+                    Confirm
+                </MudButton>
+
+            </div>
+
+        </MudPaper>
+
+    </MudOverlay>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("Pending at RO") };
+    private bool _loading = true;
+    private bool _isSubmitting = false;
+    private List<BackDatedDepositProposal> _items = new();
+    private BackDatedDepositProposal? _active;
+    private string _actionMode = "";
+    private string _remarks = "", _spocName = "", _spocEmail = "", _spocMobile = "", _spocIp = "", _empId = "", _role = "RoUser";
+    private IBrowserFile? _file;
+
+    private void CloseDialog()
+    {
+        _active = null;
+        _isSubmitting = false;
+        _remarks = "";
+        _file = null;
+
+        _spocName = "";
+        _spocEmail = "";
+        _spocMobile = "";
+        _spocIp = "";
+
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        _empId = user.FindFirst("emplid")?.Value ?? "";
+        _role = user.FindFirst("rp_role")?.Value ?? "RoUser";
+        var roSolId = user.FindFirst("region_solid")?.Value ?? "";
+        _items = (await DepositRepo.ListPendingAtRoAsync(roSolId)).ToList();
+        _loading = false;
+    }
+
+    private void OpenAction(BackDatedDepositProposal p, string mode)
+    {
+        _active = p; _actionMode = mode; _remarks = ""; _file = null;
+        _spocName = ""; _spocEmail = ""; _spocMobile = ""; _spocIp = "";
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_active is null) return;
+        try
+        {
+
+            switch (_actionMode)
+            {
+                case "Recommend":
+                    await WorkflowService.RoRecommendAsync(_active.Id, _active.RowVersion, _empId, _role,
+                        _remarks, _spocName, _spocEmail, _spocMobile, _spocIp, _file is not null);
+                    if (_file is not null)
+                    {
+                        await using var stream = _file.OpenReadStream(10 * 1024 * 1024);
+                        var key = await AttachmentStore.SaveAsync(stream, _file.Name);
+                        await DepositRepo.InsertDocumentAsync(new BackDatedDepositDocument
+                            { ProposalId = _active.Id, Level = "Ro", FileName = _file.Name, StorageKey = key, UploadedByEmp = _empId });
+                    }
+                    break;
+                case "Clarify":
+                    await WorkflowService.RoSeekClarificationAsync(_active.Id, _active.RowVersion, _empId, _role, _remarks);
+                    break;
+                case "Return":
+                    await WorkflowService.RoReturnAsync(_active.Id, _active.RowVersion, _empId, _role, _remarks);
+                    break;
+            }
+            Snackbar.Add("Action recorded.", Severity.Success);
+            _items.Remove(_active);
+            _active = null;
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

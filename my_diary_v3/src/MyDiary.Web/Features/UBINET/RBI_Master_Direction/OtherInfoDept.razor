@@ -1,0 +1,492 @@
+@page "/departments/other-info"
+@page "/departments/other-info/{DeptId}"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@inject NavigationManager Nav
+@using MyDiary.Web.Components.Layout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout PublicLayout
+<PageTitle>@_dept.Label – Other Information</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4 mb-8">
+
+    <!-- Page Header -->
+    <MudPaper Elevation="3" Class="pa-4 mb-4"
+              Style=@($"background: linear-gradient(135deg, {_dept.AccentColor} 0%, {_dept.AccentDark} 100%); color:white; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.25) !important;")>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@_dept.Icon" Style="font-size:2.5rem; color:rgba(255,255,255,0.85);" />
+                <div>
+                    <MudText Typo="Typo.h5" Style="font-weight:700; color:white;">
+                        @_dept.Label
+                    </MudText>
+                    <MudText Typo="Typo.body2" Style="color:rgba(255,255,255,0.75); margin-top:2px;">
+                        @_dept.SectionTitle — Union Bank of India
+                    </MudText>
+                </div>
+            </MudStack>
+            <MudStack Row="true" Spacing="2" Class="mt-2 mt-sm-0">
+                <MudButton Variant="Variant.Filled"
+                           Style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.4);"
+                           StartIcon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                           OnClick="@(() => Nav.NavigateTo("departments"))">Departments</MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.4);"
+                           StartIcon="@Icons.Material.Filled.Home" Size="Size.Small"
+                           OnClick="@(() => Nav.NavigateTo(""))">Home</MudButton>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    <!-- Breadcrumb -->
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 pa-0" />
+
+    <!-- Department selector chips -->
+    <MudPaper Elevation="1" Class="pa-3 mb-4" Style="border-radius:10px;">
+        <MudText Typo="Typo.caption" Class="mb-2" Style="color:#666; font-weight:600; display:block;">
+            SWITCH DEPARTMENT
+        </MudText>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            @foreach (var d in _allDepts)
+            {
+                <MudChip T="string"
+                         Color="@(d.Id == DeptId ? Color.Primary : Color.Default)"
+                         Variant="@(d.Id == DeptId ? Variant.Filled : Variant.Outlined)"
+                         Size="Size.Small"
+                         Style="font-size:0.75rem; font-weight:600; cursor:pointer;"
+                         OnClick="@(() => Nav.NavigateTo($"departments/other-info/{d.Id}"))">
+                    @d.Label
+                </MudChip>
+            }
+        </div>
+    </MudPaper>
+
+    <!-- Search (only if list has items) -->
+    @if (_dept.Items.Any())
+    {
+        <MudPaper Elevation="1" Class="pa-3 mb-4" Style="border-radius:10px;">
+            <MudTextField @bind-Value="_searchText"
+                          Placeholder=@($"Search {_dept.SectionTitle}...")
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          AdornmentColor="Color.Primary"
+                          Variant="Variant.Outlined"
+                          Clearable="true"
+                          Immediate="true"
+                          Margin="Margin.Dense"
+                          FullWidth="true"
+                          Style="font-size:0.9rem;" />
+        </MudPaper>
+    }
+
+    <!-- Content -->
+    @{
+        var filtered = string.IsNullOrWhiteSpace(_searchText)
+            ? _dept.Items
+            : _dept.Items.Where(i => i.Label.Contains(_searchText, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    @if (!_dept.Items.Any())
+    {
+        <MudPaper Elevation="0" Class="pa-8 text-center"
+                  Style="border-radius:12px; border:2px dashed #e0e0e0;">
+            <MudIcon Icon="@Icons.Material.Filled.FolderOff"
+                     Style="font-size:4rem; color:#bdbdbd;" Class="mb-2" />
+            <MudText Typo="Typo.h6" Style="color:#9e9e9e; font-weight:600;">
+                No content available for this department.
+            </MudText>
+            <MudText Typo="Typo.body2" Style="color:#bdbdbd;">
+                Please select another department from the chips above.
+            </MudText>
+        </MudPaper>
+    }
+    else if (!filtered.Any())
+    {
+        <MudAlert Severity="Severity.Info" Style="border-radius:10px;">
+            No items found matching "<strong>@_searchText</strong>".
+        </MudAlert>
+    }
+    else
+    {
+        <!-- Grouped sections (Strategy has named groups) -->
+        @if (_dept.Groups.Any())
+        {
+            @foreach (var grp in _dept.Groups)
+            {
+                <MudPaper Elevation="2" Class="pa-4 mb-4"
+                          Style=@($"border-radius:10px; border-left:4px solid {_dept.AccentColor};")>
+                    <MudText Typo="Typo.subtitle1" Class="mb-3"
+                             Style="font-weight:700; color:#1a237e;">@grp.Title</MudText>
+                    <MudDivider Class="mb-3" />
+                    <MudGrid Spacing="2">
+                        @foreach (var item in grp.Items)
+                        {
+                            <MudItem xs="12" sm="6" md="4">
+                                @ItemCard(item)
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </MudPaper>
+            }
+        }
+        else
+        {
+            <MudPaper Elevation="2" Class="pa-4" Style="border-radius:12px;">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+                    <MudIcon Icon="@_dept.Icon" Style=@($"color:{_dept.AccentColor};") />
+                    <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a237e;">
+                        @_dept.SectionTitle
+                    </MudText>
+                    <MudChip T="string" Size="Size.Small"
+                             Style=@($"background:{_dept.AccentColor}; color:white; font-size:0.75rem; font-weight:600; height:22px; margin-left:auto;")>
+                        @filtered.Count item@(filtered.Count != 1 ? "s" : "")
+                    </MudChip>
+                </MudStack>
+                <MudDivider Class="mb-3" />
+                <MudList T="string" Dense="true" DisablePadding="true">
+                    @foreach (var (item, idx) in filtered.Select((x, i) => (x, i)))
+                    {
+                        <MudListItem T="string" Class="px-0 py-1">
+                            <MudPaper Elevation="0" Class="pa-2"
+                                      Style="border-radius:8px; border:1px solid #e8eaf6;
+                                             display:flex; align-items:center; gap:10px;
+                                             justify-content:space-between;">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Style="flex:1; min-width:0;">
+                                    <MudText Typo="Typo.caption"
+                                             Style=@($"background:{_dept.AccentColor}; color:white; border-radius:4px; padding:2px 7px; font-weight:700; flex-shrink:0; font-size:0.72rem;")>
+                                        @(idx + 1)
+                                    </MudText>
+                                    <MudText Typo="Typo.body2"
+                                             Style="font-size:0.85rem; color:#1a237e; font-weight:500;
+                                                    line-height:1.4; word-break:break-word;">
+                                        @item.Label
+                                    </MudText>
+                                </MudStack>
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                               Size="Size.Small"
+                                               Style=@($"color:{_dept.AccentColor}; flex-shrink:0;")
+                                               Href="@item.Url" Target="_blank"
+                                               Title="Open document" />
+                            </MudPaper>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        }
+    }
+
+</MudContainer>
+
+@code {
+    [Parameter] public string DeptId { get; set; } = "cmplc";
+
+    private string _searchText = "";
+    private DeptConfig _dept = new();
+    private List<BreadcrumbItem> _breadcrumbs = new();
+
+    // ---- Data Models ----
+    private record LinkItem(string Label, string Url);
+    private record GroupItem(string Title, List<LinkItem> Items);
+    private record DeptConfig(
+        string Id = "cmplc",
+        string Label = "Compliance",
+        string SectionTitle = "RBI Master Direction",
+        string Icon = "",
+        string AccentColor = "#00695c",
+        string AccentDark = "#004d40",
+        List<LinkItem>? Items = null,
+        List<GroupItem>? Groups = null)
+    {
+        public List<LinkItem> Items { get; init; } = Items ?? new();
+        public List<GroupItem> Groups { get; init; } = Groups ?? new();
+    }
+
+    // Chips list for all supported departments
+    private record DeptChip(string Id, string Label);
+    private List<DeptChip> _allDepts = new()
+    {
+        new("cmplc",      "Compliance"),
+        new("it",         "Information Technology"),
+        new("recon",      "Reconciliation"),
+        new("msme",       "MSME"),
+        new("oper",       "Operations"),
+        new("gbd",        "Govt. Business"),
+        new("creditcard", "Credit Card"),
+        new("ciso",       "CISO"),
+        new("midcorp",    "MID Corporate"),
+        new("crld",       "SAMV"),
+        new("cenAcc",     "Finance & Accounts"),
+        new("strategy",   "Strategy"),
+        new("retass",     "Retail Assets"),
+        new("NPC",        "NPC"),
+        new("digi",       "Digitization"),
+        new("fi",         "RuSu & FI"),
+    };
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrWhiteSpace(DeptId)) DeptId = "cmplc";
+        _dept        = BuildConfig(DeptId);
+        _searchText  = "";
+        _breadcrumbs = new()
+        {
+            new BreadcrumbItem("Home",        href: "",             icon: Icons.Material.Filled.Home),
+            new BreadcrumbItem("Departments", href: "departments"),
+            new BreadcrumbItem(_dept.Label,   href: null, disabled: true),
+        };
+    }
+
+    private RenderFragment ItemCard(LinkItem item) =>
+    @<MudPaper Elevation="1" Class="pa-2" Style="border-radius:8px; border:1px solid #e8eaf6; height:100%;">
+        <MudStack Spacing="1">
+            <MudText Typo="Typo.body2"
+                     Style="font-size:0.82rem; color:#1a237e; font-weight:600; line-height:1.4;">
+                @item.Label
+            </MudText>
+            <MudButton Variant="Variant.Text" Size="Size.Small"
+                       Style=@($"color:{_dept.AccentColor}; font-size:0.75rem; font-weight:600; padding:0; justify-content:flex-start;")
+                       StartIcon="@Icons.Material.Filled.OpenInNew"
+                       Href="@item.Url" Target="_blank">
+                Open
+            </MudButton>
+        </MudStack>
+    </MudPaper>;
+
+    // ===================== DEPT CONFIG BUILDER =====================
+    private DeptConfig BuildConfig(string id) => id switch
+    {
+        "cmplc" => new DeptConfig("cmplc", "Compliance", "RBI Master Direction",
+            Icons.Material.Filled.GppGood, "#00695c", "#004d40",
+            Items: new()
+            {
+                new("Acquisition and Holding of Shares or Voting Rights",                   "https://ubinet.unionbankofindia.co.in/download/Master Direction/Acquisition and Holding of Shares or Voting Rights.pdf"),
+                new("Asset Liability Management",                                           "https://ubinet.unionbankofindia.co.in/download/Master Direction/Asset Liability Management.pdf"),
+                new("Branch Authorisation",                                                 "https://ubinet.unionbankofindia.co.in/download/Master Direction/Branch Authorisation.pdf"),
+                new("Cash Reserve Ratio and Statutory Liquidity Ratio",                    "https://ubinet.unionbankofindia.co.in/download/Master Direction/Cash Reserve Ratio and Statutory Liquidity Ratio.pdf"),
+                new("Classification, Valuation, and Operation of Investment Portfolio",    "https://ubinet.unionbankofindia.co.in/download/Master Direction/Classification, Valuation, and Operation of Investment Portfolio.pdf"),
+                new("Climate Finance and Management of Climate Change Risks",               "https://ubinet.unionbankofindia.co.in/download/Master Direction/Climate Finance and Management of Climate Change Risks.pdf"),
+                new("Concentration Risk Management",                                        "https://ubinet.unionbankofindia.co.in/download/Master Direction/Concentration Risk Management.pdf"),
+                new("Credit Cards and Debit Cards Issuance and Conduct",                   "https://ubinet.unionbankofindia.co.in/download/Master Direction/Credit Cards and Debit Cards Issuance and Conduct.pdf"),
+                new("Credit Facilities",                                                    "https://ubinet.unionbankofindia.co.in/download/Master Direction/Credit Facilities.pdf"),
+                new("Credit Information Reporting",                                         "https://ubinet.unionbankofindia.co.in/download/Master Direction/Credit Information Reporting.pdf"),
+                new("Credit Risk Management",                                               "https://ubinet.unionbankofindia.co.in/download/Master Direction/Credit Risk Management.pdf"),
+                new("Digital Banking Channels Authorisation",                              "https://ubinet.unionbankofindia.co.in/download/Master Direction/Digital Banking Channels Authorisation.pdf"),
+                new("Financial Statements Presentation and Disclosures",                   "https://ubinet.unionbankofindia.co.in/download/Master Direction/Financial Statements Presentation and Disclosures.pdf"),
+                new("Forthcoming Instructions",                                             "https://ubinet.unionbankofindia.co.in/download/Master Direction/Forthcoming Instructions.pdf"),
+                new("Governance",                                                           "https://ubinet.unionbankofindia.co.in/download/Master Direction/Governance.pdf"),
+                new("Income Recognition, Asset Classification and Provisioning",           "https://ubinet.unionbankofindia.co.in/download/Master Direction/Income Recognition, Asset Classification and Provisioning.pdf"),
+                new("Interest Rate on Deposits",                                            "https://ubinet.unionbankofindia.co.in/download/Master Direction/Interest Rate on Deposits.pdf"),
+                new("Interest Rates on Advances",                                           "https://ubinet.unionbankofindia.co.in/download/Master Direction/Interest Rates on Advances.pdf"),
+                new("Know Your Customer",                                                   "https://ubinet.unionbankofindia.co.in/download/Master Direction/Know Your Customer.pdf"),
+                new("Managing Risks in Outsourcing",                                        "https://ubinet.unionbankofindia.co.in/download/Master Direction/Managing Risks in Outsourcing.pdf"),
+                new("Miscellaneous",                                                        "https://ubinet.unionbankofindia.co.in/download/Master Direction/Miscellaneous.pdf"),
+                new("Prudential Norms on Capital Adequacy",                                 "https://ubinet.unionbankofindia.co.in/download/Master Direction/Prudential Norms on Capital Adequacy.pdf"),
+                new("Prudential Norms on Declaration of Dividends and Remittance of Profit","https://ubinet.unionbankofindia.co.in/download/Master Direction/Prudential Norms on Declaration of Dividends and Remittance of Profit.pdf"),
+                new("Resolution of Stressed Assets",                                        "https://ubinet.unionbankofindia.co.in/download/Master Direction/Resolution of Stressed Assets.pdf"),
+                new("Resource Raising Norms",                                               "https://ubinet.unionbankofindia.co.in/download/Master Direction/Resource Raising Norms.pdf"),
+                new("Responsible Business Conduct",                                         "https://ubinet.unionbankofindia.co.in/download/Master Direction/Responsible Business Conduct.pdf"),
+                new("Securitisation Transactions",                                          "https://ubinet.unionbankofindia.co.in/download/Master Direction/Securitisation Transactions.pdf"),
+                new("Setting Up of Wholly Owned Subsidiaries by Foreign Banks",            "https://ubinet.unionbankofindia.co.in/download/Master Direction/Setting Up of Wholly Owned Subsidiaries by Foreign Banks.pdf"),
+                new("Transfer and Distribution of Credit Risk",                             "https://ubinet.unionbankofindia.co.in/download/Master Direction/Transfer and Distribution of Credit Risk.pdf"),
+                new("Treatment of Wilful Defaulters and Large Defaulters",                 "https://ubinet.unionbankofindia.co.in/download/Master Direction/Treatment of Wilful Defaulters and Large Defaulters.pdf"),
+                new("Undertaking of Financial Services",                                    "https://ubinet.unionbankofindia.co.in/download/Master Direction/Undertaking of Financial Services.pdf"),
+                new("Universal Banks – Licensing",                                          "https://ubinet.unionbankofindia.co.in/download/Master Direction/Universal Banks- Licensing.pdf"),
+                new("Voluntary Amalgamation",                                               "https://ubinet.unionbankofindia.co.in/download/Master Direction/Voluntary Amalgamation.pdf"),
+                new("Authentication Mechanisms for Digital Payment Transactions",          "https://ubinet.unionbankofindia.co.in/download/Master Direction/Authentication mechanisms for digital payment transactions.pdf"),
+                new("Bharat Bill Payment System",                                           "https://ubinet.unionbankofindia.co.in/download/Master Direction/Bharat Bill Payment System.pdf"),
+                new("Compounding of Contraventions under FEMA, 1999",                      "https://ubinet.unionbankofindia.co.in/download/Master Direction/Compounding of Contraventions under FEMA, 1999.pdf"),
+                new("Counterfeit Notes, 2025 – Detection, Reporting and Monitoring",       "https://ubinet.unionbankofindia.co.in/download/Master Direction/Counterfeit Notes, 2025 – Detection, Reporting and Monitoring.pdf"),
+                new("Electronic Trading Platforms",                                         "https://ubinet.unionbankofindia.co.in/download/Master Direction/Electronic Trading Platforms.pdf"),
+                new("Facility for Exchange of Notes and Coins",                             "https://ubinet.unionbankofindia.co.in/download/Master Direction/Facility for Exchange of Notes and Coins.pdf"),
+                new("Filing of Supervisory Returns",                                        "https://ubinet.unionbankofindia.co.in/download/Master Direction/Filing of Supervisory Returns.pdf"),
+                new("Framework of Incentives for Currency Distribution & Exchange Scheme", "https://ubinet.unionbankofindia.co.in/download/Master Direction/Framework of incentives for Currency Distribution & Exchange Scheme for bank branches including currency chests.pdf"),
+                new("Fraud Risk Management in Commercial Banks and All India Financial Institutions", "https://ubinet.unionbankofindia.co.in/download/Master Direction/Fraud Risk Management in Commercial Banks (including Regional Rural Banks) and All India Financial Institutions.pdf"),
+                new("Non-resident Investment in Debt Instruments",                         "https://ubinet.unionbankofindia.co.in/download/Master Direction/Non-resident Investment in Debt Instruments.pdf"),
+                new("Overseas Investment",                                                  "https://ubinet.unionbankofindia.co.in/download/Master Direction/Overseas Investment.pdf"),
+                new("Penal Provisions in Reporting of Transactions & Balances at Currency Chests", "https://ubinet.unionbankofindia.co.in/download/Master Direction/Penal Provisions in reporting of transactions  balances at Currency Chests.pdf"),
+                new("Priority Sector Lending – Targets and Classification",                "https://ubinet.unionbankofindia.co.in/download/Master Direction/Priority Sector Lending – Targets and Classification.pdf"),
+                new("Regulation of Payment Aggregator (PA)",                               "https://ubinet.unionbankofindia.co.in/download/Master Direction/Regulation of Payment Aggregator (PA).pdf"),
+                new("Repurchase Transactions (Repo) – Annexure I",                        "https://ubinet.unionbankofindia.co.in/download/Master Direction/Repurchase Transactions (Repo) Annexure i.pdf"),
+                new("Repurchase Transactions (Repo) – Annexure II",                       "https://ubinet.unionbankofindia.co.in/download/Master Direction/Repurchase Transactions (Repo) Annexure ii.pdf"),
+                new("Repurchase Transactions (Repo)",                                      "https://ubinet.unionbankofindia.co.in/download/Master Direction/Repurchase Transactions (Repo).pdf"),
+                new("Rupee Interest Rate Derivatives",                                     "https://ubinet.unionbankofindia.co.in/download/Master Direction/Rupee Interest Rate Derivatives.pdf"),
+                new("Scheme of Penalties for Bank Branches and Currency Chests",          "https://ubinet.unionbankofindia.co.in/download/Master Direction/Scheme of Penalties for bank branches and currency chests for deficiency in rendering customer service to the members of public.pdf"),
+            }),
+
+        "it" => new DeptConfig("it", "Information Technology", "Tech Munch Editions",
+            Icons.Material.Filled.Computer, "#4527a0", "#311b92",
+            Items: new()
+            {
+                new("Tech Munch Edition V1",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/Tech Munch edition v1.pdf"),
+                new("Tech Munch Edition V2",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/Tech Munch Edition v2.pdf"),
+                new("Tech Munch Edition V3",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/Tech Munch Edition v3.pdf"),
+                new("Tech Munch Edition V4",  "https://ubinet.unionbankofindia.co.in/download/Videos/TechMunch_Edition4.mp4"),
+                new("Tech Munch Edition V5",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/Tech Munch Edition v5.pdf"),
+                new("Tech Munch Edition V6",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/TechMunch Edition v6.pdf"),
+                new("Tech Munch Edition V7",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/Tech Munch edition v7.pdf"),
+                new("Tech Munch Edition V8",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/TechMunch Edition v8.pdf"),
+                new("Tech Munch Edition V9",  "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/TechMunch v9.pdf"),
+                new("Tech Munch Edition V10", "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/v10.pdf"),
+                new("Tech Munch Edition V11", "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/TMv11.pdf"),
+                new("Tech Munch Edition V12", "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/TMv12.pdf"),
+                new("Tech Munch Edition V13", "https://ubinet.unionbankofindia.co.in/download/ITTechMunch/Tmv13.pdf"),
+            }),
+
+        "recon" => new DeptConfig("recon", "Reconciliation", "Other Information",
+            Icons.Material.Filled.AccountBalance, "#37474f", "#263238",
+            Items: new()
+            {
+                new("CBDC Dashboard", "/departments/cbdc-dashboard"),
+            }),
+
+        "msme" => new DeptConfig("msme", "MSME", "Government Loan Schemes",
+            Icons.Material.Filled.Storefront, "#f57f17", "#e65100",
+            Items: new()
+            {
+                new("PMEGP",                  "https://ubinet.unionbankofindia.co.in/download/GovtLoanSchemes/02 PMEGP.pdf"),
+                new("Union Mudra",            "https://ubinet.unionbankofindia.co.in/download/GovtLoanSchemes/03 UNION MUDRA.pdf"),
+                new("Union Stand-Up India",   "https://ubinet.unionbankofindia.co.in/download/GovtLoanSchemes/04 Union Stand-Up India.doc"),
+                new("Union Stand-Up India PPT","https://ubinet.unionbankofindia.co.in/download/GovtLoanSchemes/04-1 Stand up India.pptx"),
+                new("Union Start-up",         "https://ubinet.unionbankofindia.co.in/download/GovtLoanSchemes/05 Union Start-up.docx"),
+                new("Union Start Up Scheme PPT","https://ubinet.unionbankofindia.co.in/download/GovtLoanSchemes/05-1 Union Start Up Scheme.ppt"),
+            }),
+
+        "oper" => new DeptConfig("oper", "Operations", "Other Information",
+            Icons.Material.Filled.Settings, "#455a64", "#263238",
+            Items: new()
+            {
+                new("Desk SOP for Calculation of DICGC Premium 2025-26",
+                    "https://ubinet.unionbankofindia.co.in/download/Desk SOP for calculation of DICGC Premium 2025-26.pdf"),
+                new("Customer Service Info Book",
+                    "https://ubinet.unionbankofindia.co.in/download/Customerservicebooklet_2016.pdf"),
+                new("IO Decision – Case Study",
+                    "https://ubinet.unionbankofindia.co.in/download/IO DECISION-CASE STUDY.docx"),
+            }),
+
+        "gbd" => new DeptConfig("gbd", "Government Business", "Government Service Schemes",
+            Icons.Material.Filled.AccountBalanceWallet, "#1565c0", "#0d47a1",
+            Items: new()
+            {
+                new("Taxes – CBDT, GST, CBEC, Custom Duty",                         "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/01 Taxes CBDT - GST - CBEC - Custom Duty.pdf"),
+                new("Taxes – CBDT, GST, CBEC, Custom Duty PPT",                     "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/01-1 TAXES  CBDT, GST,CBEC,CUSTOMES DUTY.pptx"),
+                new("Departmentalized Ministries Accounts (DMA)",                    "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/02 Departmentalized Ministries Accounts DMA.pdf"),
+                new("Departmentalized Ministries Accounts (DMA) PPT",               "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/02-1 Departmentalized Ministries Accounts DMA.pptx"),
+                new("Pension Payments",                                               "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/03 Pension Payments.pdf"),
+                new("Pension Payments PPT",                                           "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/03-1 Pension Payment.pptx"),
+                new("RBI Guidelines Turnover Commission",                             "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/04 RBI Guidelines Turnover Commission.pdf"),
+                new("Account Labeling of Government Accounts",                        "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/05 Account Labeling of Government Accounts.pdf"),
+                new("e-Freight",                                                      "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/06 e Freight.pdf"),
+                new("Educational Institution",                                        "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/07 Educational  Institution.pdf"),
+                new("Educational Institution PPT",                                    "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/07-1 Educational institution.pptx"),
+                new("Fund Management Solution",                                       "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/08 Fund  Management Solution.pdf"),
+                new("Fund Management Solution PPT",                                   "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/08-1 Fund Management Solution.pptx"),
+                new("Non Tax Receipt Portal",                                         "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/09 Non Tax Receipt Portal.pdf"),
+                new("Non Tax Receipt Portal – Payment Gateway – Port Community PPT", "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/09-1 Non Tax Receit portal-payment gateway-Port Community-e Freight.pptx"),
+                new("Payment Gateway Services",                                       "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/10 Payment Gateway Services.pdf"),
+                new("Port Community System",                                          "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/11 Port Community System.pdf"),
+                new("Public Financial Management System",                             "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/12 Public Financial Management System.pdf"),
+                new("Aadhar Enrolment Centre",                                        "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/13 Aadhar Enrolment Centre.pdf"),
+                new("Aadhar Enrolment Centre PPT",                                    "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/13-1 Aadhar Enrolment Centre.pptx"),
+                new("GB Schemes",                                                     "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/GB Schemes.pptx"),
+                new("PMJJBY PPT",                                                     "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/PMJJBY.pptx"),
+                new("PMSBY PPT",                                                      "https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/PMSBY.pptx"),
+                new("PFMS – RBI Guidelines Turnover Commission – Account Labeling PPT","https://ubinet.unionbankofindia.co.in/download/GovtServiceSchemes/PUBLIC FINANCIAL MANAGEMENT SYSTEM PFMS-RBI Guidelines Turnover Commision-Account Labeling.pptx"),
+            }),
+
+        "creditcard" => new DeptConfig("creditcard", "Credit Card & Merchant Acquiring", "FAQs",
+            Icons.Material.Filled.CreditCard, "#b71c1c", "#7f0000",
+            Items: new()
+            {
+                new("FAQs", "https://ubinet.unionbankofindia.co.in/download/CCandMerchant/FAQS.pdf"),
+            }),
+
+        "ciso" => new DeptConfig("ciso", "CISO", "Other Information",
+            Icons.Material.Filled.Security, "#880e4f", "#560027",
+            Items: new()
+            {
+                new("Details of Empanelled IT/Cyber Security Providers & Consultants (ITCSSPs) for 2 years",
+                    "https://ubinet.unionbankofindia.co.in/download/Details of ITCSSP 20082025.pdf"),
+            }),
+
+        "midcorp" => new DeptConfig("midcorp", "MID Corporate", "Other Information",
+            Icons.Material.Filled.Business, "#5d4037", "#3e2723",
+            Items: new()
+            {
+                new("MCV Review Format", "https://ubinet.unionbankofindia.co.in/download/MIDCorporate/MCV review format.xlsx"),
+            }),
+
+        "crld" => new DeptConfig("crld", "SAMV", "Other Information",
+            Icons.Material.Filled.AccountBalance, "#e65100", "#bf360c",
+            Items: new()
+            {
+                new("E-Auction – Eligible Properties (01.08.2023)",
+                    "https://ubinet.unionbankofindia.co.in/download/SAMV/e-AUCTION-eligible-properties-01.08.2023.xlsx"),
+            }),
+
+        "cenAcc" => new DeptConfig("cenAcc", "Finance & Accounts", "Financial Prism E-Magazine",
+            Icons.Material.Filled.BarChart, "#1a237e", "#0d1b6e",
+            Items: new()
+            {
+                new("Financial Prism Vol 1 – March 2022",         "https://ubinet.unionbankofindia.co.in/download/Financial  Prism Vol 1  March 2022.pdf"),
+                new("Financial Prism E-Magazine Vol 2 – May 2022","https://ubinet.unionbankofindia.co.in/download/Financial Prism E-Magazine Vol 2 May 2022.pdf"),
+                new("Financial Prism E-Magazine Vol 3 – July 2022","https://ubinet.unionbankofindia.co.in/download/Financial Prism E-Magazine Vol 3 July 2022.pdf"),
+            }),
+
+        "strategy" => new DeptConfig("strategy", "Strategy", "Competition Scheme Results",
+            Icons.Material.Filled.TrendingUp, "#1a237e", "#0d1b6e",
+            Groups: new()
+            {
+                new("Q1 – Branch & Zone/Region Results", new()
+                {
+                    new("Branch Result Q1",      "https://ubinet.unionbankofindia.co.in/download/strategy/Branch Result Q1.xlsx"),
+                    new("Zone Region Result – Q1","https://ubinet.unionbankofindia.co.in/download/strategy/Zone Region Result - Q1.xlsx"),
+                }),
+                new("Q2 – Branch & Zone/Region Results", new()
+                {
+                    new("Branch Result Q2",      "https://ubinet.unionbankofindia.co.in/download/strategy/Branch Result Q2.xlsx"),
+                    new("Zone Region Result – Q2","https://ubinet.unionbankofindia.co.in/download/strategy/Zone Region Result - Q2.xlsx"),
+                }),
+                new("Q3 – Branch & Zone/Region Results", new()
+                {
+                    new("Branch Result Q3",      "https://ubinet.unionbankofindia.co.in/download/strategy/Branch Result Q3.xlsx"),
+                    new("Zone Region Result – Q3","https://ubinet.unionbankofindia.co.in/download/strategy/Zone Region Result - Q3.xlsx"),
+                }),
+                new("Q4 – Branch & Zone/Region Results", new()
+                {
+                    new("Branch Result Q4",      "https://ubinet.unionbankofindia.co.in/download/strategy/Branch Result - Q4.xlsx"),
+                    new("Zone Region Result – Q4","https://ubinet.unionbankofindia.co.in/download/strategy/Zone Region Result Q4.xlsx"),
+                }),
+            }),
+
+        "retass" => new DeptConfig("retass", "Retail Assets", "Other Information",
+            Icons.Material.Filled.Home, "#2e7d32", "#1b5e20",
+            Items: new()
+            {
+                new("List of Approved Builder Tie Ups / Projects",
+                    "https://ubinet.unionbankofindia.co.in/download/Retail Assets/Builder tie up Approval List UBINET.xlsx"),
+            }),
+
+        "NPC" => new DeptConfig("NPC", "NPC", "Other Information",
+            Icons.Material.Filled.VerifiedUser, "#0277bd", "#01579b",
+            Items: new()
+            {
+                new("Video KYC SOP", "https://ubinet.unionbankofindia.co.in/download/SOP VKYC.pdf"),
+            }),
+
+        "digi" => new DeptConfig("digi", "Digitization", "Informative Series",
+            Icons.Material.Filled.PhoneAndroid, "#00695c", "#004d40",
+            Items: new()
+            {
+                new("August Month Mail Series",  "https://ubinet.unionbankofindia.co.in/download/Digital/Forms/August Month Mail Series.pdf"),
+                new("September Month Mail Series","https://ubinet.unionbankofindia.co.in/download/Digital/Forms/Sept Month Series.pdf"),
+                new("October Month Series",       "https://ubinet.unionbankofindia.co.in/download/Digital/Forms/Oct Month Series.pdf"),
+                new("November & December Month",  "https://ubinet.unionbankofindia.co.in/download/Digital/Forms/Nov & Dec Month.pdf"),
+            }),
+
+        "fi" => new DeptConfig("fi", "RuSu & Financial Inclusion", "Other Information",
+            Icons.Material.Filled.Diversity3, "#558b2f", "#33691e"),
+
+        _ => new DeptConfig(id, id, "Other Information",
+            Icons.Material.Filled.Info, "#37474f", "#263238"),
+    };
+}

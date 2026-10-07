@@ -1,0 +1,1654 @@
+﻿@page "/reports/InsurancePolicies"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Globalization
+@using System.Security.Claims
+@using System.Text.RegularExpressions
+
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Insurance Policies — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#ffffff;">
+
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+
+                <MudItem xs="12" sm="4">
+                    <MudTextField T="string"
+                                  Label="Search Policy Name / Insurer / Policy Number"
+                                  @bind-Value="_searchText"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Dense="true"
+                                  Immediate="true"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search" />
+                </MudItem>
+
+                <MudSpacer />
+
+                <MudItem xs="12" sm="4" Class="d-flex justify-end">
+
+                    @if (_canAdd)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Style="background-color:green;color:white;font-size:11px;margin-right:10px;"
+                                   OnClick="ShowAdd">
+                            Add New
+                        </MudButton>
+                    }
+
+                    <MudButton Variant="Variant.Filled"
+                               Style="background-color:#000066;color:white;font-size:11px;"
+                               OnClick="OnExportInternal">
+                        Export To Excel
+                    </MudButton>
+
+                </MudItem>
+
+            </MudGrid>
+
+            @if (_showAdd)
+            {
+                <MudPaper Class="pa-4 mx-4 mt-2 mb-2">
+
+                    <MudGrid Spacing="2">
+
+                        <!-- Row 1 -->
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="S.No"
+                                          @bind-Value="_sNo"
+                                          Variant="Variant.Outlined"
+                                          Validation="ValidateSNo"
+                                          Required="true"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+
+                            <MudTextField Label="Policy Name"
+                                          @bind-Value="_policyName"
+                                          Variant="Variant.Outlined"
+                                          Validation="ValidatePolicyName"
+                                          Required="true"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="User Vertical"
+                                          @bind-Value="_userVertical"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Premium Paid By"
+                                          @bind-Value="_premiumPaidBy"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Policy Number"
+                                          @bind-Value="_policyNumber"
+                                          Validation="ValidatePolicyNumber"
+                                            Required="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <!-- Row 2 -->
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Inception Taxable Amount"
+                                             Value="_inceptionTaxable"
+                                             ValueChanged="InceptionTaxableChanged"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Inception GST"
+                                             Value="_inceptionGST"
+                                             ValueChanged="InceptionGSTChanged"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Inception Total Amount"
+                                             Value="_inceptionTotal"
+                                             ReadOnly="true"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Endorsement Invoice Upto Month"
+                                          @bind-Value="_endorsementInvoiceUptoMonth"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <!-- Row 3 -->
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Endorsement Taxable Amount"
+                                             Value="_endorsementTaxable"
+                                             ValueChanged="EndorsementTaxableChanged"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Endorsement GST"
+                                             Value="_endorsementGST"
+                                             ValueChanged="EndorsementGSTChanged"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Endorsement Total Amount"
+                                             Value="_endorsementTotal"
+                                             ReadOnly="true"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Insurer Name"
+                                          @bind-Value="_insurerName"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <!-- Row 4 -->
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Total Premium Taxable Amount"
+                                             Value="_totalPremiumTaxable"
+                                             ReadOnly="true"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Total Premium GST"
+                                             Value="_totalPremiumGST"
+                                             ReadOnly="true"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudNumericField T="decimal?"
+                                             Label="Total Premium Amount"
+                                             Value="_totalPremiumTotal"
+                                             ReadOnly="true"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudDatePicker Label="Policy Start Date"
+                                           @bind-Date="_policyStartDate"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Dense="true" />
+
+                            
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                        <MudDatePicker Label="Policy End Date"
+                                       @bind-Date="_policyEndDate"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true" />
+                        </MudItem>
+                        <!-- Row 5 -->
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Renewal Status"
+                                          @bind-Value="_renewalStatus"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+
+                            <InputFile @key="_fileInputKey" OnChange="UploadDocument" accept=".pdf,application/pdf" />
+
+                            @if (!string.IsNullOrWhiteSpace(_policyDocumentName))
+                            {
+                                <MudText Color="Color.Success">
+                                    @_policyDocumentName
+                                </MudText>
+                            }
+
+                        </MudItem>
+                        
+
+                        <!-- Buttons -->
+
+                        <MudItem xs="12">
+
+                            <MudButton Color="Color.Success"
+                                       Variant="Variant.Filled"
+                                       OnClick="SaveRow">
+                                @(_isEdit ? "Update" : "Save")
+                            </MudButton>
+
+                            <MudButton Color="Color.Error"
+                                       Variant="Variant.Filled"
+                                       Class="ml-2"
+                                       OnClick="CancelAdd">
+                                Cancel
+                            </MudButton>
+
+                        </MudItem>
+
+                    </MudGrid>
+
+                </MudPaper>
+            }
+            <MudPaper Class="pa-4 mb-3" Elevation="1">
+                <MudGrid Spacing="2">
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="Policy Name"
+                                   @bind-Value="_filterPolicyName"
+                                   Variant="Variant.Outlined"
+                                   Dense="true"
+                                   Margin="Margin.Dense"
+                                   Clearable="true">
+
+                            @foreach (var item in GetFilterValues("PolicyName"))
+                            {
+                                <MudSelectItem T="string" Value="@item">@item</MudSelectItem>
+                            }
+
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="User Vertical"
+                                   @bind-Value="_filterUserVertical"
+                                   Variant="Variant.Outlined"
+                                   Dense="true"
+                                   Margin="Margin.Dense"
+                                   Clearable="true">
+
+                            @foreach (var item in GetFilterValues("UserVertical"))
+                            {
+                                <MudSelectItem T="string" Value="@item">@item</MudSelectItem>
+                            }
+
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="Premium Paid By"
+                                   @bind-Value="_filterPremiumPaidBy"
+                                   Variant="Variant.Outlined"
+                                   Dense="true"
+                                   Margin="Margin.Dense"
+                                   Clearable="true">
+
+                            @foreach (var item in GetFilterValues("PremiumPaidBy"))
+                            {
+                                <MudSelectItem T="string" Value="@item">@item</MudSelectItem>
+                            }
+
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="Policy Number"
+                                   @bind-Value="_filterPolicyNumber"
+                                   Variant="Variant.Outlined"
+                                   Dense="true"
+                                   Margin="Margin.Dense"
+                                   Clearable="true">
+
+                            @foreach (var item in GetFilterValues("PolicyNumber"))
+                            {
+                                <MudSelectItem T="string" Value="@item">@item</MudSelectItem>
+                            }
+
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="Insurer Name"
+                                   @bind-Value="_filterInsurerName"
+                                   Variant="Variant.Outlined"
+                                   Dense="true"
+                                   Margin="Margin.Dense"
+                                   Clearable="true">
+
+                            @foreach (var item in GetFilterValues("InsurerName"))
+                            {
+                                <MudSelectItem T="string" Value="@item">@item</MudSelectItem>
+                            }
+
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="Renewal Status"
+                                   @bind-Value="_filterRenewalStatus"
+                                   Variant="Variant.Outlined"
+                                   Dense="true"
+                                   Margin="Margin.Dense"
+                                   Clearable="true">
+
+                            @foreach (var item in GetFilterValues("RenewalStatus"))
+                            {
+                                <MudSelectItem T="string" Value="@item">@item</MudSelectItem>
+                            }
+
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudDatePicker Label="Policy Start Date"
+                                       @bind-Date="_filterPolicyStartDate"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Clearable="true"
+                                       Editable="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudDatePicker Label="Policy End Date"
+                                       @bind-Date="_filterPolicyEndDate"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Clearable="true"
+                                       Editable="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" Class="d-flex justify-end mt-2">
+                        <MudButton StartIcon="@Icons.Material.Filled.ClearAll"
+                                   Variant="Variant.Filled"
+                                   Color="Color.Error"
+                                   OnClick="ClearFilters">
+                            Clear Filters
+                        </MudButton>
+                    </MudItem>
+
+                </MudGrid>
+            </MudPaper>
+            <!-- ✅ Data Table -->
+            <MudItem xs="12" Class="pa-4">
+
+                <MudTable Items="FilteredData"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50"
+                          SortLabel="Sort By">
+
+                    <!-- ✅ HEADER -->
+                    <HeaderContent>
+
+                        <MudTh Style="background-color:#2a2f5b; color:white; width:80px; text-align:center;">
+
+                            <MudTableSortLabel T="Dictionary<string, object>"
+                                               SortBy="@(x => GetNaturalSortKey(
+                           x.ContainsKey("SNo")
+                           ? x["SNo"]?.ToString() ?? ""
+                           : ""))">
+                                S.No
+                            </MudTableSortLabel>
+
+                        </MudTh>
+
+                        @foreach (var col in VisibleColumns)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width:{col.Width}; text-align:center;")">
+
+                                @if (col.IsNumeric)
+                                {
+                                    <MudTableSortLabel T="Dictionary<string, object>"
+                                                       SortBy="@(x =>
+                           x.ContainsKey(col.PropertyName)
+                               ? decimal.TryParse(
+                                    x[col.PropertyName]?.ToString(),
+                                    out var d)
+                                    ? d
+                                    : 0m
+                               : 0m)">
+                                        @col.Header
+                                    </MudTableSortLabel>
+                                }
+                                else
+                                {
+                                    if (col.PropertyName == "PolicyEndDate")
+                                    {
+                                        <MudTableSortLabel T="Dictionary<string, object>"
+                                                           SortBy="@(x =>
+                            x.ContainsKey("PolicyEndDate")
+                                ? Convert.ToDateTime(x["PolicyEndDate"])
+                                : DateTime.MinValue)">
+                                            @col.Header
+                                        </MudTableSortLabel>
+                                    }
+                                    else
+                                    {
+                                        <MudTableSortLabel T="Dictionary<string, object>"
+                                                           SortBy="@(x =>
+                           x.ContainsKey(col.PropertyName)
+                               ? x[col.PropertyName]?.ToString() ?? ""
+                               : "")">
+                                            @col.Header
+                                        </MudTableSortLabel>
+                                    }
+                                }
+
+
+
+                            </MudTh>
+                        }
+                        <MudTh Style="background-color:#2a2f5b;color:white;">
+                            Policy Document
+                        </MudTh>
+                        
+                        @if (_canAdd)
+                        {
+                            <MudTh Style="background:#2a2f5b;color:white;">
+                                Action
+                            </MudTh>
+                        }
+
+                    </HeaderContent>
+
+                    <!-- ✅ ROW -->
+                    <RowTemplate>
+                        <MudTd Style="text-align:center;">
+                            @(context.ContainsKey("SNo") ? context["SNo"] : "-")
+                        </MudTd>
+                        
+
+                        @foreach (var col in VisibleColumns)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align:right;" : "text-align:left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+
+                        <MudTd>
+
+                            @if (context["PolicyDocument"] != DBNull.Value
+                            && context["PolicyDocument"] is byte[] bytes
+                            && bytes.Length > 0)
+                            {
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           OnClick="@(() => DownloadDocument(context))">
+                                    Download
+                                </MudButton>
+                            }
+
+                        </MudTd>
+                        @if (_canAdd)
+                        {
+                            <MudTd>
+
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           Style="margin-right:5px;"
+                                           OnClick="@(() => EditRow(context))">
+                                    Edit
+                                </MudButton>
+
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => DeleteRow(context))">
+                                    Delete
+                                </MudButton>
+
+                            </MudTd>
+                        }
+                    </RowTemplate>
+
+                    <!-- ✅ NO DATA -->
+                    <NoRecordsContent>
+                        <td colspan="@(VisibleColumns.Count + 2)" style="text-align:center; padding:40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">
+                                No Data Found!
+                            </MudText>
+                        </td>
+                    </NoRecordsContent>
+
+                    <!-- ✅ PAGER -->
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10,25,50,100}" />
+                    </PagerContent>
+
+                </MudTable>
+
+            </MudItem>
+
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool _loading = true;
+    private List<Dictionary<string, object>> _data = new();
+    private bool _canAdd = false;
+    private bool _showAdd = false;
+    private bool _isEdit = false;
+    private int _editId;
+    private string _sNo = "";
+    private string _policyName = "";
+    private string _userVertical = "";
+    private string _premiumPaidBy = "";
+    private string _policyNumber = "";
+    private string? _policyValidityError;
+    private string _fileInputKey = Guid.NewGuid().ToString();
+    private decimal? _inceptionTaxable;
+    private decimal? _inceptionGST;
+    private decimal? _inceptionTotal;
+    private string _filterPolicyName = "";
+    private string _filterUserVertical = "";
+    private string _filterPremiumPaidBy = "";
+    private string _filterPolicyNumber = "";
+    private string _filterEndorseMonth = "";
+    private string _filterInsurerName = "";
+    private string _filterRenewalStatus = "";
+    private DateTime? _filterPolicyStartDate;
+private DateTime? _filterPolicyEndDate;
+    private string _endorsementInvoiceUptoMonth = "";
+
+    private decimal? _endorsementTaxable;
+    private decimal? _endorsementGST;
+    private decimal? _endorsementTotal;
+
+    private decimal? _totalPremiumTaxable;
+    private decimal? _totalPremiumGST;
+    private decimal? _totalPremiumTotal;
+    private string _searchText = "";
+
+    private string _insurerName = "";
+    private DateTime? _policyStartDate;
+    private DateTime? _policyEndDate;
+    private string _renewalStatus = "";
+
+    private byte[]? _policyDocumentBytes;
+    private string _policyDocumentName = "";
+
+ 
+    private IEnumerable<string> GetFilterValues(string columnName)
+    {
+        return FilterDataForDropdowns
+            .Where(x =>
+                x.ContainsKey(columnName) &&
+                x[columnName] != DBNull.Value)
+            .Select(x => x[columnName]?.ToString() ?? "")
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .OrderBy(x => x);
+    }
+
+    private IEnumerable<Dictionary<string, object>> FilterDataForDropdowns =>
+    _data.Where(x =>
+
+        (string.IsNullOrEmpty(_filterPolicyName)
+            || x["PolicyName"]?.ToString() == _filterPolicyName)
+
+        &&
+
+        (string.IsNullOrEmpty(_filterUserVertical)
+            || x["UserVertical"]?.ToString() == _filterUserVertical)
+
+
+        &&
+    (
+    !_filterPolicyStartDate.HasValue
+    ||
+    (
+        x["PolicyStartDate"] != DBNull.Value &&
+        Convert.ToDateTime(x["PolicyStartDate"]).Date
+        >= _filterPolicyStartDate.Value.Date
+    )
+    )
+
+    &&
+    (
+    !_filterPolicyEndDate.HasValue
+    ||
+    (
+        x["PolicyEndDate"] != DBNull.Value &&
+        Convert.ToDateTime(x["PolicyEndDate"]).Date
+        <= _filterPolicyEndDate.Value.Date
+    )
+    ) 
+        &&
+
+        (string.IsNullOrEmpty(_filterPremiumPaidBy)
+            || x["PremiumPaidBy"]?.ToString() == _filterPremiumPaidBy)
+
+        &&
+
+        (string.IsNullOrEmpty(_filterPolicyNumber)
+            || x["PolicyNumber"]?.ToString() == _filterPolicyNumber)
+
+        &&
+
+        (string.IsNullOrEmpty(_filterEndorseMonth)
+            || x["Endorsement_InvoiceUptoMonth"]?.ToString() == _filterEndorseMonth)
+
+        &&
+
+        (string.IsNullOrEmpty(_filterInsurerName)
+            || x["InsurerName"]?.ToString() == _filterInsurerName)
+
+        &&
+
+        (string.IsNullOrEmpty(_filterRenewalStatus)
+            || x["RenewalStatus"]?.ToString() == _filterRenewalStatus)
+    );
+
+    private IEnumerable<Dictionary<string, object>> FilteredData =>
+    _data.Where(x =>
+
+        (string.IsNullOrWhiteSpace(_searchText) ||
+         (x.ContainsKey("PolicyName") &&
+          x["PolicyName"]?.ToString()?.Contains(_searchText,
+            StringComparison.OrdinalIgnoreCase) == true) ||
+
+         (x.ContainsKey("InsurerName") &&
+          x["InsurerName"]?.ToString()?.Contains(_searchText,
+            StringComparison.OrdinalIgnoreCase) == true) ||
+
+         (x.ContainsKey("PolicyNumber") &&
+          x["PolicyNumber"]?.ToString()?.Contains(_searchText,
+            StringComparison.OrdinalIgnoreCase) == true))
+
+        &&
+
+        (string.IsNullOrWhiteSpace(_filterPolicyName) ||
+         (x["PolicyName"]?.ToString() ?? "")
+         .Contains(_filterPolicyName, StringComparison.OrdinalIgnoreCase))
+
+        &&
+
+        (string.IsNullOrWhiteSpace(_filterUserVertical) ||
+         (x["UserVertical"]?.ToString() ?? "")
+         .Contains(_filterUserVertical, StringComparison.OrdinalIgnoreCase))
+
+        &&
+
+        (string.IsNullOrWhiteSpace(_filterPremiumPaidBy) ||
+         (x["PremiumPaidBy"]?.ToString() ?? "")
+         .Contains(_filterPremiumPaidBy, StringComparison.OrdinalIgnoreCase))
+
+        &&
+
+        (string.IsNullOrWhiteSpace(_filterPolicyNumber) ||
+         (x["PolicyNumber"]?.ToString() ?? "")
+         .Contains(_filterPolicyNumber, StringComparison.OrdinalIgnoreCase))
+
+        &&
+
+        (string.IsNullOrWhiteSpace(_filterEndorseMonth) ||
+         (x["Endorsement_InvoiceUptoMonth"]?.ToString() ?? "")
+         .Contains(_filterEndorseMonth, StringComparison.OrdinalIgnoreCase))
+
+        &&
+
+        (string.IsNullOrWhiteSpace(_filterInsurerName) ||
+         (x["InsurerName"]?.ToString() ?? "")
+         .Contains(_filterInsurerName, StringComparison.OrdinalIgnoreCase))
+
+        &&
+
+        (string.IsNullOrWhiteSpace(_filterRenewalStatus) ||
+         (x["RenewalStatus"]?.ToString() ?? "")
+         .Contains(_filterRenewalStatus, StringComparison.OrdinalIgnoreCase))
+
+        &&
+
+        (
+            !_filterPolicyStartDate.HasValue ||
+            (x["PolicyStartDate"] != DBNull.Value &&
+             Convert.ToDateTime(x["PolicyStartDate"]).Date
+                >= _filterPolicyStartDate.Value.Date)
+        )
+
+        &&
+
+        (
+            !_filterPolicyEndDate.HasValue ||
+            (x["PolicyEndDate"] != DBNull.Value &&
+             Convert.ToDateTime(x["PolicyEndDate"]).Date
+                <= _filterPolicyEndDate.Value.Date)
+        )
+    );
+
+    private void ClearFilters()
+    {
+        _filterPolicyName = null;
+        _filterUserVertical = null;
+        _filterPremiumPaidBy = null;
+        _filterPolicyNumber = null;
+        _filterInsurerName = null;
+        _filterRenewalStatus = null;
+
+        _filterPolicyStartDate = null;
+        _filterPolicyEndDate = null;
+    }
+
+    private object GetSortValue(
+    Dictionary<string, object> row,
+    ColumnConfig col)
+    {
+        if (!row.ContainsKey(col.PropertyName) ||
+            row[col.PropertyName] == null ||
+            row[col.PropertyName] == DBNull.Value)
+            return "";
+
+        if (col.IsNumeric)
+        {
+            return Convert.ToDecimal(row[col.PropertyName]);
+        }
+
+        return row[col.PropertyName]?.ToString() ?? "";
+    }
+
+    private string ValidateSNo(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "S.No is required";
+
+        return null;
+    }
+
+    private string ValidatePolicyName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Policy Name is required";
+
+        return null;
+    }
+
+    private string ValidatePolicyNumber(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Policy Number is required";
+
+        return null;
+    }
+
+    private string ValidatePolicyDates()
+    {
+        if (!_policyStartDate.HasValue)
+            return "Policy Start Date is required";
+
+        if (!_policyEndDate.HasValue)
+            return "Policy End Date is required";
+
+        if (_policyEndDate < _policyStartDate)
+            return "End Date cannot be earlier than Start Date";
+
+        return null;
+    }
+
+    private async Task UploadDocument(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        if (file == null)
+            return;
+
+        // PDF validation
+        if (!file.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Only PDF files are allowed.");
+
+            _policyDocumentBytes = null;
+            _policyDocumentName = "";
+
+            return;
+        }
+
+        // 20 MB validation
+        const long maxSize = 20 * 1024 * 1024;
+
+        if (file.Size > maxSize)
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "File size cannot exceed 20 MB.");
+
+            _policyDocumentBytes = null;
+            _policyDocumentName = "";
+            _fileInputKey = Guid.NewGuid().ToString();
+            StateHasChanged();
+            return;
+        }
+
+        _policyDocumentName = file.Name;
+
+        using var ms = new MemoryStream();
+
+        await file.OpenReadStream(maxSize)
+                  .CopyToAsync(ms);
+
+        _policyDocumentBytes = ms.ToArray();
+    }
+
+    private async Task DeleteRow(Dictionary<string, object> row)
+    {
+        var authState =
+    await AuthStateProvider.GetAuthenticationStateAsync();
+
+        var currentUser =
+            authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? "";
+        bool delete = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Delete policy {row["PolicyNumber"]} ?");
+
+        if (!delete)
+            return;
+
+        string query = $@"
+UPDATE InsurancePolicies
+SET IsDeleted = 'Y',ModifiedBy = '{currentUser}',
+ModifiedOn = GETDATE()
+WHERE PolicyId = {row["PolicyId"]}";
+
+        await ReportService.ExecuteRawQueryAsync(query);
+
+        await LoadData();
+    }
+
+
+
+    private Task InceptionTaxableChanged(decimal? value)
+    {
+        _inceptionTaxable = value;
+        CalculateTotals();
+        return Task.CompletedTask;
+    }
+
+    private Task InceptionGSTChanged(decimal? value)
+    {
+        _inceptionGST = value;
+        CalculateTotals();
+        return Task.CompletedTask;
+    }
+
+    private Task EndorsementTaxableChanged(decimal? value)
+    {
+        _endorsementTaxable = value;
+        CalculateTotals();
+        return Task.CompletedTask;
+    }
+
+    private Task EndorsementGSTChanged(decimal? value)
+    {
+        _endorsementGST = value;
+        CalculateTotals();
+        return Task.CompletedTask;
+    }
+
+    private void CalculateTotals()
+    {
+        _inceptionTotal =
+            (_inceptionTaxable ?? 0) +
+            (_inceptionGST ?? 0);
+
+        _endorsementTotal =
+            (_endorsementTaxable ?? 0) +
+            (_endorsementGST ?? 0);
+
+        _totalPremiumTaxable =
+            (_inceptionTaxable ?? 0) +
+            (_endorsementTaxable ?? 0);
+
+        _totalPremiumGST =
+            (_inceptionGST ?? 0) +
+            (_endorsementGST ?? 0);
+
+        _totalPremiumTotal =
+            (_inceptionTotal ?? 0) +
+            (_endorsementTotal ?? 0);
+    }
+
+    private async Task EditRow(Dictionary<string, object> row)
+    {
+        try
+        {
+            _isEdit = true;
+
+            _editId = Convert.ToInt32(row["PolicyId"]);
+
+            _sNo = row["SNo"] == DBNull.Value ? "" : row["SNo"].ToString();
+
+            _policyName = row["PolicyName"] == DBNull.Value ? "" : row["PolicyName"].ToString();
+            _userVertical = row["UserVertical"] == DBNull.Value ? "" : row["UserVertical"].ToString();
+            _premiumPaidBy = row["PremiumPaidBy"] == DBNull.Value ? "" : row["PremiumPaidBy"].ToString();
+            _policyNumber = row["PolicyNumber"] == DBNull.Value ? "" : row["PolicyNumber"].ToString();
+
+            _inceptionTaxable = row["Inception_TaxableAmount"] == DBNull.Value
+                ? null : Convert.ToDecimal(row["Inception_TaxableAmount"]);
+
+            _inceptionGST = row["Inception_GST"] == DBNull.Value
+                ? null : Convert.ToDecimal(row["Inception_GST"]);
+
+            _endorsementInvoiceUptoMonth =
+                row["Endorsement_InvoiceUptoMonth"] == DBNull.Value
+                ? ""
+                : row["Endorsement_InvoiceUptoMonth"].ToString();
+
+            _endorsementTaxable = row["Endorsement_TaxableAmount"] == DBNull.Value
+                ? null : Convert.ToDecimal(row["Endorsement_TaxableAmount"]);
+
+            _endorsementGST = row["Endorsement_GST"] == DBNull.Value
+                ? null : Convert.ToDecimal(row["Endorsement_GST"]);
+
+            _insurerName = row["InsurerName"] == DBNull.Value ? "" : row["InsurerName"].ToString();
+            _policyStartDate =
+    row["PolicyStartDate"] == DBNull.Value
+    ? null
+    : Convert.ToDateTime(row["PolicyStartDate"]);
+
+            _policyEndDate =
+                row["PolicyEndDate"] == DBNull.Value
+                ? null
+                : Convert.ToDateTime(row["PolicyEndDate"]);
+            _renewalStatus = row["RenewalStatus"] == DBNull.Value ? "" : row["RenewalStatus"].ToString();
+
+            _policyDocumentName = row["PolicyDocumentName"] == DBNull.Value
+                ? ""
+                : row["PolicyDocumentName"].ToString();
+
+            CalculateTotals();
+
+            _showAdd = true;
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", ex.ToString());
+        }
+    }
+
+    private async Task SaveRow()
+    {
+        try
+        {
+            var sNo = (_sNo ?? "").Replace("'", "''");
+            var policyName = (_policyName ?? "").Replace("'", "''");
+            var userVertical = (_userVertical ?? "").Replace("'", "''");
+            var premiumPaidBy = (_premiumPaidBy ?? "").Replace("'", "''");
+            var policyNumber = (_policyNumber ?? "").Replace("'", "''");
+            var endorsementMonth = (_endorsementInvoiceUptoMonth ?? "").Replace("'", "''");
+            var insurerName = (_insurerName ?? "").Replace("'", "''");
+            var policyStartDate =
+    _policyStartDate.HasValue
+        ? $"'{_policyStartDate.Value:yyyy-MM-dd}'"
+        : "NULL";
+
+            var policyEndDate =
+                _policyEndDate.HasValue
+                    ? $"'{_policyEndDate.Value:yyyy-MM-dd}'"
+                    : "NULL";
+            var renewalStatus = (_renewalStatus ?? "").Replace("'", "''");
+            var inceptionTaxable = _inceptionTaxable?.ToString() ?? "NULL";
+            var inceptionGST = _inceptionGST?.ToString() ?? "NULL";
+            var inceptionTotal = _inceptionTotal?.ToString() ?? "NULL";
+
+            var endorsementTaxable = _endorsementTaxable?.ToString() ?? "NULL";
+            var endorsementGST = _endorsementGST?.ToString() ?? "NULL";
+            var endorsementTotal = _endorsementTotal?.ToString() ?? "NULL";
+
+            var totalPremiumTaxable = _totalPremiumTaxable?.ToString() ?? "NULL";
+            var totalPremiumGST = _totalPremiumGST?.ToString() ?? "NULL";
+            var totalPremiumTotal = _totalPremiumTotal?.ToString() ?? "NULL";
+
+            var authState =
+    await AuthStateProvider.GetAuthenticationStateAsync();
+
+            var currentUser = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+            if (_policyDocumentBytes != null &&
+    _policyDocumentBytes.Length > 20 * 1024 * 1024)
+            {
+                await JS.InvokeVoidAsync(
+                    "alert",
+                    "File size cannot exceed 20 MB.");
+
+                return;
+            }
+
+            string query;
+            string fileData =
+        _policyDocumentBytes != null
+            ? Convert.ToBase64String(_policyDocumentBytes)
+            : "";
+            string documentValue =
+        string.IsNullOrEmpty(fileData)
+            ? "NULL"
+            : $@"CAST(N'' AS XML).value(
+'xs:base64Binary(""{fileData}"")',
+'VARBINARY(MAX)'
+)";
+            var duplicateQuery = _isEdit
+        ? $@"
+        SELECT PolicyId
+        FROM InsurancePolicies
+        WHERE IsDeleted='N'
+        AND PolicyNumber = '{policyNumber}'
+        AND PolicyName = '{policyName}'
+        AND PolicyId <> {_editId}"
+        : $@"
+        SELECT PolicyId
+        FROM InsurancePolicies
+        WHERE IsDeleted='N'
+        AND PolicyNumber = '{policyNumber}'
+        AND PolicyName = '{policyName}'";
+
+            var duplicateRows =
+                await ReportService.ExecuteRawQueryAsync(duplicateQuery);
+
+            if (duplicateRows.Any())
+            {
+                await JS.InvokeVoidAsync(
+                    "alert",
+                    "Duplicate policy found. Same Policy Number already exists.");
+
+                return;
+            }
+
+            var sNoError = ValidateSNo(_sNo);
+            if (!string.IsNullOrWhiteSpace(sNoError))
+            {
+                await JS.InvokeVoidAsync("alert", sNoError);
+                return;
+            }
+
+            var policyNameError = ValidatePolicyName(_policyName);
+            if (!string.IsNullOrWhiteSpace(policyNameError))
+            {
+                await JS.InvokeVoidAsync("alert", policyNameError);
+                return;
+            }
+
+            var policyNumberError = ValidatePolicyNumber(_policyNumber);
+            if (!string.IsNullOrWhiteSpace(policyNumberError))
+            {
+                await JS.InvokeVoidAsync("alert", policyNumberError);
+                return;
+            }
+            var dateError = ValidatePolicyDates();
+
+            if (!string.IsNullOrWhiteSpace(dateError))
+            {
+                await JS.InvokeVoidAsync("alert", dateError);
+                return;
+            }
+
+
+            if (_isEdit)
+            {
+                if (_policyDocumentBytes == null)
+                {
+                    query = $@"
+UPDATE InsurancePolicies
+SET
+SNo='{sNo}',
+PolicyName='{policyName}',
+UserVertical='{userVertical}',
+PremiumPaidBy='{premiumPaidBy}',
+PolicyNumber='{policyNumber}',
+
+Inception_TaxableAmount={inceptionTaxable},
+Inception_GST={inceptionGST},
+Inception_TotalAmount={inceptionTotal},
+
+Endorsement_InvoiceUptoMonth='{endorsementMonth}',
+Endorsement_TaxableAmount={endorsementTaxable},
+Endorsement_GST={endorsementGST},
+Endorsement_TotalAmount={endorsementTotal},
+
+TotalPremium_TaxableAmount={totalPremiumTaxable},
+TotalPremium_GST={totalPremiumGST},
+TotalPremium_TotalAmount={totalPremiumTotal},
+
+InsurerName='{insurerName}',
+PolicyStartDate={policyStartDate},
+PolicyEndDate={policyEndDate},
+RenewalStatus='{renewalStatus}',
+
+ModifiedBy='{currentUser}',
+ModifiedOn=GETDATE()
+
+WHERE PolicyId={_editId}";
+                }
+                else
+                {
+                    query = $@"
+UPDATE InsurancePolicies
+SET
+SNo='{sNo}',
+PolicyName='{policyName}',
+UserVertical='{userVertical}',
+PremiumPaidBy='{premiumPaidBy}',
+PolicyNumber='{policyNumber}',
+
+Inception_TaxableAmount={inceptionTaxable},
+Inception_GST={inceptionGST},
+Inception_TotalAmount={inceptionTotal},
+
+Endorsement_InvoiceUptoMonth='{endorsementMonth}',
+Endorsement_TaxableAmount={endorsementTaxable},
+Endorsement_GST={endorsementGST},
+Endorsement_TotalAmount={endorsementTotal},
+
+TotalPremium_TaxableAmount={totalPremiumTaxable},
+TotalPremium_GST={totalPremiumGST},
+TotalPremium_TotalAmount={totalPremiumTotal},
+
+InsurerName='{insurerName}',
+PolicyStartDate={policyStartDate},
+PolicyEndDate={policyEndDate},
+RenewalStatus='{renewalStatus}',
+
+PolicyDocument =
+CAST(N'' AS XML).value(
+'xs:base64Binary(""{fileData}"")',
+'VARBINARY(MAX)'
+),
+
+PolicyDocumentName =
+'{_policyDocumentName}',
+
+ModifiedBy =
+'{currentUser}',
+
+ModifiedOn =
+GETDATE()
+
+WHERE PolicyId={_editId}";
+                }
+            }
+            else
+            {
+                query = $@"
+INSERT INTO InsurancePolicies
+(
+SNo,
+PolicyName,
+UserVertical,
+PremiumPaidBy,
+PolicyNumber,
+
+Inception_TaxableAmount,
+Inception_GST,
+Inception_TotalAmount,
+
+Endorsement_InvoiceUptoMonth,
+Endorsement_TaxableAmount,
+Endorsement_GST,
+Endorsement_TotalAmount,
+
+TotalPremium_TaxableAmount,
+TotalPremium_GST,
+TotalPremium_TotalAmount,
+
+InsurerName,
+PolicyStartDate,
+PolicyEndDate,
+RenewalStatus,
+
+PolicyDocument,
+PolicyDocumentName,
+IsDeleted,
+CreatedBy,
+CreatedOn,
+ModifiedBy,
+ModifiedOn
+
+)
+VALUES
+(
+'{sNo}',
+'{policyName}',
+'{userVertical}',
+'{premiumPaidBy}',
+'{policyNumber}',
+
+{inceptionTaxable},
+{inceptionGST},
+{inceptionTotal},
+
+'{endorsementMonth}',
+{endorsementTaxable},
+{endorsementGST},
+{endorsementTotal},
+
+{totalPremiumTaxable},
+{totalPremiumGST},
+{totalPremiumTotal},
+
+'{insurerName}',
+{policyStartDate},
+{policyEndDate},
+'{renewalStatus}',
+
+{documentValue},
+
+'{_policyDocumentName}',
+'N',
+
+'{currentUser}',
+GETDATE(),
+
+NULL,
+NULL
+)";
+            }
+
+            await ReportService.ExecuteRawQueryAsync(query);
+
+            ClearForm();
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", ex.ToString());
+        }
+    }
+
+
+    private void ClearForm()
+    {
+        _sNo = "";
+        _policyName = "";
+        _userVertical = "";
+        _premiumPaidBy = "";
+        _policyNumber = "";
+
+        _inceptionTaxable = null;
+        _inceptionGST = null;
+        _inceptionTotal = null;
+
+        _endorsementInvoiceUptoMonth = "";
+
+        _endorsementTaxable = null;
+        _endorsementGST = null;
+        _endorsementTotal = null;
+
+        _totalPremiumTaxable = null;
+        _totalPremiumGST = null;
+        _totalPremiumTotal = null;
+
+        _insurerName = "";
+        _policyStartDate = null;
+        _policyEndDate = null;
+        _renewalStatus = "";
+        _policyDocumentBytes = null;
+        _policyDocumentName = "";
+
+
+        _showAdd = false;
+        _isEdit = false;
+    }
+
+
+    private void ShowAdd()
+    {
+        ClearForm();
+        _showAdd = true;
+    }
+
+    private void CancelAdd()
+    {
+        _showAdd = false;
+        _isEdit = false;
+    }
+    // ✅ Columns (unchanged)
+    private readonly List<ColumnConfig> _cols = new()
+    {
+        new ColumnConfig { Header = "Policy Name", PropertyName = "PolicyName", Width="200px" },
+        new ColumnConfig { Header = "User Vertical", PropertyName = "UserVertical", Width="150px" },
+        new ColumnConfig { Header = "Premium Paid By", PropertyName = "PremiumPaidBy", Width="150px" },
+        new ColumnConfig { Header = "Policy Number", PropertyName = "PolicyNumber", Width="150px" },
+
+        new ColumnConfig { Header = "Inception Taxable", PropertyName = "Inception_TaxableAmount", Width="140px", IsNumeric = true, Format="N2" },
+        new ColumnConfig { Header = "Inception GST", PropertyName = "Inception_GST", Width="120px", IsNumeric = true, Format="N2" },
+        new ColumnConfig { Header = "Inception Total", PropertyName = "Inception_TotalAmount", Width="140px", IsNumeric = true, Format="N2" },
+
+        new ColumnConfig { Header = "Endorse Month", PropertyName = "Endorsement_InvoiceUptoMonth", Width="150px" },
+        new ColumnConfig { Header = "Endorse Taxable", PropertyName = "Endorsement_TaxableAmount", Width="140px", IsNumeric = true, Format="N2" },
+        new ColumnConfig { Header = "Endorse GST", PropertyName = "Endorsement_GST", Width="120px", IsNumeric = true, Format="N2" },
+        new ColumnConfig { Header = "Endorse Total", PropertyName = "Endorsement_TotalAmount", Width="140px", IsNumeric = true, Format="N2" },
+
+        new ColumnConfig { Header = "Total Taxable", PropertyName = "TotalPremium_TaxableAmount", Width="140px", IsNumeric = true, Format="N2" },
+        new ColumnConfig { Header = "Total GST", PropertyName = "TotalPremium_GST", Width="120px", IsNumeric = true, Format="N2" },
+        new ColumnConfig { Header = "Total Amount", PropertyName = "TotalPremium_TotalAmount", Width="140px", IsNumeric = true, Format="N2" },
+
+        new ColumnConfig { Header = "Insurer Name", PropertyName = "InsurerName", Width="180px" },
+        new ColumnConfig
+{
+    Header = "Policy Start Date",
+    PropertyName = "PolicyStartDate",
+    Width="130px"
+},
+
+new ColumnConfig
+{
+    Header = "Policy End Date",
+    PropertyName = "PolicyEndDate",
+    Width="130px"
+},
+        new ColumnConfig { Header = "Renewal Status", PropertyName = "RenewalStatus", Width="120px" },
+        new ColumnConfig
+{
+    Header = "Created By",
+    PropertyName = "CreatedBy",
+    Width = "180px"
+},
+
+new ColumnConfig
+{
+    Header = "Created On",
+    PropertyName = "CreatedOn",
+    Width = "160px"
+},
+
+new ColumnConfig
+{
+    Header = "Modified By",
+    PropertyName = "ModifiedBy",
+    Width = "180px"
+},
+
+new ColumnConfig
+{
+    Header = "Modified On",
+    PropertyName = "ModifiedOn",
+    Width = "160px"
+}
+    };
+
+    private List<ColumnConfig> VisibleColumns =>
+    _canAdd
+        ? _cols
+        : _cols.Where(c =>
+            c.PropertyName != "Inception_TaxableAmount" &&
+            c.PropertyName != "Inception_GST" &&
+            c.PropertyName != "Inception_TotalAmount" &&
+
+            c.PropertyName != "Endorsement_TaxableAmount" &&
+            c.PropertyName != "Endorsement_GST" &&
+            c.PropertyName != "Endorsement_TotalAmount" &&
+
+            c.PropertyName != "TotalPremium_TaxableAmount" &&
+            c.PropertyName != "TotalPremium_GST" &&
+            c.PropertyName != "TotalPremium_TotalAmount" &&
+            c.PropertyName != "CreatedBy" &&
+            c.PropertyName != "CreatedOn" &&
+            c.PropertyName != "ModifiedBy" &&
+            c.PropertyName != "ModifiedOn")
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        var department = authState.User
+            .FindFirst("department_desc")?.Value?
+            .ToUpper() ?? "";
+
+        if (department.Contains("SSD") || department.Contains("SUPPORT SERVICES"))
+            _canAdd = true;
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string query = "SELECT * FROM InsurancePolicies WHERE IsDeleted = 'N' ORDER BY SortOrder";
+        _data = await ReportService.ExecuteRawQueryAsync(query);
+
+        _data = GetSortedDataForDisplay().ToList();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task DownloadDocument(Dictionary<string, object> row)
+    {
+        if (row["PolicyDocument"] == DBNull.Value)
+            return;
+
+        var fileBytes = (byte[])row["PolicyDocument"];
+
+        if (fileBytes == null || fileBytes.Length == 0)
+        {
+            await JS.InvokeVoidAsync(
+                "alert",
+                "No document available for this policy.");
+
+            return;
+        }
+
+        var fileName =
+            row["PolicyDocumentName"]?.ToString()
+            ?? "PolicyDocument.pdf";
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            fileName,
+            "application/octet-stream",
+            Convert.ToBase64String(fileBytes));
+    }
+
+    private object GetAdvancedSortKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return (int.MaxValue, int.MaxValue, "");
+
+        value = value.Trim();
+
+        // 1021.1
+        var decimalMatch = Regex.Match(
+            value,
+            @"^(\d+)\.(\d+)$");
+
+        if (decimalMatch.Success)
+        {
+            return (
+                int.Parse(decimalMatch.Groups[1].Value),
+                int.Parse(decimalMatch.Groups[2].Value),
+                ""
+            );
+        }
+
+        // 1A, 1B
+        var alphaMatch = Regex.Match(
+            value,
+            @"^(\d+)([A-Za-z]+)$");
+
+        if (alphaMatch.Success)
+        {
+            return (
+                int.Parse(alphaMatch.Groups[1].Value),
+                0,
+                alphaMatch.Groups[2].Value.ToUpper()
+            );
+        }
+
+        // Pure number
+        if (int.TryParse(value, out var num))
+        {
+            return (num, 0, "");
+        }
+
+        return (int.MaxValue, int.MaxValue, value);
+    }
+
+    private IEnumerable<Dictionary<string, object>> GetSortedDataForDisplay()
+{
+    var activePolicies = _data
+        .Where(x =>
+            !string.Equals(
+                x["RenewalStatus"]?.ToString(),
+                "Expired",
+                StringComparison.OrdinalIgnoreCase))
+        .OrderBy(x =>
+            GetAdvancedSortKey(
+                x["SNo"]?.ToString() ?? ""));
+
+    var expiredPolicies = _data
+        .Where(x =>
+            string.Equals(
+                x["RenewalStatus"]?.ToString(),
+                "Expired",
+                StringComparison.OrdinalIgnoreCase))
+        .OrderBy(x =>
+            GetAdvancedSortKey(
+                x["SNo"]?.ToString() ?? ""));
+
+    return activePolicies.Concat(expiredPolicies);
+}
+
+
+
+    private async Task OnExportInternal()
+    {
+        var exportColumns = new List<ColumnConfig>
+    {
+        new ColumnConfig
+        {
+            Header = "S.No",
+            PropertyName = "SNo",
+            Width = "80px"
+        }
+    };
+
+        exportColumns.AddRange(VisibleColumns);
+
+        var exportData = GetSortedDataForDisplay().ToList();
+
+        var bytes = ReportService.ExportToExcel(
+            exportData,
+            exportColumns,
+            "InsurancePolicies");
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "InsurancePolicies.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private (int Number, string Suffix) GetNaturalSortKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return (int.MaxValue, "");
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            value.Trim(),
+            @"^(\d+)([A-Za-z]*)$");
+
+        if (match.Success)
+        {
+            return (
+                int.Parse(match.Groups[1].Value),
+                match.Groups[2].Value.ToUpper()
+            );
+        }
+
+        return (int.MaxValue, value);
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value)
+            return "-";
+
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d))
+            return d.ToString(col.Format);
+
+        return val.ToString();
+    }
+}

@@ -1,0 +1,2964 @@
+﻿@page "/ATMIndent/new"
+@page "/ATMIndent/{id}"
+@using System.Net.Http.Json
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using System.ComponentModel.DataAnnotations
+@using System.Linq
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using MudBlazor
+@using Procurement.Interfaces
+@using Procurement.Models
+@using Procurement.Models.TABLES
+@using Procurement.Services
+@using static Procurement.Models.DTO.MiscClasses
+@inject IJSRuntime JS
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage ProtectedSessionStorage
+@inject IPdfService PdfService 
+@inject IATMIndentService _ATMIndentService
+
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHostEnvironment
+
+<MudContainer MaxWidth="MaxWidth.False" Class="pa-4">
+
+    <MudPaper Class="pa-4 mb-3 d-flex justify-space-between align-center" Elevation="1">
+        <div>
+            <MudText Typo="Typo.h5" Color="Color.Primary" Class="fw-bold">
+                @(IsEdit ? "Edit Indent Request" : "Create New Indent")
+            </MudText>
+
+
+			<MudBreadcrumbs Items="@(
+    new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("Indent List", href: "/Indent"),
+        new BreadcrumbItem(IsEdit ? "Edit" : "New", href: null, disabled: true)
+    })" />
+
+
+        </div>
+
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">
+            Role: <b>@currentRole</b>
+        </MudChip>
+    </MudPaper>
+
+    @if (!string.IsNullOrWhiteSpace(loadError))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3">@loadError</MudAlert>
+    }
+    else if (isLoading)
+    {
+        <div class="d-flex justify-center mt-4">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        </div>
+    }
+    else
+    {
+        <EditForm Model="@vm" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+
+            <MudCard Class="mb-3" Elevation="1">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">General Information</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        @if (IsEdit)
+                        {
+                            <MudItem xs="12" sm="3">
+                                <MudText><b>Request Code:</b> @vm.RequestCode</MudText>
+                            </MudItem>
+                        }
+                        <MudItem xs="12" sm="3">
+                            <MudText><b>FY / Month:</b> @displayFinYear / @displayMonth</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudText><b>Branch:</b> @sessionLocationName (@sessionBranchCode)</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudText><b>Region:</b> @sessionRegionName</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudText><b>Zone:</b> @sessionZoneName</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+
+            <MudCard Class="mb-3" Elevation="1">
+                <MudCardContent>
+                    <MudGrid AlignItems="AlignItems.Center">
+                        <MudItem xs="12" md="3">
+                            <MudSelect T="string"
+                                       Label="Urgency Level"
+                                       @bind-Value="vm.UrgencyLevel"
+                                       Disabled="@(!CanEditMakerFields)"
+                                       Variant="Variant.Outlined">
+                                <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                <MudSelectItem Value="@("Normal")">Normal</MudSelectItem>
+                                <MudSelectItem Value="@("Urgent")">Urgent</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField Label="Reason For Replacement"
+                                          Lines="2"
+                                          @bind-Value="vm.Justification"
+                                          Disabled="@(!CanEditMakerFields)"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Attachment</MudText>
+                            <InputFile id="fileInput" OnChange="OnAttachmentSelected" hidden />
+                            <MudButton HtmlTag="label"
+                                       Variant="Variant.Filled"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.CloudUpload"
+                                       for="fileInput"
+                                       Disabled="@(!CanEditMakerFields)">
+                                Upload File
+                            </MudButton>
+                            @if (!string.IsNullOrEmpty(displayAttachmentName))
+                            {
+                                <MudText Typo="Typo.caption" Class="d-block mt-1 text-truncate">
+                                    @displayAttachmentName (@attachmentSizeKb KB)
+                                </MudText>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+
+			@if (status == "ZO Approved" && RequiresHigherApproval)
+			{
+				<MudGrid Class="mt-4">
+					<MudItem xs="12" Class="d-flex justify-end">
+
+						<MudButton Variant="Variant.Filled"
+								   Color="Color.Primary"
+								   StartIcon="@Icons.Material.Filled.PlaylistAddCheck"
+								   Class="px-4 shadow-sm"
+								   OnClick="OpenPOModal">
+
+							Manage Purchase Orders
+
+						</MudButton>
+
+					</MudItem>
+				</MudGrid>
+			}
+
+			@if (status == "Region Approved" && !RequiresHigherApproval)
+			{
+				<MudGrid Class="mt-4">
+					<MudItem xs="12" Class="d-flex justify-end">
+
+						<MudButton Variant="Variant.Filled"
+								   Color="Color.Primary"
+								   StartIcon="@Icons.Material.Filled.PlaylistAddCheck"
+								   Class="px-4 shadow-sm"
+								   OnClick="OpenPOModal">
+
+							Manage Purchase Orders
+
+						</MudButton>
+
+					</MudItem>
+				</MudGrid>
+			}
+
+
+            <MudCard Class="mb-4" Elevation="1">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <div class="d-flex justify-space-between align-center">
+                            <MudText Typo="Typo.h6">ATM Technical Details</MudText>
+                            @if (CanEditMakerFields)
+                            {
+                                <MudButton Variant="Variant.Outlined" 
+                                           Color="Color.Success" 
+                                           StartIcon="@Icons.Material.Filled.Search"
+                                           OnClick="@(() => OpenAtmLookup(0))">
+                                    Search ATM
+                                </MudButton>
+                            }
+                        </div>
+                    </CardHeaderContent>
+                </MudCardHeader>
+
+                <MudTable Items="vm.AtmMasterRow" Dense="true" Bordered="true" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>ATM ID</MudTh>
+                        <MudTh>Project</MudTh>
+                        <MudTh>Make</MudTh>
+                        <MudTh>Install Date</MudTh>
+                        <MudTh>CRM</MudTh>
+                        <MudTh>CAPEX/OPEX</MudTh>
+                    </HeaderContent>
+					<RowTemplate Context="row">
+
+						<MudTd DataLabel="ATM ID">
+							<MudTextField Value="@row.ATMId"
+										  ReadOnly="true"
+										  Margin="Margin.Dense"
+										  Variant="Variant.Text" />
+						</MudTd>
+
+						<MudTd DataLabel="Project">@row.Project</MudTd>
+
+						<MudTd DataLabel="Make">@row.AtmMake</MudTd>
+
+						<MudTd DataLabel="Install Date">
+							@row.InstallationDate?.ToString("dd-MM-yyyy")
+						</MudTd>
+
+						<MudTd DataLabel="CRM">@row.AtmCrm</MudTd>
+
+						<MudTd DataLabel="CAPEX/OPEX">@row.CapexOpex</MudTd>
+
+					</RowTemplate>
+
+                </MudTable>
+            </MudCard>
+
+            <MudTable Items="vm.Rows" Dense="true" Hover="true" Bordered="true" Elevation="1" Class="mb-4">
+                <HeaderContent>
+                    <MudTh Style="width: 50px;">#</MudTh>
+                    <MudTh>Item</MudTh>
+                    <MudTh>Qty</MudTh>
+                    <MudTh>Cost</MudTh>
+                    <MudTh>Approved</MudTh>
+                    <MudTh Style="width: 120px;">Action</MudTh>
+                </HeaderContent>
+				<RowTemplate Context="row">
+
+					<MudTd DataLabel="#">@(vm.Rows.IndexOf(row) + 1)</MudTd>
+
+					<MudTd DataLabel="Item">
+						<div class="d-flex align-center gap-2">
+
+							<MudTextField Value="@(string.IsNullOrEmpty(row.ItemName) ? row.AtmCode : row.ItemName)"
+										  ReadOnly="true"
+										  Margin="Margin.Dense"
+										  Variant="Variant.Outlined" />
+
+							@if (CanEditMakerFields)
+							{
+								<MudIconButton Icon="@Icons.Material.Filled.Search"
+											   Color="Color.Primary"
+											   Size="Size.Small"
+											   OnClick="@(() => OpenItemLookup(vm.Rows.IndexOf(row)))" />
+							}
+
+						</div>
+					</MudTd>
+
+					<MudTd DataLabel="Qty">
+						<MudNumericField T="int?"
+										 Value="row.Quantity"
+										 ValueChanged="@((int? val) => UpdateCostBeforeTax(val, row))"
+										 Disabled="@(!CanEditMakerFields)"
+										 Margin="Margin.Dense"
+										 Variant="Variant.Outlined" />
+					</MudTd>
+
+					<MudTd DataLabel="Cost">
+						<MudNumericField T="decimal?"
+										 @bind-Value="row.CostBeforeTax"
+										 ReadOnly="true"
+										 Margin="Margin.Dense"
+										 Variant="Variant.Outlined" />
+					</MudTd>
+
+					<MudTd DataLabel="Approved">
+						<MudNumericField T="int?"
+										 Value="row.QuantityApproved"
+										 ValueChanged="@((int? val) =>
+                         {
+                             row.QuantityApproved = val;
+                             RecalculateRowCost(row);
+                         })"
+										 Disabled="@(!CanEditROSection)"
+										 Margin="Margin.Dense"
+										 Variant="Variant.Outlined" />
+					</MudTd>
+
+					@if (ShowActionColumn)
+					{
+						@if (CanDeleteRows)
+						{
+							<MudTd Align="Align.Center">
+
+								<MudStack Direction="Row"
+										  Justify="Justify.Center"
+										  AlignItems="AlignItems.Center"
+										  Spacing="1">
+
+									@* SHOW ADD BUTTON ONLY ON LAST ROW *@
+									<MudIconButton Icon="@Icons.Material.Filled.Add"
+												   Color="Color.Primary"
+												   Size="Size.Small"
+												   OnClick="AddRow"
+												   Disabled="@(!CanEditMakerFields)" />
+
+									<MudIconButton Icon="@Icons.Material.Filled.Delete"
+												   Color="Color.Error"
+												   Size="Size.Small"
+												   OnClick="@(() => RemoveRow(vm.Rows.IndexOf(row)))"
+												   Disabled="@(!CanEditMakerFields)" />
+
+								</MudStack>
+
+							</MudTd>
+						}
+					}
+
+					@* SELECT BUTTON AFTER APPROVAL *@
+					@if (!IsEdit || IsPoGenerated || status == "ZO Approved" || status == "Region Approved")
+					{
+						@if (IsPoGenerated)
+						{
+							<MudTd Align="Align.Center">
+
+								<MudButton Variant="Variant.Outlined"
+										   Color="Color.Primary"
+										   Size="Size.Small"
+										   OnClick="@(() => HandleSelect(row))">
+
+									Select
+
+								</MudButton>
+
+							</MudTd>
+						}
+					}
+
+				</RowTemplate>
+
+            </MudTable>
+			<MudGrid Class="mt-2">
+
+				<MudItem xs="12" md="2">
+					<!-- empty space like col-md-2 -->
+				</MudItem>
+
+				<MudItem xs="12" md="10">
+
+					<MudAlert Severity="Severity.Info"
+							  Variant="Variant.Text"
+							  Dense="true">
+
+						
+
+						<b>Note:</b>
+						The rates are inclusive of all charges including installation andgrouting charges, but exclusive of GST.
+
+					</MudAlert>
+
+				</MudItem>
+
+			</MudGrid>
+
+			@if (ShowCheckerSection || ShowROSection || ShowZOSection || status == "ZO Approved")
+			{
+				<MudText Typo="Typo.h6"
+						 Class="mt-5 mb-3 text-secondary"
+						 Style="border-left:4px solid #1976d2;padding-left:10px;">
+					Approval Workflow
+				</MudText>
+
+				<MudGrid Class="mb-5" Spacing="3">
+
+					<!-- ✅ Branch Checker -->
+					@if (ShowCheckerSection)
+					{
+						<MudItem xs="12" md="6">
+							<MudCard Elevation="1">
+
+								<MudCardHeader>
+									<CardHeaderContent>
+										<MudText Typo="Typo.subtitle1">
+											Branch Checker
+										</MudText>
+									</CardHeaderContent>
+								</MudCardHeader>
+
+								<MudCardContent>
+
+									<MudSelect T="string"
+											   Label="Recommendation"
+											   @bind-Value="vm.CheckerRecommendation"
+											   Disabled="@(!CanEditCheckerSection)">
+
+										@foreach (var opt in RecommendationOptions)
+										{
+											<MudSelectItem Value="@opt">@opt</MudSelectItem>
+										}
+									</MudSelect>
+
+									<MudTextField Label="Remarks"
+												  Lines="2"
+												  Class="mt-2"
+												  @bind-Value="vm.CheckerRemarks"
+												  Disabled="@(!CanEditCheckerSection)" />
+
+								</MudCardContent>
+							</MudCard>
+						</MudItem>
+					}
+
+					<!-- ✅ RO Section -->
+					@if (ShowROSection)
+					{
+						<MudItem xs="12">
+							<MudCard Elevation="1">
+
+								<MudCardHeader>
+									<MudText Typo="Typo.subtitle1" Color="Color.Info">
+										Regional Office (RO)
+									</MudText>
+								</MudCardHeader>
+
+								<MudCardContent>
+
+									<MudGrid>
+
+										<!-- RO Maker -->
+										<MudItem xs="12" md="6">
+											<MudText Typo="Typo.subtitle2" Class="mb-2">RO Maker</MudText>
+
+											<MudSelect T="string"
+													   Label="Recommendation"
+													   @bind-Value="vm.RegionRecommendation"
+													   Disabled="@(!CanEditROMakerFields)">
+												@foreach (var opt in RecommendationOptions)
+												{
+													<MudSelectItem Value="@opt">@opt</MudSelectItem>
+												}
+											</MudSelect>
+
+											@if (RequiresHigherApproval)
+											{
+
+												<MudSelect T="string"
+														   Label="Forward To"
+														   Class="mt-2"
+														   @bind-Value="vm.RegionForwardTo"
+														   Disabled="@(!CanEditROMakerFields)">
+
+													<MudSelectItem Value="@("ZO")">ZO</MudSelectItem>
+
+												</MudSelect>
+
+											}
+
+											<MudTextField Label="Maker Remarks"
+														  Lines="2"
+														  Class="mt-2"
+														  @bind-Value="vm.RegionRemarks"
+														  Disabled="@(!CanEditROMakerFields)" />
+										</MudItem>
+
+
+										<!-- RO Checker -->
+										@if (!RequiresHigherApproval)
+										{
+											<MudItem xs="12" md="6">
+
+												<MudText Typo="Typo.subtitle2" Class="mb-2">
+													RO Checker
+												</MudText>
+
+												<MudSelect T="string"
+														   Label="Action"
+														   @bind-Value="vm.RegionApproverRecommendation"
+														   Disabled="@(!CanEditROApproverFields)">
+													@foreach (var opt in RecommendationOptions)
+													{
+														<MudSelectItem Value="@opt">@opt</MudSelectItem>
+													}
+												</MudSelect>
+
+												<MudTextField Label="Approver Remarks"
+															  Lines="2"
+															  Class="mt-2"
+															  @bind-Value="vm.RegionApproverRemarks"
+															  Disabled="@(!CanEditROApproverFields)" />
+
+											</MudItem>
+										}
+
+									</MudGrid>
+
+								</MudCardContent>
+							</MudCard>
+						</MudItem>
+					}
+
+					<!-- ✅ ZO Section -->
+					@if (ShowZOSection)
+					{
+						<MudItem xs="12">
+							<MudCard Elevation="1">
+
+								<MudCardHeader>
+									<MudText Typo="Typo.subtitle1" Color="Color.Success">
+										Zonal Office (ZO) Workflow
+									</MudText>
+								</MudCardHeader>
+
+								<MudCardContent>
+
+									<MudGrid>
+
+										<!-- ZO Maker -->
+										<MudItem xs="12" md="6">
+											<MudText Typo="Typo.subtitle2">Zonal Maker</MudText>
+
+											<MudSelect T="string"
+													   Label="Recommendation"
+													   @bind-Value="vm.CoCheckerRecommendation"
+													   Disabled="@(!CanEditZOMakerFields)">
+												@foreach (var opt in RecommendationOptions)
+												{
+													<MudSelectItem Value="@opt">@opt</MudSelectItem>
+												}
+											</MudSelect>
+
+											<MudTextField Label="Maker Remarks"
+														  Lines="2"
+														  Class="mt-2"
+														  @bind-Value="vm.CoCheckerRemarks"
+														  Disabled="@(!CanEditZOMakerFields)" />
+										</MudItem>
+
+										<!-- ZO Checker -->
+										<MudItem xs="12" md="6">
+											<MudText Typo="Typo.subtitle2">Zonal Checker</MudText>
+
+											<MudSelect T="string"
+													   Label="Final Decision"
+													   @bind-Value="vm.CoRecommendation"
+													   Disabled="@(!CanEditZOApproverFields)">
+												@foreach (var opt in RecommendationOptions)
+												{
+													<MudSelectItem Value="@opt">@opt</MudSelectItem>
+												}
+											</MudSelect>
+
+											<MudTextField Label="Approver Remarks"
+														  Lines="2"
+														  Class="mt-2"
+														  @bind-Value="vm.CoRemarks"
+														  Disabled="@(!CanEditZOApproverFields)" />
+										</MudItem>
+
+									</MudGrid>
+
+								</MudCardContent>
+							</MudCard>
+						</MudItem>
+					}
+
+				</MudGrid>
+			}
+
+            <MudPaper Class="pa-3 mt-4 d-flex justify-end gap-2" Elevation="1">
+                <MudButton Variant="Variant.Outlined" OnClick="Cancel">
+                    Cancel
+                </MudButton>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           ButtonType="ButtonType.Submit"
+                           Disabled="@IsSubmitDisabled">
+                    Submit Indent
+                </MudButton>
+
+                @if (CanSubmitFeedback)
+                {
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Info"
+                               OnClick="@(() => showFeedbackModal = true)">
+                        Add Feedback
+                    </MudButton>
+                }
+            </MudPaper>
+        </EditForm>
+    }
+</MudContainer>
+
+@if (showPOModal)
+{
+    var itemRow = vm.Rows.FirstOrDefault(r => !string.IsNullOrEmpty(r.VendorName));
+
+    <MudOverlay Visible="true" DarkBackground="true">
+
+        <MudCard Style="width: min(900px, 95vw);" Class="mx-auto mt-10">
+
+            <!-- HEADER -->
+            <MudCardHeader Style="background: linear-gradient(90deg, #1a237e, #283593); color:white;">
+                <CardHeaderContent>
+					<MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+
+                        <MudIcon Icon="@Icons.Material.Filled.Description"
+                                 Color="Color.Warning"
+                                 Size="Size.Large" />
+
+                        <MudText Typo="Typo.h6">
+                            Purchase Order Issuance
+                        </MudText>
+
+                    </MudStack>
+                </CardHeaderContent>
+
+                <CardHeaderActions>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   Color="Color.Inherit"
+                                   OnClick="ClosePOModal" />
+                </CardHeaderActions>
+            </MudCardHeader>
+
+            <!-- BODY -->
+            <MudCardContent Class="pa-4">
+
+                <!-- PHASE -->
+				<MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+
+					<MudChip T="string" Color="Color.Primary">
+						Phase 1
+					</MudChip>
+
+                    <MudText Typo="Typo.subtitle2" Color="Color.Primary">
+                        Document Generation
+                    </MudText>
+                </MudStack>
+
+                <!-- FORM -->
+                <MudPaper Class="pa-4 mb-4">
+
+                    <MudGrid Spacing="3">
+
+                        <MudItem xs="12" md="6">
+                            <MudDatePicker Label="Issue Date"
+                                           @bind-Date="vm.PoIssuedOn"
+                                           Disabled="true"
+                                           Variant="Variant.Outlined" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField Label="PO Reference Number"
+                                          @bind-Value="vm.PoRefno"
+                                          Placeholder="e.g. DBD:HHP:ATM:001"
+                                          Variant="Variant.Outlined" />
+                        </MudItem>
+
+                    </MudGrid>
+
+                </MudPaper>
+
+                <!-- ACTION BUTTONS -->
+                <MudGrid AlignItems="Center" Spacing="2">
+
+                    <MudItem xs="12" md="4">
+
+                        @if (vm.PoAcceptedDoc != null && vm.PoAcceptedDoc.Length > 0)
+                        {
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Warning"
+                                       FullWidth="true"
+                                       OnClick="@(() => GeneratePO(itemRow))"
+                                       Disabled="@(!IsZOOrROApproved)"
+                                       StartIcon="@Icons.Material.Filled.Refresh">
+
+                                Regenerate PO
+
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       FullWidth="true"
+                                       OnClick="@(() => GeneratePO(itemRow))"
+                                       Disabled="@(!IsZOOrROApproved)"
+                                       StartIcon="@Icons.Material.Filled.Settings">
+
+                                Generate PO
+
+                            </MudButton>
+                        }
+
+                    </MudItem>
+
+                    <MudItem xs="12" md="8">
+
+                        <MudStack Direction="Row" Spacing="2">
+
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Disabled="@(vm.PoAcceptedDoc == null)"
+                                       OnClick="@(() => JS.InvokeVoidAsync("previewFileFromBase64",
+                                                    vm.PoAcceptedDocName,
+                                                    Convert.ToBase64String(vm.PoAcceptedDoc)))"
+                                       StartIcon="@Icons.Material.Filled.PictureAsPdf">
+
+                                Preview PDF
+
+                            </MudButton>
+
+
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Error"
+                                       Disabled="@(vm.PoAcceptedDoc == null || string.IsNullOrEmpty(vm.PoAcceptedDocName))"
+                                       OnClick="SendPOEmail"
+                                       StartIcon="@Icons.Material.Filled.Send">
+
+                                Send via Email
+
+                            </MudButton>
+
+                        </MudStack>
+
+                    </MudItem>
+
+                </MudGrid>
+
+            </MudCardContent>
+
+            <!-- FOOTER -->
+            <MudCardActions Class="d-flex justify-end">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Default"
+                           OnClick="ClosePOModal">
+                    Close
+                </MudButton>
+            </MudCardActions>
+
+        </MudCard>
+
+    </MudOverlay>
+}
+
+
+@if (IsPOGeneratedSelected == true && vm.Rows != null)
+{
+    <div id="po-print-zone">
+        <MudPaper Class="pa-6 mx-auto my-4" Style="max-width: 900px; font-family: 'Times New Roman', serif; color: black; line-height: 1.6;" Elevation="2">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #003366; padding-bottom: 15px; margin-bottom: 25px;">
+                <div style="flex: 1; text-align: left;">
+                    <MudImage Src="Images/union_ease.png" Height="75" Alt="VYOM Logo" />
+                </div>
+                <div style="flex: 2; text-align: center;">
+                    <MudImage Src="Images/logubi.png" Height="85" Alt="Union Bank Logo" />
+                </div>
+                <div style="flex: 1; text-align: right;">
+                    <MudImage Src="Images/75_year_India.png" Height="75" Alt="Azadi Logo" />
+                </div>
+            </div>
+
+            <div class="d-flex justify-space-between mb-6" style="font-weight: bold; font-size: 18px;">
+                <MudText>Ref: CPP/GEN/@(vm.RequestCode)</MudText>
+                <MudText>Date: @AppTime.Now.ToString("dd-MM-yyyy")</MudText>
+            </div>
+
+            <div class="mb-6" style="font-size: 17px;">
+                <MudText>To,</MudText>
+                <MudText Typo="Typo.h6" Class="fw-bold">@(vm.Rows.FirstOrDefault()?.VendorName)</MudText>
+            </div>
+
+            <MudText Class="mb-4">Dear Sir,</MudText>
+
+            <MudText Class="fw-bold mb-4" Style="font-size: 17px; text-transform: uppercase;">
+                Sub: - Purchase order for Procurement of IT Assets to @sessionLocationName
+            </MudText>
+
+            <MudText Align="Align.Justify" Class="mb-4">
+                We refer to the rate contract dated <strong>@AppTime.Now.ToString("dd-MM-yyyy")</strong>.
+                We are pleased to confirm the indent for the below mentioned items.
+                Kindly arrange for the delivery of the items at the earliest.
+            </MudText>
+
+            <MudText Typo="Typo.h6" Class="fw-bold mb-2" Style="font-size: 18px;">Price Details:</MudText>
+
+            <MudTable Items="vm.Rows" Dense="true" Bordered="true" Elevation="0" Class="mb-4" Style="border: 1.5px solid black !important;">
+                <HeaderContent>
+                    <MudTh Style="background-color: #f2f2f2; border: 1px solid black; font-weight: bold; color: black;">Sl.</MudTh>
+                    <MudTh Style="background-color: #f2f2f2; border: 1px solid black; font-weight: bold; color: black;">Description</MudTh>
+                    <MudTh Style="background-color: #f2f2f2; border: 1px solid black; font-weight: bold; color: black;" TValue="string" Align="Align.Center">Quantity</MudTh>
+                    <MudTh Style="background-color: #f2f2f2; border: 1px solid black; font-weight: bold; color: black;" TValue="string" Align="Align.Right">Unit Price</MudTh>
+                    <MudTh Style="background-color: #f2f2f2; border: 1px solid black; font-weight: bold; color: black;" TValue="string" Align="Align.Right">Total Price</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="border: 1px solid black; text-align: center;">@(vm.Rows.IndexOf(context) + 1)</MudTd>
+                    <MudTd Style="border: 1px solid black;"><b>@context.ItemName</b></MudTd>
+                    <MudTd Style="border: 1px solid black;" Align="Align.Center">@context.QuantityApproved</MudTd>
+                    <MudTd Style="border: 1px solid black;" Align="Align.Right">@context.ItemCost?.ToString("N2")</MudTd>
+                    <MudTd Style="border: 1px solid black;" Align="Align.Right">@context.CostBeforeTax?.ToString("N2")</MudTd>
+                </RowTemplate>
+                <FooterContent>
+                    <MudTr Style="background-color: #f9f9f9;">
+                        <MudTd SafeText="Grand Total (Excl. Tax)" CoSpan="4" Style="border: 1px solid black; text-align: right; font-weight: bold;" />
+                        <MudTd Style="border: 1px solid black; text-align: right; font-weight: bold;">
+                            @vm.Rows.Sum(x => x.CostBeforeTax ?? 0).ToString("N2")
+                        </MudTd>
+                    </MudTr>
+                </FooterContent>
+            </MudTable>
+
+            <MudPaper Class="pa-3 mb-4 text-capitalize" Style="border: 1px solid #eee; background-color: #fcfcfc;" Elevation="0">
+                <strong>Amount in Words:</strong> @ConvertAmountToWords(vm.Rows.Sum(x => x.CostBeforeTax ?? 0))
+            </MudPaper>
+
+            <MudText Style="font-size: 13px; font-style: italic;" Class="mb-6">*GST will be applicable as per the terms.</MudText>
+
+            <div style="font-size: 15px; line-height: 1.7;">
+                <MudText Style="font-weight: bold; text-decoration: underline;" Class="mb-1">Payment terms:</MudText>
+                <ul style="margin: 0 0 20px 25px; padding: 0;">
+                    <li>No advance payment shall be made.</li>
+                    <li>The payment will be made only after the delivery and installation of the items.</li>
+                    <li>Vendor must show the bifurcation/details of GST (CGST/SGST/IGST) in the invoice.</li>
+                </ul>
+
+                <MudText Style="font-weight: bold; text-decoration: underline;" Class="mb-1">Delivery Location:</MudText>
+                <div style="margin: 0 0 20px 25px;">
+                    @sessionUserId (Branch Maker)<br />
+                    @sessionLocationName<br />
+                    @(sessionRegionName ?? "Zonal Office")
+                </div>
+            </div>
+
+            <div class="mt-8 d-flex justify-space-between align-end">
+                <div style="font-size: 13px; color: #666;">
+                    <strong>Classification:</strong> Internal
+                </div>
+                <MudPaper Class="pa-4 text-center" Style="min-width: 350px; border: 1px dashed #ccc; background-color: #fdfdfd;" Elevation="0">
+                    <MudText Style="font-size: 14px; color: #333;">Digitally Authorized By</MudText>
+                    <MudText Style="font-size: 16px; font-weight: bold; text-transform: uppercase;">SYSTEM GENERATED AUTHORIZATION</MudText>
+                    <MudDivider Class="my-2" Style="background-color:#000;" />
+                    <MudText Style="font-size: 12px; font-style: italic; color: #555;">
+                        This is a computer-generated document and does not require a physical signature.
+                    </MudText>
+                </MudPaper>
+            </div>
+        </MudPaper>
+    </div>
+}
+
+
+@if (selectedRow != null && IsSelectSelected)
+{
+	<MudOverlay Visible="true" DarkBackground="true" ZIndex="1400">
+
+		<MudCard Style="width: min(900px, 95vw); max-height: 90vh; overflow-y:auto;"
+				 Class="mx-auto mt-6">
+
+			<EditForm Model="selectedRow" OnValidSubmit="SaveDetails">
+				<DataAnnotationsValidator />
+
+				<!-- ✅ HEADER -->
+				<MudCardHeader Class="bg-dark text-white">
+
+					<CardHeaderContent>
+						<MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+
+							<MudAvatar Color="Color.Primary">
+								<MudIcon Icon="@Icons.Material.Filled.Settings" />
+							</MudAvatar>
+
+							<div>
+								<MudText Typo="Typo.h6" Class="text-white">
+									EXECUTION WORKFLOW
+								</MudText>
+
+								<MudText Typo="Typo.caption" Color="Color.Info">
+									@selectedRow.ItemName
+								</MudText>
+							</div>
+
+						</MudStack>
+					</CardHeaderContent>
+
+					<CardHeaderActions>
+						<MudIconButton Icon="@Icons.Material.Filled.Close"
+									   Color="Color.Inherit"
+									   OnClick="CancelDetails" />
+					</CardHeaderActions>
+
+				</MudCardHeader>
+
+				<!-- ✅ BODY -->
+				<MudCardContent Class="pa-4">
+
+					<!-- ✅ STEP 1 -->
+					<MudPaper Class="pa-3 mb-4">
+
+						<MudText Typo="Typo.subtitle1" Color="Color.Warning">
+							1. Delivery
+						</MudText>
+
+						<MudGrid Class="mt-2">
+
+							<MudItem xs="12" md="4">
+								<MudTextField Label="Received By"
+											  @bind-Value="selectedRow.ReceivedBy"
+											  Disabled="@IsWorkflowLocked" />
+							</MudItem>
+
+							<MudItem xs="12" md="4">
+								<MudDatePicker Label="Delivery Date"
+											   @bind-Date="selectedRow.DeliveredOn"
+											   Disabled="@IsWorkflowLocked" />
+							</MudItem>
+
+							<MudItem xs="12">
+								<MudText Typo="Typo.caption">Order Received Document</MudText>
+
+								@if (!string.IsNullOrWhiteSpace(selectedRow.OrderRecivedDocName))
+								{
+									<MudPaper Class="pa-2 d-flex justify-space-between align-center mt-1">
+										<MudText Class="text-truncate">
+											@selectedRow.OrderRecivedDocName
+										</MudText>
+
+										<MudIconButton Icon="@Icons.Material.Filled.Download"
+													   Color="Color.Warning"
+													   OnClick="@(() => DownloadPOFile(selectedRow.OrderRecivedDoc, selectedRow.OrderRecivedDocName))" />
+									</MudPaper>
+								}
+								else
+								{
+									<InputFile OnChange="@((InputFileChangeEventArgs e) => OnInputFileChange(e, "Receive"))"
+											   disabled="@IsWorkflowLocked" />
+								}
+							</MudItem>
+
+						</MudGrid>
+					</MudPaper>
+
+					<!-- ✅ STEP 2 -->
+					<MudPaper Class="pa-3 mb-4">
+
+						<MudText Typo="Typo.subtitle1">
+							2. Installation & Completion
+						</MudText>
+
+						<MudGrid Class="mt-2">
+
+							<MudItem xs="12" md="6">
+								<MudDatePicker Label="Installed On"
+											   @bind-Date="selectedRow.InstalledOn"
+											   Disabled="@IsWorkflowLocked" />
+							</MudItem>
+
+							<MudItem xs="12">
+								<MudText Typo="Typo.caption">Post Installation Document</MudText>
+
+								@if (!string.IsNullOrWhiteSpace(selectedRow.PostInstallationDocName))
+								{
+									<MudPaper Class="pa-2 d-flex justify-space-between align-center mt-1">
+										<MudText>@selectedRow.PostInstallationDocName</MudText>
+
+										<MudIconButton Icon="@Icons.Material.Filled.Download"
+													   OnClick="@(() => DownloadPOFile(selectedRow.PostInstallationDoc, selectedRow.PostInstallationDocName))" />
+									</MudPaper>
+								}
+								else
+								{
+									<InputFile OnChange="@((InputFileChangeEventArgs e) => OnInputFileChange(e, "Install"))"
+											   disabled="@IsWorkflowLocked" />
+								}
+							</MudItem>
+
+						</MudGrid>
+					</MudPaper>
+
+					<!-- ✅ STEP 3 -->
+					<MudPaper Class="pa-3">
+
+						<MudText Typo="Typo.subtitle1" Color="Color.Success">
+							3. Payment & Invoicing
+						</MudText>
+
+						<MudGrid Class="mt-2">
+
+							<MudItem xs="12" md="6">
+								<MudTextField Label="Invoice Number"
+											  @bind-Value="selectedRow.InvoiceNumber"
+											  Disabled="@IsWorkflowLocked" />
+							</MudItem>
+
+							<MudItem xs="12" md="6">
+								<MudDatePicker Label="Payment Date"
+											   @bind-Date="selectedRow.PaymentDate"
+											   Disabled="@IsWorkflowLocked" />
+							</MudItem>
+
+							<MudItem xs="12">
+								<MudTextField Label="Payment By"
+											  @bind-Value="selectedRow.PaymentBy"
+											  Disabled="@IsWorkflowLocked" />
+							</MudItem>
+
+							<MudItem xs="12">
+								<MudText Typo="Typo.caption">Upload Invoice</MudText>
+
+								@if (!string.IsNullOrWhiteSpace(selectedRow.InvoiceDocName))
+								{
+									<MudPaper Class="pa-2 d-flex justify-space-between align-center mt-1">
+										<MudText>@selectedRow.InvoiceDocName</MudText>
+
+										<MudIconButton Icon="@Icons.Material.Filled.Download"
+													   OnClick="@(() => DownloadPOFile(selectedRow.InvoiceDoc, selectedRow.InvoiceDocName))" />
+									</MudPaper>
+								}
+								else
+								{
+									<InputFile OnChange="@((InputFileChangeEventArgs e) => OnInputFileChange(e, "Invoice"))"
+											   disabled="@IsWorkflowLocked" />
+								}
+							</MudItem>
+
+						</MudGrid>
+
+					</MudPaper>
+
+				</MudCardContent>
+
+				<!-- ✅ FOOTER -->
+				<MudCardActions Class="d-flex justify-space-between pa-3">
+
+					<MudButton Variant="Variant.Text"
+							   Color="Color.Secondary"
+							   OnClick="CancelDetails">
+						Dismiss
+					</MudButton>
+
+					<MudButton ButtonType="ButtonType.Submit"
+							   Variant="Variant.Filled"
+							   Color="Color.Success"
+							   Disabled="@IsWorkflowLocked"
+							   StartIcon="@Icons.Material.Filled.CheckCircle">
+
+						Save Progress
+
+					</MudButton>
+
+				</MudCardActions>
+
+			</EditForm>
+
+		</MudCard>
+
+	</MudOverlay>
+}
+
+<MudOverlay @bind-Visible="isItemLookupOpen" DarkBackground="true" AutoClose="false" ZIndex="1400">
+    <MudCard Style="width: min(1000px, 95vw); max-height: 85vh; overflow-y: auto;" Class="pa-0">
+        <MudCardHeader Class="bg-primary text-white">
+            <CardHeaderContent>
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Layers" />
+                    <MudText Typo="Typo.h6" Class="text-white fw-bold">Select Item</MudText>
+                </div>
+            </CardHeaderContent>
+            <CardHeaderActions>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Inherit" OnClick="CloseItemLookup" />
+            </CardHeaderActions>
+        </MudCardHeader>
+
+        <MudCardContent Class="pa-4 bg-light">
+            <MudTextField @bind-Value="lookupSearch" 
+                          Placeholder="Search by Code, Name, or Category..." 
+                          Adornment="Adornment.Start" 
+                          AdornmentIcon="@Icons.Material.Filled.Search" 
+                          Immediate="true"
+                          Variant="Variant.Outlined" 
+                          Class="mb-3 bg-white" />
+
+            @if (isItemLookupLoading)
+            {
+                <div class="d-flex justify-center my-5">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                </div>
+            }
+            else
+            {
+                <MudTable Items="ItemLookupFiltered" Dense="true" Hover="true" FixedHeader="true" Height="400px" Elevation="1">
+                    <HeaderContent>
+                        <MudTh>Item Code</MudTh>
+                        <MudTh>Item Name</MudTh>
+                        <MudTh>Category</MudTh>
+                        <MudTh>Cost</MudTh>
+                        <MudTh>Vendor</MudTh>
+                        <MudTh Align="Align.Center">Action</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Item Code" Class="fw-bold text-primary">@context.ItemCode</MudTd>
+                        <MudTd DataLabel="Item Name">@context.ItemName</MudTd>
+                        <MudTd DataLabel="Category">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.ItemCategory</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Cost">@context.ItemCost</MudTd>
+                        <MudTd DataLabel="Vendor">@context.VendorName</MudTd>
+                        <MudTd DataLabel="Action" Align="Align.Center">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="() => SelectItemFromLookup(context)">
+                                Select
+                            </MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudCardContent>
+    </MudCard>
+</MudOverlay>
+
+<MudOverlay @bind-Visible="isAtmLookupOpen" DarkBackground="true" AutoClose="false" ZIndex="1400">
+    <MudCard Style="width: min(1000px, 95vw); max-height: 85vh; overflow-y: auto;" Class="pa-0">
+        <MudCardHeader Class="bg-success text-white">
+            <CardHeaderContent>
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.DeveloperBoard" />
+                    <MudText Typo="Typo.h6" Class="text-white fw-bold">Select ATM Instance</MudText>
+                </div>
+            </CardHeaderContent>
+            <CardHeaderActions>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Inherit" OnClick="CloseAtmLookup" />
+            </CardHeaderActions>
+        </MudCardHeader>
+
+        <MudCardContent Class="pa-4 bg-light">
+            <MudTextField @bind-Value="atmLookupSearch" 
+                          Placeholder="Search by ATM ID, SOL ID, or Location..." 
+                          Adornment="Adornment.Start" 
+                          AdornmentIcon="@Icons.Material.Filled.Search" 
+                          Immediate="true"
+                          Variant="Variant.Outlined" 
+                          Class="mb-3 bg-white" />
+
+            @if (isAtmLookupLoading)
+            {
+                <div class="d-flex justify-center my-5">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Success" />
+                </div>
+            }
+            else
+            {
+                <MudTable Items="AtmLookupFiltered" Dense="true" Hover="true" FixedHeader="true" Height="400px" Elevation="1">
+                    <HeaderContent>
+                        <MudTh>ATM ID</MudTh>
+                        <MudTh>Project</MudTh>
+                        <MudTh>ATM Make</MudTh>
+                        <MudTh>Installation Date</MudTh>
+                        <MudTh>ATM CRM</MudTh>
+                        <MudTh>CAPEX/OPEX</MudTh>
+                        <MudTh Align="Align.Center">Action</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="ATM ID" Class="fw-bold text-success">@context.AtmId</MudTd>
+                        <MudTd DataLabel="Project">@context.Project</MudTd>
+                        <MudTd DataLabel="ATM Make">@context.AtmMake</MudTd>
+                        <MudTd DataLabel="Installation Date">@context.InstallationDate</MudTd>
+                        <MudTd DataLabel="ATM CRM">@context.AtmCrm</MudTd>
+                        <MudTd DataLabel="CAPEX/OPEX">@context.CapexOpex</MudTd>
+                        <MudTd DataLabel="Action" Align="Align.Center">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" OnClick="() => SelectAtmFromLookup(context)">
+                                Select
+                            </MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudCardContent>
+    </MudCard>
+</MudOverlay>
+
+<MudOverlay @bind-Visible="showFeedbackModal" DarkBackground="true" AutoClose="false" ZIndex="1400">
+    <MudCard Style="width: min(500px, 95vw);" Class="pa-0">
+        <MudCardHeader Class="bg-info text-white">
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6" Class="text-white fw-bold">Add Feedback</MudText>
+            </CardHeaderContent>
+            <CardHeaderActions>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Inherit" OnClick="@(() => showFeedbackModal = false)" />
+            </CardHeaderActions>
+        </MudCardHeader>
+        <MudCardContent Class="pa-4 bg-white">
+            <MudTextField Label="Feedback Comments" Lines="4" @bind-Value="vm.Feedback" Variant="Variant.Outlined" Class="mb-3" />
+        </MudCardContent>
+        <MudCardActions Class="bg-light d-flex justify-end gap-2 py-3 px-4">
+            <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="@(() => showFeedbackModal = false)">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="SaveFeedback">Submit Feedback</MudButton>
+        </MudCardActions>
+    </MudCard>
+</MudOverlay>
+
+
+
+@code {
+
+
+
+	[Parameter] public string? id { get; set; }
+	private bool IsEdit => !string.IsNullOrWhiteSpace(id);
+	private ProcurementRow selectedRow;
+	private string? attachmentFileName;
+	private long attachmentSizeKb;
+	private string? attachmentInfo;
+
+	private string? displayAttachmentName;
+
+	private bool isLoading;
+	private string? loadError;
+
+	public string status;
+	// Role plumbing
+	private string? sessionRoleRaw;
+	public bool? IsPOGeneratedSelected = false;
+	public bool? IsPoFilePrinted = true;
+	public bool IsSelectSelected = false;
+	private bool CanSubmitFeedback = false;
+	private bool IsFeedbackSaved = false;
+
+
+	private DotNetObjectReference<ATMIndentEditPage>? objRef;
+
+
+	//private enum UserRole { Maker, Checker, ROApprover, ROMAKER, ZOMAKER, ZOAPPROVER, COMaker, COApprover }
+	private enum UserRole { Maker, Checker, ROApprover, ROMAKER, ZOMAKER, ZOAPPROVER }
+	private UserRole currentRole = UserRole.Maker; // default fallback
+
+	private bool IsROMaker => currentRole == UserRole.ROMAKER;
+	private bool IsROApprover => currentRole == UserRole.ROApprover;
+	private bool IsRO => IsROMaker || IsROApprover;
+
+	private bool IsMaker => currentRole == UserRole.Maker;
+	private bool IsChecker => currentRole == UserRole.Checker;
+	//private bool IsRO => currentRole == UserRole.RO;
+	// private bool IsZO => currentRole == UserRole.ZO;
+	private bool IsZOMaker => currentRole == UserRole.ZOMAKER;
+	private bool IsZOApprover => currentRole == UserRole.ZOAPPROVER;
+	// private bool IsCOMaker => currentRole == UserRole.COMaker;
+	// private bool IsCOApprover => currentRole == UserRole.COApprover;
+	private bool IsZO => IsZOMaker || IsZOApprover;
+
+	// Maker (header + items + attachment) editable only by Maker
+	private bool CanEditMakerFields => (IsMaker && !IsEdit) || (IsMaker && status.Contains("Returned"));
+
+	// Which approval section is editable (only its owner)
+	private bool CanEditCheckerSection => IsChecker && status == "Branch Submitted";
+
+
+
+	// RO Maker can only edit if they are a Maker AND the status isn't already 'Region Maker Approved' or higher
+	private bool CanEditROMakerFields => IsROMaker && status == "Branch Recommended";
+
+	// RO Approver can only edit if they are an Approver AND the status isn't already 'Region Approved'
+	private bool CanEditROApproverFields => IsROApprover && (status == "Branch Recommended" || status == "Region Maker Recommended");
+
+	// The overall RO Section visible logic (optional helper)
+	private bool CanEditROSection => CanEditROMakerFields || CanEditROApproverFields;
+
+
+
+	private bool CanEditZOMakerFields => IsZOMaker && status == "Region Maker Recommended";
+
+	private bool CanEditZOApproverFields => IsZOApprover && status == "ZO Maker Recommended";
+
+
+	// Checker is always shown to everyone downstream
+	private bool ShowCheckerSection => IsChecker || IsRO || IsZO || status == "ZO Approved" || status == "Region Approved";
+
+
+
+	// RO is always shown to everyone downstream
+	private bool ShowROSection => IsRO || IsZO || status == "ZO Approved" || status == "Region Approved";
+
+	// ZO and CO only show if the cost exceeds the limit
+	private bool ShowZOSection => RequiresHigherApproval && (IsZO || status == "ZO Approved");
+	//private bool ShowCOSection => RequiresHigherApproval && (IsZO || status == "ZO Approved");
+	private bool ROCanEdit => IsRO;
+	private bool isChangingFile = false;
+
+	private bool CanDeleteRows => IsMaker &&
+	string.IsNullOrWhiteSpace(vm.CheckerRecommendation) &&
+	string.IsNullOrWhiteSpace(vm.CoRecommendation);
+	private Dictionary<string, bool> uploadedFiles = new();
+	private IJSObjectReference? _jsModule;
+
+	private bool showFeedbackModal = false;
+
+	private string searchAtmId;
+
+	private bool IsPoGenerated;
+
+	// Show the "Action" column if we are in draft mode OR if the CO has approved
+	private bool ShowActionColumn => CanDeleteRows || status == "ZO Approved";
+
+	// Define your limit here (e.g., 50,000)
+	private const decimal RO_AUTHORITY_LIMIT = 100000;
+
+	// Calculate the total cost across all items
+	private decimal TotalProcurementCost => vm.Rows.Sum(i => i.CostBeforeTax ?? 0m);
+
+
+
+	// Determine if this request requires Higher Authority (ZO/CO)
+	private bool RequiresHigherApproval => TotalProcurementCost >= RO_AUTHORITY_LIMIT;
+
+
+	private bool showPOModal = false;
+
+	private void OpenPOModal() => showPOModal = true;
+	private void ClosePOModal() => showPOModal = false;
+	private async Task HandleSignedDocUpload(InputFileChangeEventArgs e)
+	{
+		// Your logic to handle the signed document upload
+		var file = e.File;
+		if (file != null)
+		{
+			// Process file...
+		}
+	}
+	// Special flag for the PO button
+
+	//private bool CanGeneratePO => IsMaker && status == "CO Approved";
+	private bool IsZOOrROApproved => !IsMaker && (status == "Region Approved" || status == "ZO Approved");
+
+	private void ToggleChangeFile()
+	{
+		isChangingFile = true;
+	}
+
+	private bool isAtmLookupOpen = false;
+	private bool isAtmLookupLoading = false;
+	private string atmLookupSearch = "";
+	private int currentLookupRowIndex = -1;
+	private List<AtmMaster> AtmMasterList = new();
+
+	private IEnumerable<AtmMaster> AtmLookupFiltered =>
+	string.IsNullOrWhiteSpace(atmLookupSearch)
+	? AtmMasterList
+	: AtmMasterList.Where(x =>
+		(x.AtmId?.Contains(atmLookupSearch, StringComparison.OrdinalIgnoreCase) ?? false) ||
+		(x.SolId?.Contains(atmLookupSearch, StringComparison.OrdinalIgnoreCase) ?? false) || 
+		(x.Project?.Contains(atmLookupSearch, StringComparison.OrdinalIgnoreCase) ?? false));
+
+	private async Task OpenAtmLookup(int rowIndex)
+	{
+		currentLookupRowIndex = rowIndex;
+		isAtmLookupOpen = true;
+		isAtmLookupLoading = true;
+
+		// 1. Retrieve the BranchCode from Session Storage
+		var jobRes = await ProtectedSessionStorage.GetAsync<string>("LOCATION");
+		string? sessionBranchCode = jobRes.Success ? jobRes.Value : null;
+
+
+		// 2. Fetch all data from the service
+		var allAtms = await _ATMIndentService.GetAllATMMasterData();
+		var firstRecord = allAtms.FirstOrDefault();
+
+		// 3. Filter based on the sessionBranchCode
+		// We filter by 'BRANCH_CODE' or 'SOL_ID' depending on your schema
+		if (!string.IsNullOrEmpty(sessionBranchCode))
+		{
+			// Use Trim() to remove accidental spaces and ensure a clean comparison
+			AtmMasterList = allAtms
+			.Where(x => x.BranchCode == sessionBranchCode)
+			.ToList();
+		}
+		// else
+		// {
+		// 	// Optional: Show empty or all data if no branch is found in session
+		// 	AtmMasterList = allAtms.ToList();
+		// }
+
+		isAtmLookupLoading = false;
+	}
+
+	private void CloseAtmLookup() => isAtmLookupOpen = false;
+
+	private void SelectAtmFromLookup(AtmMaster atm)
+	{
+		if (currentLookupRowIndex != -1 && currentLookupRowIndex < vm.AtmMasterRow.Count)
+		{
+			var row = vm.AtmMasterRow[currentLookupRowIndex];
+
+			// Populate all fields from the selected ATM master data
+			row.ATMId = atm.AtmId;
+			row.Project = atm.Project;
+			row.AtmMake = atm.AtmMake;
+			row.InstallationDate = atm.InstallationDate;
+			row.AtmCrm = atm.AtmCrm;
+			row.CapexOpex = atm.CapexOpex;
+
+			// Optional: Trigger any additional sync logic
+			// StateHasChanged();
+		}
+		CloseAtmLookup();
+	}
+
+	private static readonly string[] RecommendationOptions =
+		new[] { "Approve", "Reject", "Return to Requestor" };
+
+	private static bool TryParseRole(string? s, out UserRole role)
+	{
+		role = UserRole.Maker;
+		if (string.IsNullOrWhiteSpace(s)) return false;
+
+		switch (s.Trim().ToUpperInvariant())
+		{
+			case "MAKER": role = UserRole.Maker; return true;
+			case "CHECKER": role = UserRole.Checker; return true;
+			case "ROAPPROVER": role = UserRole.ROApprover; return true;
+			case "ROMAKER": role = UserRole.ROMAKER; return true;
+			case "ZOMAKER": role = UserRole.ZOMAKER; return true;
+			case "ZOAPPROVER": role = UserRole.ZOAPPROVER; return true;
+			// case "COAPPROVER": role = UserRole.COApprover; return true;
+			// case "COMAKER": role = UserRole.COMaker; return true;
+			default: return false;
+		}
+	}
+
+	// View-model holds header + dynamic rows + approval fields
+	private ProcurementEditVm vm = new();
+
+	// (Optional) Keep a global set of all vendor codes seen (for chips/UX; not strictly required)
+	private HashSet<string> AllVendorOptions = new(StringComparer.OrdinalIgnoreCase);
+
+	// -------- Item lookup modal state --------
+	private bool isItemLookupOpen = false;
+	private bool isItemLookupLoading = false;
+	private int? selectingRowIndex = null;
+	private List<ATMVendorMaster> itemLookup = new();
+	private string? lookupSearch;
+
+	private string? sessionBranchCode;
+	private string? sessionFinacleId;
+	private string? sessionUserId;
+	private string? sessionLocationName;
+	private string? sessionRegionName;
+	private string? sessionZoneName;
+
+	private string? displayFinYear;
+	private string? displayMonth;
+	private bool IsWorkflowLocked => !IsMaker || (selectedRow?.IsPaymentCompleted ?? false);
+
+
+	// Helper for neat read-only rendering
+	private static string ReadonlyValue(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+
+	// For highlighting current selection inside modal
+	private string? SelectedItemCodeInModal =>
+		(selectingRowIndex.HasValue &&
+			selectingRowIndex.Value >= 0 &&
+			selectingRowIndex.Value < vm.Rows.Count)
+			? vm.Rows[selectingRowIndex.Value].AtmCode
+			: null;
+
+	// Filtered view for the item lookup modal
+	private List<ATMVendorMaster> ItemLookupFiltered
+	{
+		get
+		{
+			IEnumerable<ATMVendorMaster> q = itemLookup;
+			if (!string.IsNullOrWhiteSpace(lookupSearch))
+			{
+				var s = lookupSearch.Trim();
+				q = q.Where(x =>
+					(!string.IsNullOrEmpty(x.ItemCode) && x.ItemCode.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+					(!string.IsNullOrEmpty(x.ItemName) && x.ItemName.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+					(!string.IsNullOrEmpty(x.ItemCategory) && x.ItemCategory.Contains(s, StringComparison.OrdinalIgnoreCase))
+				);
+			}
+			return q.OrderBy(x => x.ItemName, StringComparer.OrdinalIgnoreCase).ToList();
+		}
+	}
+
+
+
+	protected override async Task OnInitializedAsync()
+	{
+		isLoading = true;
+		loadError = null;
+
+		try
+		{
+
+			// --- Read session
+			var jobRes = await ProtectedSessionStorage.GetAsync<string>("LOCATION");
+			var finRes = await ProtectedSessionStorage.GetAsync<string>("FINACLE_ID");
+			var userRes = await ProtectedSessionStorage.GetAsync<string>("UserId");
+			var locationNameRes = await ProtectedSessionStorage.GetAsync<string>("LOCATION_DESC");
+			var regionRes = await ProtectedSessionStorage.GetAsync<string>("REGION_NAME");
+			var zoneRes = await ProtectedSessionStorage.GetAsync<string>("ZONE_NAME");
+
+			// Role (adjust key if needed)
+			var roleRes = await ProtectedSessionStorage.GetAsync<string>("ROLE");
+			sessionRoleRaw = roleRes.Success ? roleRes.Value : null;
+			if (!TryParseRole(sessionRoleRaw, out var parsed))
+			{
+				parsed = UserRole.Maker; // fallback or show error
+			}
+			currentRole = parsed;
+
+			// If not Maker and trying to create new, block
+			if (!IsMaker && !IsEdit)
+			{
+				loadError = "Only Maker can create a new Indent.";
+				return;
+			}
+
+			sessionBranchCode = jobRes.Success ? jobRes.Value : null;
+			sessionFinacleId = finRes.Success ? finRes.Value : null;
+			sessionLocationName = locationNameRes.Success ? locationNameRes.Value : null;
+			sessionRegionName = regionRes.Success ? regionRes.Value : null;
+			sessionZoneName = zoneRes.Success ? zoneRes.Value : null;
+			sessionUserId = userRes.Success ? userRes.Value : null;
+			if (IsEdit)
+			{
+				var reqId = Uri.EscapeDataString(id!);
+
+				var dyn = await _ATMIndentService.GetAllATMIndentDataById(reqId);
+				if (dyn is null)
+				{
+					loadError = "Record not found.";
+				}
+				else
+				{
+					var json = JsonSerializer.Serialize(dyn);
+					var item = JsonSerializer.Deserialize<ATMRequestMaster>(
+						json,
+						new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+					if (item is null)
+					{
+						loadError = "Failed to materialize response.";
+					}
+					else
+					{
+
+
+						// status = (!string.IsNullOrWhiteSpace(item.CoRecommendation)) ? "CO Approved" :
+						// (!string.IsNullOrWhiteSpace(item.CoCheckerRecommendation)) ? "CO Maker Approved" :
+						// 		// (!string.IsNullOrWhiteSpace(item.ZoneRecommendation)) ? "Zonal Approved" :
+						// 		(!string.IsNullOrWhiteSpace(item.RegionApproverRecommendation)) ? "Region Approved" :
+						// 		(!string.IsNullOrWhiteSpace(item.RegionRecommendation)) ? "Region Maker Approved" :
+						// 		(!string.IsNullOrWhiteSpace(item.BranchRecommendation)) ? "Branch Approved" :
+						// 		"Draft";
+						var temp_status = item.BranchRecommendation;
+						status = (!string.IsNullOrWhiteSpace(item.CoRecommendation))
+	? (item.CoRecommendation == "Reject" ? "ZO Rejected" :
+		item.CoRecommendation == "Return to Requestor" ? "ZO Returned" : "ZO Approved") :
+
+(!string.IsNullOrWhiteSpace(item.CoCheckerRecommendation))
+? (item.CoCheckerRecommendation == "Reject" ? "ZO Maker Rejected" :
+		item.CoCheckerRecommendation == "Return to Requestor" ? "ZO Maker Returned" : "ZO Maker Recommended") :
+
+(!string.IsNullOrWhiteSpace(item.RegionApproverRecommendation))
+? (item.RegionApproverRecommendation == "Reject" ? "Region Rejected" :
+		item.RegionApproverRecommendation == "Return to Requestor" ? "Region Returned" : "Region Approved") :
+
+(!string.IsNullOrWhiteSpace(item.RegionRecommendation))
+	? (item.RegionRecommendation == "Reject" ? "Region Maker Rejected" :
+		item.RegionRecommendation == "Return to Requestor" ? "Region Maker Returned" : "Region Maker Recommended") :
+
+(!string.IsNullOrWhiteSpace(item.BranchRecommendation))
+	? (item.BranchRecommendation == "Reject" ? "Branch Rejected" :
+		item.BranchRecommendation == "Return to Requestor" ? "Branch Returned" : "Branch Recommended") :
+
+"Branch Submitted";
+
+
+						// ------- Map header -> VM -------
+						vm.RequestCode = item.RequestCode;
+						vm.FinYear = item.FinYear;
+						vm.Month = item.Month;
+						vm.Justification = item.Justification;
+						vm.UrgencyLevel = item.UrgencyLevel;
+						vm.Attachment = item.Attachment;
+						vm.AttachmentName = item.AttachmentName;
+						vm.ATMId = item.ATMId;
+
+						vm.IsPoIssued = item.IsPoIssued;
+						vm.PoIssuedBy = item.PoIssuedBy;
+						vm.PoIssuedOn = item.PoIssuedOn ?? AppTime.Now;
+						vm.IsPoAccepted = item.IsPoAccepted;
+						vm.PoAcceptedBy = item.PoAcceptedBy;
+						vm.PoAcceptedOn = item.PoAcceptedOn;
+						vm.PoAcceptedDoc = item.PoAcceptedDoc;
+						vm.PoAcceptedDocName = item.PoAcceptedDocName;
+						vm.PoRefno = item.PoRefno;
+						vm.RaisedBy = item.RaisedBy;
+						vm.RaisedOn = item.RaisedOn;
+						vm.Feedback = item.Feedback;
+
+						// ------- Display FY/Month (from record) -------
+						displayFinYear = vm.FinYear;
+						displayMonth = vm.Month;
+
+						if (!string.IsNullOrWhiteSpace(vm.AttachmentName))
+						{
+							displayAttachmentName = vm.AttachmentName;
+							attachmentSizeKb = 0;
+						}
+						vm.AtmMasterRow.Clear();
+						var atmRow = new AtmMasterRow { ATMId = item.ATMId };
+
+						if (!string.IsNullOrEmpty(item.ATMId))
+						{
+							var masterData = await _ATMIndentService.GetAtmMasterById(item.ATMId);
+							if (masterData != null)
+							{
+								atmRow.Project = masterData.Project;
+								atmRow.AtmMake = masterData.AtmMake;
+								atmRow.InstallationDate = masterData.InstallationDate;
+								atmRow.AtmCrm = masterData.AtmCrm;
+								atmRow.CapexOpex = masterData.CapexOpex;
+								atmRow.AvgUptime = masterData.AvgUptime;
+								atmRow.AvgHits = masterData.AvgHits;
+							}
+						}
+						vm.AtmMasterRow.Add(atmRow);
+						// ------- Map rows (dynamic-safe) -------
+						vm.Rows.Clear();
+						CanSubmitFeedback = item?.IsPaymentCompleted;
+						IsFeedbackSaved = !string.IsNullOrWhiteSpace(item?.Feedback);
+						IsPoGenerated = (status == "ZO Approved" || status == "Region Approved") && item.IsPoIssued == true;
+						if (item?.RequestATM is System.Collections.IEnumerable reqItems)
+						{
+							foreach (var itObj in reqItems)
+							{
+								dynamic it = itObj;
+								string code = it?.AtmCode;
+
+
+								//IsPoGenerated = false;
+								var newRow = new ProcurementRow
+								{
+									AtmCode = code,
+									Quantity = it?.Quantity,
+									CostBeforeTax = it?.CostBeforeTax,
+									QuantityApproved = it?.ApprovedQuantity,
+									IsPoIssued = it?.IsPOIssued,
+									POIssuedBy = it?.POIssuedBy,
+									POIssuedOn = it?.POIssuedOn,
+									IsPoAccepted = it?.IsPoAccepted,
+									PoAcceptedBy = it?.PoAcceptedBy,
+									PoAcceptedOn = it?.PoAcceptedOn,
+									OrderedBy = it?.OrderedBy,
+									OrderedOn = it?.OrderedOn,
+									PreBookedAmt = it?.PreBookedAmt,
+									ReceivedBy = it?.ReceivedBy,
+									DeliveredOn = it?.DeliveredOn,
+									PostDeliveredAmt = it?.PostDeliveredAmt,
+									InstalledOn = it?.InstalledOn,
+									PostInstalledAmt = it?.PostInstalledAmt,
+									PoGeneratedDoc = it?.PoGeneratedDoc,
+									PoGeneratedDocName = it?.PoGeneratedDocName,
+
+									PaymentDate = it?.PaymentDate,
+									InvoiceNumber = it?.InvoiceNumber,
+									PaymentBy = it?.PaymentBy,
+										IsPaymentCompleted = !string.IsNullOrWhiteSpace(it?.PaymentBy),
+									InvoiceDoc = it?.InvoiceDoc,
+									InvoiceDocName = it?.InvoiceDocName,
+
+									PoAcceptedDoc = it?.PoAcceptedDoc,
+									PoAcceptedDocName = it?.PoAcceptedDocName,
+
+									PreBookedDoc = it?.PreBookedDoc,
+									PreBookedDocName = it?.PreBookedDocName,
+
+									OrderRecivedDoc = it?.OrderRecivedDoc,
+									OrderRecivedDocName = it?.OrderRecivedDocName,
+
+									PostInstallationDoc = it?.PostInstallationDoc,
+									PostInstallationDocName = it?.PostInstallationDocName,
+								};
+
+								// NEW LOGIC: Look up the Name and Category from the Item Service
+								if (!string.IsNullOrEmpty(code))
+								{
+									var itemDetails = await _ATMIndentService.GetItemByCode(code);
+									if (itemDetails != null)
+									{
+										newRow.ItemName = itemDetails.ItemName;
+										newRow.ItemCategory = itemDetails.ItemCategory;
+										newRow.Specification = itemDetails.Specification;
+										newRow.ItemCost = itemDetails.ItemCost;
+										newRow.VendorName = itemDetails.VendorName;
+										newRow.VendorAddress = itemDetails.VendorAddress;
+									}
+								}
+
+
+								vm.Rows.Add(newRow);
+							}
+						}
+
+						// ------- Map approvals -------
+						// Checker (Branch)
+						vm.CheckerRecommendation = item.BranchRecommendation;
+						vm.CheckerRemarks = item.BranchRemarks;
+						vm.CheckerApproverName = item.CheckerApproverName;
+
+						// RO (Region)
+						vm.RegionRecommendation = item.RegionRecommendation;
+						vm.RegionRemarks = item.RegionRemarks;
+						vm.RegionForwardTo = item.RegionForwardTo;
+						vm.RegionApproverName = item.RegionApproverName;
+
+						vm.RegionCheckerName = item.RegionCheckerName;
+						vm.RegionApproverRecommendation = item.RegionApproverRecommendation;
+						vm.RegionApproverRemarks = item.RegionApproverRemarks;
+
+						// ZO (Zone)
+						// vm.ZoneRecommendation = item.ZoneRecommendation;
+						// vm.ZoneRemarks = item.ZoneRemarks;
+						// vm.ZoneForwardTo = item.ZoneForwardTo;
+						// vm.ZoneApproverName = item.ZoneApproverName;
+
+						// CO (Corporate)
+						vm.CoCheckerRecommendation = item.CoCheckerRecommendation;
+						vm.CoCheckerRemarks = item.CoCheckerRemarks;
+						vm.CoCheckerName = item.CoCheckerName;
+
+
+						vm.CoRecommendation = item.CoRecommendation;
+						vm.CoRemarks = item.CoRemarks;
+						vm.CoApproverName = item.CoApproverName;
+					}
+				}
+			}
+			else
+			{
+				// New (Maker only)
+				vm = new ProcurementEditVm();
+				AllVendorOptions.Clear();
+
+				var nowIst = GetNowInIndia();
+				displayFinYear = GetIndianFinancialYear(nowIst);
+				displayMonth = nowIst.ToString("MMMM");
+			}
+			vm.AtmMasterRow ??= new List<AtmMasterRow>();
+			if (vm.AtmMasterRow.Count == 0)
+			{
+				vm.AtmMasterRow.Add(new AtmMasterRow());
+			}
+
+			vm.Rows ??= new List<ProcurementRow>();
+			if (vm.Rows.Count == 0)
+			{
+				vm.Rows.Add(new ProcurementRow());
+			}
+		}
+		catch (Exception ex)
+		{
+			AppLogger.LogError(ex, "ATMIndentEditPage: failed to load data");
+			loadError = UserFacingError.Generic;
+		}
+		finally
+		{
+			isLoading = false;
+		}
+	}
+
+	private bool IsSubmitDisabled
+	{
+		get
+		{
+			// Ensure we don't crash on null status
+			string safeStatus = status ?? "";
+
+			if (IsMaker)
+			{
+				// If creating NEW, button is active
+				if (!IsEdit) return false;
+
+
+
+				// If EDITING, button is active ONLY for Draft or Returned
+				return !(safeStatus.Contains("Returned"));
+			}
+
+			if (IsChecker)
+			{
+				// Checker only submits when status is Draft
+				return safeStatus != "Branch Submitted";
+			}
+
+			if (IsROMaker)
+			{
+				// RO Maker only submits when status is Branch Approved
+				return safeStatus != "Branch Recommended";
+			}
+			if (IsROApprover)
+			{
+				return safeStatus != "Region Maker Recommended";
+			}
+
+			if (IsZOMaker)
+			{
+				return safeStatus != "Region Maker Recommended";
+			}
+
+			// 6. CO Approver: Enable if CO Maker has recommended
+			if (IsZOApprover)
+			{
+				return safeStatus != "ZO Maker Recommended";
+			}
+
+			// Default: Disable for safety if no conditions are met
+			return true;
+		}
+	}
+
+	private void AddRow()
+	{
+		if (CanEditMakerFields)
+			vm.Rows.Add(new ProcurementRow());
+	}
+
+	private void RemoveRow(int index)
+	{
+		if (!CanEditMakerFields) return;
+		if (index >= 0 && index < vm.Rows.Count)
+			vm.Rows.RemoveAt(index);
+	}
+
+	private async Task OnInputFileChange(InputFileChangeEventArgs e, string section)
+	{
+		var file = e.File;
+		if (file == null) return;
+
+		using var ms = new MemoryStream();
+		await file.OpenReadStream(1024 * 1024 * 5).CopyToAsync(ms); // 5MB Limit
+		byte[] fileBytes = ms.ToArray();
+
+		switch (section)
+		{
+			case "PO":
+				selectedRow.PoGeneratedDoc = fileBytes;
+				selectedRow.TempPoGeneratedDocName = file.Name;
+				break;
+			case "Accept":
+				selectedRow.PoAcceptedDoc = fileBytes;
+				selectedRow.TempPoAcceptedDocName = file.Name;
+				break;
+			case "Order":
+				selectedRow.PreBookedDoc = fileBytes;
+				selectedRow.TempPreBookedDocName = file.Name;
+				break;
+			case "Receive":
+				selectedRow.OrderRecivedDoc = fileBytes;
+				selectedRow.TempOrderRecivedDocName = file.Name;
+				break;
+			case "Install":
+				selectedRow.PostInstallationDoc = fileBytes;
+				selectedRow.TempPostInstallationDocName = file.Name;
+				break;
+			case "Invoice":
+				selectedRow.InvoiceDoc = fileBytes;
+				selectedRow.TempInvoiceDocName = file.Name;
+				break;
+
+		}
+		StateHasChanged();
+	}
+
+	private async Task GeneratePO(ProcurementRow row)
+	{
+		try
+		{
+			if (vm.Rows == null || !vm.Rows.Any()) return;
+			IsPOGeneratedSelected = true;
+			StateHasChanged();
+			await Task.Delay(1000);
+			// Give Blazor a moment to render the HTML into the DOM
+			//
+
+			// await JS.InvokeVoidAsync("eval", $@"
+			//         window.onafterprint = function() {{
+			//             DotNet.invokeMethodAsync('{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}', 'OnPrintDialogClosed');
+			//         }};
+			//         window.print();
+			//     ");
+
+			// if (IsPoFilePrinted == true)
+			// {
+			var pdfBytes =await PdfService.GeneratePoPdf(vm,sessionUserId);
+
+			var payload = new ATMRequestMaster
+			{
+				RequestCode = vm.RequestCode,
+				IsPoIssued = true,
+				PoIssuedBy = sessionUserId,
+				PoIssuedOn = AppTime.Now,
+				PoAcceptedDoc = pdfBytes,
+				PoAcceptedDocName = $"PO_{vm.RequestCode}.pdf",
+				PoRefno = vm.PoRefno
+			};
+
+			// 2. Call Service
+			var result = await _ATMIndentService.InsertPODetails(payload);
+			if (result == "Success")
+			{
+
+				IsPOGeneratedSelected = false;
+				IsPoFilePrinted = false;
+				IsSelectSelected = false;
+				vm.PoAcceptedDoc = pdfBytes;
+				vm.PoAcceptedDocName = $"PO_{vm.RequestCode}.pdf";
+
+				await JS.InvokeVoidAsync("alert", "PO Generated Successfully!");
+			}
+			else
+			{
+				loadError = "Failed to update PO status.";
+			}
+
+		}
+		catch (Exception ex)
+		{
+			AppLogger.LogError(ex, "ATMIndentEditPage: error generating PO");
+			loadError = UserFacingError.Generic;
+		}
+	}
+
+	[JSInvokable("OnPrintDialogClosed")]
+	public static void OnPrintDialogClosed()
+	{
+
+		OnClosedAction?.Invoke();
+
+	}
+
+	private static Action? OnClosedAction;
+
+	protected override void OnInitialized()
+	{
+		OnClosedAction = HandleDialogClosed;
+	}
+	private void HandleDialogClosed()
+	{
+
+		IsPoFilePrinted = true;
+
+	}
+	public void Dispose() => objRef?.Dispose();
+
+
+	private async Task HandlePoAcceptanceChange(ChangeEventArgs e)
+	{
+		// Get the checkbox state from the event arguments
+		bool isChecked = (bool)(e.Value ?? false);
+		selectedRow.IsPoAccepted = isChecked;
+
+		if (isChecked)
+		{
+			// 1. Set current system timestamp
+			selectedRow.PoAcceptedOn = AppTime.Now;
+
+			// 2. Fetch UserID from Session Storage
+			try
+			{
+				var result = await ProtectedSessionStorage.GetAsync<string>("UserId");
+				if (result.Success)
+				{
+					selectedRow.PoAcceptedBy = result.Value;
+				}
+				else
+				{
+					selectedRow.PoAcceptedBy = "Unknown User";
+				}
+			}
+			catch (Exception ex)
+			{
+				selectedRow.PoAcceptedBy = "System Error";
+				AppLogger.LogError(ex, "[AccountsClosedData] Error fetching session: " + ex.Message);
+			}
+		}
+		else
+		{
+			// Optional: Clear fields if the user unchecks the box
+			selectedRow.PoAcceptedOn = null;
+			selectedRow.PoAcceptedBy = string.Empty;
+		}
+	}
+
+	private void HandleSelect(ProcurementRow row)
+	{
+		// Toggles selection or switches row
+		selectedRow = row;
+		IsSelectSelected = true;
+	}
+
+	private async Task SaveDetails()
+	{
+		if (selectedRow == null) return;
+
+		try
+		{
+			// 1. Map the UI Row data to the Database Model (Payload)
+			var payload = new RequestATM
+			{
+				RequestCode = vm.RequestCode,
+				AtmCode = selectedRow.AtmCode,
+
+				// PO Issued Fields
+				IsPOIssued = selectedRow.IsPoIssued,
+				POIssuedBy = selectedRow.POIssuedBy,
+				POIssuedOn = selectedRow.POIssuedOn,
+				PoGeneratedDoc = selectedRow.PoGeneratedDoc,
+				PoGeneratedDocName = !string.IsNullOrEmpty(selectedRow.TempPoGeneratedDocName)
+									 ? selectedRow.TempPoGeneratedDocName
+									 : selectedRow.PoGeneratedDocName,
+
+				// PO Acceptance Fields
+				IsPoAccepted = selectedRow.IsPoAccepted,
+				PoAcceptedBy = selectedRow.PoAcceptedBy,
+				PoAcceptedOn = selectedRow.PoAcceptedOn,
+				PoAcceptedDoc = selectedRow.PoAcceptedDoc,
+				PoAcceptedDocName = !string.IsNullOrEmpty(selectedRow.TempPoAcceptedDocName)
+									 ? selectedRow.TempPoAcceptedDocName
+									 : selectedRow.PoAcceptedDocName,
+
+				// Order & Receipt Fields
+				OrderedBy = selectedRow.OrderedBy,
+				OrderedOn = selectedRow.OrderedOn,
+				PreBookedAmt = selectedRow.PreBookedAmt,
+				PreBookedDoc = selectedRow.PreBookedDoc,
+				PreBookedDocName = !string.IsNullOrEmpty(selectedRow.TempPreBookedDocName)
+									? selectedRow.TempPreBookedDocName
+									: selectedRow.PreBookedDocName,
+
+				ReceivedBy = selectedRow.ReceivedBy,
+				DeliveredOn = selectedRow.DeliveredOn,
+				PostDeliveredAmt = selectedRow.PostDeliveredAmt,
+				OrderRecivedDoc = selectedRow.OrderRecivedDoc,
+				OrderRecivedDocName = !string.IsNullOrEmpty(selectedRow.TempOrderRecivedDocName)
+									   ? selectedRow.TempOrderRecivedDocName
+									   : selectedRow.OrderRecivedDocName,
+
+
+				// Installation Fields
+				InstalledOn = selectedRow.InstalledOn,
+				PostInstalledAmt = selectedRow.PostInstalledAmt,
+				PostInstallationDoc = selectedRow.PostInstallationDoc,
+				PostInstallationDocName = !string.IsNullOrEmpty(selectedRow.TempPostInstallationDocName)
+										   ? selectedRow.TempPostInstallationDocName
+										   : selectedRow.PostInstallationDocName,
+
+
+										   PaymentDate = selectedRow.PaymentDate,
+				InvoiceNumber = selectedRow.InvoiceNumber,
+				PaymentBy = selectedRow.PaymentBy,
+				InvoiceDoc = selectedRow.InvoiceDoc,
+				InvoiceDocName = !string.IsNullOrEmpty(selectedRow.TempInvoiceDocName)
+										   ? selectedRow.TempInvoiceDocName
+										   : selectedRow.InvoiceDocName
+			};
+
+			// 2. Call the service
+			var result = await _ATMIndentService.UpdateRequestATM(payload);
+
+			// 3. Provide Feedback
+			if (result == "Success")
+			{
+				await JS.InvokeVoidAsync("alert", "Execution Details Updated Successfully!");
+				if (!string.IsNullOrEmpty(selectedRow.TempPoGeneratedDocName))
+					selectedRow.PoGeneratedDocName = selectedRow.TempPoGeneratedDocName;
+
+				if (!string.IsNullOrEmpty(selectedRow.TempPoAcceptedDocName))
+					selectedRow.PoAcceptedDocName = selectedRow.TempPoAcceptedDocName;
+
+				if (!string.IsNullOrEmpty(selectedRow.TempPreBookedDocName))
+					selectedRow.PreBookedDocName = selectedRow.TempPreBookedDocName;
+
+				if (!string.IsNullOrEmpty(selectedRow.TempOrderRecivedDocName))
+					selectedRow.OrderRecivedDocName = selectedRow.TempOrderRecivedDocName;
+
+				if (!string.IsNullOrEmpty(selectedRow.TempPostInstallationDocName))
+					selectedRow.PostInstallationDocName = selectedRow.TempPostInstallationDocName;
+
+				if (!string.IsNullOrEmpty(selectedRow.TempInvoiceDocName))
+					selectedRow.InvoiceDocName = selectedRow.TempInvoiceDocName;
+
+				// CLEAR: Reset temporary staging names
+				selectedRow.TempPoGeneratedDocName = null;
+				selectedRow.TempPoAcceptedDocName = null;
+				selectedRow.TempPreBookedDocName = null;
+				selectedRow.TempOrderRecivedDocName = null;
+				selectedRow.TempPostInstallationDocName = null;
+				selectedRow.TempInvoiceDocName = null;
+				// 4. Close the Modal
+				selectedRow = null;
+
+				// Optional: Refresh state to reflect changes in the main table
+				StateHasChanged();
+			}
+			else
+			{
+				loadError = "Failed to update status in database: " + result;
+			}
+		}
+		catch (Exception ex)
+		{
+			AppLogger.LogError(ex, "ATMIndentEditPage: error saving data");
+			loadError = UserFacingError.Generic;
+		}
+	}
+
+	private void CancelDetails()
+	{
+		selectedRow = null; // Hide form
+	}
+	// ============== Item lookup modal methods ==============
+	private async Task OpenItemLookup(int rowIndex)
+	{
+		if (!CanEditMakerFields) return;
+
+		selectingRowIndex = rowIndex;
+		lookupSearch = string.Empty;
+
+		isItemLookupLoading = true;
+		isItemLookupOpen = true; // open immediately so spinner is visible
+
+		try
+		{
+			// Fetch fresh from API each time (can cache if needed)
+			itemLookup = await _ATMIndentService.GetAllATMVendorData();
+		}
+		catch (Exception ex)
+		{
+			AppLogger.LogError(ex, "ATMIndentEditPage: failed to load vendor items");
+			loadError = UserFacingError.Generic;
+			itemLookup = new();
+		}
+		finally
+		{
+			isItemLookupLoading = false;
+			await InvokeAsync(StateHasChanged);
+		}
+	}
+
+	private async Task SelectItemFromLookup(ATMVendorMaster picked)
+	{
+		if (selectingRowIndex.HasValue &&
+			selectingRowIndex.Value >= 0 &&
+			selectingRowIndex.Value < vm.Rows.Count)
+		{
+			var target = vm.Rows[selectingRowIndex.Value];
+
+			// Map Item Data
+			target.AtmCode = picked.ItemCode;
+			target.ItemName = picked.ItemName;
+			target.ItemCategory = picked.ItemCategory;
+			target.ItemCost = picked.ItemCost;
+
+
+			// Auto-load Vendor
+			target.VendorName = picked.VendorName;
+
+			// Set default quantity if it's currently empty
+			if (!target.Quantity.HasValue || target.Quantity <= 0)
+			{
+				target.Quantity = 1;
+			}
+
+			// TRIGGER CALCULATION IMMEDIATELY
+			UpdateCostBeforeTax(target.Quantity, target);
+		}
+
+		// Close modal and refresh UI
+		isItemLookupOpen = false;
+		selectingRowIndex = null;
+		await InvokeAsync(StateHasChanged);
+	}
+
+	private void CloseItemLookup()
+	{
+		isItemLookupOpen = false;
+		selectingRowIndex = null;
+	}
+
+	private void ClearLookupSearch() => lookupSearch = string.Empty;
+
+	private void UpdateCostBeforeTax(int? newQuantity, ProcurementRow row)
+	{
+		// Update the specific field that was changed
+		row.Quantity = newQuantity;
+
+		// Recalculate based on the hierarchy:
+		// If Approved exists, use it; otherwise fallback to Maker Quantity.
+		RecalculateRowCost(row);
+	}
+
+	private void RecalculateRowCost(ProcurementRow row)
+	{
+		decimal? effectiveQuantity;
+
+		// If the Maker is currently editing (New or Returned), use their Quantity.
+		// Otherwise, fallback to the Approved Quantity for read-only/approval views.
+		if (CanEditMakerFields)
+		{
+			effectiveQuantity = (decimal?)row.Quantity;
+		}
+		else
+		{
+			effectiveQuantity = row.QuantityApproved.HasValue
+								? (decimal)row.QuantityApproved.Value
+								: (decimal?)row.Quantity;
+		}
+
+		if (effectiveQuantity.HasValue && row.ItemCost.HasValue)
+		{
+			row.CostBeforeTax = (int)effectiveQuantity.Value * row.ItemCost.Value;
+		}
+		else
+		{
+			row.CostBeforeTax = 0;
+		}
+	}
+
+	// ============================================================
+
+	private async Task SaveAsync()
+	{
+		try
+		{
+			// Quick role-based required checks (optional)
+			if (IsChecker && string.IsNullOrWhiteSpace(vm.CheckerRecommendation))
+			{
+				ShowError("Please choose a recommendation");
+				return;
+			}
+			if (IsRO)
+			{
+				if (IsROMaker && string.IsNullOrWhiteSpace(vm.RegionRecommendation))
+				{
+					ShowError("Please choose a recommendation");
+					return;
+				}
+
+				if (IsROApprover && string.IsNullOrWhiteSpace(vm.RegionApproverRecommendation))
+				{
+					ShowError("Please choose a recommendation");
+					return;
+				}
+			}
+			// if (IsZO && string.IsNullOrWhiteSpace(vm.ZoneRecommendation))
+			// {
+			// 	loadError = "Please choose a recommendation";
+			// 	return;
+			// }
+			if (IsZO)
+			{
+				if (IsZOMaker && string.IsNullOrWhiteSpace(vm.CheckerRecommendation))
+				{
+					ShowError("Please choose a recommendation");
+					return;
+				}
+
+				if (IsZOApprover && string.IsNullOrWhiteSpace(vm.CoRecommendation))
+				{
+					ShowError("Please choose a recommendation");
+					return;
+				}
+
+			}
+			if (vm.AtmMasterRow == null || !vm.AtmMasterRow.Any())
+			{
+				ShowError("ATM Master data is missing.");
+				return;
+			}
+
+			// Sync the first row's ATM ID to the main ViewModel property
+			vm.ATMId = vm.AtmMasterRow.FirstOrDefault()?.ATMId;
+
+			if (string.IsNullOrWhiteSpace(vm.ATMId))
+			{
+				ShowError("ATM ID is required. Please select an ATM using the search tool.");
+				return;
+			}
+
+
+			foreach (var row in vm.Rows)
+			{
+				if (string.IsNullOrWhiteSpace(row.AtmCode))
+				{
+					await ShowError("Please add at least one item.");
+					return;
+				}
+
+				if (row.Quantity == null || row.Quantity <= 0)
+				{
+					await ShowError("Please enter a valid Quantity.");
+					return;
+				}
+
+				if (row.QuantityApproved < 0)
+				{
+					await ShowError("Please enter a valid Quantity Approved.");
+					return;
+				}
+			}
+
+			var jobRes = await ProtectedSessionStorage.GetAsync<string>("LOCATION");
+			var finRes = await ProtectedSessionStorage.GetAsync<string>("FINACLE_ID");
+			var userRes = await ProtectedSessionStorage.GetAsync<string>("UserId");
+
+			string? branchCode = jobRes.Success ? jobRes.Value : null;
+			string? finacleId = finRes.Success ? finRes.Value : null;
+			string? userId = userRes.Success ? userRes.Value : null;
+
+			var nowIst = GetNowInIndia();
+			var finYearComputed = GetIndianFinancialYear(nowIst);
+			var monthComputed = nowIst.ToString("MMMM");
+
+			var finYearToSend = !string.IsNullOrWhiteSpace(vm.FinYear) ? vm.FinYear : finYearComputed;
+			var monthToSend = !string.IsNullOrWhiteSpace(vm.Month) ? vm.Month : monthComputed;
+
+			string? requestCodeToSend = (IsEdit && !string.IsNullOrWhiteSpace(vm.RequestCode))
+				? vm.RequestCode
+				: null;
+			string? atmIdToSave = vm.ATMId;
+			var entity = new ATMRequestMaster
+			{
+				RequestCode = requestCodeToSend,
+				BranchCode = branchCode,
+				FinYear = finYearToSend,
+				Month = monthToSend,
+				FinacleId = finacleId,
+				Justification = vm.Justification,
+				UrgencyLevel = vm.UrgencyLevel,
+				ATMId = atmIdToSave,
+				Attachment = vm.Attachment,
+				AttachmentName = vm.AttachmentName,
+				RaisedBy = userId,
+				RaisedOn = AppTime.Now, // NOTE: If you want to preserve existing value on Edit, move this server-side
+				RequestATM = vm.Rows.Select(r => new RequestATM
+				{
+					AtmCode = r.AtmCode,
+					Quantity = r.Quantity,
+					CostBeforeTax = r.CostBeforeTax,
+					ApprovedQuantity = (r.QuantityApproved == null || r.QuantityApproved == 0)
+			   ? r.Quantity
+			   : r.QuantityApproved.Value
+				}).ToList()
+			};
+
+			// Role-specific mapping + status dates
+			var nowUtc = AppTime.Now;
+
+			if (IsChecker)
+			{
+				var UserName = await ProtectedSessionStorage.GetAsync<string>("NAME");
+
+				string? CheckerApproverName = UserName.Success ? UserName.Value : null;
+				entity.BranchRecommendation = vm.CheckerRecommendation;
+				entity.BranchRemarks = vm.CheckerRemarks;
+				entity.CheckerApproverName = CheckerApproverName;
+				entity.BranchStatusDate = nowUtc;
+			}
+
+			if (IsRO)
+			{
+				var UserName = await ProtectedSessionStorage.GetAsync<string>("NAME");
+
+				string? RegionApproverName = UserName.Success ? UserName.Value : null;
+				if (IsROMaker)
+				{
+					entity.RegionRecommendation = vm.RegionRecommendation;
+					entity.RegionRemarks = vm.RegionRemarks;
+					entity.RegionApproverName = RegionApproverName;
+					entity.RegionStatusDate = nowUtc;
+				}
+				else if (IsROApprover)
+				{
+					entity.RegionApproverRecommendation = vm.RegionApproverRecommendation;
+					entity.RegionForwardTo = vm.RegionForwardTo;
+					entity.RegionApproverRemarks = vm.RegionApproverRemarks;
+					entity.RegionApproverName = RegionApproverName;
+					entity.RegionApproverDate = nowUtc;
+				}
+
+			}
+
+			// if (IsZO)
+			// {
+			// 	var UserName = await ProtectedSessionStorage.GetAsync<string>("NAME");
+
+			// 	string? ZoneApproverName = UserName.Success ? UserName.Value : null;
+			// 	entity.ZoneRecommendation = vm.ZoneRecommendation;
+			// 	entity.ZoneRemarks = vm.ZoneRemarks;
+			// 	entity.ZoneForwardTo = vm.ZoneForwardTo;
+
+			// 	entity.ZoneApproverName = ZoneApproverName;
+			// 	entity.ZoneStatusDate = nowUtc;
+			// }
+
+			if (IsZO)
+			{
+				var UserName = await ProtectedSessionStorage.GetAsync<string>("NAME");
+				string? CoApproverName = UserName.Success ? UserName.Value : null;
+				if (IsZOMaker)
+				{
+					entity.CoCheckerRecommendation = vm.CoCheckerRecommendation;
+					entity.CoCheckerRemarks = vm.CoCheckerRemarks;
+					entity.CoCheckerName = CoApproverName;
+				}
+				else if (IsZOApprover)
+				{
+					entity.CoRecommendation = vm.CoRecommendation;
+					entity.CoRemarks = vm.CoRemarks;
+					entity.CoApproverName = CoApproverName;
+					entity.CoStatusDate = nowUtc;
+				}
+
+			}
+
+			var resultMessage = await _ATMIndentService.InsertOrUpdateATMIndent(entity, currentRole.ToString());
+
+			if (string.IsNullOrWhiteSpace(resultMessage) ||
+				resultMessage.StartsWith("Insert failed", StringComparison.OrdinalIgnoreCase) ||
+				resultMessage.StartsWith("Update failed", StringComparison.OrdinalIgnoreCase) ||
+				resultMessage.StartsWith("Invalid payload", StringComparison.OrdinalIgnoreCase))
+			{
+				loadError = string.IsNullOrWhiteSpace(resultMessage) ? "Save failed." : resultMessage;
+				return;
+			}
+			else{
+				if (IsMaker){
+					await JS.InvokeVoidAsync("Swal.fire", new
+					{
+						icon = "success",
+						title = "Success!",
+						text = "Indent Created Successfully.",
+						showConfirmButton = false, // Hides the button for a cleaner look
+						timer = 2000,              // Automatically closes after 2 seconds
+						timerProgressBar = true    // Adds a nice progress bar at the bottom
+					});
+				}
+				else{
+					await JS.InvokeVoidAsync("Swal.fire", new
+					{
+						icon = "success",
+						title = "Success!",
+						text = "Indent Submitted Successfully",
+						showConfirmButton = false, // Hides the button for a cleaner look
+						timer = 2000,              // Automatically closes after 2 seconds
+						timerProgressBar = true    // Adds a nice progress bar at the bottom
+					});
+				}
+
+			}
+
+			Nav.NavigateTo("ATMIndent", forceLoad: true);
+		}
+		catch (Exception ex)
+		{
+			AppLogger.LogError(ex, "ATMIndentEditPage: save failed unexpectedly");
+			loadError = UserFacingError.Generic;
+		}
+	}
+
+
+	private async Task ShowError(string message)
+	{
+		await JS.InvokeVoidAsync("Swal.fire", new
+		{
+			icon = "error",
+			title = "Oops...",
+			text = message,
+			confirmButtonColor = "#198754" // Bootstrap success green to match your theme
+		});
+	}
+
+	private async Task AutoFetchDetails(AtmMasterRow row)
+	{
+		if (string.IsNullOrWhiteSpace(row.ATMId)) return;
+
+		// Call your service using the ID entered in this specific row
+		var data = await _ATMIndentService.GetAtmMasterById(row.ATMId);
+
+		if (data != null)
+		{
+			// Populate the row properties automatically
+			row.TerminalId8Digit = data.TerminalId8Digit;
+			row.Project = data.Project;
+			row.AtmMake = data.AtmMake;
+			row.InstallationDate = data.InstallationDate;
+			row.AtmCrm = data.AtmCrm;
+			row.CapexOpex = data.CapexOpex;
+			row.CapexOpexOnly = data.CapexOpexOnly;
+			row.AvgUptime = data.AvgUptime;
+			row.AvgHits = data.AvgHits;
+
+			StateHasChanged();
+		}
+		else
+		{
+			row.Project = "Not Found";
+		}
+	}
+	private async Task HandleFileSelected(InputFileChangeEventArgs e)
+	{
+		var file = e.File;
+		if (file != null)
+		{
+			// Limit file size (e.g., 5MB)
+			using var ms = new MemoryStream();
+			await file.OpenReadStream(5120000).CopyToAsync(ms);
+
+			vm.PoAcceptedDoc = ms.ToArray();
+			vm.PoAcceptedDocName = file.Name;
+		}
+	}
+
+
+
+	private async Task HandleSavePO()
+	{
+		var masterObj = new ATMRequestMaster
+		{
+			RequestCode = vm.RequestCode,
+			IsPoIssued = vm.IsPoIssued,
+			PoIssuedBy = vm.PoIssuedBy,
+			PoIssuedOn = vm.PoIssuedOn,
+			IsPoAccepted = true,
+			PoAcceptedBy = vm.PoAcceptedBy,
+			PoAcceptedOn = vm.PoAcceptedOn,
+			PoAcceptedDoc = vm.PoAcceptedDoc,
+			PoAcceptedDocName = vm.PoAcceptedDocName
+		};
+
+		// 2. Call your service method
+		var result = await _ATMIndentService.InsertPODetails(masterObj);
+
+		if (result == "Success")
+		{
+			// Show success message and close
+			ClosePOModal();
+			// Optional: Refresh the main list
+		}
+		else
+		{
+			// Handle error (e.g., show a toast/alert)
+		}
+	}
+
+	private async Task SaveFeedback()
+	{
+		var userRes = await ProtectedSessionStorage.GetAsync<string>("UserId");
+		string? userId = userRes.Success ? userRes.Value : null;
+		var masterObj = new ATMRequestMaster
+		{
+			RequestCode = vm.RequestCode,
+			Feedback = vm.Feedback,
+			FeedbackBy = userId
+
+		};
+
+		// 2. Call your service method
+		var result = await _ATMIndentService.InsertFeedbackDetails(masterObj);
+
+		if (result == "Success")
+		{
+			await JS.InvokeVoidAsync("alert", "Feedback Saved Successfully!");
+			// Show success message and close
+			showFeedbackModal = false;
+			// Optional: Refresh the main list
+		}
+		else
+		{
+			// Handle error (e.g., show a toast/alert)
+		}
+	}
+
+	private async Task SyncAndFetch(AtmMasterRow row)
+	{
+		// Sync the list value to the main VM property so the [Required] validator passes
+		vm.ATMId = row.ATMId;
+
+		// Trigger your existing fetch logic
+		await AutoFetchDetails(row);
+	}
+	private void Cancel() => Nav.NavigateTo("ATMIndent");
+
+	private static DateTime GetNowInIndia()
+	{
+		try
+		{
+			var ist = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+			return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ist);
+		}
+		catch (TimeZoneNotFoundException)
+		{
+			var ist = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
+			return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ist);
+		}
+	}
+
+	private static string GetIndianFinancialYear(DateTime dt)
+	{
+		var startYear = dt.Month >= 4 ? dt.Year : dt.Year - 1;
+		var endYearShort = (startYear + 1) % 100;
+		return $"{startYear}-{endYearShort:00}";
+	}
+
+	private async Task OnAttachmentSelected(InputFileChangeEventArgs e)
+	{
+		try
+		{
+			if (!CanEditMakerFields)
+				return;
+
+			var file = e.File;
+			if (file is null)
+			{
+				vm.Attachment = null;
+				vm.AttachmentName = null;
+				displayAttachmentName = null;
+				attachmentSizeKb = 0;
+				return;
+			}
+
+			// Safety limit e.g., 10 MB
+			const long maxAllowed = 10 * 1024 * 1024;
+
+			await using var stream = file.OpenReadStream(maxAllowed);
+			using var ms = new MemoryStream();
+			await stream.CopyToAsync(ms);
+
+			// Store the raw byte array directly into the View Model
+			vm.Attachment = ms.ToArray();
+
+			vm.AttachmentName = file.Name;
+			displayAttachmentName = file.Name;
+
+			// Calculate size from the byte array length
+			attachmentSizeKb = (int)(vm.Attachment.Length / 1024);
+			isChangingFile = false;
+		}
+		catch (Exception ex)
+		{
+			AppLogger.LogError(ex, "ATMIndentEditPage: failed to read attachment");
+			loadError = UserFacingError.Generic;
+			vm.Attachment = null;
+			vm.AttachmentName = null;
+			displayAttachmentName = null;
+			attachmentSizeKb = 0;
+		}
+	}
+
+	private async Task DownloadFile()
+	{
+		if (vm.Attachment != null && !string.IsNullOrWhiteSpace(vm.AttachmentName))
+		{
+			// Convert to Base64 only for the JS Interop call
+			var base64 = Convert.ToBase64String(vm.Attachment);
+			await JS.InvokeVoidAsync("downloadFileFromBase64", vm.AttachmentName, base64);
+		}
+	}
+
+	private async Task DownloadPOFile(byte[] fileData, string fileName)
+	{
+		if (fileData == null || fileData.Length == 0) return;
+
+		// Call JS function to download byte array as file
+		var base64 = Convert.ToBase64String(fileData);
+		await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, base64);
+	}
+	private bool isEmailSending = false;
+
+	private async Task SendPOEmail()
+	{
+		try
+		{
+			if (vm.PoAcceptedDoc == null) return;
+
+			isEmailSending = true;
+			StateHasChanged();
+
+
+			var result = await _ATMIndentService.SendPoEmailToVendor(vm.RequestCode, vm.PoAcceptedDoc, vm.PoAcceptedDocName);
+
+			if (result.IsSuccess)
+			{
+				AppLogger.LogInfo("[ATMIndentEditPage] Send Email Success Message: " + result.Msg);
+			}
+			else
+			{
+				AppLogger.LogInfo("[ATMIndentEditPage] Send Email Error Message: " + result.Msg);
+			}
+		}
+		catch (Exception ex)
+		{
+			AppLogger.LogError(ex, "[ATMIndentEditPage] UI Error sending mail: " + ex.Message);
+		}
+		finally
+		{
+			isEmailSending = false;
+			StateHasChanged(); // Hide loading state
+		}
+	}
+	public string ConvertAmountToWords(decimal amount)
+	{
+		if (amount == 0) return "Zero Only";
+
+		long integers = (long)amount;
+		int decimals = (int)((amount - integers) * 100);
+
+		string result = NumberToWords((int)integers) + " Rupees";
+		if (decimals > 0)
+		{
+			result += " and " + NumberToWords(decimals) + " Paise";
+		}
+		return result + " Only";
+	}
+
+	private string NumberToWords(int number)
+	{
+		if (number == 0) return "Zero";
+		if (number < 0) return "Minus " + NumberToWords(Math.Abs(number));
+
+		string words = "";
+
+		if ((number / 10000000) > 0)
+		{
+			words += NumberToWords(number / 10000000) + " Crore ";
+			number %= 10000000;
+		}
+
+		if ((number / 100000) > 0)
+		{
+			words += NumberToWords(number / 100000) + " Lakh ";
+			number %= 100000;
+		}
+
+		if ((number / 1000) > 0)
+		{
+			words += NumberToWords(number / 1000) + " Thousand ";
+			number %= 1000;
+		}
+
+		if ((number / 100) > 0)
+		{
+			words += NumberToWords(number / 100) + " Hundred ";
+			number %= 100;
+		}
+
+		if (number > 0)
+		{
+			if (words != "") words += "and ";
+			var unitsMap = new[] { "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen" };
+			var tensMap = new[] { "Zero", "Ten", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety" };
+
+			if (number < 20)
+				words += unitsMap[number];
+			else
+			{
+				words += tensMap[number / 10];
+				if ((number % 10) > 0) words += "-" + unitsMap[number % 10];
+			}
+		}
+		return words.Trim();
+	}
+	// ---------- Models (Page-scoped) ----------
+	public class ProcurementEditVm
+	{
+		public string? RequestCode { get; set; }
+
+		public string? FinYear { get; set; }
+
+		public string? Month { get; set; }
+
+		public string? Justification { get; set; }
+
+		[Required(ErrorMessage = "Urgency Level is required.")]
+		public string? UrgencyLevel { get; set; }
+
+		public string? ATMId { get; set; }
+
+		public byte[]? Attachment { get; set; }
+		public string? AttachmentName { get; set; }
+		public string? VendorPreferences { get; set; }
+		public List<ProcurementRow> Rows { get; set; } = new();
+		public List<AtmMasterRow> AtmMasterRow { get; set; } = new();
+
+		// ===== Checker (Branch) =====
+		public string? CheckerRecommendation { get; set; }
+		public string? CheckerRemarks { get; set; }
+		public string? CheckerApproverName { get; set; }
+
+		// ===== RO (Region) =====
+		public string? RegionRecommendation { get; set; }
+		public string? RegionRemarks { get; set; }
+		public string? RegionForwardTo { get; set; }
+		public string? RegionApproverRecommendation { get; set; }
+		public string? RegionApproverName { get; set; }
+		public string? RegionApproverRemarks { get; set; }
+
+
+		public string? RegionCheckerName { get; set; }
+		public string? RegionApproverDate { get; set; }
+
+
+
+		// ===== ZO (Zone) =====
+		// public string? ZoneRecommendation { get; set; }
+		// public string? ZoneRemarks { get; set; }
+		// public string? ZoneForwardTo { get; set; }
+		// public string? ZoneApproverName { get; set; }
+
+		// ===== CO (Corporate) =====
+		public string? CoCheckerRecommendation { get; set; }
+		public string? CoCheckerRemarks { get; set; }
+		public string? CoCheckerName { get; set; }
+
+		public string? CoRecommendation { get; set; }
+		public string? CoRemarks { get; set; }
+		public string? CoApproverName { get; set; }
+		public DateTime? CoApproverDate { get; set; }
+
+		public string? RaisedBy { get; set; } 
+		public DateTime? RaisedOn { get; set; }
+		public bool? IsPoIssued { get; set; }
+		public string? PoIssuedBy { get; set; }
+		public DateTime? PoIssuedOn { get; set; }
+		public bool? IsPoAccepted { get; set; }
+		public string? PoAcceptedBy { get; set; }
+		public DateTime? PoAcceptedOn { get; set; }
+		public string? OrderedBy { get; set; }
+		public DateTime? OrderedOn { get; set; }
+		public decimal? PreBookedAmt { get; set; }
+		public string? ReceivedBy { get; set; }
+		public DateTime? DeliveredOn { get; set; }
+		public decimal? PostDeliveredAmt { get; set; }
+		public DateTime? InstalledOn { get; set; }
+		public decimal? PostInstalledAmt { get; set; }
+
+		public byte[]? PoAcceptedDoc { get; set; }
+
+		public string? PoAcceptedDocName { get; set; }
+		public string? PoRefno { get; set; }
+		public string? Feedback { get; set; }
+
+	}
+
+	public class ProcurementRow
+	{
+		[Required(ErrorMessage = "Item Code is required.")]
+		public string? AtmCode { get; set; }
+
+		[Required(ErrorMessage = "Quantity is required.")]
+		[Range(1, int.MaxValue, ErrorMessage = "Quantity must be greater than zero.")]
+		public int? Quantity { get; set; }
+
+		[Range(typeof(decimal), "0", "79228162514264337593543950335",
+			ErrorMessage = "Estimated cost must be non-negative.")]
+		public decimal? CostBeforeTax { get; set; }
+
+		[Range(0, int.MaxValue, ErrorMessage = "Quantity Approved must be greater than or equal zero.")]
+		public int? QuantityApproved { get; set; }
+
+		// [Required(ErrorMessage = "Vendor preference is required.")]
+		// public string? VendorPreferences { get; set; }
+
+		public string? ItemCategory { get; set; }
+		public string? ItemName { get; set; }
+		public string? Specification { get; set; }
+		public decimal? ItemCost { get; set; }
+		public string? VendorName { get; set; }
+		public string? VendorAddress { get; set; }
+		public bool? IsPoIssued { get; set; }
+		public string? POIssuedBy { get; set; }
+		public DateTime? POIssuedOn { get; set; }
+		public bool? IsPoAccepted { get; set; }
+		public string? PoAcceptedBy { get; set; }
+		public DateTime? PoAcceptedOn { get; set; }
+		public string? OrderedBy { get; set; }
+		public DateTime? OrderedOn { get; set; }
+		public decimal? PreBookedAmt { get; set; }
+		public string? ReceivedBy { get; set; }
+		public DateTime? DeliveredOn { get; set; }
+		public decimal? PostDeliveredAmt { get; set; }
+		public DateTime? InstalledOn { get; set; }
+		public decimal? PostInstalledAmt { get; set; }
+
+		public DateTime? PaymentDate { get; set; }
+		public string? InvoiceNumber { get; set; }
+		public string? PaymentBy { get; set; }
+		public byte[]? InvoiceDoc { get; set; }
+		public string? InvoiceDocName { get; set; }
+
+		public byte[]? PoGeneratedDoc { get; set; }
+		public string? PoGeneratedDocName { get; set; }
+
+		// Step 2: PO Accepted
+		public byte[]? PoAcceptedDoc { get; set; }
+		public string? PoAcceptedDocName { get; set; }
+
+		// Step 3: Pre-Booked (Order Details)
+		public byte[]? PreBookedDoc { get; set; }
+		public string? PreBookedDocName { get; set; }
+
+		// Step 4: Order Received
+		public byte[]? OrderRecivedDoc { get; set; }
+		public string? OrderRecivedDocName { get; set; }
+
+		// Step 5: Post Installation
+		public byte[]? PostInstallationDoc { get; set; }
+		public string? PostInstallationDocName { get; set; }
+
+		// --- Temporary UI Staging Properties ---
+		public string? TempPoGeneratedDocName { get; set; }
+		public string? TempPoAcceptedDocName { get; set; }
+		public string? TempPreBookedDocName { get; set; }
+		public string? TempOrderRecivedDocName { get; set; }
+		public string? TempPostInstallationDocName { get; set; }
+		public string? TempInvoiceDocName { get; set; }
+		public bool? IsPaymentCompleted { get; set; }
+	}
+
+	public class AtmMasterRow
+	{
+		public string? ATMId { get; set; }
+		public string? TerminalId8Digit { get; set; }
+		public string? Project { get; set; }
+		public string? AtmMake { get; set; }
+		public DateTime? InstallationDate { get; set; }
+		public string? AtmCrm { get; set; }
+		public string? CapexOpex { get; set; }
+		public string? CapexOpexOnly { get; set; }
+		public decimal? AvgUptime { get; set; }
+		public decimal? AvgHits { get; set; }
+	}
+
+	// ===== POST payload (PascalCase) =====
+	public class UpsertRequestMasterPayload
+	{
+		public string? RequestCode { get; set; }
+		public string? BranchCode { get; set; }
+		public string? FinYear { get; set; }
+		public string? Month { get; set; }
+		public string? FinacleId { get; set; }
+		public string? Justification { get; set; }
+		public string? UrgencyLevel { get; set; }
+		public string? Attachment { get; set; }
+		public string? AttachmentName { get; set; }
+		public List<RequestItem> RequestItem { get; set; } = new();
+	}
+}

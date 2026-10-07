@@ -1,0 +1,364 @@
+﻿@page "/reports/deathclaim"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Reports.Services
+
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DeathClaimReportService DataService
+@inject DynamicReportService ReportService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@inject IJSRuntime JS
+
+@* --- INJECTED MUDBLAZOR STYLES --- *@
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+
+    .mud-table-sort-label .mud-button-root .mud-icon-root {
+        opacity: 1 !important;
+        color: rgba(255, 255, 255, 0.7) !important;
+    }
+
+    .mud-table-sort-label.mud-table-sort-label-active .mud-button-root .mud-icon-root {
+        color: white !important;
+    }
+
+    .auto-index-table {
+        counter-reset: rowNumber;
+    }
+
+        .auto-index-table tbody tr:has(td:nth-child(2)) {
+            counter-increment: rowNumber;
+        }
+
+            .auto-index-table tbody tr:has(td:nth-child(2)) td:first-child::before {
+                content: counter(rowNumber);
+            }
+
+    /* Styling specifically for the Grand Total Row in Summary Grid */
+    .grand-total-row {
+        background-color: #284e98 !important;
+        color: white !important;
+        font-weight: bold !important;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <div id="report-page-root" class="mb-4">
+            <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+
+                @* --- CUSTOM MUDBLAZOR FILTERS --- *@
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string" Label="Zone" Value="@_selectedZone" ValueChanged="OnZoneChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(!IsCo)">
+                            <MudSelectItem Value="@("ALL")">ALL</MudSelectItem>
+                            @foreach (var z in _zones)
+                            {
+                                <MudSelectItem Value="@z.Value">@z.Text</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string" Label="Region" Value="@_selectedRegion" ValueChanged="OnRegionChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(_userPrivilege == "REGION" || _userPrivilege == "BRANCH" || _selectedZone == "ALL")">
+                            <MudSelectItem Value="@("ALL")">ALL</MudSelectItem>
+                            @foreach (var r in _regions)
+                            {
+                                <MudSelectItem Value="@r.Value">@r.Text</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Branch" Value="@_selectedBranch" ValueChanged="OnBranchChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(_userPrivilege == "BRANCH" || _selectedRegion == "ALL")">
+                            <MudSelectItem Value="@("ALL")">ALL</MudSelectItem>
+                            @foreach (var b in _branches)
+                            {
+                                <MudSelectItem Value="@b.Value">@b.Text</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="2">
+                        <MudSelect T="string" Label="Pendency" Value="@_selectedPendency" ValueChanged="OnPendencyChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem Value="@("ALL")">ALL</MudSelectItem>
+                            <MudSelectItem Value="@("Upto 15 Days")">Upto 15 Days</MudSelectItem>
+                            <MudSelectItem Value="@("Above 15 Days")">Above 15 Days</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudSpacer />
+
+                    <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                        <MudButton Variant="Variant.Filled" StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                                   Style="background-color: #000066; color: white; font-size: 11px;"
+                                   OnClick="HandleExport">Export Excel</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                @if (_loading)
+                {
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Loading Dashboard Data...</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="px-4 pb-2">
+                        @* --- SUMMARY TABLE --- *@
+                        @if (_summaryData.Any())
+                        {
+                            <MudText Typo="Typo.subtitle1" Class="mb-2 fw-bold" Style="color: #284e98;">
+                                <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Small" Class="mr-1" /> Pendency Summary
+                            </MudText>
+                            <MudTable Items="_summaryData" Dense="true" Striped="true" Bordered="true" Elevation="2" RowClassFunc="@HighlightGrandTotal" Class="mb-6" Style="font-size:13px;">
+                                <HeaderContent>
+                                    <MudTh Style="background-color:#2a2f5b; color:white;">@_summaryHeaderLabel</MudTh>
+                                    <MudTh Style="background-color:#2a2f5b; color:white; text-align: center;">Total Pendency</MudTh>
+                                    <MudTh Style="background-color:#2a2f5b; color:white; text-align: center;">0 - 10 Days</MudTh>
+                                    <MudTh Style="background-color:#2a2f5b; color:white; text-align: center;">10 - 15 Days</MudTh>
+                                    <MudTh Style="background-color:#2a2f5b; color:white; text-align: center;">> 15 Days</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Office Name">@context["Zone/Region/Branch"]</MudTd>
+                                    <MudTd DataLabel="Total Pendency" Style="text-align: center;">@context["Total Pendency"]</MudTd>
+                                    <MudTd DataLabel="0 - 10 Days" Style="text-align: center;">@context["0 to 10 days"]</MudTd>
+                                    <MudTd DataLabel="10 - 15 Days" Style="text-align: center;">@context["10 to 15 days"]</MudTd>
+                                    <MudTd DataLabel="> 15 Days" Style="text-align: center;">@context["Beyond 15 days"]</MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+
+                        @* --- DETAIL DATA TABLE --- *@
+                        <MudText Typo="Typo.subtitle1" Class="mb-2 fw-bold" Style="color: #284e98;">
+                            <MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Small" Class="mr-1" /> Details
+                        </MudText>
+
+                        @if (!_detailData.Any())
+                        {
+                            <div class="alert alert-warning text-center" role="alert">
+                                <strong style="color: crimson;">No Detail Data Found!</strong>
+                            </div>
+                        }
+                        else
+                        {
+                            <MudTable Items="_detailData" Dense="true" Striped="true" Bordered="true" FixedHeader="true"
+                                      Height="500px" Elevation="2" Class="fixed-table auto-index-table" Style="font-size:12px;" RowsPerPage="25">
+                                <HeaderContent>
+                                    <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                                    @foreach (var col in _detailColumns)
+                                    {
+                                        <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width ?? "10%"}; text-align: center;")">
+                                            <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                                @col.Header
+                                            </MudTableSortLabel>
+                                        </MudTh>
+                                    }
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd Style="text-align: center;"></MudTd>
+                                    @foreach (var col in _detailColumns)
+                                    {
+                                        <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                            @FormatValue(context, col)
+                                        </MudTd>
+                                    }
+                                </RowTemplate>
+                                <PagerContent>
+                                    <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                                </PagerContent>
+                            </MudTable>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private string _title => string.IsNullOrWhiteSpace(Title) ? "Death Claim Dashboard" : Title!;
+
+    private bool _loading = true;
+
+    // Dropdown Data
+    private List<DropdownItem> _zones = new(), _regions = new(), _branches = new();
+    private string _selectedZone = "ALL", _selectedRegion = "ALL", _selectedBranch = "ALL", _selectedPendency = "ALL";
+
+    // RBAC scope resolved from the logged-in user's claims. Non-CO users are clamped to their own
+    // zone/region/branch in LoadReportData regardless of the dropdown selections.
+    private string _userPrivilege = "BRANCH";
+    private string _userZoneCode = "", _userRegionCode = "", _userBranchCode = "";
+    private bool IsCo => _userPrivilege == "CO";
+
+    // Dynamic Header
+    private string _summaryHeaderLabel = "Zone Name";
+
+    // Report Data
+    private List<Dictionary<string, object>> _summaryData = new();
+    private List<Dictionary<string, object>> _detailData = new();
+
+    private List<ColumnConfig> _detailColumns = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "ZONE", Width = "8%" },
+        new ColumnConfig { Header = "Region", PropertyName = "REGION", Width = "8%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "BRANCH", Width = "12%" },
+        new ColumnConfig { Header = "Account No", PropertyName = "ACCOUNT_NO", Width = "12%" },
+        new ColumnConfig { Header = "Claimant Name", PropertyName = "CLAIMANT_NAME", Width = "15%" },
+        new ColumnConfig { Header = "Death Reason", PropertyName = "DEATH_REASON", Width = "10%" },
+        new ColumnConfig { Header = "Entry Date", PropertyName = "CLAIM_ENTRY_DATE", Width = "10%" },
+        new ColumnConfig { Header = "Pendency (Days)", PropertyName = "PENDENCY", IsNumeric = true, Width = "8%" },
+        new ColumnConfig { Header = "Current Status", PropertyName = "STATUS_DESCRIPTION", Width = "12%" },
+        new ColumnConfig { Header = "Finacle Status", PropertyName = "FINACLE_STATUS", Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: resolve the user's scope. Default to BRANCH (most restrictive) for an
+        // unknown/missing privilege so a bad claim can never widen access.
+        _userPrivilege = (CurrentUser.Privilege ?? "").ToUpperInvariant() switch
+        {
+            "CO" => "CO",
+            "ZONE" => "ZONE",
+            "REGION" => "REGION",
+            _ => "BRANCH"
+        };
+        _userZoneCode = CurrentUser.ZoneCode ?? "";
+        _userRegionCode = CurrentUser.RegionCode ?? "";
+        _userBranchCode = CurrentUser.BranchCode ?? "";
+
+        // Zones dropdown and initial report data are independent — run in parallel
+        var zonesTask = DataService.GetZonesAsync();
+        var reportTask = LoadReportData();
+        await Task.WhenAll(zonesTask, reportTask);
+        _zones = zonesTask.Result;
+    }
+
+    private async Task OnZoneChanged(string value)
+    {
+        _selectedZone = value ?? "ALL";
+        _selectedRegion = "ALL";
+        _selectedBranch = "ALL";
+        _branches.Clear();
+
+        _summaryHeaderLabel = _selectedZone == "ALL" ? "Zone Name" : "Region Name";
+
+        if (_selectedZone != "ALL") _regions = await DataService.GetRegionsAsync(_selectedZone);
+        else _regions.Clear();
+
+        await LoadReportData();
+    }
+
+    private async Task OnRegionChanged(string value)
+    {
+        _selectedRegion = value ?? "ALL";
+        _selectedBranch = "ALL";
+
+        _summaryHeaderLabel = _selectedRegion == "ALL" ? "Region Name" : "Branch Name";
+
+        if (_selectedRegion != "ALL") _branches = await DataService.GetBranchesAsync(_selectedRegion);
+        else _branches.Clear();
+
+        await LoadReportData();
+    }
+
+    private async Task OnBranchChanged(string value)
+    {
+        _selectedBranch = value ?? "ALL";
+        _summaryHeaderLabel = "Branch Name";
+        await LoadReportData();
+    }
+
+    private async Task OnPendencyChanged(string value)
+    {
+        _selectedPendency = value ?? "ALL";
+        await LoadReportData();
+    }
+
+    private async Task LoadReportData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // RBAC enforcement — The SP therefore never receives a filter outside the user's scope.
+            var zoneArg = _selectedZone;
+            var regionArg = _selectedRegion;
+            var branchArg = _selectedBranch;
+            if (_userPrivilege == "ZONE")
+            {
+                zoneArg = _userZoneCode;
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                zoneArg = _userZoneCode;
+                regionArg = _userRegionCode;
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                zoneArg = _userZoneCode;
+                regionArg = _userRegionCode;
+                branchArg = _userBranchCode;
+            }
+
+            var results = await DataService.GetDashboardDataAsync(zoneArg, regionArg, branchArg, _selectedPendency);
+            _summaryData = results.Summary;
+            _detailData = results.Details;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    // Function to beautifully style the Grand Total row injected in the DataService
+    private string HighlightGrandTotal(Dictionary<string, object> row, int index)
+    {
+        if (row.TryGetValue("Zone/Region/Branch", out var val) && val?.ToString() == "GRAND TOTAL")
+        {
+            return "grand-total-row";
+        }
+        return string.Empty;
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        return val.ToString() ?? "";
+    }
+
+    private async Task HandleExport()
+    {
+        if (!_detailData.Any()) return;
+
+        // Exporting ONLY the Detail grid matching the original application logic
+        var bytes = ReportService.ExportToExcel(_detailData, _detailColumns, "DeathClaim_Report");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", $"DeathClaim_Report_{AppTime.Now:yyyyMMdd_HHmmss}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

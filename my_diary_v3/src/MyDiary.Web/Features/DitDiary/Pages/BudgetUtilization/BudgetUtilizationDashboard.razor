@@ -1,0 +1,385 @@
+@page "/dit/budget/dashboard"
+@using MudBlazor
+@using MyDiary.Web.Features.DitDiary.Models.DTO
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@using MyDiary.Web.Features.DitDiary.Services
+@inject IBudgetEntryService EntryService
+@inject IAdminMasterService AdminService
+@inject DitUserSession Session
+
+<style>
+    .budget-card {
+        cursor: pointer;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        transition: all .2s;
+    }
+
+        .budget-card.selected {
+            border: 2px solid var(--mud-palette-primary);
+            background: #fcfcff;
+        }
+
+    .kpi-card {
+        border-radius: 10px;
+        height: 100%;
+        min-height: 86px;
+    }
+</style>
+
+<MudContainer MaxWidth="@MaxWidth.False" Class="mt-2">
+
+    <MudPaper Class="pa-4 mb-3" Elevation="3">
+        <MudStack Row="true" AlignItems="@AlignItems.Center" Justify="@Justify.SpaceBetween">
+            <div>
+                <MudText Typo="@Typo.h5" Color="@Color.Primary"><b>Budget Utilization Dashboard</b></MudText>
+                <MudText Typo="@Typo.body2" Class="mud-text-secondary">@FyLabel() (Till @_month)</MudText>
+                @if (_scopeNote is not null)
+                {
+                    <MudText Typo="@Typo.body2" Class="mud-text-secondary">@_scopeNote</MudText>
+                }
+            </div>
+            <MudChip T="string" Color="@(_view == "Capital" ? Color.Info : Color.Error)" Size="@Size.Large">
+                @(_view == "Capital" ? "IT CAPITAL BUDGET" : "IT REVENUE BUDGET")
+            </MudChip>
+        </MudStack>
+    </MudPaper>
+
+    @if (_loadError is not null)
+    {
+        <MudAlert Severity="@Severity.Error" Class="mb-3">Load error: @_loadError</MudAlert>
+    }
+
+    @if (_noAccess)
+    {
+        <MudAlert Severity="@Severity.Warning">
+            You are not mapped to any section. Please contact the administrator.
+        </MudAlert>
+    }
+    else
+    {
+        @* ---------- CAPITAL / REVENUE SELECTOR ---------- *@
+        <MudGrid Spacing="3" Class="mb-3">
+            <MudItem xs="12" md="6">
+                <MudPaper Class="@CardClass("Capital")" Elevation="2" @onclick="@(() => SetView("Capital"))">
+                    <MudStack Row="true" AlignItems="@AlignItems.Center" Justify="@Justify.SpaceBetween" Class="pa-4">
+                        <div>
+                            <MudText Typo="@Typo.caption">CAPITAL EXPENDITURE</MudText>
+                            @if (_view == "Capital")
+                            {
+                                <MudText Typo="@Typo.h4" Color="@Color.Info"><b>@_d.TotalAllocated.ToString("N2")</b><small> Cr</small></MudText>
+                            }
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="@Size.Large" Color="@Color.Info" />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="@CardClass("Revenue")" Elevation="2" @onclick="@(() => SetView("Revenue"))">
+                    <MudStack Row="true" AlignItems="@AlignItems.Center" Justify="@Justify.SpaceBetween" Class="pa-4">
+                        <div>
+                            <MudText Typo="@Typo.caption">REVENUE EXPENDITURE</MudText>
+                            @if (_view == "Revenue")
+                            {
+                                <MudText Typo="@Typo.h4" Color="@Color.Error"><b>@_d.TotalAllocated.ToString("N2")</b><small> Cr</small></MudText>
+                            }
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="@Size.Large" Color="@Color.Error" />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* ---------- FILTERS ---------- *@
+        <MudPaper Class="pa-4 mb-3" Elevation="3">
+            <MudGrid AlignItems="@AlignItems.Center" Spacing="2">
+
+                <MudItem xs="12" sm="3" @key="1">
+                    <MudSelect T="int" Label="Financial Year" Value="@_fyId" ValueChanged="@OnFyChanged" Variant="@Variant.Outlined" Dense="true">
+                        @foreach (var fy in _fys)
+                        {
+                            <MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3" @key="2">
+                    <MudSelect T="string" Label="Month" Value="@_month" ValueChanged="@OnMonthChanged" Variant="@Variant.Outlined" Dense="true">
+                        @foreach (var m in Months)
+                        {
+                            <MudSelectItem T="string" Value="@m" Disabled="@IsFuture(m)">@m</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+               
+                
+                    <MudItem xs="12" sm="2" @key="3">
+                        <MudSelect T="long?" Label="Department" Value="@_deptId" ValueChanged="@OnDeptChanged"
+                                   Variant="@Variant.Outlined" Dense="true" Disabled="@_lockDept">
+                            @if (!_lockDept)
+                            {
+                                <MudSelectItem T="long?" Value="@((long?)null)">All Departments</MudSelectItem>
+                            }
+                            @foreach (var d in _depts)
+                            {
+                                <MudSelectItem T="long?" Value="@((long?)d.DEPT_ID)">@d.DEPT_NAME</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                
+
+                <MudItem xs="12" sm="3" @key="4">
+                    <MudSelect T="string" Label="Section" Value="@_section" ValueChanged="@OnSectionChanged"
+                               Variant="@Variant.Outlined" Dense="true" Disabled="@_lockSection">
+                        @if (!_lockSection)
+                        {
+                            <MudSelectItem T="string" Value="@("All")">All Sections</MudSelectItem>
+                        }
+                        @foreach (var s in _sectionNames)
+                        {
+                            <MudSelectItem T="string" Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="1" @key="5" Class="d-flex justify-center">
+                    <MudTooltip Text="Clear all filters">
+                        <MudIconButton Icon="@Icons.Material.Filled.FilterAltOff"
+                                       Color="@Color.Default"
+                                       Size="@Size.Medium"
+                                       OnClick="@ClearFilters"
+                                       aria-label="Clear filters" />
+                    </MudTooltip>
+                </MudItem>
+
+            </MudGrid>
+        </MudPaper>
+
+        @* ---------- 6 KPI CARDS ---------- *@
+        <MudGrid Spacing="2" Class="mb-3">
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Class="pa-3 kpi-card" Elevation="2">
+                    <MudText Typo="@Typo.caption" Class="mud-text-secondary">Spillover Budget Allocated</MudText>
+                    <MudText Typo="@Typo.h5" Color="@Color.Primary"><b>₹ @_d.SpilloverAllocated.ToString("N2")</b> <small>Cr</small></MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Class="pa-3 kpi-card" Elevation="2">
+                    <MudText Typo="@Typo.caption" Class="mud-text-secondary">Fresh Budget Allocated</MudText>
+                    <MudText Typo="@Typo.h5" Color="@Color.Secondary"><b>₹ @_d.FreshAllocated.ToString("N2")</b> <small>Cr</small></MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Class="pa-3 kpi-card" Elevation="2">
+                    <MudText Typo="@Typo.caption" Class="mud-text-secondary">Total Budget Allocated</MudText>
+                    <MudText Typo="@Typo.h5" Color="@Color.Info"><b>₹ @_d.TotalAllocated.ToString("N2")</b> <small>Cr</small></MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Class="pa-3 kpi-card" Elevation="2">
+                    <MudText Typo="@Typo.caption" Class="mud-text-secondary">Utilized till @_month</MudText>
+                    <MudText Typo="@Typo.h5" Color="@Color.Success"><b>₹ @_d.UtilizedTill.ToString("N2")</b> <small>Cr</small></MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Class="pa-3 kpi-card" Elevation="2">
+                    <MudText Typo="@Typo.caption" Class="mud-text-secondary">Utilization for @_month</MudText>
+                    <MudText Typo="@Typo.h5" Color="@Color.Warning"><b>₹ @_d.ThisMonth.ToString("N2")</b> <small>Cr</small></MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Class="pa-3 kpi-card" Elevation="2">
+                    <MudText Typo="@Typo.caption" Class="mud-text-secondary">Projected for @NextMonth()</MudText>
+                    <MudText Typo="@Typo.h5" Color="@Color.Error"><b>₹ @_d.ProjectedNext.ToString("N2")</b> <small>Cr</small></MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* ---------- 3 CHARTS ---------- *@
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4" Elevation="3" Style="height:100%;">
+                    <MudText Typo="@Typo.subtitle1" Align="@Align.Center"><b>Budget Allocation</b></MudText>
+                    @if (_d.TotalAllocated > 0)
+                    {
+                        <MudChart ChartType="@ChartType.Donut" Width="100%" Height="260px"
+                                  InputData="@(new double[] { (double)_d.SpilloverAllocated, (double)_d.FreshAllocated })"
+                                  InputLabels="@(new string[] { "Spillover", "Fresh" })" />
+                    }
+                    else
+                    {
+                        <MudText Align="@Align.Center" Class="mt-8 mud-text-secondary">No allocation</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4" Elevation="3" Style="height:100%;">
+                    <MudText Typo="@Typo.subtitle1" Align="@Align.Center"><b>Utilization Till @_month</b></MudText>
+                    @if (_d.TotalAllocated > 0)
+                    {
+                        <MudChart ChartType="@ChartType.Donut" Width="100%" Height="260px"
+                                  InputData="@(new double[] { (double)_d.UtilizedTill, (double)Math.Max(0, _d.Remaining) })"
+                                  InputLabels="@(new string[] { "Utilized", "Remaining" })" />
+                    }
+                    else
+                    {
+                        <MudText Align="@Align.Center" Class="mt-8 mud-text-secondary">No data</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4" Elevation="3" Style="height:100%;">
+                    <MudText Typo="@Typo.subtitle1" Align="@Align.Center"><b>Overview (₹ Cr)</b></MudText>
+                    <MudChart ChartType="@ChartType.Bar" Width="100%" Height="260px"
+                              ChartSeries="@_series"
+                              XAxisLabels="@(new string[] { "Spillover", "Fresh", "Total" })" />
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private string _view = "Capital";
+    private List<FinancialYear> _fys = new();
+    private int _fyId;
+    private List<Department> _depts = new();
+    private long? _deptId;
+    private List<string> _sectionNames = new();
+    private string _section = "All";
+    private string _month = DefaultMonth();
+    private BudgetDashboardData _d = new();
+    private List<ChartSeries> _series = new();
+
+    private bool _loaded, _noAccess, _lockDept, _lockSection;
+    private string? _scopeNote;
+    private string? _loadError;
+
+    private static readonly string[] Months =
+        { "APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER","JANUARY","FEBRUARY","MARCH" };
+
+    private static string DefaultMonth() => DateTime.Now.AddMonths(-1).ToString("MMMM").ToUpperInvariant();
+
+    private static bool IsFuture(string m) =>
+        Array.IndexOf(Months, m) > Array.IndexOf(Months, DateTime.Now.ToString("MMMM").ToUpperInvariant());
+
+    private string NextMonth()
+    {
+        var i = Array.IndexOf(Months, _month);
+        return i < 0 ? "-" : Months[(i + 1) % 12];
+    }
+
+    private string FyLabel() => _fys.FirstOrDefault(f => f.FyId == _fyId)?.FyLabel ?? "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _loaded) return;
+        _loaded = true;
+        try
+        {
+            await Session.LoadAsync();
+            await Session.EnsureScopeAsync(AdminService);
+            await LoadAll();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.InnerException?.Message ?? ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadAll()
+    {
+        var u = Session.User;
+        if (u is not null && !u.IsAdmin && !u.HasScope) { _noAccess = true; return; }
+
+        _fys = await EntryService.GetFinancialYearsAsync();
+        var cur = await EntryService.GetCurrentFyAsync();
+        _fyId = cur?.FyId ?? _fys.LastOrDefault()?.FyId ?? 0;
+
+        _depts = await EntryService.GetDepartmentsAsync();
+        if (u is not null && !u.IsAdmin)
+        {
+            _depts = _depts.Where(x => u.DeptIds.Contains(x.DEPT_ID)).ToList();
+            _lockDept = u.DeptIds.Count == 1;
+            if (_lockDept) _deptId = u.DeptIds[0];
+
+            _scopeNote = _lockDept
+                ? $"Showing data for your department and {(u.SectionIds.Count == 1 ? "section" : $"{u.SectionIds.Count} sections")}."
+                : $"Showing data for your {u.DeptIds.Count} departments.";
+        }
+
+        await LoadSections();
+        await LoadData();
+    }
+
+    private async Task LoadSections()
+    {
+        var u = Session.User;
+
+        var list = await EntryService.GetCapitalSectionsByDeptAsync(_deptId);
+
+        // var list = _view == "Capital"
+        //     ? await EntryService.GetCapitalSectionsByDeptAsync(_deptId)
+        //     : await EntryService.GetSectionsAsync("REVENUE");
+
+        if (u is not null && !u.IsAdmin)
+            list = list.Where(s => u.SectionIds.Contains(s.SECTION_ID)).ToList();
+
+        _sectionNames = list.Select(s => s.NAME).ToList();
+
+        _lockSection = u is not null && !u.IsAdmin && _sectionNames.Count == 1;
+        _section = _lockSection ? _sectionNames[0] : "All";
+    }
+
+    private async Task LoadData()
+    {
+        var u = Session.User;
+        var scope = (u is not null && !u.IsAdmin) ? u.SectionIds : null;
+
+        _d = await EntryService.GetDashboardAsync(_view, _fyId, _deptId, _section, _month, scope);
+
+        _series = new List<ChartSeries>
+        {
+            new ChartSeries
+            {
+                Name = "Allocated",
+                Data = new double[] { (double)_d.SpilloverAllocated, (double)_d.FreshAllocated, (double)_d.TotalAllocated }
+            },
+            new ChartSeries
+            {
+                Name = $"Utilized till {_month}",
+                Data = new double[] { (double)_d.UtilizedSpilloverTill, (double)_d.UtilizedFreshTill, (double)_d.UtilizedTill }
+            },
+            new ChartSeries
+            {
+                Name = $"Projected {NextMonth()}",
+                Data = new double[] { (double)_d.ProjectedSpilloverNext, (double)_d.ProjectedFreshNext, (double)_d.ProjectedNext }
+            }
+        };
+
+        StateHasChanged();
+    }
+
+    private async Task SetView(string v) { _view = v; await LoadSections(); await LoadData(); }
+    private async Task OnFyChanged(int v) { _fyId = v; await LoadData(); }
+    private async Task OnDeptChanged(long? v) { _deptId = v; await LoadSections(); await LoadData(); }
+    private async Task OnSectionChanged(string v) { _section = v; await LoadData(); }
+    private async Task OnMonthChanged(string v) { _month = v; await LoadData(); }
+
+    private async Task ClearFilters()
+    {
+        var cur = await EntryService.GetCurrentFyAsync();
+        _fyId = cur?.FyId ?? _fyId;
+        _month = DefaultMonth();
+        if (!_lockDept) _deptId = null;
+        await LoadSections();
+        await LoadData();
+    }
+
+    private string CardClass(string v) => _view == v ? "budget-card selected pa-1" : "budget-card pa-1";
+}

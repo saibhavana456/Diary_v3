@@ -1,0 +1,253 @@
+@page "/union-hub"
+@namespace RequestPortal.Web.Pages.UnionHub
+@attribute [Authorize]
+@inject ICurrentUser CurrentUser
+@inject IEventFeedService EventsSvc
+@inject NavigationManager Nav
+
+<PageTitle>Union Hub</PageTitle>
+
+<PageHeader Title="Union Hub" Crumbs="@(new List<PageHeader.Crumb> { new("Union Hub") })" />
+
+<div class="ev-scope">
+    <div class="ev-grid">
+        <!-- ============ FEED COLUMN ============ -->
+        <div class="ev-feed-col">
+            @if (_loading)
+            {
+                <div class="ev-empty"><p>Loading feed…</p></div>
+            }
+            else if (!_posts.Any())
+            {
+                <div class="ev-empty"><p>No event updates yet.</p></div>
+            }
+            @foreach (var post in _posts)
+            {
+                <article class="ev-card ev-post">
+                    <div class="ev-post-head">
+                        <div class="ev-avatar ev-avatar-md ev-ring-blue">@post.VerticalInitials</div>
+                        <div class="ev-post-meta">
+                            <p class="ev-post-author">@post.VerticalName</p>
+                            <p class="ev-post-time">Posted @post.PostedAgo · Central Office · PF @post.PostedByEmp</p>
+                        </div>
+                        @if (!string.IsNullOrEmpty(post.TagName))
+                        {
+                            <span class="ev-chip ev-chip-blue">@post.TagName</span>
+                        }
+                    </div>
+                    <p class="ev-post-text">@post.Caption</p>
+                    @if (!string.IsNullOrEmpty(post.EventName))
+                    {
+                        <p class="ev-post-event">📅 @post.EventName</p>
+                    }
+                    @if (post.Images.Any())
+                    {
+                        <div class="ev-post-imgs ev-cols-@Math.Min(post.Images.Count, 3)">
+                            @for (var i = 0; i < post.Images.Count; i++)
+                            {
+                                var idx = i;
+                                var media = post.Images[i];
+                                @if (media.IsVideo)
+                                {
+                                    <div class="ev-post-video-thumb" @onclick="@(() => OpenLightbox(post.Images, idx, post.Caption))">
+                                        <video src="@media.Url" class="ev-post-img" muted preload="metadata"></video>
+                                        <span class="ev-play-overlay">▶</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <img src="@media.Url" alt="Event photo" class="ev-post-img"
+                                         @onclick="@(() => OpenLightbox(post.Images, idx, post.Caption))" />
+                                }
+                            }
+                        </div>
+                    }
+                   @*  <div class="ev-actions">
+                        <button class="ev-act @(post.Liked ? "ev-liked" : "")" @onclick="@(() => ToggleLike(post))">
+                            <span class="ev-heart">@(post.Liked ? "♥" : "♡")</span> Likes · @post.Likes
+                        </button>
+                        <button class="ev-act ev-hover-blue" @onclick="@(() => post.ShowComments = !post.ShowComments)">
+                            💬 Comments · @post.Comments.Count
+                        </button>
+                        <button class="ev-act ev-act-right @(post.Saved ? "ev-saved" : "")" @onclick="@(() => post.Saved = !post.Saved)">
+                            @(post.Saved ? "🔖 Saved" : "🏷 Save")
+                        </button>
+                    </div> *@
+                    @if (post.ShowComments)
+                    {
+                        <div class="ev-comments">
+                            @foreach (var c in post.Comments)
+                            {
+                                <div class="ev-comment">
+                                    <div class="ev-avatar ev-avatar-sm">@InitialsOf(c.Author)</div>
+                                    <div class="ev-comment-bubble">
+                                        <p class="ev-comment-author">@c.Author</p>
+                                        <p class="ev-comment-text">@c.Text</p>
+                                    </div>
+                                </div>
+                            }
+                            <div class="ev-comment-compose">
+                                <div class="ev-avatar ev-avatar-sm ev-ring-blue">@InitialsOf(CurrentUser.Name)</div>
+                                <input class="ev-comment-input" placeholder="Write a comment…"
+                                       @bind="post.Draft" @bind:event="oninput"
+                                       @onkeydown="@(e => OnCommentKey(e, post))" />
+                                <button class="ev-comment-send" @onclick="@(() => AddComment(post))">Post</button>
+                            </div>
+                        </div>
+                    }
+                </article>
+            }
+
+            <div class="ev-viewmore">
+                <button class="ev-btn-ghost" @onclick="@(() => Nav.NavigateTo("union-hub/explore"))">
+                    View more in the Union Hub →
+                </button>
+                <p class="ev-viewmore-sub">See the complete event feed in the Union Hub.</p>
+            </div>
+        </div>
+
+        <!-- ============ SIDEBAR ============ -->
+        <aside class="ev-side-col">
+           @*  <div class="ev-card ev-side-card">
+                <h3 class="ev-side-title">Trending Tags</h3>
+                <div class="ev-tags">
+                    @if (_tags.Any())
+                    {
+                        @foreach (var t in _tags)
+                        {
+                            <span class="ev-chip ev-chip-blue">@t.Name</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="ev-post-time">No tags enabled.</span>
+                    }
+                </div>
+            </div> *@
+
+            <div class="ev-card ev-upcoming">
+                <h3 class="ev-upcoming-title">Upcoming Events</h3>
+                <div class="ev-upcoming-list">
+                    @if (_events.Any())
+                    {
+                        @foreach (var ev in _events.Take(4))
+                        {
+                            <div class="ev-upcoming-item">
+                                <p class="ev-upcoming-name">@ev.Name</p>
+                                <p class="ev-upcoming-when">@ev.WhenText</p>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="ev-upcoming-item"><p class="ev-upcoming-when">No events posted yet.</p></div>
+                    }
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<!-- Lightbox carousel -->
+@if (_lbItems is not null)
+{
+    <div class="ev-lightbox" tabindex="0" @ref="_lbRef" @onkeydown="OnLbKey" @onclick="CloseLightbox">
+        <div class="ev-lb-inner" @onclick:stopPropagation="true">
+            @if (_lbItems.Count > 1)
+            {
+                <button class="ev-lb-arrow" @onclick="LbPrev" aria-label="Previous item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                </button>
+            }
+            <div class="ev-lb-figure">
+                @{
+                    var current = _lbItems[_lbIndex];
+                }
+                @if (current.IsVideo)
+                {
+                    <video @key="current.Url" src="@current.Url" class="ev-lightbox-video" controls autoplay
+                           controlsList="nodownload" oncontextmenu="return false;"></video>
+                }
+                else
+                {
+                    <img src="@current.Url" alt="Preview" class="ev-lightbox-img" />
+                }
+                <div class="ev-lb-caption">
+                    @if (!string.IsNullOrWhiteSpace(_lbCaption)) { <span>@_lbCaption</span> }
+                    @if (_lbItems.Count > 1) { <span class="ev-lb-count">@(_lbIndex + 1) / @_lbItems.Count</span> }
+                </div>
+            </div>
+            @if (_lbItems.Count > 1)
+            {
+                <button class="ev-lb-arrow" @onclick="LbNext" aria-label="Next item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+            }
+        </div>
+        <button class="ev-lightbox-close" @onclick="CloseLightbox">×</button>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private List<FeedPost> _posts = new();
+    private List<UpcomingEventItem> _events = new();
+    private List<EventTag> _tags = new();
+
+    private sealed record LightboxItem(string Url, bool IsVideo);
+    private List<LightboxItem>? _lbItems;
+    private int _lbIndex;
+    private string? _lbCaption;
+    private ElementReference _lbRef;
+    private bool _lbFocusPending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Independent data sources — load in parallel
+        var feedTask   = EventsSvc.GetFeedAsync(null, 3);
+        var eventsTask = EventsSvc.ListEventsAsync(null);
+        var tagsTask   = EventsSvc.ListTagsAsync(true);
+        await Task.WhenAll(feedTask, eventsTask, tagsTask);
+        _posts  = feedTask.Result.ToList();
+        _events = eventsTask.Result.ToList();
+        _tags   = tagsTask.Result.ToList();
+        _loading = false;
+    }
+
+    private void ToggleLike(FeedPost p) { p.Liked = !p.Liked; p.Likes += p.Liked ? 1 : -1; }
+    private void OnCommentKey(KeyboardEventArgs e, FeedPost p) { if (e.Key == "Enter") AddComment(p); }
+    private void AddComment(FeedPost p)
+    {
+        var text = (p.Draft ?? "").Trim();
+        if (text.Length == 0) return;
+        p.Comments.Add(new PostComment("You", text));
+        p.Draft = "";
+    }
+
+    private void OpenLightbox(List<FeedPostImage> media, int index, string? caption)
+    {
+        _lbItems = media.Select(m => new LightboxItem(m.Url, m.IsVideo)).ToList();
+        _lbIndex = index; _lbCaption = caption; _lbFocusPending = true;
+    }
+    private void CloseLightbox() => _lbItems = null;
+    private void LbPrev() { if (_lbItems is { Count: > 0 }) _lbIndex = (_lbIndex - 1 + _lbItems.Count) % _lbItems.Count; }
+    private void LbNext() { if (_lbItems is { Count: > 0 }) _lbIndex = (_lbIndex + 1) % _lbItems.Count; }
+    private void OnLbKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "ArrowLeft") LbPrev();
+        else if (e.Key == "ArrowRight") LbNext();
+        else if (e.Key == "Escape") CloseLightbox();
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_lbFocusPending && _lbItems is not null) { _lbFocusPending = false; await _lbRef.FocusAsync(); }
+    }
+
+    private static string InitialsOf(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+    }
+}

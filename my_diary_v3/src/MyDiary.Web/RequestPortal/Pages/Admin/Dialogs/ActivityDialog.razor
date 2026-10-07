@@ -1,0 +1,50 @@
+@namespace RequestPortal.Web.Pages.Admin.Dialogs
+@* Activity edit — Department FK + Code/Name/IsActive *@
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudSelect T="long?" Label="Department" @bind-Value="DepartmentId" Required="true">
+                    @foreach (var d in Departments)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="Code" Label="Code" MaxLength="50" Required="true" Counter="50" />
+            </MudItem>
+            <MudItem xs="12" md="8">
+                <MudTextField @bind-Value="Name" Label="Name" MaxLength="200" Required="true" Counter="200" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSwitch T="bool" @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(!IsValid)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<RequestPortal.Core.Models.Department> Departments { get; set; } = Array.Empty<RequestPortal.Core.Models.Department>();
+
+    [Parameter] public long? DepartmentId { get; set; }
+    [Parameter] public string Code { get; set; } = "";
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public bool IsActive { get; set; } = true;
+
+    private bool IsValid =>
+        DepartmentId.HasValue && !string.IsNullOrWhiteSpace(Code) && !string.IsNullOrWhiteSpace(Name);
+
+    private void Save() => Dialog.Close(DialogResult.Ok(new ActivityFormResult(
+        DepartmentId!.Value, Code.Trim(), Name.Trim(), IsActive)));
+    private void Cancel() => Dialog.Cancel();
+
+    public sealed record ActivityFormResult(long DepartmentId, string Code, string Name, bool IsActive);
+}

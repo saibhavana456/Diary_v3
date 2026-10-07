@@ -1,0 +1,25 @@
+@media print {
+    body {
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+    }
+
+    .print-container {
+        width: 100%;
+    }
+
+    .print-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+        .print-table td,
+        .print-table th {
+            border: 1px solid black;
+            padding: 4px;
+        }
+
+    button {
+        display: none;
+    }
+}

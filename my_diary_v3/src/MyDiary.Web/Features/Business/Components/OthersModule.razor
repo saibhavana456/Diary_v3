@@ -1,0 +1,160 @@
+@using MudBlazor
+@using System.Globalization
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Business.Models
+@using MyDiary.Web.Features.Business.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Nav
+@inject IConfiguration Configuration
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject MyDiary.Web.Core.Services.Storage.ISessionStorageService SessionStorage
+@inject MyDiary.Web.Services.IEncryptionService EncryptionService
+@inject NavigationManager Navigation
+@inject IChargeReportService ChargeReportService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MudGrid GutterSize="24px">
+    <MudItem xs="12" sm="6" md="4" lg="3" Class="d-flex">
+        <div class="app-card-btn" style="width:100%;">
+            <div class="card-content-wrapper">
+                <div class="d-flex align-start gap-4">
+                    <div class="icon-badge">
+                        <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Style="font-size:2rem; color:#2E7D32;" />
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="card-title">Handover / Takeover</div>
+                    </div>
+                </div>
+                <MudDivider Class="my-3" />
+                <div style="font-size:0.85rem; color:#444; flex-grow:1;">
+                    @if (_handoverLoading)
+                    {
+                        <div class="d-flex align-center gap-2">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            <span>Loading...</span>
+                        </div>
+                    }
+                    else if (_handoverContext == null)
+                    {
+                        <div class="mb-1"><b>Last Handover Date:</b> —</div>
+                        <div class="mb-1"><b>Outgoing Officer:</b> —</div>
+                        <div class="mb-1"><b>Incoming Officer:</b> —</div>
+                        <div class="mb-1"><b>Status:</b> —</div>
+                    }
+                    else
+                    {
+                        <div class="mb-1"><b>Last Handover Date:</b> @(_handoverDate?.ToString("dd-MMM-yyyy") ?? "—")</div>
+                        <div class="mb-1"><b>Outgoing Officer:</b> @(_outgoingOfficer ?? "—")</div>
+                        <div class="mb-1"><b>Incoming Officer:</b> @(_incomingOfficer ?? "—")</div>
+                        <div class="mb-1"><b>Status:</b> @_handoverStatus</div>
+                    }
+                </div>
+                <div class="d-flex justify-end mt-4">
+                    <MudButton Class="rounded-pill px-4 go-btn-style"
+                               EndIcon="@Icons.Material.Filled.ArrowRightAlt"
+                               OnClick="@GoToHandoverTakeover">GO</MudButton>
+                </div>
+            </div>
+        </div>
+    </MudItem>
+    @* <MudItem xs="12" sm="6" md="4" lg="3" Class="d-flex">
+    <div class="app-card-btn" style="width:100%;">
+        <div class="card-content-wrapper">
+            <div class="d-flex align-start gap-4">
+                <div class="icon-badge">
+                    <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Style="font-size:2rem; color:#2E7D32;" />
+                </div>
+                <div class="flex-grow-1">
+                    <div class="card-title">Monthly Gold Surprise Visit</div>
+                </div>
+            </div>
+            <MudDivider Class="my-3" />
+            <div style="font-size:0.85rem; color:#444; flex-grow:1;">
+                <div class="mb-1"><b>Status:</b> View / Submit Monthly Report</div>
+            </div>
+            <div class="d-flex justify-end mt-4">
+                <MudButton Class="rounded-pill px-4 go-btn-style"
+                           EndIcon="@Icons.Material.Filled.ArrowRightAlt"
+                           OnClick="@GoToGold">GO</MudButton>
+            </div>
+        </div>
+    </div>
+</MudItem> *@
+</MudGrid>
+
+@code {
+    private bool _handoverLoading = true;
+    private ActiveChargeContextDto? _handoverContext;
+    private string? _outgoingOfficer;
+    private string? _incomingOfficer;
+    private DateTime? _handoverDate;
+    private string _handoverStatus = "—";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var employeeNo = user.FindFirst("emplid")?.Value ?? "";
+
+            if (!string.IsNullOrEmpty(employeeNo))
+            {
+                _handoverContext = await ChargeReportService.GetActiveChargeForUserAsync(employeeNo);
+
+                if (_handoverContext != null && _handoverContext.ReportID > 0)
+                {
+                    // Load Part A draft to get officer names and date
+                    var partA = await ChargeReportService.LoadDraftPartAAsync(_handoverContext.ReportID ?? 0);
+                    if (partA != null)
+                    {
+                        _outgoingOfficer = partA.OfficerName;
+                        _incomingOfficer = partA.IncomingOfficerName;
+                        _handoverDate = partA.DeclarationDate ?? partA.ChargeTakenDate;
+                    }
+
+                    // Determine status
+                    if (_handoverContext.IsSubmitted && _handoverContext.IsTakenOver)
+                        _handoverStatus = "Completed";
+                    else if (_handoverContext.IsSubmitted && !_handoverContext.IsTakenOver)
+                        _handoverStatus = "Pending Takeover (Part B)";
+                    else if (!_handoverContext.IsSubmitted)
+                        _handoverStatus = "Draft (Part A)";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "OthersModule: Failed to load handover/takeover summary");
+        }
+        finally
+        {
+            _handoverLoading = false;
+        }
+    }
+
+    private async Task GoToHandoverTakeover()
+    {
+        var userId = await SessionStorage.GetAsync<string>("UserId") ?? "";
+        var pwd = await SessionStorage.GetAsync<string>("Pwd") ?? "";
+
+        var baseUrl = Configuration["ApiEndpoints:HandoverTakeoverUrl"] ?? "#";
+        string finalUrl = baseUrl;
+
+        if (!string.IsNullOrEmpty(userId))
+        {
+            string formattedDateTime = AppTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
+            string plainText = $"{userId}|{pwd}|{formattedDateTime}";
+            string ssoData = EncryptionService.EncryptStringAES(plainText);
+            finalUrl = $"{baseUrl}?data={ssoData}";
+        }
+
+        await JS.InvokeVoidAsync("window.open", finalUrl, "_blank");
+    }
+
+    // private async Task GoToGold()
+    // {
+    //     Navigation.NavigateTo("MonthlyGoldSurpriseVisit");
+    // }
+}

@@ -1,0 +1,422 @@
+@page "/home"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@using MyDiary.Web.Features.Feedback.Components
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@using MyDiary.Web.Features.Shared.Components
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ILandingDashboardV2Service LegacyService
+@inject IEventFeedService EventsSvc
+@inject NavigationManager Nav
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<PageTitle>Home — My Diary | Union Bank of India</PageTitle>
+
+<div class="he-root">
+
+    @* ══ Hero ══════════════════════════════════════════════════════════════ *@
+    <section class="he-hero">
+        <div class="he-hero-glow" aria-hidden="true"></div>
+        <div class="he-hero-main">
+            <div class="he-hero-avatar">
+                <UserAvatar Size="MudBlazor.Size.Large" AvatarStyle="background:#ffffff;color:#1E3A8A;font-weight:800;"
+                            Initials="@GetInitials(_userName)" />
+            </div>
+            <div>
+                <div class="he-greeting">@Greeting, @_userName</div>
+                <div class="he-hero-sub">
+                    @if (!string.IsNullOrWhiteSpace(_userDesignation)) { <span>@_userDesignation</span> }
+                    @if (!string.IsNullOrWhiteSpace(_userDeptExtraDesc)) { <span class="he-dot">•</span> <span>@_userDeptExtraDesc</span> }
+                    @if (!string.IsNullOrWhiteSpace(_userRole)) { <span class="he-role-chip">@_userRole</span> }
+                </div>
+            </div>
+        </div>
+        <div class="he-hero-aside">
+            <div class="he-today">@AppTime.Now.ToString("dddd, dd MMM yyyy")</div>
+        </div>
+    </section>
+
+    <div class="he-shell">
+
+        @* ══ Main — corporate events feed ═════════════════════════════════ *@
+        <main class="he-main">
+            <div class="he-section-label"><span class="he-bar"></span>Corporate Feed (Union Hub)</div>
+
+            <div class="ev-scope">
+                @if (_loadingFeed)
+                {
+                    <div class="he-card he-empty">Loading updates…</div>
+                }
+                else if (!_posts.Any())
+                {
+                    <div class="he-card he-empty">No corporate updates yet. Check back soon.</div>
+                }
+                else
+                {
+                    @foreach (var post in _posts)
+                    {
+                        <article class="ev-card ev-post">
+                            <div class="ev-post-head">
+                                <div class="ev-avatar ev-avatar-md ev-ring-blue">@post.VerticalInitials</div>
+                                <div class="ev-post-meta">
+                                    <p class="ev-post-author">@post.VerticalName</p>
+                                    <p class="ev-post-time">Posted @post.PostedAgo · Central Office · PF @post.PostedByEmp</p>
+                                </div>
+                                @if (!string.IsNullOrEmpty(post.TagName))
+                                {
+                                    <span class="ev-chip ev-chip-blue">@post.TagName</span>
+                                }
+                            </div>
+                            <p class="ev-post-text">@post.Caption</p>
+                            @if (!string.IsNullOrEmpty(post.EventName))
+                            {
+                                <p class="ev-post-event">📅 @post.EventName</p>
+                            }
+                            @if (post.Images.Any())
+                            {
+                                <div class="ev-post-imgs ev-cols-@Math.Min(post.Images.Count, 3)">
+                                    @foreach (var img in post.Images)
+                                    {
+                                        @if (img.IsVideo)
+                                        {
+                                            <div class="ev-post-video-thumb" @onclick='@(() => Nav.NavigateTo("union-hub"))'>
+                                                <video src="@img.Url" class="ev-post-img" muted preload="metadata"></video>
+                                                <span class="ev-play-overlay">▶</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <img src="@img.Url" alt="Event photo" class="ev-post-img"
+                                                 @onclick='@(() => Nav.NavigateTo("union-hub"))' />
+                                        }
+                                    }
+                                </div>
+                            }
+                        @*     <div class="ev-actions">
+                                <span class="ev-act"><span class="ev-heart">♡</span> Likes · @post.Likes</span>
+                                <span class="ev-act">💬 Comments · @post.Comments.Count</span>
+                                <a class="ev-act ev-act-right" href="union-hub">Open in Union Hub →</a>
+                            </div> *@
+                        </article>
+                    }
+
+                    <div class="he-viewmore">
+                        <a class="he-viewmore-btn" href="union-hub">View the full Union Hub feed →</a>
+                    </div>
+                }
+            </div>
+        </main>
+
+        @* ══ Right rail ═══════════════════════════════════════════════════ *@
+        <aside class="he-rail">
+
+            @* Feedback — above Staff Details *@
+            @* <FeedbackHomeCard /> *@
+
+            @* Staff Details *@
+            <article class="he-card">
+                <header class="he-card-head"><MudIcon Icon="@Icons.Material.Filled.Groups" Size="MudBlazor.Size.Small" />Staff Details</header>
+                <div class="he-card-body">
+                    @foreach (var s in _staffRows)
+                    {
+                        <div class="he-staff-row">
+                            <span class="he-staff-l"><MudIcon Icon="@s.Icon" Size="MudBlazor.Size.Small" Style="@($"color:{s.Color}")" />@s.Label</span>
+                            <span class="he-staff-chip" style="@($"background:{s.Color}")">@s.Count</span>
+                        </div>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small"
+                               FullWidth="true" Class="rounded-pill mt-3" OnClick='@(() => Nav.NavigateTo("business-360?tab=staffdetails"))'>View Details</MudButton>
+                </div>
+            </article>
+
+            @* Quick Actions — hidden to match Home Dashboard *@
+            @* <article class="he-card">
+                <header class="he-card-head"><MudIcon Icon="@Icons.Material.Filled.Bolt" Size="MudBlazor.Size.Small" />Quick Actions</header>
+                <div class="he-card-body he-actions">
+                    <a class="he-action he-action-blue" href="requests/new">
+                        <span class="he-action-ic"><MudIcon Icon="@Icons.Material.Filled.AddCircle" /></span>
+                        <span class="he-action-tx"><b>New Request</b><small>Raise a new request</small></span>
+                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" Class="he-action-arrow" />
+                    </a>
+                    <a class="he-action he-action-green" href="requests/mine">
+                        <span class="he-action-ic"><MudIcon Icon="@Icons.Material.Filled.Inbox" /></span>
+                        <span class="he-action-tx"><b>My Requests</b><small>Track your requests</small></span>
+                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" Class="he-action-arrow" />
+                    </a>
+                    <a class="he-action he-action-red" href="requests/escalation-matrix">
+                        <span class="he-action-ic"><MudIcon Icon="@Icons.Material.Filled.AccountTree" /></span>
+                        <span class="he-action-tx"><b>Escalation Matrix</b><small>View escalation levels</small></span>
+                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" Class="he-action-arrow" />
+                    </a>
+                </div>
+            </article> *@
+
+            @* Branch Profile / Network Overview — CO users see Network Overview, others see Branch Profile *@
+            @if (!_isCOUser)
+            {
+                <article class="he-card">
+                    <header class="he-card-head"><MudIcon Icon="@Icons.Material.Filled.Store" Size="MudBlazor.Size.Small" />Branch Profile</header>
+                    <div class="he-card-body">
+                        @foreach (var st in _statRows)
+                        {
+                            <div class="he-stat-row">
+                                <span class="he-stat-ic" style="@($"background:{st.Bg};color:{st.Color}")"><MudIcon Icon="@st.Icon" Size="MudBlazor.Size.Small" /></span>
+                                <div class="he-stat-txt"><span class="he-stat-k">@st.Label</span><span class="he-stat-v">@st.Value</span></div>
+                            </div>
+                        }
+                        <MudButton Variant="Variant.Filled" Size="MudBlazor.Size.Small" FullWidth="true"
+                                   Class="rounded-pill mt-3" OnClick='@(() => Nav.NavigateTo("business-new?tab=BranchMgmt"))'
+                                   Style="background:#c8102e;color:#fff;">View Details</MudButton>
+                    </div>
+                </article>
+            }
+            else
+            {
+                <article class="he-card">
+                    <header class="he-card-head"><MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="MudBlazor.Size.Small" />Network Overview</header>
+                    <div class="he-card-body">
+                        <div class="he-stat-row">
+                            <span class="he-stat-ic" style="background:#E3F2FD;color:#1565C0"><MudIcon Icon="@Icons.Material.Filled.Public" Size="MudBlazor.Size.Small" /></span>
+                            <div class="he-stat-txt"><span class="he-stat-k">Zones</span><span class="he-stat-v">@(_entityCounts.ZoneCount > 0 ? _entityCounts.ZoneCount.ToString() : "18")</span></div>
+                        </div>
+                        <div class="he-stat-row">
+                            <span class="he-stat-ic" style="background:#FFF3E0;color:#E65100"><MudIcon Icon="@Icons.Material.Filled.Map" Size="MudBlazor.Size.Small" /></span>
+                            <div class="he-stat-txt"><span class="he-stat-k">Regions</span><span class="he-stat-v">@(_entityCounts.RegionCount > 0 ? _entityCounts.RegionCount.ToString() : "76")</span></div>
+                        </div>
+                        <div class="he-stat-row">
+                            <span class="he-stat-ic" style="background:#FFEBEE;color:#C62828"><MudIcon Icon="@Icons.Material.Filled.Store" Size="MudBlazor.Size.Small" /></span>
+                            <div class="he-stat-txt"><span class="he-stat-k">Branches</span><span class="he-stat-v">@(_entityCounts.BranchCount > 0 ? _entityCounts.BranchCount.ToString("N0") : "8500+")</span></div>
+                        </div>
+                    </div>
+                </article>
+            }
+        </aside>
+    </div>
+</div>
+
+<style>
+    .he-root { --he-blue:#1E3A8A; --he-red:#c8102e; --he-ink:#1b2a4a; --he-muted:#64748b;
+        --he-line:#e9edf5; --he-radius:16px; --he-shadow:0 1px 2px rgba(16,24,64,.04), 0 6px 20px rgba(16,24,64,.06);
+        display:flex; flex-direction:column; gap:18px; padding:4px 2px 24px; }
+
+    .he-hero { position:relative; overflow:hidden; border-radius:20px; color:#fff;
+        background:linear-gradient(120deg,#1E3A8A 0%,#3452b5 45%,#c8102e 130%);
+        padding:22px 26px; display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap;
+        box-shadow:0 10px 30px rgba(30,58,138,.28); }
+    .he-hero-glow { position:absolute; inset:auto -60px -120px auto; width:320px; height:320px;
+        background:radial-gradient(circle,rgba(255,255,255,.22),transparent 62%); pointer-events:none; }
+    .he-hero-main { display:flex; align-items:center; gap:16px; min-width:0; z-index:1; }
+    .he-hero-avatar .mud-avatar { width:60px; height:60px; box-shadow:0 4px 14px rgba(0,0,0,.18); }
+    .he-greeting { font-size:1.5rem; font-weight:800; letter-spacing:-.01em; line-height:1.15; }
+    .he-hero-sub { font-size:.85rem; opacity:.92; margin-top:3px; display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+    .he-dot { opacity:.6; }
+    .he-role-chip { background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.28);
+        padding:1px 10px; border-radius:999px; font-weight:700; font-size:.72rem; letter-spacing:.03em; }
+    .he-hero-aside { z-index:1; }
+    .he-today { font-size:.8rem; font-weight:600; background:rgba(255,255,255,.16);
+        border:1px solid rgba(255,255,255,.25); padding:6px 14px; border-radius:999px; }
+
+    .he-shell { display:grid; grid-template-columns:1fr 300px; gap:18px; align-items:start; }
+    .he-main { min-width:0; display:flex; flex-direction:column; gap:12px; }
+    .he-rail { display:flex; flex-direction:column; gap:16px; position:sticky; top:12px; }
+
+    .he-section-label { display:flex; align-items:center; gap:9px; font-size:.82rem; font-weight:800;
+        text-transform:uppercase; letter-spacing:.06em; color:var(--he-ink); margin:6px 2px 2px; }
+    .he-bar { width:5px; height:16px; border-radius:3px; background:var(--he-red); }
+
+    .he-card { background:#fff; border:1px solid var(--he-line); border-radius:var(--he-radius); box-shadow:var(--he-shadow); overflow:hidden; }
+    .he-card-head { display:flex; align-items:center; gap:8px; padding:13px 16px; border-bottom:1px solid var(--he-line);
+        font-weight:700; font-size:.92rem; color:var(--he-ink); }
+    .he-card-head .mud-icon-root { color:var(--he-blue); font-size:19px; }
+    .he-card-body { padding:14px 16px 16px; }
+    .he-empty { padding:28px 16px; text-align:center; color:var(--he-muted); font-size:.9rem; }
+
+    /* Quick actions */
+    .he-actions { display:flex; flex-direction:column; gap:10px; }
+    .he-action { display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px;
+        border:1px solid var(--he-line); text-decoration:none; transition:all .18s ease; background:#fff; }
+    .he-action:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(16,24,64,.10); border-color:transparent; }
+    .he-action-ic { width:40px; height:40px; border-radius:11px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; color:#fff; }
+    .he-action-ic .mud-icon-root { font-size:22px; color:#fff; }
+    .he-action-tx { display:flex; flex-direction:column; flex:1 1 auto; min-width:0; }
+    .he-action-tx b { font-size:.9rem; color:var(--he-ink); }
+    .he-action-tx small { font-size:.72rem; color:var(--he-muted); }
+    .he-action-arrow { color:#c0c7d6; }
+    .he-action-blue .he-action-ic { background:#1E3A8A; }
+    .he-action-blue:hover { background:#f4f7ff; }
+    .he-action-green .he-action-ic { background:#2a9d5c; }
+    .he-action-green:hover { background:#f2fbf6; }
+    .he-action-red .he-action-ic { background:#c8102e; }
+    .he-action-red:hover { background:#fff4f6; }
+
+    /* Staff / stat rows */
+    .he-staff-row { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--he-line); }
+    .he-staff-l { display:flex; align-items:center; gap:9px; font-size:.86rem; font-weight:600; color:#475569; }
+    .he-staff-chip { color:#fff; font-weight:800; font-size:.78rem; min-width:26px; height:22px; padding:0 8px;
+        border-radius:999px; display:inline-flex; align-items:center; justify-content:center; }
+    .he-stat-row { display:flex; align-items:center; gap:12px; padding:9px 0; }
+    .he-stat-ic { width:38px; height:38px; border-radius:11px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; }
+    .he-stat-txt { display:flex; flex-direction:column; }
+    .he-stat-k { font-size:.7rem; color:var(--he-muted); font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+    .he-stat-v { font-size:1.1rem; font-weight:800; color:var(--he-ink); line-height:1.2; }
+
+    .he-viewmore { text-align:center; padding:6px 0 2px; }
+    .he-viewmore-btn { display:inline-block; font-weight:700; font-size:.85rem; color:var(--he-blue); text-decoration:none;
+        border:1px solid var(--he-line); border-radius:999px; padding:8px 18px; background:#fff; box-shadow:var(--he-shadow); }
+    .he-viewmore-btn:hover { border-color:var(--he-blue); }
+
+    /* ── Corporate Feed (ev-*) styles ──────────────────────────────────────── */
+    .ev-scope { width:100%; max-width:100%; }
+    .ev-card { background:#fff; border:1px solid var(--he-line); border-radius:var(--he-radius);
+        box-shadow:var(--he-shadow); width:100%; }
+    .ev-post { padding:20px 24px; margin-bottom:12px; }
+    .ev-post-head { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+    .ev-avatar { display:inline-flex; align-items:center; justify-content:center;
+        border-radius:50%; font-weight:700; text-transform:uppercase; color:#fff; flex-shrink:0; }
+    .ev-avatar-md { width:42px; height:42px; font-size:.82rem; }
+    .ev-ring-blue { background:#1E3A8A; }
+    .ev-post-meta { flex:1 1 auto; min-width:0; }
+    .ev-post-author { margin:0; font-weight:700; font-size:.9rem; color:var(--he-ink); }
+    .ev-post-time { margin:0; font-size:.72rem; color:var(--he-muted); }
+    .ev-chip { display:inline-block; font-size:.68rem; font-weight:700; padding:3px 10px;
+        border-radius:999px; white-space:nowrap; }
+    .ev-chip-blue { background:#e8f0fe; color:#1a56db; }
+    .ev-post-text { margin:0 0 10px; font-size:.9rem; line-height:1.55; color:#334155;
+        width:100%; max-width:100%; word-wrap:break-word; overflow-wrap:break-word; }
+    .ev-post-event { margin:0 0 10px; font-size:.82rem; color:#475569; }
+    .ev-post-imgs { display:grid; gap:8px; border-radius:12px; overflow:hidden;
+        width:100%; max-width:100%; margin-bottom:10px; }
+    .ev-post-imgs.ev-cols-1 { grid-template-columns:1fr; }
+    .ev-post-imgs.ev-cols-2 { grid-template-columns:1fr 1fr; }
+    .ev-post-imgs.ev-cols-3 { grid-template-columns:1fr 1fr 1fr; }
+    .ev-post-img { width:100%; height:180px; object-fit:cover; border-radius:8px; cursor:pointer;
+        transition:transform .15s ease; }
+    .ev-post-img:hover { transform:scale(1.02); }
+    .ev-post-video-thumb { position:relative; cursor:pointer; border-radius:8px; overflow:hidden;
+        transition:transform .15s ease; }
+    .ev-post-video-thumb:hover { transform:scale(1.02); }
+    .ev-post-video-thumb video { display:block; pointer-events:none; }
+    .ev-play-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+        font-size:2rem; color:#fff; background:rgba(0,0,0,.28); text-shadow:0 2px 8px rgba(0,0,0,.5);
+        pointer-events:none; }
+    .ev-actions { display:flex; align-items:center; gap:16px; padding-top:10px;
+        border-top:1px solid var(--he-line); font-size:.8rem; color:var(--he-muted); }
+    .ev-act { display:inline-flex; align-items:center; gap:4px; cursor:default; }
+    .ev-act-right { margin-left:auto; color:var(--he-blue); font-weight:700; text-decoration:none; }
+    .ev-act-right:hover { text-decoration:underline; }
+    .ev-heart { font-size:1rem; }
+
+    @@media (max-width:1100px) {
+        .he-shell { grid-template-columns:1fr; }
+        .he-rail { position:static; flex-direction:row; flex-wrap:wrap; }
+        .he-rail > .he-card { flex:1 1 300px; }
+    }
+    @@media (max-width:620px) { .he-greeting { font-size:1.25rem; } }
+</style>
+
+@code {
+    private string _userName = "Test User";
+    private string _userDesignation = "";
+    private string _userDeptExtraDesc = "";
+    private string _userRole = "";
+    private string _brSolid = "", _regionSolid = "", _zoneSolid = "";
+    private bool _isCOUser = false;
+
+    private bool _loadingFeed = true;
+    private List<FeedPost> _posts = new();
+
+    private StaffSummary _staffSummary = new();
+    private BranchProfile _branchProfile = new();
+    private EntityCountSummary _entityCounts = new();
+
+    private List<(string Icon, string Color, string Label, int Count)> _staffRows = new();
+    private List<(string Icon, string Color, string Bg, string Label, string Value)> _statRows = new();
+
+    private string Greeting
+    {
+        get
+        {
+            // IST hour so the greeting is correct under Kubernetes (UTC pod) too.
+            var h = AppTime.Now.Hour;
+            if (h < 12) return "Good morning";
+            if (h < 17) return "Good afternoon";
+            return "Good evening";
+        }
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "U";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 1 ? parts[0][..1].ToUpper() : (parts[0][..1] + parts[^1][..1]).ToUpper();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userName = user.FindFirst(ClaimTypes.Name)?.Value ?? "Test User";
+            _userDesignation = user.FindFirst("employee_designation")?.Value ?? "";
+            _userDeptExtraDesc = user.FindFirst("department_extra")?.Value ?? "";
+            _userRole = user.FindFirst(ClaimTypes.Role)?.Value ?? user.FindFirst("Role")?.Value ?? "";
+            _brSolid = user.FindFirst("branch_solid")?.Value
+                    ?? user.FindFirst("br_solid")?.Value ?? "";
+            _regionSolid = user.FindFirst("region_solid")?.Value ?? "";
+            _zoneSolid = user.FindFirst("zone_solid")?.Value ?? "";
+
+            var privilege = (_userRole ?? "").ToUpperInvariant();
+            _isCOUser = privilege == "CO" || privilege == "CORPORATE" || privilege.Contains("CENTRAL");
+        }
+
+        StateHasChanged();
+
+        // Fire-and-forget: feed and staff/branch data load independently,
+        // each calling StateHasChanged() when done.
+        _ = LoadFeedAsync();
+        _ = LoadStaffAndBranchAsync();
+    }
+
+    private async Task LoadFeedAsync()
+    {
+        try { _posts = (await EventsSvc.GetFeedAsync(null, 6)).ToList(); }
+        catch (Exception ex) { AppLogger.LogError(ex, "HomeEmployee: failed to load event feed"); _posts = new(); }
+        _loadingFeed = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadStaffAndBranchAsync()
+    {
+        try { _staffSummary = await LegacyService.GetStaffSummaryAsync(_userRole, _brSolid, _regionSolid, _zoneSolid); }
+        catch (Exception ex) { AppLogger.LogError(ex, "HomeEmployee: failed to load staff summary"); _staffSummary = new(); }
+        _staffRows = new()
+        {
+            (Icons.Material.Filled.Badge, "#1b4a98", "Officers", _staffSummary.OfficerCount),
+            (Icons.Material.Filled.SupportAgent, "#2a9d5c", "CSA", _staffSummary.CSACount),
+            (Icons.Material.Filled.Engineering, "#e65100", "Sub Staff", _staffSummary.SubStaffCount),
+        };
+
+        try { _branchProfile = await LegacyService.GetBranchProfileAsync(_userRole, _brSolid, _regionSolid, _zoneSolid); }
+        catch (Exception ex) { AppLogger.LogError(ex, "HomeEmployee: failed to load branch profile"); _branchProfile = new(); }
+        _statRows = new()
+        {
+            (Icons.Material.Filled.CalendarMonth, "#1565C0", "#E3F2FD", "Opening Date", _branchProfile.SolOpnDt?.ToString("dd-MMM-yy") ?? "—"),
+            (Icons.Material.Filled.Badge, "#E65100", "#FFF3E0", "License Number", string.IsNullOrWhiteSpace(_branchProfile.LicenseNumber) ? "—" : _branchProfile.LicenseNumber),
+            (Icons.Material.Filled.EventBusy, "#C62828", "#FFEBEE", "Lease Expiry", "31-Dec-2027"),
+        };
+
+        // Load entity counts for CO users (Network Overview card)
+        if (_isCOUser)
+        {
+            try { _entityCounts = await LegacyService.GetEntityCountSummaryAsync(); }
+            catch (Exception ex) { AppLogger.LogError(ex, "HomeEmployee: failed to load entity count summary"); _entityCounts = new(); }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+}

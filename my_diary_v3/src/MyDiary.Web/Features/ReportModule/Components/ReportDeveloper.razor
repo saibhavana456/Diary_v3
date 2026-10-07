@@ -1,0 +1,246 @@
+@page "/reports/developer"
+@using MudBlazor
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IReportRepo ReportRepo
+@inject IMasterRepo Masters
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Report Developer</PageTitle>
+
+<PageHeader PageKey="report-developer" Title="Report Developer" Crumbs="_crumbs" />
+
+<SuperAdminOnly>
+    <MudPaper Elevation="1" Class="pa-3">
+        <div class="d-flex flex-wrap align-end gap-3 mb-3">
+            <MudSelect T="long?" Label="Vertical" Value="_filterVerticalId" ValueChanged="OnFilterVerticalChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width:220px">
+                @foreach (var v in _verticals) { <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="long?" Label="Department" Value="_filterDepartmentId" ValueChanged="OnFilterDepartmentChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width:220px"
+                       Disabled="@(_filterDepartments.Count == 0)">
+                @foreach (var d in _filterDepartments) { <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.Name</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="string" Label="Status" Value="_filterStatus" ValueChanged="OnFilterStatusChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width:180px">
+                <MudSelectItem T="string" Value="@("LIVE")">Live</MudSelectItem>
+                <MudSelectItem T="string" Value="@("DISABLED")">Disabled</MudSelectItem>
+            </MudSelect>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Nav.NavigateTo("reports/developer/new"))">Add</MudButton>
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else if (_defs.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No reports found for the selected filters.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_defs" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Report</MudTh><MudTh>Vertical</MudTh><MudTh>Department</MudTh><MudTh>Source</MudTh>
+                    <MudTh>Running From</MudTh><MudTh>Status</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Report">@context.ReportName</MudTd>
+                    <MudTd DataLabel="Vertical">@context.VerticalName</MudTd>
+                    <MudTd DataLabel="Department">@context.DepartmentName</MudTd>
+                    <MudTd DataLabel="Source">@SourceLabel(context.SourceType)</MudTd>
+                    <MudTd DataLabel="Running From">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.RunningFrom == ReportSite.Dr ? Color.Warning : Color.Info)">
+                            @(context.RunningFrom == ReportSite.Dr ? "DR" : "DC")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                            @(context.IsActive ? "Live" : "Disabled")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Title="View"
+                                       OnClick="@(() => Nav.NavigateTo($"reports/developer/view/{context.Id}"))" aria-label="View" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Title="Edit"
+                                       OnClick="@(() => Nav.NavigateTo($"reports/developer/edit/{context.Id}"))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       Title="@(context.IsActive ? "Disable" : "Enable")"
+                                       OnClick="@(() => ToggleActive(context))" aria-label="Enable or disable" />
+                        <MudIconButton Icon="@Icons.Material.Filled.History" Size="Size.Small" Title="Audit &amp; Access Logs"
+                                       OnClick="@(() => ShowLogsAsync(context))" aria-label="Logs" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    @if (_logsOpen)
+    {
+        <MudDialog @bind-Visible="_logsOpen" Options="@(new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true })">
+            <TitleContent>
+                <MudText Typo="Typo.h6"><MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" />@_logsReportName — Audit &amp; Access Logs</MudText>
+            </TitleContent>
+            <DialogContent>
+                <MudTabs Rounded="true">
+                    <MudTabPanel Text="Audit Trail">
+                        @if (_auditEntries.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-2">No audit entries yet.</MudAlert>
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true" Striped="true" Style="overflow-x:auto;max-height:420px;">
+                                <thead><tr><th>Action</th><th>By</th><th>When</th><th>Details</th></tr></thead>
+                                <tbody>
+                                    @foreach (var a in _auditEntries)
+                                    {
+                                        <tr>
+                                            <td><MudChip T="string" Size="Size.Small" Color="@AuditColor(a.Action)">@a.Action</MudChip></td>
+                                            <td>@a.ActorEmp</td>
+                                            <td>@a.ActorAt.ToString("dd-MMM-yyyy HH:mm:ss")</td>
+                                            <td>@a.Details</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </MudTabPanel>
+                    <MudTabPanel Text="Access Log">
+                        @if (_accessEntries.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-2">No access attempts logged yet.</MudAlert>
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true" Striped="true" Style="overflow-x:auto;max-height:420px;">
+                                <thead><tr><th>Accessed By</th><th>When</th><th>Site</th><th>Rows</th><th>Result</th></tr></thead>
+                                <tbody>
+                                    @foreach (var a in _accessEntries)
+                                    {
+                                        <tr>
+                                            <td>@a.AccessedBy</td>
+                                            <td>@a.AccessedAt.ToString("dd-MMM-yyyy HH:mm:ss")</td>
+                                            <td>@(a.RunningFrom == ReportSite.Dr ? "DR" : a.RunningFrom == ReportSite.Dc ? "DC" : "—")</td>
+                                            <td>@(a.RowsReturned?.ToString() ?? "—")</td>
+                                            <td>
+                                                @if (a.Success)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Success</MudChip>
+                                                }
+                                                else
+                                                {
+                                                    <MudTooltip Text="@a.ErrorMsg"><MudChip T="string" Size="Size.Small" Color="Color.Error">Failed</MudChip></MudTooltip>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </MudTabPanel>
+                </MudTabs>
+            </DialogContent>
+            <DialogActions>
+                <MudButton OnClick="@(() => _logsOpen = false)">Close</MudButton>
+            </DialogActions>
+        </MudDialog>
+    }
+</SuperAdminOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Reports"), new("Report Developer") };
+
+    private bool _loading = true;
+    private List<Vertical> _verticals = new();
+    private List<Department> _filterDepartments = new();
+    private List<ReportDef> _defs = new();
+
+    private long? _filterVerticalId, _filterDepartmentId;
+    private string? _filterStatus;
+
+    private bool _logsOpen;
+    private string _logsReportName = "";
+    private List<ReportAuditEntry> _auditEntries = new();
+    private List<ReportAccessEntry> _accessEntries = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = (await Masters.ListVerticalsAllAsync()).ToList();
+        await ReloadDefsAsync();
+        _loading = false;
+    }
+
+    private async Task OnFilterVerticalChangedAsync(long? verticalId)
+    {
+        _filterVerticalId = verticalId;
+        _filterDepartmentId = null;
+        _filterDepartments = verticalId.HasValue ? (await Masters.ListDepartmentsAllAsync(verticalId)).ToList() : new();
+        await ReloadDefsAsync();
+    }
+
+    private async Task OnFilterDepartmentChangedAsync(long? departmentId)
+    {
+        _filterDepartmentId = departmentId;
+        await ReloadDefsAsync();
+    }
+
+    private async Task OnFilterStatusChangedAsync(string? status)
+    {
+        _filterStatus = status;
+        await ReloadDefsAsync();
+    }
+
+    private async Task ReloadDefsAsync()
+    {
+        var all = await ReportRepo.ListDefsAsync(_filterVerticalId, _filterDepartmentId, null, activeOnly: false);
+        _defs = _filterStatus switch
+        {
+            "LIVE" => all.Where(d => d.IsActive).ToList(),
+            "DISABLED" => all.Where(d => !d.IsActive).ToList(),
+            _ => all.ToList()
+        };
+    }
+
+    private async Task ShowLogsAsync(ReportDef d)
+    {
+        _logsReportName = d.ReportName;
+        _auditEntries = (await ReportRepo.ListAuditAsync(d.Id, 100)).ToList();
+        _accessEntries = (await ReportRepo.ListAccessAsync(d.Id, 100)).ToList();
+        _logsOpen = true;
+    }
+
+    private static Color AuditColor(string action) => action switch
+    {
+        "CREATE" => Color.Success,
+        "UPDATE" => Color.Info,
+        "DELETE" => Color.Error,
+        "ENABLE" => Color.Success,
+        "DISABLE" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task ToggleActive(ReportDef d)
+    {
+        await ReportRepo.SetActiveAsync(d.Id, !d.IsActive, CurrentUser.EmpCode ?? "");
+        await ReloadDefsAsync();
+    }
+
+    private static string SourceLabel(ReportSourceType t) => t switch
+    {
+        ReportSourceType.FilePath => "Server File Path",
+        ReportSourceType.Sftp => "SFTP",
+        ReportSourceType.OracleDb => "Oracle DB",
+        ReportSourceType.SqlServerDb => "MS SQL Server DB",
+        ReportSourceType.Impala => "Hive/Impala (via Knox)",
+        _ => t.ToString()
+    };
+}

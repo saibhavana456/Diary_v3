@@ -1,0 +1,30 @@
+.aum-title {
+    color: #1E3A8A;
+    font-weight: 700;
+}
+
+::deep .aum-tabs .mud-tabs-toolbar {
+    background: #fff;
+}
+
+::deep .mud-tab.mud-tab-active {
+    color: #1E3A8A;
+}
+
+::deep .mud-tabs-tabbar-inner .mud-tab-slider {
+    background-color: #1E3A8A;
+}
+
+::deep .aum-card {
+    border-radius: 12px;
+}
+
+.aum-actions {
+    display: flex;
+    align-items: center;
+    margin-top: 8px;
+}
+
+::deep .aum-table td {
+    line-height: 1.5;
+}

@@ -1,0 +1,465 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/page-config"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "AppAdmin")]
+@inject IPageInfoService PageInfoSvc
+@inject ISnackbar Snackbar
+@inject ModuleContext Module
+@inject IAuditService AuditSvc
+@inject ICurrentUser CurrentUser
+@using RequestPortal.Web.Features.PageInfo.Services
+@using RequestPortal.Web.Features.PageInfo.Models
+
+<PageTitle>Page Configuration</PageTitle>
+
+<style>
+    .pc-btn-primary  { background:var(--rp-navy); color:#fff; border:none; border-radius:8px;
+                       padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer;
+                       display:inline-flex; align-items:center; gap:6px; transition:opacity 0.15s; }
+    .pc-btn-primary:hover    { opacity:0.88; }
+    .pc-btn-primary:disabled { background:#90A4AE; cursor:not-allowed; }
+
+    .pc-btn-outline  { background:#fff; color:var(--rp-navy); border:1.5px solid var(--rp-navy);
+                       border-radius:8px; padding:7px 18px; font-size:13px; font-weight:600;
+                       cursor:pointer; transition:background 0.15s; }
+    .pc-btn-outline:hover { background:#EEF2FF; }
+
+    .pc-btn-danger   { background:#C62828; color:#fff; border:none; border-radius:8px;
+                       padding:7px 18px; font-size:13px; font-weight:600; cursor:pointer; }
+    .pc-btn-danger:hover  { background:#D32F2F; }
+
+    .pc-btn-icon     { background:transparent; border:none; cursor:pointer;
+                       border-radius:6px; padding:4px 6px; transition:background 0.15s; }
+    .pc-btn-icon-edit { color:var(--rp-navy); }
+    .pc-btn-icon-edit:hover  { background:#EEF2FF; }
+    .pc-btn-icon-del  { color:#C62828; }
+    .pc-btn-icon-del:hover   { background:#FFEBEE; }
+
+    .pc-form-label   { font-size:12px; font-weight:600; color:#333; margin-bottom:3px; display:block; }
+    .pc-form-hint    { font-size:11px; color:#aaa; margin-left:5px; }
+    .pc-form-input   { width:100%; box-sizing:border-box; border:1.5px solid #C8D0D8;
+                       border-radius:8px; padding:8px 12px; font-size:13px; color:#222;
+                       outline:none; transition:border 0.15s; font-family:inherit; }
+    .pc-form-input:focus    { border-color:var(--rp-navy); }
+    .pc-form-input:disabled { background:#F5F5F5; color:#888; }
+    .pc-form-select  { width:100%; box-sizing:border-box; border:1.5px solid #C8D0D8;
+                       border-radius:8px; padding:8px 12px; font-size:13px; color:#222;
+                       outline:none; background:#fff; appearance:auto; font-family:inherit; }
+    .pc-form-select:focus { border-color:var(--rp-navy); }
+    .pc-grid-2       { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .pc-col-2        { grid-column:1 / -1; }
+
+    .pc-chip         { display:inline-block; border-radius:20px; padding:2px 10px;
+                       font-size:11px; font-weight:700; }
+    .pc-chip-dashboard  { background:#EEF2FF; color:var(--rp-navy); }
+    .pc-chip-report     { background:#E0F7FA; color:#00838F; }
+    .pc-chip-upload     { background:#FFF3E0; color:#E65100; }
+    .pc-chip-approve    { background:#E8F5E9; color:#2E7D32; }
+    .pc-chip-enquiry    { background:#F3E5F5; color:#7B1FA2; }
+    .pc-chip-maintenance{ background:#EEEEEE; color:#333; }
+    .pc-chip-other      { background:#F5F5F5; color:#555; }
+    .pc-chip-active     { background:#E8F5E9; color:#2E7D32; }
+    .pc-chip-inactive   { background:#FFEBEE; color:#C62828; }
+    .pc-chip-mono       { background:#F5F5F5; color:#555; font-family:monospace; font-size:11px; }
+</style>
+
+@* ── Page Header ─────────────────────────────────────────────────────────── *@
+<PageHeader PageKey="admin-page-config" Title="Page Configuration"
+            Subtitle="Manage page metadata — type, owner, IP number and contact details"
+            Crumbs="_crumbs">
+    <Actions>
+        <button class="pc-btn-primary" @onclick="@(() => OpenForm(null))">
+            ＋ Add Page
+        </button>
+    </Actions>
+</PageHeader>
+
+<AuthorizeView Policy="AppAdmin">
+
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-3" />
+}
+
+@* ── Data Table ───────────────────────────────────────────────────────────── *@
+<MudPaper Elevation="1" Style="border-radius:12px; overflow:hidden;">
+
+    <div style="display:flex; align-items:center; justify-content:space-between;
+                padding:14px 16px; border-bottom:1px solid #EEE;">
+        <span style="font-size:14px; font-weight:600; color:#333;">All Pages (@_filtered.Count)</span>
+        <input @bind="_search" @bind:event="oninput"
+               placeholder="🔍  Search pages…"
+               style="border:1.5px solid #C8D0D8; border-radius:8px; padding:7px 14px;
+                      font-size:13px; width:260px; outline:none; font-family:inherit;" />
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+                <tr style="background:#F8F9FA; color:#555; font-weight:600; font-size:11px;
+                           text-transform:uppercase; letter-spacing:0.5px;">
+                    <th style="padding:10px 14px; text-align:left;">Key</th>
+                    <th style="padding:10px 14px; text-align:left;">Page Name</th>
+                    <th style="padding:10px 14px; text-align:left;">Type</th>
+                    <th style="padding:10px 14px; text-align:left;">Owner Vertical</th>
+                    <th style="padding:10px 14px; text-align:left;">Module Owner</th>
+                    <th style="padding:10px 14px; text-align:left;">IP Number</th>
+                    <th style="padding:10px 14px; text-align:left;">Mail ID</th>
+                    <th style="padding:10px 14px; text-align:left;">Ver</th>
+                    <th style="padding:10px 14px; text-align:left;">Status</th>
+                    <th style="padding:10px 14px; text-align:center;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_filtered.Count == 0 && !_loading)
+                {
+                    <tr>
+                        <td colspan="10" style="padding:40px; text-align:center; color:#aaa;">
+                            No pages found. Click <strong>+ Add Page</strong> to create the first entry.
+                        </td>
+                    </tr>
+                }
+                @foreach (var (p, idx) in _filtered.Select((p, i) => (p, i)))
+                {
+                    <tr style="border-top:1px solid #F0F0F0; background:@(idx % 2 == 0 ? "#fff" : "#FAFAFA");">
+                        <td style="padding:10px 14px;">
+                            <span class="pc-chip pc-chip-mono">@p.PageKey</span>
+                        </td>
+                        <td style="padding:10px 14px; font-weight:600; color:#222;">@p.PageName</td>
+                        <td style="padding:10px 14px;">
+                            <span class="pc-chip @TypeChipClass(p.PageType)">@p.PageType</span>
+                        </td>
+                        <td style="padding:10px 14px; color:#555;">@p.OwnerVertical</td>
+                        <td style="padding:10px 14px; color:#555;">@p.ModuleOwner</td>
+                        <td style="padding:10px 14px; font-family:monospace; font-size:12px; color:#555;">@p.IpNumber</td>
+                        <td style="padding:10px 14px; font-size:12px; color:#555;">@p.MailId</td>
+                        <td style="padding:10px 14px; color:#555;">@p.Version</td>
+                        <td style="padding:10px 14px;">
+                            <span class="pc-chip @(p.Status == "ACTIVE" ? "pc-chip-active" : "pc-chip-inactive")">
+                                ● @p.Status
+                            </span>
+                        </td>
+                        <td style="padding:10px 14px; text-align:center; white-space:nowrap;">
+                            <button class="pc-btn-icon pc-btn-icon-edit" title="Edit"   @onclick="@(() => OpenForm(p))">✏</button>
+                            <button class="pc-btn-icon pc-btn-icon-del"  title="Delete" @onclick="@(() => ConfirmDelete(p))">🗑</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</MudPaper>
+
+
+@* ══ SLIDE-IN FORM DRAWER ══════════════════════════════════════════════════ *@
+@if (_formOpen)
+{
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1400;"
+         @onclick="CloseForm"></div>
+
+    <div style="position:fixed; top:0; right:0; height:100vh; width:500px; z-index:1500;
+                background:#fff; box-shadow:-6px 0 32px rgba(0,0,0,0.18);
+                display:flex; flex-direction:column; overflow:hidden;"
+         @onclick:stopPropagation="true">
+
+        @* Drawer Header *@
+        <div style="background:var(--rp-grad); padding:20px 24px; color:#fff;
+                    display:flex; align-items:center; gap:12px; flex-shrink:0;">
+            <span style="font-size:2rem;">@(_isNew ? "📄" : "✏️")</span>
+            <div style="flex:1;">
+                <div style="font-size:17px; font-weight:700;">@(_isNew ? "Add New Page" : "Edit Page")</div>
+                <div style="font-size:12px; opacity:0.85;">Fill in all configuration details below</div>
+            </div>
+            <button @onclick="CloseForm"
+                    style="background:rgba(255,255,255,0.2); border:none; border-radius:50%;
+                           width:32px; height:32px; color:#fff; font-size:16px; cursor:pointer;
+                           display:flex; align-items:center; justify-content:center; flex-shrink:0;">✕</button>
+        </div>
+
+        @* Scrollable form body *@
+        <div style="flex:1; overflow-y:auto; padding:24px;">
+            <div class="pc-grid-2">
+
+                <div class="pc-col-2">
+                    <label class="pc-form-label">Page Key <span class="pc-form-hint">Unique identifier (e.g. loan-report)</span></label>
+                    <input class="pc-form-input" @bind="_form.PageKey" disabled="@(!_isNew)"
+                           placeholder="e.g. loan-report"
+                           style="@(!_isNew ? "background:#F5F5F5; color:#888;" : "")" />
+                </div>
+
+                <div class="pc-col-2">
+                    <label class="pc-form-label">Page Name <span class="pc-form-hint">Display name shown in info popup</span></label>
+                    <input class="pc-form-input" @bind="_form.PageName" placeholder="e.g. Loan Summary Report" />
+                </div>
+
+                <div>
+                    <label class="pc-form-label">Page Type <span class="pc-form-hint">Functional classification</span></label>
+                    <select class="pc-form-select" @bind="_form.PageType">
+                        @foreach (var t in _pageTypes)
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+
+                <div>
+                    <label class="pc-form-label">Status</label>
+                    <select class="pc-form-select" @bind="_form.Status">
+                        <option value="ACTIVE">ACTIVE</option>
+                        <option value="INACTIVE">INACTIVE</option>
+                        <option value="DEPRECATED">DEPRECATED</option>
+                    </select>
+                </div>
+
+                <div class="pc-col-2">
+                    <label class="pc-form-label">Description <span class="pc-form-hint">What this page shows or does</span></label>
+                    <textarea class="pc-form-input" @bind="_form.Description" rows="3"
+                              placeholder="Describe the purpose of this page…" style="resize:vertical;"></textarea>
+                </div>
+
+                <div class="pc-col-2">
+                    <label class="pc-form-label">Owner Vertical <span class="pc-form-hint">Business unit responsible</span></label>
+                    <input class="pc-form-input" @bind="_form.OwnerVertical" placeholder="e.g. Retail Banking" />
+                </div>
+
+                <div>
+                    <label class="pc-form-label">Module Owner <span class="pc-form-hint">Person responsible</span></label>
+                    <input class="pc-form-input" @bind="_form.ModuleOwner" placeholder="e.g. Priya Nair" />
+                </div>
+
+                <div>
+                    <label class="pc-form-label">Version</label>
+                    <input class="pc-form-input" @bind="_form.Version" placeholder="e.g. v1.0" />
+                </div>
+
+                <div class="pc-col-2">
+                    <label class="pc-form-label">IP Number <span class="pc-form-hint">Internal project reference</span></label>
+                    <input class="pc-form-input" @bind="_form.IpNumber" placeholder="e.g. IP-RP-2024-0041" />
+                </div>
+
+                <div class="pc-col-2">
+                    <label class="pc-form-label">Mail ID <span class="pc-form-hint">Contact email for this page</span></label>
+                    <input class="pc-form-input" type="email" @bind="_form.MailId"
+                           placeholder="e.g. owner@company.in" />
+                </div>
+
+            </div>
+
+            @if (_formError is not null)
+            {
+                <div style="color:#C62828; font-size:12px; margin-top:12px; padding:8px 12px;
+                            background:#FFEBEE; border-radius:6px;">⚠ @_formError</div>
+            }
+        </div>
+
+        @* Sticky Footer *@
+        <div style="padding:16px 24px; border-top:1px solid #EEE; display:flex; gap:12px;
+                    justify-content:flex-end; flex-shrink:0; background:#fff;">
+            <button class="pc-btn-outline" @onclick="CloseForm">Cancel</button>
+            <button class="pc-btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                @(_saving ? "Saving…" : (_isNew ? "✔ Add Page" : "✔ Save Changes"))
+            </button>
+        </div>
+    </div>
+}
+
+
+@* ══ DELETE CONFIRM ════════════════════════════════════════════════════════ *@
+@if (_deleteTarget is not null)
+{
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1600;
+                display:flex; align-items:center; justify-content:center;">
+        <div style="background:#fff; border-radius:16px; padding:36px 32px; max-width:380px;
+                    width:90%; box-shadow:0 8px 40px rgba(0,0,0,0.25); text-align:center;"
+             @onclick:stopPropagation="true">
+            <div style="font-size:3rem; margin-bottom:8px;">🗑️</div>
+            <div style="font-size:18px; font-weight:700; margin-bottom:8px; color:#222;">Delete Page?</div>
+            <div style="font-size:13px; color:#555; margin-bottom:24px; line-height:1.6;">
+                Are you sure you want to delete<br />
+                <strong>@_deleteTarget.PageName</strong>
+                (<code style="background:#F5F5F5; padding:1px 6px; border-radius:4px;">@_deleteTarget.PageKey</code>)?
+                <br /><span style="color:#C62828; font-size:12px;">This cannot be undone.</span>
+            </div>
+            <div style="display:flex; gap:12px; justify-content:center;">
+                <button class="pc-btn-outline" @onclick="@(() => _deleteTarget = null)">Cancel</button>
+                <button class="pc-btn-danger"  @onclick="ExecuteDeleteAsync">Delete</button>
+            </div>
+        </div>
+    </div>
+}
+    </Authorized>
+</AuthorizeView>
+
+
+@code {
+    bool _loading = true;
+    List<PageInfo> _pages    = [];
+    List<PageInfo> _filtered = [];
+
+    string _searchBacking = "";
+    string _search
+    {
+        get => _searchBacking;
+        set { _searchBacking = value; ApplyFilter(); }
+    }
+
+    bool _formOpen;
+    bool _isNew;
+    bool _saving;
+    string? _formError;
+    PageInfoForm _form = new();
+
+    PageInfo? _deleteTarget;
+
+    static readonly string[] _pageTypes =
+        ["Dashboard", "Report", "Upload", "Approve", "Enquiry", "Maintenance", "Other"];
+
+    readonly List<PageHeader.Crumb> _crumbs =
+    [
+        new("Admin",              "/admin/home"),
+        new("Page Configuration", null)
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Module.SwitchTo(PortalModule.AccessManagement);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "PageConfig: failed to load page configuration");
+        }
+    }
+
+    async Task LoadAsync()
+    {
+        _loading = true;
+        _pages   = await PageInfoSvc.GetAllAsync();
+        ApplyFilter();
+        _loading = false;
+    }
+
+    void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(_searchBacking))
+        {
+            _filtered = [.. _pages];
+            return;
+        }
+        var q = _searchBacking.Trim();
+        _filtered = _pages.Where(p =>
+            p.PageKey.Contains(q, StringComparison.OrdinalIgnoreCase)       ||
+            p.PageName.Contains(q, StringComparison.OrdinalIgnoreCase)      ||
+            p.PageType.Contains(q, StringComparison.OrdinalIgnoreCase)      ||
+            p.OwnerVertical.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+            p.ModuleOwner.Contains(q, StringComparison.OrdinalIgnoreCase)   ||
+            p.IpNumber.Contains(q, StringComparison.OrdinalIgnoreCase)
+        ).ToList();
+    }
+
+    // Snapshot of the row being edited, kept alongside _form so SaveAsync can log a real
+    // before/after diff to the Setup Audit Log — null when adding a brand-new page.
+    PageInfo? _editingBefore;
+
+    void OpenForm(PageInfo? existing)
+    {
+        _isNew    = existing is null;
+        _form     = existing is null ? new PageInfoForm() : PageInfoForm.From(existing);
+        _editingBefore = existing;
+        _formError = null;
+        _formOpen  = true;
+    }
+
+    void CloseForm() => _formOpen = false;
+
+    async Task SaveAsync()
+    {
+        _formError = null;
+        if (string.IsNullOrWhiteSpace(_form.PageKey))     { _formError = "Page Key is required.";     return; }
+        if (string.IsNullOrWhiteSpace(_form.PageName))    { _formError = "Page Name is required.";    return; }
+        if (string.IsNullOrWhiteSpace(_form.ModuleOwner)) { _formError = "Module Owner is required."; return; }
+        if (string.IsNullOrWhiteSpace(_form.MailId))      { _formError = "Mail ID is required.";      return; }
+
+        _saving = true;
+        var ok  = await PageInfoSvc.UpsertAsync(_form, _isNew);
+        _saving = false;
+
+        if (ok)
+        {
+            // Every add/edit here goes to the Setup Audit Log (same tamper-evident,
+            // hash-chained IAuditService the other Admin setup screens use) — entity
+            // RP_PAGE_INFO, actor = the logged-in AppAdmin who made the change, plus the
+            // full before/after JSON so it's clear exactly what was changed, not just that
+            // something was. PageKey isn't numeric, so EntityId uses a stable hash of it
+            // purely for the audit log's "ID" column — the PageKey itself is always in the
+            // JSON payload, which is what actually identifies the row.
+            await AuditSvc.LogAsync(
+                AuditEntityNames.PageInfo, StableId(_form.PageKey),
+                _isNew ? AuditEntityNames.ActionCreate : AuditEntityNames.ActionUpdate,
+                CurrentUser.EmpCode,
+                _isNew ? null : _editingBefore,
+                _form);
+
+            _formOpen = false;
+            Snackbar.Add($"Page '{_form.PageName}' {(_isNew ? "added" : "updated")}.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            _formError = _isNew
+                ? "Save failed — Page Key may already exist."
+                : "Save failed. Please try again.";
+        }
+    }
+
+    void ConfirmDelete(PageInfo p) => _deleteTarget = p;
+
+    async Task ExecuteDeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        var deleted = _deleteTarget;
+        var name = deleted.PageName;
+        var ok   = await PageInfoSvc.DeleteAsync(deleted.PageKey);
+        _deleteTarget = null;
+
+        if (ok)
+        {
+            await AuditSvc.LogAsync(
+                AuditEntityNames.PageInfo, StableId(deleted.PageKey), AuditEntityNames.ActionDelete,
+                CurrentUser.EmpCode, deleted, null);
+        }
+
+        Snackbar.Add(ok ? $"'{name}' deleted." : "Delete failed.", ok ? Severity.Warning : Severity.Error);
+        if (ok) await LoadAsync();
+    }
+
+    // See the comment in SaveAsync — string.GetHashCode() is intentionally randomized
+    // per-process since .NET Core, so a deterministic polynomial hash is used instead to
+    // keep this stable across app restarts for the same PageKey.
+    static long StableId(string key)
+    {
+        unchecked
+        {
+            long h = 17;
+            foreach (var c in key) h = h * 31 + c;
+            return Math.Abs(h);
+        }
+    }
+
+    string TypeChipClass(string t) => t switch
+    {
+        "Dashboard"    => "pc-chip-dashboard",
+        "Report"       => "pc-chip-report",
+        "Upload"       => "pc-chip-upload",
+        "Approve"      => "pc-chip-approve",
+        "Enquiry"      => "pc-chip-enquiry",
+        "Maintenance"  => "pc-chip-maintenance",
+        _              => "pc-chip-other"
+    };
+}

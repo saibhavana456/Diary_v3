@@ -1,0 +1,165 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+
+@* Zone > Region > Branch cascade (options come from the caller's own scope, so a single option is
+   pre-selected and locked), drill type, period presets, date window, status and search. *@
+<MudPaper Elevation="0" Class="pa-3 mb-3" Style="background-color:#ffffff;">
+    <MudGrid Spacing="2" Class="align-center">
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" Label="Zone" Value="@_zone" ValueChanged="OnZoneAsync" Disabled="@_zoneLocked" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                @foreach (var z in _zones) { <MudSelectItem T="string" Value="@z.Code">@z.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" Label="Region (RO)" Value="@_region" ValueChanged="OnRegionAsync" Disabled="@_regionLocked" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                @foreach (var r in _regions) { <MudSelectItem T="string" Value="@r.Code">@r.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string" Label="Branch" Value="@_branch" ValueChanged="OnBranch" Disabled="@_branchLocked" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                @foreach (var b in _branches) { <MudSelectItem T="string" Value="@b.Code">@b.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" Label="Drill type" Value="@(Filter.DrillType ?? "ALL")" ValueChanged="@(v => Filter.DrillType = v == "ALL" ? null : v)" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("ALL")">All</MudSelectItem>
+                <MudSelectItem T="string" Value="@BcpTypes.Bcp">BCP Testing</MudSelectItem>
+                <MudSelectItem T="string" Value="@BcpTypes.Dr">DR Drill</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string" Label="Status" Value="@(Filter.Status ?? "ALL")" ValueChanged="@(v => Filter.Status = v == "ALL" ? null : v)" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var s in StatusItems) { <MudSelectItem T="string" Value="@s.Value">@s.Label</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" Label="Financial year" Value="@_fy" ValueChanged="OnPeriodAsync" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("")">Custom dates</MudSelectItem>
+                @foreach (var fy in _fyOptions) { <MudSelectItem T="string" Value="@fy">@fy</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" Label="Quarter" Value="@_qtr" ValueChanged="OnQuarterAsync" Disabled="@(_fy == "")" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("")">Full year</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Q1")">Q1 (Apr-Jun)</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Q2")">Q2 (Jul-Sep)</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Q3")">Q3 (Oct-Dec)</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Q4")">Q4 (Jan-Mar)</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="From" Date="@Filter.From" DateChanged="@(d => { Filter.From = d; _fy = ""; _qtr = ""; })" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd-MMM-yyyy" Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="To / as on" Date="@Filter.To" DateChanged="@(d => { Filter.To = d; _fy = ""; _qtr = ""; })" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd-MMM-yyyy" Clearable="true" />
+        </MudItem>
+        @if (ShowSearch)
+        {
+            <MudItem xs="12" sm="6" md="2">
+                <MudTextField T="string" Label="Search" @bind-Value="Filter.Search" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" OnAdornmentClick="ApplyAsync"
+                              OnKeyUp="@(e => { if (e.Key == "Enter") _ = ApplyAsync(); })" />
+            </MudItem>
+        }
+        <MudItem xs="12" sm="6" md="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="ApplyAsync">Apply</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public BcpDrillFilter Filter { get; set; } = new();
+    [Parameter] public EventCallback OnApply { get; set; }
+    [Parameter] public bool ShowSearch { get; set; } = true;
+    [Parameter] public List<(string Value, string Label)> StatusItems { get; set; } = new()
+    {
+        ("ALL", "All"), (BcpStatus.Submitted, "Pending review"), (BcpStatus.Acknowledged, "Acknowledged"), (BcpStatus.Returned, "Returned")
+    };
+
+    private System.Security.Claims.ClaimsPrincipal _user = new();
+    private List<OrgOption> _zones = new(), _regions = new(), _branches = new();
+    private string _zone = "ALL", _region = "ALL", _branch = "ALL", _fy = "", _qtr = "";
+    private bool _zoneLocked, _regionLocked, _branchLocked;
+    private readonly List<string> _fyOptions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var todayFy = int.Parse(BcpPeriod.FinYear(DateTime.Today)[..4]);
+        for (var y = todayFy; y >= todayFy - 3; y--) _fyOptions.Add($"{y}-{(y + 1) % 100:00}");
+
+        _user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        var scope = Svc.GetScope(_user);
+        _zones = await Svc.GetZonesAsync(_user);
+        if (!scope.CanViewAll && _zones.Count == 1)
+        {
+            _zone = _zones[0].Code; _zoneLocked = true;
+            _regions = await Svc.GetRegionsAsync(_user, _zone);
+            if (_regions.Count == 1)
+            {
+                _region = _regions[0].Code; _regionLocked = true;
+                _branches = await Svc.GetBranchesAsync(_user, _region);
+                if (_branches.Count == 1) { _branch = _branches[0].Code; _branchLocked = true; }
+            }
+        }
+        Sync();
+    }
+
+    private void Sync()
+    {
+        Filter.ZoneCode = _zone; Filter.RegionCode = _region; Filter.SolId = _branch;
+    }
+
+    private async Task OnZoneAsync(string? v)
+    {
+        _zone = v ?? "ALL"; _region = "ALL"; _branch = "ALL";
+        _regions = _zone == "ALL" ? new() : await Svc.GetRegionsAsync(_user, _zone);
+        _branches = new();
+        Sync();
+    }
+
+    private async Task OnRegionAsync(string? v)
+    {
+        _region = v ?? "ALL"; _branch = "ALL";
+        _branches = _region == "ALL" ? new() : await Svc.GetBranchesAsync(_user, _region);
+        Sync();
+    }
+
+    private void OnBranch(string? v) { _branch = v ?? "ALL"; Sync(); }
+
+    private Task OnPeriodAsync(string? v)
+    {
+        _fy = v ?? ""; _qtr = "";
+        ApplyPeriod();
+        return Task.CompletedTask;
+    }
+
+    private Task OnQuarterAsync(string? v)
+    {
+        _qtr = v ?? "";
+        ApplyPeriod();
+        return Task.CompletedTask;
+    }
+
+    private void ApplyPeriod()
+    {
+        if (_fy == "") return;
+        var y = int.Parse(_fy[..4]);
+        if (_qtr == "") { (Filter.From, Filter.To) = BcpPeriod.FinYearRange(y); return; }
+        (Filter.From, Filter.To) = _qtr switch
+        {
+            "Q1" => (new DateTime(y, 4, 1), new DateTime(y, 6, 30)),
+            "Q2" => (new DateTime(y, 7, 1), new DateTime(y, 9, 30)),
+            "Q3" => (new DateTime(y, 10, 1), new DateTime(y, 12, 31)),
+            _ => (new DateTime(y + 1, 1, 1), new DateTime(y + 1, 3, 31)),
+        };
+    }
+
+    private Task ApplyAsync() { Sync(); return OnApply.InvokeAsync(); }
+}

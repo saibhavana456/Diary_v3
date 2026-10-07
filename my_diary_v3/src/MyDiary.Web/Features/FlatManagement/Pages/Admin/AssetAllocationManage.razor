@@ -1,0 +1,778 @@
+@page "/flatmgmt/admin/asset-allocation-manage"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminFlatAllocationService FlatAllocationService
+@inject IAdminAssetAllocationService AssetService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Asset Allocation - Flat Management System</PageTitle>
+
+<div class="aam-page">
+    <a href="flatmgmt/admin/flat-assets" class="aam-back">&laquo; Back to Flat Assets</a>
+
+    <PageHeader Title="Asset Allocation" Crumbs="_crumbs" PageKey="flatmgmt-admin-asset-allocation-manage" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (loadError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">@loadError</MudAlert>
+    }
+    else
+    {
+        <MudCard Class="aam-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="aam-section-title">Flat Details</MudText></MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="aam-label">Flat No.</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat!.FlatNo</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="aam-label">Type / Area</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.BhkDetails / @flat.FlatArea Sqmtr</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="aam-label">Category / Status</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.FamilyDetails / @occupancyLabel</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="aam-label">Building / Location</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.SocietyName - @flat.LocationName</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="aam-label">Address</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.Address</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="aam-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="aam-section-title">Current Occupant Details</MudText></MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@currentOccupants" Hover="true" Bordered="true" Dense="true" Class="aam-table">
+                    <HeaderContent>
+                        <MudTh>PF No.</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Designation</MudTh>
+                        <MudTh>Email</MudTh>
+                        <MudTh>Phone</MudTh>
+                        <MudTh>Department</MudTh>
+                        <MudTh>Occupy Date</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd DataLabel="PF No.">@row.EmployeePf</MudTd>
+                        <MudTd DataLabel="Name">@row.EmployeeName</MudTd>
+                        <MudTd DataLabel="Designation">@row.EmployeeDesignation</MudTd>
+                        <MudTd DataLabel="Email">@row.Email</MudTd>
+                        <MudTd DataLabel="Phone">@row.Phone</MudTd>
+                        <MudTd DataLabel="Department">@row.EmployeeDepartment</MudTd>
+                        <MudTd DataLabel="Occupy Date">@row.OccupyDate</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No Current Occupant</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="aam-card mt-4" Elevation="2">
+            <MudCardContent>
+                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="aam-tabs" PanelClass="pa-0 pt-4">
+                    <MudTabPanel Text="Existing Assets">
+                        <MudTable Items="@currentAssets" Hover="true" Bordered="true" Dense="true" Class="aam-table">
+                            <HeaderContent>
+                                <MudTh>Asset Name</MudTh>
+                                <MudTh>No. of Assets</MudTh>
+                                <MudTh>Cost</MudTh>
+                                <MudTh>Allocation Date</MudTh>
+                                <MudTh>Modify</MudTh>
+                            </HeaderContent>
+                            <RowTemplate Context="row">
+                                @if (editingAssetRef == row.AssetReferenceNo)
+                                {
+                                    <MudTd DataLabel="Asset Name">@row.AssetName</MudTd>
+                                    <MudTd DataLabel="No. of Assets"><MudTextField @bind-Value="editNoOfAssets" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                                    <MudTd DataLabel="Cost"><MudTextField @bind-Value="editPrice" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudTd>
+                                    <MudTd DataLabel="Allocation Date"><MudDatePicker @bind-Date="editDate" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" /></MudTd>
+                                    <MudTd DataLabel="Modify">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success" OnClick="HandleAssetSave" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => editingAssetRef = null)" />
+                                    </MudTd>
+                                }
+                                else
+                                {
+                                    <MudTd DataLabel="Asset Name">@row.AssetName</MudTd>
+                                    <MudTd DataLabel="No. of Assets">@row.NoOfAssets</MudTd>
+                                    <MudTd DataLabel="Cost">@row.PurchasePrice</MudTd>
+                                    <MudTd DataLabel="Allocation Date">@row.AllocationDate</MudTd>
+                                    <MudTd DataLabel="Modify">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => StartEditAsset(row))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => HandleAssetDelete(row.AssetReferenceNo))" />
+                                    </MudTd>
+                                }
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText>No Assets</MudText>
+                            </NoRecordsContent>
+                        </MudTable>
+                        @if (totalAssetValue is not null)
+                        {
+                            <MudText Typo="Typo.body2" Class="aam-total mt-2">Total Assets Value: Rs. @totalAssetValue</MudText>
+                        }
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Asset History">
+                        <MudTable Items="@assetHistory" Hover="true" Bordered="true" Dense="true" Class="aam-table">
+                            <HeaderContent>
+                                <MudTh>Asset Name</MudTh>
+                                <MudTh>No. of Assets</MudTh>
+                                <MudTh>Cost</MudTh>
+                                <MudTh>Allocation Date</MudTh>
+                                <MudTh>Status</MudTh>
+                            </HeaderContent>
+                            <RowTemplate Context="row">
+                                <MudTd DataLabel="Asset Name">@row.AssetName</MudTd>
+                                <MudTd DataLabel="No. of Assets">@row.NoOfAssets</MudTd>
+                                <MudTd DataLabel="Cost">@row.PurchasePrice</MudTd>
+                                <MudTd DataLabel="Allocation Date">@row.AllocationDate</MudTd>
+                                <MudTd DataLabel="Status">@row.OtherRemark</MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText>No Assets</MudText>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </MudTabPanel>
+                </MudTabs>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="aam-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="aam-section-title">Asset Management</MudText></MudCardHeader>
+            <MudCardContent>
+                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="aam-tabs" PanelClass="pa-0 pt-4">
+                    <MudTabPanel Text="New Allocation">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="allocCategory" Label="Select Category*" Variant="Variant.Outlined"
+                                                   Required="true" @bind-Value:after="HandleAllocCategoryChanged">
+                                            <MudSelectItem Value="@("Furniture")">Furniture</MudSelectItem>
+                                            <MudSelectItem Value="@("Fixture")">Fixture</MudSelectItem>
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="allocItemId" Label="Select Item*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var item in allocItems)
+                                            {
+                                                <MudSelectItem Value="@item.AssetId">@item.AssetName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="allocNoOfItems" Label="No. of Items*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var n in ItemCountOptions)
+                                            {
+                                                <MudSelectItem Value="@n">@n</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocTotalAmount" Label="Total Amount*" Variant="Variant.Outlined" Required="true" MaxLength="10" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="allocProvidedDate" Label="Provided on Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="allocRemark" Label="Description/Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+                        <div class="aam-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isBusy" OnClick="HandleAllocate">Allocate</MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Transfer">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="transferAssetRef" Label="Choose Asset" Variant="Variant.Outlined"
+                                                   @bind-Value:after="HandleTransferAssetChanged">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var a in flatAssets)
+                                            {
+                                                <MudSelectItem Value="@a.AssetId">@a.AssetName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@transferDetailDisplay" Label="No. of Items / Amount" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@transferDetail?.AllocationDate" Label="Provided on Date" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="transferDate" Label="Transfer Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="transferLocationId" Label="Transfer Location*" Variant="Variant.Outlined"
+                                                   Required="true" @bind-Value:after="HandleTransferLocationChanged">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var s in transferLocations)
+                                            {
+                                                <MudSelectItem Value="@s.SocietyId">@s.SocietyName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="transferSocietyId" Label="Society*" Variant="Variant.Outlined"
+                                                   Required="true" @bind-Value:after="HandleTransferSocietyChanged">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var s in transferSocieties)
+                                            {
+                                                <MudSelectItem Value="@s.SocietyId">@s.SocietyName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="transferFlatId" Label="Flat*" Variant="Variant.Outlined" Required="true">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var f in transferFlats)
+                                            {
+                                                <MudSelectItem Value="@f.FlatId">@f.FlatNo</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="transferRemark" Label="Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+                        <div class="aam-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isBusy" OnClick="HandleTransfer">Transfer Asset</MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Sale">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="saleAssetRef" Label="Choose Asset" Variant="Variant.Outlined"
+                                                   @bind-Value:after="HandleSaleAssetChanged">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var a in flatAssets)
+                                            {
+                                                <MudSelectItem Value="@a.AssetId">@a.AssetName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@saleDetailDisplay" Label="No. of Items / Amount" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="saleDate" Label="Sale Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="saleTo" Label="Sale To*(PF/Name)" Variant="Variant.Outlined" Required="true" MaxLength="49" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="saleNoOfYears" Label="No. of Years" Variant="Variant.Outlined" MaxLength="19" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="saleDepreciation" Label="Depriciation Cost*" Variant="Variant.Outlined" Required="true" MaxLength="10" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="salePrice" Label="Sale Price*" Variant="Variant.Outlined" Required="true" MaxLength="10" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="saleRemark" Label="Details/Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+                        <div class="aam-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isBusy" OnClick="HandleSale">Sale Asset</MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Replace">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="replaceOldAssetRef" Label="Choose Old Asset" Variant="Variant.Outlined"
+                                                   @bind-Value:after="HandleReplaceAssetChanged">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var a in flatAssets)
+                                            {
+                                                <MudSelectItem Value="@a.AssetId">@a.AssetName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@replaceDetailDisplay" Label="No. of Items / Amount" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="replaceWriteOffDetails" Label="Write Off details of old furniture" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="replaceCategory" Label="New Category*" Variant="Variant.Outlined"
+                                                   Required="true" @bind-Value:after="HandleReplaceCategoryChanged">
+                                            <MudSelectItem Value="@("Furniture")">Furniture</MudSelectItem>
+                                            <MudSelectItem Value="@("Fixture")">Fixture</MudSelectItem>
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="replaceItemId" Label="New Item*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var item in replaceItems)
+                                            {
+                                                <MudSelectItem Value="@item.AssetId">@item.AssetName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="replaceNoOfItems" Label="No. of Items*" Variant="Variant.Outlined" Required="true">
+                                            @foreach (var n in ItemCountOptions)
+                                            {
+                                                <MudSelectItem Value="@n">@n</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="replaceDate" Label="Replace Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="replaceTotalAmount" Label="Total Amount*" Variant="Variant.Outlined" Required="true" MaxLength="10" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="replaceRemark" Label="Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+                        <div class="aam-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isBusy" OnClick="HandleReplace">Replace Asset</MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Discard">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudSelect T="string" @bind-Value="discardAssetRef" Label="Choose Asset" Variant="Variant.Outlined"
+                                                   @bind-Value:after="HandleDiscardAssetChanged">
+                                            <MudSelectItem Value="@("")">-- Select --</MudSelectItem>
+                                            @foreach (var a in flatAssets)
+                                            {
+                                                <MudSelectItem Value="@a.AssetId">@a.AssetName</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField Value="@discardDetailDisplay" Label="No. of Items / Amount" Variant="Variant.Outlined" ReadOnly="true" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="discardDate" Label="Discard Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="discardLetterNo" Label="Office Letter No." Variant="Variant.Outlined" MaxLength="49" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="discardRemark" Label="Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+                        <div class="aam-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isBusy" OnClick="HandleDiscard">Discard Asset</MudButton>
+                        </div>
+                    </MudTabPanel>
+                </MudTabs>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="aam-modal-overlay" @onclick="() => message = null">
+            <div class="aam-modal @(isError ? "aam-modal-error" : "aam-modal-success")" @onclick:stopPropagation="true">
+                <div class="aam-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="aam-modal-text">@message</p>
+                <button type="button" class="aam-btn @(isError ? "aam-btn-secondary" : "aam-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Asset Allocation") };
+    private static readonly string[] ItemCountOptions = { "Select", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "More than 10" };
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery(Name = "flatId")]
+    public string? FlatId { get; set; }
+
+    private string adminPfNo = "";
+    private bool isLoading = true;
+    private string? loadError;
+    private bool isBusy;
+
+    private FlatAllocationFlatInfo? flat;
+    private string occupancyLabel = "";
+    private List<FlatOccupantRow> currentOccupants = new();
+    private List<CurrentAssetRow> currentAssets = new();
+    private List<AssetHistoryRow> assetHistory = new();
+    private List<AssetItemOption> flatAssets = new();
+    private decimal? totalAssetValue;
+
+    private string? editingAssetRef;
+    private string editNoOfAssets = "";
+    private string editPrice = "";
+    private DateTime? editDate;
+
+    private string allocCategory = "";
+    private string allocItemId = "";
+    private List<AssetItemOption> allocItems = new();
+    private string allocNoOfItems = "";
+    private string allocTotalAmount = "";
+    private DateTime? allocProvidedDate;
+    private string allocRemark = "";
+
+    private string transferAssetRef = "";
+    private AssetDetailInfo? transferDetail;
+    private DateTime? transferDate;
+    private string transferLocationId = "";
+    private List<SocietyOption> transferLocations = new();
+    private string transferSocietyId = "";
+    private List<SocietyOption> transferSocieties = new();
+    private string transferFlatId = "";
+    private List<FlatOption> transferFlats = new();
+    private string transferRemark = "";
+    private string transferDetailDisplay => transferDetail is null ? "" : $"{transferDetail.NoOfAssets} / {transferDetail.PurchasePrice}";
+
+    private string saleAssetRef = "";
+    private AssetDetailInfo? saleDetail;
+    private DateTime? saleDate;
+    private string saleTo = "";
+    private string saleNoOfYears = "";
+    private string saleDepreciation = "";
+    private string salePrice = "";
+    private string saleRemark = "";
+    private string saleDetailDisplay => saleDetail is null ? "" : $"{saleDetail.NoOfAssets} / {saleDetail.PurchasePrice}";
+
+    private string replaceOldAssetRef = "";
+    private AssetDetailInfo? replaceDetail;
+    private string replaceWriteOffDetails = "";
+    private string replaceCategory = "";
+    private string replaceItemId = "";
+    private List<AssetItemOption> replaceItems = new();
+    private string replaceNoOfItems = "";
+    private DateTime? replaceDate;
+    private string replaceTotalAmount = "";
+    private string replaceRemark = "";
+    private string replaceDetailDisplay => replaceDetail is null ? "" : $"{replaceDetail.NoOfAssets} / {replaceDetail.PurchasePrice}";
+
+    private string discardAssetRef = "";
+    private AssetDetailInfo? discardDetail;
+    private DateTime? discardDate;
+    private string discardLetterNo = "";
+    private string discardRemark = "";
+    private string discardDetailDisplay => discardDetail is null ? "" : $"{discardDetail.NoOfAssets} / {discardDetail.PurchasePrice}";
+
+    private string? message;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(FlatId))
+        {
+            loadError = "Invalid request.";
+            isLoading = false;
+            return;
+        }
+
+        await LoadAllAsync();
+        transferLocations = await AssetService.GetActiveSocietiesAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadAllAsync()
+    {
+        flat = await FlatAllocationService.GetFlatInfoAsync(FlatId!);
+        if (flat is null)
+        {
+            loadError = "Flat Details with this Flat No. doesn't exist..";
+            return;
+        }
+
+        occupancyLabel = string.Equals(flat.OccupancyStatus, "Vacant", StringComparison.OrdinalIgnoreCase)
+            ? "Vacant"
+            : $"{flat.OccupantCount}-Occupants";
+
+        currentOccupants = await FlatAllocationService.GetCurrentOccupantsAsync(FlatId!);
+        currentAssets = await AssetService.GetCurrentAssetsAsync(FlatId!);
+        assetHistory = await AssetService.GetAssetHistoryAsync(FlatId!);
+        flatAssets = await AssetService.GetActiveAssetsForFlatAsync(FlatId!);
+        totalAssetValue = await AssetService.GetTotalAssetValueAsync(FlatId!);
+    }
+
+    private void StartEditAsset(CurrentAssetRow row)
+    {
+        editingAssetRef = row.AssetReferenceNo;
+        editNoOfAssets = row.NoOfAssets ?? "";
+        editPrice = row.PurchasePrice ?? "";
+        editDate = DateTime.TryParseExact(row.AllocationDate, "dd/MM/yyyy",
+            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+    }
+
+    private async Task HandleAssetSave()
+    {
+        if (editingAssetRef is null) return;
+
+        var result = await AssetService.UpdateAssetAsync(new AssetUpdateRequest(editingAssetRef, editNoOfAssets, editPrice, editDate?.ToString("dd/MM/yyyy") ?? ""));
+        editingAssetRef = null;
+
+        if (!result.Success)
+        {
+            ShowError(result.Error ?? "Some Error Occured. Please try later...");
+            return;
+        }
+
+        await LoadAllAsync();
+        ShowSuccess("Asset updated.");
+    }
+
+    private async Task HandleAssetDelete(string assetReferenceNo)
+    {
+        var result = await AssetService.DeleteAssetAsync(assetReferenceNo);
+        if (!result.Success)
+        {
+            ShowError(result.Error ?? "Some Error Occured. Please try later...");
+            return;
+        }
+
+        await LoadAllAsync();
+        ShowSuccess("Asset removed.");
+    }
+
+    private async Task HandleAllocCategoryChanged()
+    {
+        allocItemId = "";
+        allocItems = string.IsNullOrEmpty(allocCategory) ? new() : await AssetService.GetItemsAsync(allocCategory);
+    }
+
+    private async Task HandleAllocate()
+    {
+        message = null;
+        if (string.IsNullOrEmpty(allocCategory)) { ShowError("Select Category"); return; }
+        if (string.IsNullOrEmpty(allocItemId)) { ShowError("Select Item"); return; }
+        if (string.IsNullOrEmpty(allocNoOfItems) || allocNoOfItems == "Select") { ShowError("Select No of Items"); return; }
+        if (string.IsNullOrWhiteSpace(allocTotalAmount)) { ShowError("Enter Amount"); return; }
+        if (allocProvidedDate is null) { ShowError("Enter Date"); return; }
+
+        isBusy = true;
+        try
+        {
+            var itemName = allocItems.FirstOrDefault(i => i.AssetId == allocItemId)?.AssetName ?? "";
+            var result = await AssetService.AllocateAssetAsync(new AssetAllocationRequest(
+                FlatId!, flat!.FlatNo ?? "", allocItemId, itemName, allocCategory, allocNoOfItems,
+                allocTotalAmount, allocProvidedDate.Value.ToString("dd/MM/yyyy"), allocRemark, adminPfNo));
+
+            if (!result.Success) { ShowError(result.Error ?? "Some Error Occured. Please try later..."); return; }
+
+            await LoadAllAsync();
+            allocCategory = ""; allocItemId = ""; allocItems.Clear(); allocNoOfItems = "";
+            allocTotalAmount = ""; allocProvidedDate = null; allocRemark = "";
+            ShowSuccess("Asset Allocated SuccessFully..");
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task HandleTransferAssetChanged()
+    {
+        transferDetail = string.IsNullOrEmpty(transferAssetRef) ? null : await AssetService.GetAssetDetailAsync(transferAssetRef);
+    }
+
+    private async Task HandleTransferLocationChanged()
+    {
+        transferSocietyId = "";
+        transferSocieties = string.IsNullOrEmpty(transferLocationId) ? new() : await AssetService.GetSocietiesFilteredAsync(transferLocationId);
+        transferFlatId = "";
+        transferFlats.Clear();
+    }
+
+    private async Task HandleTransferSocietyChanged()
+    {
+        transferFlatId = "";
+        transferFlats = string.IsNullOrEmpty(transferSocietyId) ? new() : await AssetService.GetFlatsBySocietyAsync(transferSocietyId);
+    }
+
+    private async Task HandleTransfer()
+    {
+        message = null;
+        if (string.IsNullOrEmpty(transferAssetRef)) { ShowError("Select Asset"); return; }
+        if (string.IsNullOrEmpty(transferLocationId)) { ShowError("Choose Location"); return; }
+        if (string.IsNullOrEmpty(transferSocietyId)) { ShowError("Choose Society"); return; }
+        if (string.IsNullOrEmpty(transferFlatId)) { ShowError("Choose Flat"); return; }
+        if (transferDate is null) { ShowError("Choose Date"); return; }
+
+        isBusy = true;
+        try
+        {
+            var targetFlatNo = transferFlats.FirstOrDefault(f => f.FlatId == transferFlatId)?.FlatNo ?? "";
+            var targetSocietyName = transferSocieties.FirstOrDefault(s => s.SocietyId == transferSocietyId)?.SocietyName ?? "";
+            var targetLocationName = transferLocations.FirstOrDefault(s => s.SocietyId == transferLocationId)?.SocietyName ?? "";
+
+            var result = await AssetService.TransferAssetAsync(new AssetTransferRequest(
+                transferAssetRef, flat!.FlatNo ?? "", flat.SocietyName ?? "", flat.LocationName ?? "",
+                transferFlatId, targetFlatNo, targetSocietyName, targetLocationName, transferDate.Value.ToString("dd/MM/yyyy"), transferRemark));
+
+            if (!result.Success) { ShowError(result.Error ?? "Some Error Occured. Please try later..."); return; }
+
+            await LoadAllAsync();
+            transferAssetRef = ""; transferDetail = null; transferDate = null;
+            transferLocationId = ""; transferSocietyId = ""; transferFlatId = ""; transferRemark = "";
+            ShowSuccess("Asset Transferred SuccessFully..");
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task HandleSaleAssetChanged()
+    {
+        saleDetail = string.IsNullOrEmpty(saleAssetRef) ? null : await AssetService.GetAssetDetailAsync(saleAssetRef);
+    }
+
+    private async Task HandleSale()
+    {
+        message = null;
+        if (string.IsNullOrEmpty(saleAssetRef)) { ShowError("Select Asset"); return; }
+        if (saleDate is null) { ShowError("Choose Date"); return; }
+        if (string.IsNullOrWhiteSpace(saleTo)) { ShowError("Write Name/Pf"); return; }
+        if (string.IsNullOrWhiteSpace(saleDepreciation)) { ShowError("Enter Amount"); return; }
+        if (string.IsNullOrWhiteSpace(salePrice)) { ShowError("Enter Amount"); return; }
+
+        isBusy = true;
+        try
+        {
+            var result = await AssetService.SaleAssetAsync(new AssetSaleRequest(
+                saleAssetRef, saleDate.Value.ToString("dd/MM/yyyy"), saleTo, saleNoOfYears, saleDepreciation, salePrice, saleRemark));
+
+            if (!result.Success) { ShowError(result.Error ?? "Some Error Occured. Please try later..."); return; }
+
+            await LoadAllAsync();
+            saleAssetRef = ""; saleDetail = null; saleDate = null; saleTo = ""; saleNoOfYears = "";
+            saleDepreciation = ""; salePrice = ""; saleRemark = "";
+            ShowSuccess("Asset Sold SuccessFully..");
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task HandleReplaceAssetChanged()
+    {
+        replaceDetail = string.IsNullOrEmpty(replaceOldAssetRef) ? null : await AssetService.GetAssetDetailAsync(replaceOldAssetRef);
+    }
+
+    private async Task HandleReplaceCategoryChanged()
+    {
+        replaceItemId = "";
+        replaceItems = string.IsNullOrEmpty(replaceCategory) ? new() : await AssetService.GetItemsAsync(replaceCategory);
+    }
+
+    private async Task HandleReplace()
+    {
+        message = null;
+        if (string.IsNullOrEmpty(replaceOldAssetRef)) { ShowError("Select Asset"); return; }
+        if (string.IsNullOrEmpty(replaceCategory)) { ShowError("Select Category"); return; }
+        if (string.IsNullOrEmpty(replaceItemId)) { ShowError("Select Item"); return; }
+        if (string.IsNullOrEmpty(replaceNoOfItems) || replaceNoOfItems == "Select") { ShowError("Select No of Items"); return; }
+        if (replaceDate is null) { ShowError("Choose Date"); return; }
+        if (string.IsNullOrWhiteSpace(replaceTotalAmount)) { ShowError("Enter Amount"); return; }
+
+        isBusy = true;
+        try
+        {
+            var itemName = replaceItems.FirstOrDefault(i => i.AssetId == replaceItemId)?.AssetName ?? "";
+            var result = await AssetService.ReplaceAssetAsync(new AssetReplaceRequest(
+                replaceOldAssetRef, replaceDate.Value.ToString("dd/MM/yyyy"), replaceWriteOffDetails, replaceRemark,
+                FlatId!, flat!.FlatNo ?? "", replaceItemId, itemName, replaceCategory, replaceNoOfItems, replaceTotalAmount, adminPfNo));
+
+            if (!result.Success) { ShowError(result.Error ?? "Some Error Occured. Please try later..."); return; }
+
+            await LoadAllAsync();
+            replaceOldAssetRef = ""; replaceDetail = null; replaceWriteOffDetails = "";
+            replaceCategory = ""; replaceItemId = ""; replaceItems.Clear(); replaceNoOfItems = "";
+            replaceDate = null; replaceTotalAmount = ""; replaceRemark = "";
+            ShowSuccess("Asset Replaced SuccessFully..");
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task HandleDiscardAssetChanged()
+    {
+        discardDetail = string.IsNullOrEmpty(discardAssetRef) ? null : await AssetService.GetAssetDetailAsync(discardAssetRef);
+    }
+
+    private async Task HandleDiscard()
+    {
+        message = null;
+        if (string.IsNullOrEmpty(discardAssetRef)) { ShowError("Select Asset"); return; }
+        if (discardDate is null) { ShowError("Choose Date"); return; }
+
+        isBusy = true;
+        try
+        {
+            var result = await AssetService.DiscardAssetAsync(new AssetDiscardRequest(discardAssetRef, discardDate.Value.ToString("dd/MM/yyyy"), discardLetterNo, discardRemark));
+
+            if (!result.Success) { ShowError(result.Error ?? "Some Error Occured. Please try later..."); return; }
+
+            await LoadAllAsync();
+            discardAssetRef = ""; discardDetail = null; discardDate = null; discardLetterNo = ""; discardRemark = "";
+            ShowSuccess("Asset Discarded SuccessFully..");
+        }
+        finally { isBusy = false; }
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

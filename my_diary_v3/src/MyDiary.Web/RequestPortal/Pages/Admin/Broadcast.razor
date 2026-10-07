@@ -1,0 +1,263 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/broadcast"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "OpsOversight")]
+@using MyDiary.Core.Abstractions
+@* Accessible to L4 (Senior Handler), L5 (Oversight), and Admin.           *@
+@inject IBroadcastDirectory Directory
+@inject IMasterRepo Masters
+@inject INotificationApi NotificationApi
+@inject RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+
+<PageTitle>Push Notification</PageTitle>
+
+<PageHeader PageKey="admin-broadcast" Title="Push Notification"
+            Crumbs="_crumbs"
+            Subtitle="Broadcast a notification to users in a chosen scope. Audience is resolved live from unit/vertical assignments." />
+
+<MudGrid>
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-6" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-3">Compose</MudText>
+
+            <MudSelect T="BroadcastScopeKind" Label="Scope" @bind-Value="_scopeKind" Required="true"
+                       OnClose="OnScopeChanged">
+                <MudSelectItem T="BroadcastScopeKind" Value="@BroadcastScopeKind.BankWide">Bank-level (everyone)</MudSelectItem>
+                <MudSelectItem T="BroadcastScopeKind" Value="@BroadcastScopeKind.Vertical">Vertical</MudSelectItem>
+                <MudSelectItem T="BroadcastScopeKind" Value="@BroadcastScopeKind.Zone">Zonal Office</MudSelectItem>
+                <MudSelectItem T="BroadcastScopeKind" Value="@BroadcastScopeKind.RegionalOffice">Regional Office</MudSelectItem>
+                <MudSelectItem T="BroadcastScopeKind" Value="@BroadcastScopeKind.Branch">Branch</MudSelectItem>
+            </MudSelect>
+
+            @if (_scopeKind == BroadcastScopeKind.Vertical)
+            {
+                <MudSelect T="long?" Label="Vertical" @bind-Value="_verticalId" Required="true"
+                           OnClose="RefreshAudience" Class="mt-3">
+                    @foreach (var v in _verticals)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            else if (_scopeKind != BroadcastScopeKind.BankWide)
+            {
+                <MudSelect T="long?" Label="@UnitLabel(_scopeKind)" @bind-Value="_unitId" Required="true"
+                           OnClose="RefreshAudience" Class="mt-3">
+                    @foreach (var u in _unitsForScope)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name <MudText Typo="Typo.caption" Style="color:#59636e;">(@u.Code)</MudText></MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            <MudTextField @bind-Value="_subject" Label="Title" Required="true" MaxLength="200" Counter="200" Class="mt-3" />
+            <MudTextField @bind-Value="_message" Label="Message" Lines="5" Required="true" MaxLength="2000" Counter="2000" Class="mt-3" />
+
+            <div class="d-flex align-center mt-4" style="gap:12px;">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Campaign"
+                           OnClick="Send" Disabled="@(_sending || !CanSend())">
+                    @(_sending ? "Sending..." : $"Send to {_audience.Count} user{(_audience.Count == 1 ? "" : "s")}")
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="RefreshAudience">Refresh audience</MudButton>
+            </div>
+
+            @if (_lastResult is not null)
+            {
+                <MudAlert Severity="@(_lastResult.Failures == 0 ? Severity.Success : Severity.Warning)" Class="mt-4">
+                    Pushed to @_lastResult.Sent of @_lastResult.Total recipients.
+                    @if (_lastResult.Failures > 0)
+                    {
+                        <text>@_lastResult.Failures failed.</text>
+                    }
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-2">Audience preview</MudText>
+            <MudText Typo="Typo.body2" Style="color:#59636e;" Class="mb-3">
+                @ScopeSummary()
+            </MudText>
+            @if (_audience.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                    No users matched the chosen scope.
+                </MudAlert>
+            }
+            else
+            {
+                <MudList T="AppUser" Dense="true">
+                    @foreach (var u in _audience.Take(20))
+                    {
+                        <MudListItem T="AppUser" Icon="@Icons.Material.Filled.Person">
+                            <div style="display:flex;flex-direction:column;">
+                                <span><b>@u.Name</b></span>
+                                <span style="font-size:12px;color:#59636e;">@u.EmpCode &middot; @(u.Email ?? "—")</span>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+                @if (_audience.Count > 20)
+                {
+                    <MudText Typo="Typo.caption" Style="color:#59636e;">+ @(_audience.Count - 20) more</MudText>
+                }
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("Push Notification"),
+    };
+
+    private BroadcastScopeKind _scopeKind = BroadcastScopeKind.BankWide;
+    private long? _unitId;
+    private long? _verticalId;
+
+    private string? _subject;
+    private string? _message;
+
+    private IReadOnlyList<Vertical> _verticals = Array.Empty<Vertical>();
+    private IReadOnlyList<UnitType> _unitTypes = Array.Empty<UnitType>();
+    private IReadOnlyList<Unit> _allUnits = Array.Empty<Unit>();
+    private IReadOnlyList<Unit> _unitsForScope = Array.Empty<Unit>();
+    private List<AppUser> _audience = new();
+
+    private bool _sending;
+    private SendResult? _lastResult;
+
+    private sealed record SendResult(int Total, int Sent, int Failures);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _verticals = await Masters.ListVerticalsAsync();
+            _unitTypes = await Masters.ListUnitTypesAsync();
+            _allUnits  = await Masters.ListUnitsAsync(null, default);
+            await RefreshAudience();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Broadcast: failed to load master data on initialization");
+        }
+    }
+
+    private async Task OnScopeChanged()
+    {
+        // Filter the unit dropdown to whatever unit-type matches the scope.
+        var code = _scopeKind switch
+        {
+            BroadcastScopeKind.Zone           => "ZN",
+            BroadcastScopeKind.RegionalOffice => "RO",
+            BroadcastScopeKind.Branch         => "BR",
+            _ => null
+        };
+        if (code is null)
+        {
+            _unitsForScope = Array.Empty<Unit>();
+            _unitId = null;
+        }
+        else
+        {
+            var typeId = _unitTypes.FirstOrDefault(t => t.Code == code)?.Id;
+            _unitsForScope = typeId.HasValue
+                ? _allUnits.Where(u => u.UnitTypeId == typeId.Value).ToList()
+                : Array.Empty<Unit>();
+            _unitId = _unitsForScope.FirstOrDefault()?.Id;
+        }
+        if (_scopeKind != BroadcastScopeKind.Vertical) _verticalId = null;
+        else _verticalId ??= _verticals.FirstOrDefault()?.Id;
+        await RefreshAudience();
+    }
+
+    private async Task RefreshAudience()
+    {
+        var scope = new BroadcastScope(_scopeKind, _unitId, _verticalId);
+        _audience = (await Directory.ResolveAudienceAsync(scope)).ToList();
+        _lastResult = null;
+        StateHasChanged();
+    }
+
+    private bool CanSend() =>
+        !string.IsNullOrWhiteSpace(_subject)
+        && !string.IsNullOrWhiteSpace(_message)
+        && _audience.Count > 0
+        && (_scopeKind switch
+        {
+            BroadcastScopeKind.BankWide        => true,
+            BroadcastScopeKind.Vertical        => _verticalId.HasValue,
+            _                                  => _unitId.HasValue,
+        });
+
+    private async Task Send()
+    {
+        if (!CanSend()) return;
+        _sending = true;
+        var sent = 0; var failed = 0;
+        try
+        {
+            foreach (var u in _audience)
+            {
+                try
+                {
+                    await NotificationApi.CreateAsync(new CreateNotificationRequest
+                    {
+                        UserId       = u.Id,
+                        Title        = _subject!.Trim(),
+                        Message      = _message!.Trim(),
+                        Category     = ScopeChip(),
+                        EventCode    = "Broadcast",
+                        Source       = NotificationSource.System,
+                        RedirectUrl  = "notifications",
+                    });
+
+                    // await NotificationRepository.CreateInAppAsync({
+                        
+                    // });
+
+                    sent++;
+                }
+                catch (Exception ex) { AppLogger.LogWarning($"Broadcast: failed to send notification to recipient — {ex.Message}"); failed++; }
+            }
+            _lastResult = new SendResult(_audience.Count, sent, failed);
+            Snackbar.Add($"Pushed to {sent} of {_audience.Count} recipients.", failed == 0 ? Severity.Success : Severity.Warning);
+        }
+        finally { _sending = false; }
+    }
+
+    private string ScopeChip() => _scopeKind switch
+    {
+        BroadcastScopeKind.BankWide       => "Bank-wide",
+        BroadcastScopeKind.Vertical       => "Vertical",
+        BroadcastScopeKind.Zone           => "Zone",
+        BroadcastScopeKind.RegionalOffice => "Regional Office",
+        BroadcastScopeKind.Branch         => "Branch",
+        _ => "Broadcast"
+    };
+
+    private string ScopeSummary() => _scopeKind switch
+    {
+        BroadcastScopeKind.BankWide       => "All active users across the bank.",
+        BroadcastScopeKind.Vertical       => $"Users tagged to vertical: {_verticals.FirstOrDefault(v => v.Id == _verticalId)?.Name ?? "—"}",
+        BroadcastScopeKind.Zone           => $"Users in zone subtree: {_unitsForScope.FirstOrDefault(u => u.Id == _unitId)?.Name ?? "—"}",
+        BroadcastScopeKind.RegionalOffice => $"Users in RO subtree: {_unitsForScope.FirstOrDefault(u => u.Id == _unitId)?.Name ?? "—"}",
+        BroadcastScopeKind.Branch         => $"Users in branch: {_unitsForScope.FirstOrDefault(u => u.Id == _unitId)?.Name ?? "—"}",
+        _ => ""
+    };
+
+    private static string UnitLabel(BroadcastScopeKind k) => k switch
+    {
+        BroadcastScopeKind.Zone           => "Zonal Office",
+        BroadcastScopeKind.RegionalOffice => "Regional Office",
+        BroadcastScopeKind.Branch         => "Branch",
+        _ => "Unit"
+    };
+}

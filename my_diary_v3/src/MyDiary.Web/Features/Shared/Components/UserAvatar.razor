@@ -1,0 +1,96 @@
+﻿@*
+    UserAvatar — reusable component used in MainLayout and Landing_Dashboard_V2_1.
+    Shows the employee's profile picture if one exists in Employee_Card,
+    otherwise falls back to the coloured initials avatar.
+    
+    Renders initials immediately, then loads the profile image asynchronously
+    without blocking page render.
+*@
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Core.Extensions
+@inject IVCardService VCardService
+@inject MyDiary.Web.Core.Services.Storage.ISessionStorageService SessionStorage
+
+@if (!string.IsNullOrEmpty(_profileImageSrc))
+{
+    <MudAvatar Size="@Size" Style="@AvatarStyle">
+        <img src="@_profileImageSrc"
+             alt="Profile picture"
+             style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />
+    </MudAvatar>
+}
+else
+{
+    <MudAvatar Size="@Size" Style="@AvatarStyle">
+        @Initials
+    </MudAvatar>
+}
+
+@code {
+    [Parameter] public MudBlazor.Size Size { get; set; } = MudBlazor.Size.Medium;
+    [Parameter] public string AvatarStyle { get; set; } = "";
+    [Parameter] public string Initials { get; set; } = "?";
+    [Parameter] public string? EmployeeId { get; set; }
+
+    private string? _profileImageSrc;
+    private bool _imageLoaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_imageLoaded)
+        {
+            _imageLoaded = true;
+            await LoadProfileImageAsync();
+        }
+    }
+
+    private async Task LoadProfileImageAsync()
+    {
+        try
+        {
+            // Determine current user ID
+            var currentUserId = EmployeeId;
+            if (string.IsNullOrWhiteSpace(currentUserId))
+                currentUserId = await SessionStorage.GetAsync<string>("UserId");
+
+            if (string.IsNullOrWhiteSpace(currentUserId))
+                return;
+
+            // Check cached image — validate it belongs to the current user
+            var cachedUserId = await SessionStorage.GetAsync<string>("ProfileImageUserId");
+            if (string.Equals(cachedUserId, currentUserId, StringComparison.OrdinalIgnoreCase))
+            {
+                var cached = await SessionStorage.GetAsync<string>("ProfileImageSrc");
+                if (!string.IsNullOrEmpty(cached))
+                {
+                    _profileImageSrc = cached;
+                    StateHasChanged();
+                    return;
+                }
+            }
+            else
+            {
+                // Different user — clear stale cache
+                await SessionStorage.RemoveAsync("ProfileImageSrc");
+                await SessionStorage.RemoveAsync("ProfileImageUserId");
+            }
+
+            // Fetch from DB
+            _profileImageSrc = await VCardService.GetProfileImageAsync(currentUserId);
+
+            // Cache with user ID for validation
+            if (!string.IsNullOrEmpty(_profileImageSrc))
+            {
+                await SessionStorage.SetAsync("ProfileImageSrc", _profileImageSrc);
+                await SessionStorage.SetAsync("ProfileImageUserId", currentUserId);
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[UserAvatar] Error loading profile image: " + ex.Message);
+        }
+    }
+}

@@ -1,0 +1,332 @@
+@page "/deposits/new"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IBackDatedDepositWorkflowService WorkflowService
+@inject IAttachmentStore AttachmentStore
+@inject IBackDatedDepositRepo DepositRepo
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>New Proposal - Back-Dated Deposit Approvals</PageTitle>
+<PageHeader Title="New Back-Dated Deposit Proposal" Subtitle="Retail or Bulk deposit — Back-Dated Opening or Back-Dated Renewal." Crumbs="_crumbs" PageKey="bdd-new" />
+<style>
+    .loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(255,255,255,0.7);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+</style>
+<MudPaper Class="pa-6" Elevation="1" Disabled="_saving">
+    @if (_saving)
+    {
+        <div class="loading-overlay">
+            <MudPaper Class="pa-6 d-flex flex-column align-center">
+                <MudProgressCircular Indeterminate="true"
+                                     Color="Color.Primary"
+                                     Size="Size.Large" />
+                <MudText Class="mt-3">
+                    Submitting proposal, please wait...
+                </MudText>
+            </MudPaper>
+        </div>
+    }
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudSelect T="DepositType" @bind-Value="_type" Label="Deposit Type" Variant="Variant.Outlined">
+                <MudSelectItem Value="DepositType.Retail">Retail Deposit</MudSelectItem>
+                <MudSelectItem Value="DepositType.Bulk">Bulk Deposit</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="DepositPurpose" @bind-Value="_purpose" Label="Purpose of Request" Variant="Variant.Outlined">
+                <MudSelectItem Value="DepositPurpose.BackDatedOpening">Back-Dated Opening</MudSelectItem>
+                <MudSelectItem Value="DepositPurpose.BackDatedRenewal">Back-Dated Renewal</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string" Value="@_branchSolId" Label="Branch Sol ID" ReadOnly="true" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string" Value="@_branchName" Label="Branch Name" ReadOnly="true" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_cifId" Label="CIF ID" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_customerName" Label="Customer Name" Variant="Variant.Outlined" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Deposit Account Number(s) &amp; Amount</MudText>
+            @for (int i = 0; i < _accounts.Count; i++)
+            {
+                var idx = i;
+                <MudGrid Class="mb-1">
+                    <MudItem xs="6" md="5">
+                        <MudTextField @bind-Value="_accounts[idx].AccountNumber" Label="Account Number" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="5" md="5">
+                        <MudNumericField @bind-Value="_accounts[idx].Amount" Label="Amount" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="1" md="2">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="@(() => _accounts.RemoveAt(idx))" Disabled="@(_accounts.Count <= 1)" />
+                    </MudItem>
+                </MudGrid>
+            }
+            <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _accounts.Add(new BackDatedDepositAccount()))">Add Row</MudButton>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_scheme" Label="Scheme" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudDatePicker @bind-Date="_openingDate" Label="Deposit Opening / Last Renewal Date" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_tenure" Label="Tenure" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudDatePicker @bind-Date="_maturityDate" Label="Deposit Maturity Date" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudDatePicker @bind-Date="_customerRequestDate" Label="Customer Request Date" Variant="Variant.Outlined" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_reason" Label="Reason (brief description, max 500 words)" Variant="Variant.Outlined" Lines="4" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AttachFile">
+                        @(_uploadedFileName ?? "Upload Supporting Document")
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+        </MudItem>
+
+        <MudItem xs="12"><MudDivider /></MudItem>
+        <MudItem xs="12" md="3"><MudTextField @bind-Value="_spocName" Label="SPOC Name" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" md="3"><MudTextField @bind-Value="_spocEmail" Label="SPOC Email" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" md="3"><MudTextField @bind-Value="_spocMobile" Label="SPOC Mobile" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" md="3"><MudTextField @bind-Value="_spocIp" Label="SPOC IP" Variant="Variant.Outlined" /></MudItem>
+
+        <MudItem xs="12" Class="d-flex justify-end gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitAsync" Disabled="_saving">Submit Proposal</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("New Proposal") };
+
+    private DepositType _type = DepositType.Retail;
+    private DepositPurpose _purpose = DepositPurpose.BackDatedOpening;
+    private string _branchSolId = "", _branchName = "", _cifId = "", _customerName = "", _scheme = "", _tenure = "", _reason = "";
+    private string _spocName = "", _spocEmail = "", _spocMobile = "", _spocIp = "";
+    private string? _regionSolId, _regionName, _zoneSolId, _zoneName, _empId;
+    private DateTime? _openingDate = DateTime.Today;
+    private DateTime? _maturityDate = DateTime.Today;
+    private DateTime? _customerRequestDate = DateTime.Today;
+    private List<BackDatedDepositAccount> _accounts = new() { new BackDatedDepositAccount() };
+    private IBrowserFile? _file;
+    private string? _uploadedFileName;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        _empId = user.FindFirst("emplid")?.Value ?? "";
+        _branchSolId = user.FindFirst("branch_solid")?.Value ?? "";
+        _branchName = user.FindFirst("branch_name")?.Value ?? "";
+        _regionSolId = user.FindFirst("region_solid")?.Value;
+        _regionName = user.FindFirst("region_name")?.Value;
+        _zoneSolId = user.FindFirst("zone_solid")?.Value;
+        _zoneName = user.FindFirst("zone_name")?.Value;
+        _spocName = user.FindFirst("employee_name")?.Value ?? "";
+        _spocEmail = user.FindFirst("email")?.Value ?? "";
+        _spocMobile = user.FindFirst("mobile")?.Value ?? "";
+    }
+
+    private void OnFileSelected(IBrowserFile file)
+    {
+        _file = file;
+        _uploadedFileName = file.Name;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_branchSolId))
+        {
+            Snackbar.Add("Branch Sol ID is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_branchName))
+        {
+            Snackbar.Add("Branch Name is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_cifId))
+        {
+            Snackbar.Add("CIF ID is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_customerName))
+        {
+            Snackbar.Add("Customer Name is required.", Severity.Error);
+            return;
+        }
+
+        if (_accounts.Any(x => string.IsNullOrWhiteSpace(x.AccountNumber)))
+        {
+            Snackbar.Add("Account Number is required for all rows.", Severity.Error);
+            return;
+        }
+
+        if (_accounts.Any(x => x.Amount <= 0))
+        {
+            Snackbar.Add("Amount must be greater than zero for all accounts.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_scheme))
+        {
+            Snackbar.Add("Scheme is required.", Severity.Error);
+            return;
+        }
+
+        if (_openingDate == null)
+        {
+            Snackbar.Add("Deposit Opening / Last Renewal Date is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_tenure))
+        {
+            Snackbar.Add("Tenure is required.", Severity.Error);
+            return;
+        }
+
+        if (_maturityDate == null)
+        {
+            Snackbar.Add("Deposit Maturity Date is required.", Severity.Error);
+            return;
+        }
+
+        if (_customerRequestDate == null)
+        {
+            Snackbar.Add("Customer Request Date is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_reason))
+        {
+            Snackbar.Add("Reason is required.", Severity.Error);
+            return;
+        }
+
+        if (_file == null)
+        {
+            Snackbar.Add("Supporting document is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_spocName))
+        {
+            Snackbar.Add("SPOC Name is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_spocEmail))
+        {
+            Snackbar.Add("SPOC Email is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_spocMobile))
+        {
+            Snackbar.Add("SPOC Mobile is required.", Severity.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_spocIp))
+        {
+            Snackbar.Add("SPOC IP is required.", Severity.Error);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_branchSolId))
+        {
+            Snackbar.Add("Branch Sol ID could not be resolved from your session.", Severity.Error);
+            return;
+        }
+        _saving = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var proposal = new BackDatedDepositProposal
+            {
+                DepositType = _type,
+                Purpose = _purpose,
+                BranchSolId = _branchSolId,
+                BranchName = _branchName,
+                RoSolId = _regionSolId,
+                RoName = _regionName,
+                ZoSolId = _zoneSolId,
+                ZoName = _zoneName,
+                CifId = _cifId,
+                CustomerName = _customerName,
+                Scheme = _scheme,
+                OpeningOrLastRenewalDate = _openingDate ?? DateTime.Today,
+                Tenure = _tenure,
+                MaturityDate = _maturityDate ?? DateTime.Today,
+                CustomerRequestDate = _customerRequestDate ?? DateTime.Today,
+                Reason = _reason,
+                SpocName = _spocName,
+                SpocEmail = _spocEmail,
+                SpocMobile = _spocMobile,
+                SpocIp = _spocIp
+            };
+
+            var saved = await WorkflowService.SubmitAsync(proposal, _accounts, _empId ?? "");
+
+            if (_file is not null)
+            {
+                await using var stream = _file.OpenReadStream(10 * 1024 * 1024);
+                var key = await AttachmentStore.SaveAsync(stream, _file.Name);
+                await DepositRepo.InsertDocumentAsync(new BackDatedDepositDocument
+                {
+                    ProposalId = saved.Id, Level = "Branch", FileName = _file.Name, StorageKey = key, UploadedByEmp = _empId ?? ""
+                });
+            }
+
+            Snackbar.Add($"Proposal submitted — reference {saved.RefNo}.", Severity.Success);
+            Nav.NavigateTo("deposits/my");
+        }
+        catch (DepositWorkflowException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to submit: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

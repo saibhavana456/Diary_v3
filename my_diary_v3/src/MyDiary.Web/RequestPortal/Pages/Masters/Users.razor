@@ -1,0 +1,119 @@
+@namespace RequestPortal.Web.Pages.Masters
+@page "/masters/users"
+@using RequestPortal.Web.Demo
+@inject IServiceProvider SP
+@inject ICurrentUser CurrentUser
+@inject ModuleContext Module
+
+<PageTitle>Users</PageTitle>
+<PageHeader PageKey="masters-users" Title="Users" Subtitle="All portal users and their role assignments."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Masters"), new("Users") })" />
+
+<SuperAdminOnly>
+
+@if (_rows.Count == 0 && !_loaded)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+}
+else
+{
+    <MudPaper Elevation="1">
+        <MudTable Items="@_rows" Dense="true" Hover="true" Striped="true" Class="rp-data-table"
+                  Filter="@(r => FilterRow(r, _search))">
+            <ToolBarContent>
+                <MudText Typo="Typo.subtitle1" Class="mr-4"><b>@_rows.Count</b> users</MudText>
+                <MudSpacer />
+                <MudTextField @bind-Value="_search" Placeholder="Search name / username…"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Clearable="true" Immediate="true" Style="max-width:280px" />
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh>User</MudTh>
+                <MudTh>Username</MudTh>
+                <MudTh>Emp Code</MudTh>
+                <MudTh>Email</MudTh>
+                <MudTh>Roles</MudTh>
+                <MudTh>Status</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <div class="d-flex align-center gap-2">
+                        <div class="rp-user-avatar">@Initials(context.Name)</div>
+                        <MudText Typo="Typo.body2" Style="font-weight:600">@context.Name</MudText>
+                    </div>
+                </MudTd>
+                <MudTd><MudText Typo="Typo.caption" Style="font-family:monospace">@context.Sam</MudText></MudTd>
+                <MudTd><MudText Typo="Typo.caption">@context.EmpCode</MudText></MudTd>
+                <MudTd><MudText Typo="Typo.caption">@(context.Email ?? "—")</MudText></MudTd>
+                <MudTd>
+                    <div class="d-flex flex-wrap gap-1">
+                        @foreach (var r in context.Roles)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="@RoleChipColor(r)" Variant="Variant.Filled">@DemoStore.RoleLabelFromString(r)</MudChip>
+                        }
+                    </div>
+                </MudTd>
+                <MudTd>
+                    @if (context.IsActive)
+                    { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Active</MudChip> }
+                    else
+                    { <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Inactive</MudChip> }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+</SuperAdminOnly>
+
+@code {
+    private List<UserRow> _rows = new();
+    private string _search = "";
+    private bool _loaded;
+
+    protected override void OnInitialized()
+    {
+        Module.SwitchTo(PortalModule.AccessManagement);
+        var demo = SP.GetService<DemoStore>();
+        if (demo is null) { _loaded = true; return; }
+
+        _rows = demo.Users.Select(u =>
+        {
+            var roleCodes = demo.UserRoles
+                .Where(ur => ur.EmpCode == u.EmpCode && (ur.ValidTo is null || ur.ValidTo > DateTime.UtcNow))
+                .Select(ur => ur.RoleId).ToHashSet();
+            var roles = demo.Roles
+                .Where(r => roleCodes.Contains(r.Id))
+                .Select(r => r.Code.ToString())
+                .ToList();
+            return new UserRow(u.Id, u.Name ?? u.AdSamAccountName ?? "", u.AdSamAccountName ?? "", u.EmpCode ?? "", u.Email, roles, u.IsActive);
+        }).OrderBy(r => r.Name).ToList();
+
+        _loaded = true;
+    }
+
+    private static bool FilterRow(UserRow r, string s) =>
+        string.IsNullOrWhiteSpace(s) ||
+        r.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+        r.Sam.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+        r.EmpCode.Contains(s, StringComparison.OrdinalIgnoreCase);
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpper();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpper();
+    }
+
+    private static Color RoleChipColor(string r) => r switch
+    {
+        "AppAdmin" or "SuperAdmin"         => Color.Error,
+        "VertL5"                           => Color.Info,
+        "VertL4" or "VertL3"              => Color.Warning,
+        "VertL2" or "VertL1"              => Color.Success,
+        _                                  => Color.Default,
+    };
+
+    private sealed record UserRow(long Id, string Name, string Sam, string EmpCode, string? Email, List<string> Roles, bool IsActive);
+}

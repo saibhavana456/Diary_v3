@@ -1,0 +1,110 @@
+/* ============================================================
+   Accessibility Fixes — Global Stylesheet
+   Addresses JAWS/NVDA screen reader issues with MudBlazor components
+   ============================================================ */
+
+/* --- Fix #15: Digital Business tables should not receive tab focus --- */
+/* The sr-only tables are for screen reader reading, not for tab navigation */
+.dashboard-bottom-card table.sr-only {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* Prevent MudCard bottom-row cards from receiving any tab focus */
+.dashboard-bottom-card,
+.dashboard-bottom-card * {
+    outline: none;
+}
+
+/* --- Fix #36, #48, #17: MudSelect combobox role announcement --- */
+/* MudBlazor's MudSelect renders an input element but does not always
+   announce as "combobox" for JAWS. This wrapper ensures proper ARIA. */
+.a11y-combobox-wrapper {
+    position: relative;
+}
+
+/* Ensure the MudSelect input gets proper combobox semantics via JS */
+.mud-select .mud-input-slot,
+.mud-select input[type="text"] {
+    /* Allow the JS fix to add role="combobox" */
+}
+
+/* --- Fix #55: Decorative search icon should not receive focus --- */
+/* The search adornment button inside MudAutocomplete that is decorative */
+.search-bar .mud-input-adornment-start .mud-icon-button {
+    pointer-events: none;
+    tabindex: -1;
+}
+
+/* --- Remove the blue focus border/glow on input fields --------------------
+   The default Blazor/Bootstrap and MudBlazor themes draw a blue ring or
+   colored border when a textbox/select is focused (including on mouse click).
+   We remove that cosmetic ring here.
+
+   IMPORTANT: keyboard accessibility is NOT affected. The visible keyboard
+   focus indicator is provided by the ":focus-visible" outline rules in
+   responsive-a11y.css, which are intentionally left in place. Those only
+   trigger during keyboard navigation, so screen-reader / keyboard users still
+   get a clear, high-contrast focus ring. */
+
+/* Native inputs / Bootstrap form controls: kill the blue :focus glow and the
+   browser-native focus outline (mouse-focus). */
+input:focus,
+textarea:focus,
+select:focus,
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus,
+.mud-input-slot:focus,
+.mud-input-root:focus {
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* MudBlazor OUTLINED text fields: the blue border on focus is drawn on the
+   fieldset element (.mud-input-outlined-border). Neutralize it for every focus
+   path MudBlazor uses (.mud-focused and :focus-within). */
+.mud-input.mud-input-outlined.mud-focused .mud-input-outlined-border,
+.mud-input-outlined:focus-within .mud-input-outlined-border,
+.mud-input-control:focus-within .mud-input-outlined-border {
+    border-color: rgba(0, 0, 0, 0.23) !important;
+    border-width: 1px !important;
+    box-shadow: none !important;
+}
+
+/* MudBlazor FILLED / TEXT (underline) fields: hide the animated colored
+   underline that expands on focus. */
+.mud-input-underline::before,
+.mud-input-underline::after {
+    border-bottom-color: transparent !important;
+}
+
+/* MudBlazor: remove the primary-colored label + any residual box-shadow ring
+   on the input control while focused. */
+.mud-input.mud-focused,
+.mud-input-control:focus-within {
+    box-shadow: none !important;
+}
+
+/* Ensure no blue focus RING is drawn on text fields / dropdowns for any user.
+   Browsers match :focus-visible on text inputs and <select> even for mouse
+   clicks, so we clear the ring here too. Buttons, links, nav and table rows
+   keep their high-contrast :focus-visible ring (defined in responsive-a11y.css),
+   so keyboard accessibility for actionable controls is unaffected. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible,
+.mud-input-slot:focus-visible,
+.mud-input-root:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+}

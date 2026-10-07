@@ -1,0 +1,262 @@
+﻿@page "/reports/atrreport"
+@using MudBlazor
+
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Reports.Models
+@using MyDiary.Web.Features.Reports.Services
+
+@inject NavigationManager Nav
+@inject ATRReportService _atrService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-4">
+
+    <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-2">
+        Mandatory Report - Action Taken Report
+    </MudText>
+
+    <!-- DATE SELECT -->
+
+    <MudSelect T="string"
+               Label="Select Report Date"
+               Value="SelectedDate"
+               ValueChanged="OnDateChanged"
+               ValueExpression="() => SelectedDate">
+
+        <MudSelectItem Value="@((string)null)">-- SELECT --</MudSelectItem>
+
+        @foreach (var dt in ReportDates)
+        {
+            <MudSelectItem Value="@dt">@dt</MudSelectItem>
+        }
+    </MudSelect>
+
+    <!-- BRANCH DETAILS -->
+    <MudPaper Class="pa-4 mt-4">
+        <MudText Typo="Typo.h6">Branch Details</MudText>
+
+        <MudGrid>
+            <MudItem xs="6"><b>Branch:</b> @report.BR_NAME</MudItem>
+            <MudItem xs="6"><b>SOL:</b> @report.SOLID</MudItem>
+            <MudItem xs="6"><b>RO:</b> @report.RO_NAME</MudItem>
+            <MudItem xs="6"><b>ZO:</b> @report.ZO_NAME</MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <!-- QUESTIONS -->
+    <MudPaper Class="pa-4 mt-4">
+
+        <MudText Typo="Typo.h6">Questionnaire</MudText>
+
+        <MudSimpleTable Hover="true" Bordered="true">
+
+            <thead>
+                <tr style="background:#1b4a98; color:white;">
+                    <th>S.No</th>
+                    <th>Observation</th>
+                    <th>Action</th>
+                    <th>Comments</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                @foreach (var q in Questions)
+                {
+                    var optProp = typeof(ATRReportDataModel).GetProperty($"Q{q.No}OPT");
+                    var cmtProp = typeof(ATRReportDataModel).GetProperty($"Q{q.No}COMMENT");
+
+                    if (optProp == null || cmtProp == null)
+                        continue;
+
+                    string opt = optProp.GetValue(report)?.ToString() ?? "Y";
+                    string cmt = cmtProp.GetValue(report)?.ToString() ?? "";
+
+                    <tr>
+                        <td>@q.No</td>
+                        <td>@q.Text</td>
+
+                        <td>
+                            <MudRadioGroup T="string"
+                                           Value="@opt"
+                                           ValueChanged="@(val =>
+                           {
+                               optProp.SetValue(report, val);
+                               OnOptChanged(q.No);
+                           })">
+
+                                <MudRadio Value="@("Y")">Yes</MudRadio>
+                                <MudRadio Value="@("N")">No</MudRadio>
+                                <MudRadio Value="@("NA")">NA</MudRadio>
+
+                            </MudRadioGroup>
+                        </td>
+
+                        <td>
+                            <MudTextField T="string"
+                                          Value="@cmt"
+                                          ValueChanged="@(val => cmtProp.SetValue(report, val ?? ""))"
+                                          Disabled="@(opt == "NA")"
+                                          Lines="2" />
+                        </td>
+                    </tr>
+                }
+
+            </tbody>
+        </MudSimpleTable>
+
+    </MudPaper>
+
+    <!-- BUTTONS -->
+    <div class="text-center mt-4">
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="@_disableButtons"
+                   OnClick="HandleSave"
+                   Class="me-2">
+            Save
+        </MudButton>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="@_disableButtons"
+                   OnClick="HandleSubmit">
+            Submit
+        </MudButton>
+
+    </div>
+
+</MudContainer>
+
+@code {
+
+    private ATRReportDataModel report = new();
+    private string? SelectedDate;
+    private bool _disableButtons;
+
+    public List<string> ReportDates = new();
+
+    // ✅ QUESTION MASTER
+    private List<(int No, string Text)> Questions = new()
+    {
+        (1,"Accounts - Drawing Power Modified"),
+        (2,"Accounts - Sanction Limit Modified"),
+        (3,"Stock Statement Due More than 60 days"),
+        (4,"LC opened breached"),
+        (5,"BG opened breached"),
+        (6,"Bills Lodged > 25 lakhs"),
+        (7,"Inward remittance > 25 lakhs"),
+        (8,"Outward remittance exceeds"),
+        (9,"Transactions in inoperative accounts"),
+        (10,"TDS deduction issues"),
+        (11,"Manual transactions in Impersonal accounts"),
+        (12,"Employee self account verification"),
+        (13,"Value dated Manual transaction"),
+        (14,"Dormant/Inactive transactions"),
+        (15,"Transaction breach SB/CA"),
+        (16,"Transaction breach CC/OD"),
+        (17,"Concessions given"),
+        (18,"Dormant to active change"),
+        (19,"Lien lifted"),
+        (20,"WF transactions"),
+        (21,"Account Unfreezing"),
+        (22,"DD/TT breach"),
+        (23,"Cash Payment other SOL"),
+        (24,"Cash Payment for other SOL"),
+        (25,"Account transferred OUT"),
+        (26,"Account transferred IN"),
+        (27,"Dormant change"),
+        (28,"Inactive change"),
+        (29,"Customer transaction breach"),
+        (30,"Manual Transaction Accounts"),
+        (31,"Partition expenditure"),
+        (32,"Income/Expenditure manual"),
+        (33,"Inactive notice"),
+        (34,"Dormant notice")
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+
+        report.BR_NAME = user.FindFirst("Branch_name")?.Value ?? "";
+        report.SOLID = user.FindFirst("branch_solid")?.Value ?? "";
+
+        ReportDates = await _atrService.GetATRReportDatesAsync(report.SOLID) ?? new List<string>();
+    }
+
+    private async Task OnDateChanged(string? val)
+    {
+
+        SelectedDate = val;
+
+        if (string.IsNullOrEmpty(val))
+            return;
+
+        var existing = await _atrService.GetATRReportDataAsync(report.SOLID, val);
+
+
+        if (existing != null)
+        {
+
+            foreach (var prop in typeof(ATRReportDataModel).GetProperties())
+            {
+                var propValue = prop.GetValue(existing);
+                prop.SetValue(report, propValue);
+            }
+
+
+            _disableButtons = existing.STATUS == "S";
+        }
+
+        else
+        {
+            InitializeDefault();
+        }
+    }
+
+    private void InitializeDefault()
+    {
+        for (int i = 1; i <= 34; i++)
+        {
+            typeof(ATRReportDataModel)
+                .GetProperty($"Q{i}OPT")?.SetValue(report, "Y");
+
+            typeof(ATRReportDataModel)
+                .GetProperty($"Q{i}COMMENT")?.SetValue(report, "Complied as per guidelines");
+        }
+    }
+
+    private async Task HandleSave()
+    {
+        Snackbar.Add("Saved Successfully", Severity.Success);
+    }
+
+    private async Task HandleSubmit()
+    {
+        var confirm = await JS.InvokeAsync<bool>("confirm", "Submit?");
+        if (!confirm) return;
+
+        _disableButtons = true;
+        Snackbar.Add("Submitted Successfully", Severity.Success);
+    }
+
+    private void OnOptChanged(int no)
+    {
+        var opt = typeof(ATRReportDataModel)
+            .GetProperty($"Q{no}OPT")?.GetValue(report)?.ToString();
+
+        if (opt == "NA")
+        {
+            typeof(ATRReportDataModel)
+                .GetProperty($"Q{no}COMMENT")?.SetValue(report, "");
+        }
+    }
+}

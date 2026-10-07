@@ -1,0 +1,64 @@
+@page "/deposits/dashboard"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@inject IBackDatedDepositRepo DepositRepo
+
+<PageTitle>Dashboard - Back-Dated Deposit Approvals</PageTitle>
+<PageHeader Title="Dashboard / MIS" Subtitle="Pending, Approved, Rejected — and ageing at the current stage." Crumbs="_crumbs" PageKey="bdd-dashboard" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudGrid Class="mb-6">
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4 text-center" Elevation="1"><MudText Typo="Typo.h4">@_pending</MudText><MudText Typo="Typo.caption">Pending</MudText></MudPaper></MudItem>
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4 text-center" Elevation="1"><MudText Typo="Typo.h4" Color="Color.Success">@_approved</MudText><MudText Typo="Typo.caption">Approved / Sanctioned</MudText></MudPaper></MudItem>
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4 text-center" Elevation="1"><MudText Typo="Typo.h4" Color="Color.Error">@_rejected</MudText><MudText Typo="Typo.caption">Rejected</MudText></MudPaper></MudItem>
+        <MudItem xs="6" md="3"><MudPaper Class="pa-4 text-center" Elevation="1"><MudText Typo="Typo.h4">@_total</MudText><MudText Typo="Typo.caption">Total Proposals</MudText></MudPaper></MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Ageing — proposals currently pending, by days at their current level</MudText>
+    <MudTable Items="_ageing" Hover="true" Dense="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>Ref No</MudTh><MudTh>Branch</MudTh><MudTh>Pending At</MudTh><MudTh>Status</MudTh><MudTh>Since</MudTh><MudTh>Ageing (days)</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.RefNo</MudTd>
+            <MudTd>@context.BranchName</MudTd>
+            <MudTd>@context.PendingLevel</MudTd>
+            <MudTd>@context.Status</MudTd>
+            <MudTd>@context.ModifiedAt.ToString("dd-MMM-yyyy")</MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Color="@(AgeingDays(context) > 7 ? Color.Error : AgeingDays(context) > 3 ? Color.Warning : Color.Success)">
+                    @AgeingDays(context)
+                </MudChip>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("Dashboard") };
+    private bool _loading = true;
+    private int _pending, _approved, _rejected, _total;
+    private List<BackDatedDepositProposal> _ageing = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var all = await DepositRepo.ListAllAsync();
+        _total = all.Count;
+        _approved = all.Count(p => p.Status == DepositProposalStatus.Sanctioned);
+        _rejected = all.Count(p => p.Status == DepositProposalStatus.Rejected);
+        _pending = all.Count(p => p.PendingLevel != DepositPendingLevel.Closed);
+        _ageing = all.Where(p => p.PendingLevel != DepositPendingLevel.Closed)
+                      .OrderByDescending(p => (DateTime.Now - p.ModifiedAt).TotalDays)
+                      .ToList();
+        _loading = false;
+    }
+
+    private static int AgeingDays(BackDatedDepositProposal p) => (int)Math.Max(0, (DateTime.Now - p.ModifiedAt).TotalDays);
+}

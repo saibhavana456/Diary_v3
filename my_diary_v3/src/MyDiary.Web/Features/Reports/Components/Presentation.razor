@@ -1,0 +1,61 @@
+﻿@page "/reports/presentation"
+@layout MyDiary.Web.Components.Layout.MainLayout
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Web
+@inject NavigationManager Nav
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Presentation — My Diary</PageTitle>
+
+<style>
+    .doc-page-container { padding: 24px; }
+    .doc-header { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .doc-title { font-size: 1.4rem; font-weight: 700; color: #1e3a5f; }
+    .download-btn { background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%); color: white !important; border: none; padding: 8px 20px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.2s ease; display: inline-block; }
+    .download-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+</style>
+
+<div class="doc-page-container">
+    <div class="doc-header">
+        <MudTextField T="string" @bind-Value="_search" Placeholder="Search documents..."
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Style="max-width:350px; margin-left:auto;" />
+    </div>
+
+    <MudTable Items="FilteredItems" Dense="true" Hover="true" Striped="true" Bordered="true" Elevation="2">
+        <HeaderContent>
+            <MudTh Style="background-color:#2a2f5b; color:white; width:70px;">S.No</MudTh>
+            <MudTh Style="background-color:#2a2f5b; color:white;">Presentation Name</MudTh>
+            <MudTh Style="background-color:#2a2f5b; color:white;">FY</MudTh>
+            <MudTh Style="background-color:#2a2f5b; color:white;">Date</MudTh>
+            <MudTh Style="background-color:#2a2f5b; color:white; width:150px;">Click Here</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.SNo</MudTd>
+            <MudTd>@context.Name</MudTd>
+            <MudTd>@context.FY</MudTd>
+            <MudTd>@context.Date.ToString("dd-MM-yyyy")</MudTd>
+            <MudTd>
+                <a href="@context.DownloadUrl" target="_blank" rel="noopener" class="download-btn">Click Here</a>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</div>
+
+@code {
+    private string _search = "";
+
+    private List<DocItem> _items = new()
+    {
+        new(1, "Assurance Summarized", "2026-27", new DateTime(2026, 05, 29),"download/presentations/Assurance_Summarised_12012026.pptx"),
+    };
+
+    private IEnumerable<DocItem> FilteredItems => string.IsNullOrWhiteSpace(_search)
+        ? _items
+        : _items.Where(x => x.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    private record DocItem(int SNo, string Name, string FY, DateTime Date, string DownloadUrl);
+}

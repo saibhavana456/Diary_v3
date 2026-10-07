@@ -1,0 +1,393 @@
+﻿@page "/reports/DormantAccounts"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Dormant Accounts — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ========= Centralized file path & builders =========
+    // Raw Windows path (edit here if your base folder changes)
+    private const string FileBaseRaw = @"D:\LiveApllication\MyDiary\";
+    // Escaped for SQL string literals inside C# (backslashes doubled)
+    private static readonly string FileBaseSql = FileBaseRaw.Replace(@"\", @"\\");
+    // Zone-level file expression with a literal value
+    private static string BuildZoneFileExpr(string zoneSolid) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = '" + zoneSolid + "' AND filetype = 'Dormant') AS File_name";
+    // Region-level file expression with a literal value
+    private static string BuildRegionFileExpr(string regionSolid) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = '" + regionSolid + "' AND filetype = 'Dormant') AS File_name";
+    // NEW: Zone-level file expression using a COLUMN (no quotes) � use for grouped Zone summaries
+    private static string BuildZoneFileExprByColumn(string zoneSolidColumnExpr) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = " + zoneSolidColumnExpr + " AND filetype = 'Dormant') AS File_name";
+    // NEW: Region-level file expression using a COLUMN (no quotes) � use for grouped Region summaries
+    private static string BuildRegionFileExprByColumn(string regionSolidColumnExpr) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = " + regionSolidColumnExpr + " AND filetype = 'Dormant') AS File_name";
+    // ================================================================
+
+    // --- Column configurations ---
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new ColumnConfig { Header = "Zone",                         PropertyName = "zone_name_eng",  Width = "20%" },
+        new ColumnConfig { Header = "Region",                       PropertyName = "region_name",    Width = "20%" },
+        new ColumnConfig { Header = "Branch",                       PropertyName = "Branch_Name",    Width = "20%" },
+        new ColumnConfig { Header = "No of Dormant Accounts",       PropertyName = "DormantCount",   IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Total Amount (Rs. in Lacs)",   PropertyName = "DormantAmount",  IsNumeric = true, Format = "N2", Width = "15%" },
+         new ColumnConfig { Header = "Download",                    PropertyName = "File_name", IsLink = true, LinkText = "Download File", Width = "10%" }
+    };
+
+    private readonly List<ColumnConfig> _detailedCols = new()
+    {
+        new ColumnConfig { Header = "Zone",                         PropertyName = "zone_name_eng",  Width = "20%" },
+        new ColumnConfig { Header = "Region",                       PropertyName = "region_name",    Width = "20%" },
+        new ColumnConfig { Header = "Branch",                       PropertyName = "Branch_Name",    Width = "20%" },
+        new ColumnConfig { Header = "No of Dormant Accounts",       PropertyName = "DormantCount",   IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Total Amount (Rs. in Lacs)",   PropertyName = "DormantAmount",  IsNumeric = true, Format = "N2", Width = "15%" },
+          new ColumnConfig { Header = "Download",                    PropertyName = "File_name", IsLink = true, LinkText = "Download File", Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Dormant Accounts";
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "LTRIM(RTRIM(B.region_solid)) <> ''";
+        string groupBy = "";
+        bool isSummary = true;
+
+        try
+        {
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1") // All (Summary)
+                {
+                    columns = "SUM(DormantCount) AS DormantCount, " +
+                              "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                              "'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId, '' AS File_name";
+                }
+                else if (_selectedZone == "all")
+                {
+                    if (_selectedRegion == "1") // Zone-wise summary across MANY zones
+                    {
+                        columns = "SUM(DormantCount) AS DormantCount, " +
+                                  "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                  "'All' AS Branch_Name, 'All' AS region_name, " +
+                                  "B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                                  BuildZoneFileExprByColumn("B.Zone_SolId");
+                        groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1") // Region-wise summary across MANY regions
+                        {
+                            columns = "SUM(DormantCount) AS DormantCount, " +
+                                      "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                      "'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildRegionFileExprByColumn("B.region_SolId");
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else // Branchwise detailed
+                        {
+                            isSummary = false;
+                            columns = "DormantCount, " +
+                                      "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                                      "DormantFileName AS File_name, " +
+                                      "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                    else // Specific Region selected
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1") // Single-region summary
+                        {
+                            columns = "SUM(DormantCount) AS DormantCount, " +
+                                      "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                      "'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildRegionFileExpr(_selectedRegion);
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "DormantCount, " +
+                                      "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                                      "DormantFileName AS File_name, " +
+                                      "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                }
+                else // Specific Zone selected
+                {
+                    where += $" AND B.zone_solid = '{_selectedZone}'";
+
+                    if (_selectedRegion == "1") // Single-zone summary
+                    {
+                        columns = "SUM(DormantCount) AS DormantCount, " +
+                                  "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                  "'All' AS Branch_Name, 'All' AS region_name, " +
+                                  "B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                                  BuildZoneFileExpr(_selectedZone);
+                        groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1") // Region summaries within the selected zone
+                        {
+                            columns = "SUM(DormantCount) AS DormantCount, " +
+                                      "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                      "'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildRegionFileExprByColumn("B.region_SolId");
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Detailed in that zone
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "DormantCount, " +
+                                      "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                                      "DormantFileName AS File_name, " +
+                                      "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                    else // Specific Region within Specific Zone
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1") // Single-region summary inside the zone
+                        {
+                            columns = "SUM(DormantCount) AS DormantCount, " +
+                                      "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                      "'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildRegionFileExpr(_selectedRegion);
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "DormantCount, " +
+                                      "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                                      "DormantFileName AS File_name, " +
+                                      "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND B.zone_solid = '{_userZoneSolid}'";
+
+                if (_selectedRegion == "1") // Single-zone summary (user's zone)
+                {
+                    columns = "SUM(DormantCount) AS DormantCount, " +
+                              "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                              "'All' AS Branch_Name, 'All' AS region_name, " +
+                              "B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                              BuildZoneFileExpr(_userZoneSolid);
+                    groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Region summaries within the zone
+                    {
+                        columns = "SUM(DormantCount) AS DormantCount, " +
+                                  "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                  "'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                  BuildRegionFileExprByColumn("B.region_SolId");
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+
+                        if (_selectedBranch != "all")
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        columns = "DormantCount, " +
+                                  "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                                  "DormantFileName AS File_name, " +
+                                  "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                    }
+                }
+                else // Specific Region
+                {
+                    where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                    if (_selectedBranch == "1") // Single-region summary
+                    {
+                        columns = "SUM(DormantCount) AS DormantCount, " +
+                                  "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                                  "'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                  BuildRegionFileExpr(_selectedRegion);
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+
+                        if (_selectedBranch != "all")
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        columns = "DormantCount, " +
+                                  "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                                  "DormantFileName AS File_name, " +
+                                  "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND B.region_solid = '{_userRegionSolid}'";
+
+                if (_selectedBranch == "1") // Single-region summary (user's region)
+                {
+                    columns = "SUM(DormantCount) AS DormantCount, " +
+                              "ROUND(SUM(DormantAmount) / 100000.0, 2) AS DormantAmount, " +
+                              "'All' AS Branch_Name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                              BuildRegionFileExpr(_userRegionSolid);
+                    groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+
+                    if (_selectedBranch != "all")
+                        where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                    columns = "DormantCount, " +
+                              "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                              "DormantFileName AS File_name, " +
+                              "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                isSummary = false;
+                where += $" AND B.SOL_ID = '{_userBranchSolid}'";
+                columns = "DormantCount, " +
+                          "ROUND(DormantAmount / 100000.0, 2) AS DormantAmount, " +
+                          "DormantFileName AS File_name, " +
+                          "B.Branch_Name AS Branch_Name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+            }
+
+            // Build & run query
+            string finalQuery =
+                $"SELECT {columns} " +
+                $"FROM AccountStatus A " +
+                $"JOIN Branch_Master B ON A.SolID = B.SOL_ID " +
+                $"WHERE {where}{groupBy}";
+
+            _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+            // foreach (var row in _data)
+            // {
+            //     var url = row.TryGetValue("File_name", out var v) ? v?.ToString() : null;
+
+            //     if (string.IsNullOrWhiteSpace(url))
+            //     {
+            //         row["DownloadHtml"] = "";
+            //         continue;
+            //     }
+
+
+            //     var safeUrl = System.Net.WebUtility.HtmlEncode(url);
+
+
+            //     row["DownloadHtml"] = $"<a href=\"{safeUrl}\" target=\"_blank\" rel=\"noopener\">Download</a>";
+            // }
+
+
+            // Footer & columns — date query was fired in parallel with data
+            string date = await ReportService.GetAsOnDateAsync("AccountStatus");
+            _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "DormantAccountsReport");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "DormantAccountsReport.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

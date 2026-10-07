@@ -1,0 +1,1281 @@
+﻿@using Microsoft.AspNetCore.Components.Forms
+﻿@using MudBlazor
+@using MyDiary.Web.Features.Business.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+@inject ChargeReportPdfService PdfService
+@inject IChargeReportService ChargeReportService
+@inject AuthenticationStateProvider AuthStateProvider
+@using Microsoft.JSInterop
+@inject AuthenticationStateProvider AuthStateProvider
+
+
+
+<MudPaper Class="pa-6">
+
+    @if (IsDisabled)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" Variant="Variant.Outlined">
+            This form has been submitted and is now read-only.
+        </MudAlert>
+    }
+
+    <fieldset disabled="@IsDisabled" style="border:none;padding:0;margin:0;">
+
+        <MudPaper Elevation="2" Class="pa-4 mb-6" Style="background:#f5f9ff">
+            <MudStack AlignItems="AlignItems.Center" Spacing="1">
+                <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn"
+                         Size="Size.Large"
+                         Color="Color.Secondary" />
+
+                <MudText Typo="Typo.h4" Class="fw-bold">
+                    Charges Taking Over Report
+                </MudText>
+
+                <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined">
+                    Incoming Officer (Part B as per IC 00656-2023)
+                </MudChip>
+            </MudStack>
+        </MudPaper>
+
+        <MudDivider Class="my-4" />
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#ede7f6,#f9f7ff);
+                     border-left:6px solid #673ab7;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Color="Color.Secondary" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        Official Submitting the Charge Taking Over Report
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="4">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Name"
+                                      @bind-Value="Model.OfficerName"
+                                      ReadOnly="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Employee No (PF Number)"
+                                      @bind-Value="Model.EmployeeNo"
+                                      ReadOnly="true" />
+
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Designation"
+                                      @bind-Value="Model.Designation"
+                                      ReadOnly="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Branch Name"
+                                      @bind-Value="Model.BranchName"
+                                      ReadOnly="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Region Name"
+                                      @bind-Value="Model.RegionName"
+                                      ReadOnly="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Zone Name"
+                                      @bind-Value="Model.ZoneName"
+                                      ReadOnly="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudDatePicker Dense Variant="Variant.Outlined"
+                                       Label="Date Reported for Duty"
+                                       @bind-Date="Model.DateReportedForDuty" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudDatePicker Dense Variant="Variant.Outlined"
+                                       Label="Date Charge Taken"
+                                       @bind-Date="Model.DateChargeTaken" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudDatePicker Dense Variant="Variant.Outlined"
+                                       Label="Last Inspection Date"
+                                       @bind-Date="Model.LastInspectionDate" Required="true" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+        </MudPaper>
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#e8f5e9,#f9fff9);
+                     border-left:6px solid #2e7d32;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Description" Color="Color.Success" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        1. Document Availability at Branch
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                @foreach (var doc in Model.Documents)
+                {
+                    <MudPaper Class="pa-3 mb-2 rounded-md"
+                              Style="border:1px dashed #c8e6c9;">
+                        <MudGrid AlignItems="AlignItems.Center">
+                            <MudItem xs="9">@doc.DocumentName</MudItem>
+                            <MudItem xs="3">
+                                <MudSwitch Color="Color.Success"
+                                           @bind-Value="doc.IsAvailable" />
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                }
+            </MudPaper>
+
+        </MudPaper>
+
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#fff3e0,#fffaf4);
+                     border-left:6px solid #f57c00;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Key" Color="Color.Warning" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        2. Safe Custody & Key Verification
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudSwitch Label="Safe custody receipt of duplicate keys available"
+                           Color="Color.Warning"
+                           @bind-Value="Model.SafeCustodyReceiptAvailable" />
+
+                <MudGrid Spacing="3" Class="mt-3">
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="First Set of Keys held by (PF Number)"
+                                      @bind-Value="Model.FirstKeyHolder"
+                                      Immediate="true"
+                                      OnBlur="FetchFirstKeyHolderNamePartB" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="First Key Holder Name"
+                                      Value="Model.FirstKeyHolderName"
+                                      ReadOnly="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Second Set of Keys held by (PF Number)"
+                                      @bind-Value="Model.SecondKeyHolder"
+                                      Immediate="true"
+                                      OnBlur="FetchSecondKeyHolderNamePartB" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Second Key Holder Name"
+                                      Value="Model.SecondKeyHolderName"
+                                      ReadOnly="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Duplicate Keys lodged at"
+                                      @bind-Value="Model.DuplicateKeysLodgedAt" Required="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudDatePicker Dense Variant="Variant.Outlined"
+                                       Label="Date"
+                                       @bind-Date="Model.DuplicateKeysLodgedDate" Required="true" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+        </MudPaper>
+
+        <!-- ================= SECTION 3 : CUSTOMER COMPLAINTS ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#e3f2fd,#f8fbff);
+                     border-left:6px solid #1e88e5;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Report" Color="Color.Primary" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        3. Customer Complaints Pending Disposal
+                    </MudText>
+                </MudStack>
+
+                <MudText Typo="Typo.caption" Class="mt-1 ml-7">
+                    Upload consolidated statement of pending customer complaints
+                </MudText>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+
+                    <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="3" Wrap="Wrap.Wrap">
+                        <MudLink Href="Templates/Customer_Complaints_template.pdf"
+                                 Target="_blank"
+                                 StartIcon="@Icons.Material.Filled.PictureAsPdf">
+                            Download Template
+                        </MudLink>
+
+                        <MudFileUpload T="IBrowserFile"
+                                       Accept=".pdf"
+                                       MaxFiles="1"
+                                       MaxFileSize="5242880"
+                                       Disabled="@IsDisabled"
+                                       Required="string.IsNullOrWhiteSpace(Model.CustomerComplaintsPdfFileName)"
+                                       FilesChanged="@(file => UploadCustomerComplaintsPdf(file))">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Upload PDF
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                    </MudStack>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.CustomerComplaintsPdfFileName))
+                    {
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Outlined"
+                                 StartIcon="@Icons.Material.Filled.CheckCircle">
+                            @Model.CustomerComplaintsPdfFileName
+                        </MudChip>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="DownloadCustomerComplaintsPdf">
+                            Download Uploaded PDF
+                        </MudButton>
+                    }
+
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+
+        <!-- ================= SECTION 4 : CONSUMER CASES ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#ede7f6,#f9f7ff);
+                     border-left:6px solid #5e35b1;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Gavel" Color="Color.Secondary" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        4. Consumer Forum / Ombudsman Cases
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+
+                    <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="3">
+                        <MudLink Href="Templates/Consumer_Cases_template.pdf"
+                                 Target="_blank"
+                                 StartIcon="@Icons.Material.Filled.PictureAsPdf">
+                            Download Template
+                        </MudLink>
+
+                        <MudFileUpload T="IBrowserFile"
+                                       Accept=".pdf"
+                                       MaxFiles="1"
+                                       MaxFileSize="5242880"
+                                       Required="string.IsNullOrWhiteSpace(Model.ConsumerCasesPdfFileName)"
+                                       Disabled="@IsDisabled"
+                                       FilesChanged="@(file => UploadConsumerCasesPdf(file))">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Upload PDF
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                    </MudStack>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.ConsumerCasesPdfFileName))
+                    {
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Outlined"
+                                 StartIcon="@Icons.Material.Filled.CheckCircle">
+                            @Model.ConsumerCasesPdfFileName
+                        </MudChip>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="DownloadConsumerCasesPdf">
+                            Download Uploaded PDF
+                        </MudButton>
+                    }
+
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+        <!-- ================= SECTION 5 : TIME BARRED ACCOUNTS ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <!-- Section Header -->
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#fff3e0,#fffaf4);
+                     border-left:6px solid #f57c00;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.WarningAmber"
+                             Color="Color.Warning" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        5. Time Barred Accounts
+                    </MudText>
+                </MudStack>
+
+                <MudText Typo="Typo.caption" Class="mt-1 ml-7">
+                    Upload consolidated statement of time‑barred accounts in the branch
+                </MudText>
+            </MudPaper>
+
+            <!-- Section Body -->
+            <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+
+                    <!-- Template & Upload -->
+                    <MudStack Direction="Row"
+                              AlignItems="AlignItems.Center"
+                              Spacing="3"
+                              Wrap="Wrap.Wrap">
+
+                        <MudLink Href="Templates/Time_Barred_Accounts_template.pdf"
+                                 Target="_blank"
+                                 Underline="Underline.Hover"
+                                 StartIcon="@Icons.Material.Filled.PictureAsPdf">
+                            Download Template
+                        </MudLink>
+
+                        <MudFileUpload T="IBrowserFile"
+                                       Accept=".pdf"
+                                       MaxFiles="1"
+                                       MaxFileSize="5242880"
+                                       Disabled="@IsDisabled"
+                                       Required="string.IsNullOrWhiteSpace(Model.TimeBarredAccountsPdfFileName)"
+                                       FilesChanged="@(file => UploadTimeBarredAccountsPdf(file))">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Upload PDF
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                    </MudStack>
+
+                    <!-- Uploaded PDF Indicator -->
+                    @if (!string.IsNullOrWhiteSpace(Model.TimeBarredAccountsPdfFileName))
+                    {
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Outlined"
+                                 StartIcon="@Icons.Material.Filled.CheckCircle">
+                            @Model.TimeBarredAccountsPdfFileName
+                        </MudChip>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="DownloadTimeBarredAccountsPdf">
+                            Download Uploaded PDF
+                        </MudButton>
+                    }
+
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+        <!-- ================= SECTION 6 : CAPITAL ASSETS VERIFICATION ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <!-- Section Header -->
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#e8f5e9,#f9fff9);
+                     border-left:6px solid #388e3c;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Inventory"
+                             Color="Color.Success" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        6. Capital Assets Verification
+                    </MudText>
+                </MudStack>
+
+                <MudText Typo="Typo.caption" Class="mt-1 ml-7">
+                    Upload the consolidated list of capital assets (furniture, fixtures, equipment, etc.)
+                </MudText>
+            </MudPaper>
+
+            <!-- Section Body -->
+            <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+
+                    <!-- Template & Upload -->
+                    <MudStack Direction="Row"
+                              AlignItems="AlignItems.Center"
+                              Spacing="3"
+                              Wrap="Wrap.Wrap">
+
+                        <MudLink Href="Templates/Capital_Assets_template.pdf"
+                                 Target="_blank"
+                                 Underline="Underline.Hover"
+                                 StartIcon="@Icons.Material.Filled.PictureAsPdf">
+                            Download Template
+                        </MudLink>
+
+                        <MudFileUpload T="IBrowserFile"
+                                       Accept=".pdf"
+                                       MaxFiles="1"
+                                       MaxFileSize="5242880"
+                                       Required="string.IsNullOrWhiteSpace(Model.CapitalAssetsPdfFileName)"
+                                       Disabled="@IsDisabled"
+                                       FilesChanged="@(file => UploadCapitalAssetsPdf(file))">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Upload PDF
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                    </MudStack>
+
+                    <!-- Uploaded PDF Indicator -->
+                    @if (!string.IsNullOrWhiteSpace(Model.CapitalAssetsPdfFileName))
+                    {
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Outlined"
+                                 StartIcon="@Icons.Material.Filled.CheckCircle">
+                            @Model.CapitalAssetsPdfFileName
+                        </MudChip>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="DownloadCapitalAssetsPdf">
+                            Download Uploaded PDF
+                        </MudButton>
+                    }
+
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+
+        <!-- ================= SECTION 7 : SUNDRY DEBTORS / CREDITORS / DEPOSITS ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <!-- Section Header -->
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#e1f5fe,#f7fcff);
+                     border-left:6px solid #0288d1;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Payments"
+                             Color="Color.Info" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        7. Sundry Debtors / Creditors / Deposits
+                    </MudText>
+                </MudStack>
+
+                <MudText Typo="Typo.caption" Class="mt-1 ml-7">
+                    Upload consolidated statement of sundry balances as on the date of taking over charge
+                </MudText>
+            </MudPaper>
+
+            <!-- Section Body -->
+            <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+
+                    <!-- Template & Upload -->
+                    <MudStack Direction="Row"
+                              AlignItems="AlignItems.Center"
+                              Spacing="3"
+                              Wrap="Wrap.Wrap">
+
+                        <MudLink Href="Templates/Sundry_Balances_template.pdf"
+                                 Target="_blank"
+                                 Underline="Underline.Hover"
+                                 StartIcon="@Icons.Material.Filled.PictureAsPdf">
+                            Download Template
+                        </MudLink>
+
+                        <MudFileUpload T="IBrowserFile"
+                                       Accept=".pdf"
+                                       MaxFiles="1"
+                                       MaxFileSize="5242880"
+                                       Required="string.IsNullOrWhiteSpace(Model.SundryBalancesPdfFileName)"
+                                       Disabled="@IsDisabled"
+                                       FilesChanged="@(file => UploadSundryBalancesPdf(file))">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Upload PDF
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                    </MudStack>
+
+                    <!-- Uploaded PDF Indicator -->
+                    @if (!string.IsNullOrWhiteSpace(Model.SundryBalancesPdfFileName))
+                    {
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Outlined"
+                                 StartIcon="@Icons.Material.Filled.CheckCircle">
+                            @Model.SundryBalancesPdfFileName
+                        </MudChip>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="DownloadSundryBalancesPdf">
+                            Download Uploaded PDF
+                        </MudButton>
+                    }
+
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+        <!-- ================= SECTION 8 : VEHICLE DOCUMENTS ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#fffde7,#fffff5);
+                     border-left:6px solid #fbc02d;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.DirectionsCar" Color="Color.Warning" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        8. Verification of Bank Vehicle Documents
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudSwitch Color="Color.Warning"
+                           Label="Vehicle documents are in force and log book maintained"
+                           @bind-Value="Model.VehicleDocumentsInOrder" />
+
+                <MudDatePicker Dense Variant="Variant.Outlined"
+                               Class="mt-3"
+                               Label="Insurance Renewal Due Date"
+                               @bind-Date="Model.InsuranceRenewalDueDate" Required="true" />
+            </MudPaper>
+
+        </MudPaper>
+        <!-- ================= SECTION 9 : GODOWN KEYS VERIFICATION (PDF) ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <!-- Section Header -->
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#e3f2fd,#f8fbff);
+                     border-left:6px solid #1e88e5;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Warehouse"
+                             Color="Color.Primary" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        9. Godown Keys Verification
+                    </MudText>
+                </MudStack>
+
+                <MudText Typo="Typo.caption" Class="mt-1 ml-7">
+                    Upload consolidated verification statement of godown keys held at branch
+                </MudText>
+            </MudPaper>
+
+            <!-- Section Body -->
+            <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+
+                    <!-- Template + Upload -->
+                    <MudStack Direction="Row"
+                              AlignItems="AlignItems.Center"
+                              Spacing="3"
+                              Wrap="Wrap.Wrap">
+
+                        <MudLink Href="Templates/Godown_Keys_Verification_template.pdf"
+                                 Target="_blank"
+                                 Underline="Underline.Hover"
+                                 StartIcon="@Icons.Material.Filled.PictureAsPdf">
+                            Download Template
+                        </MudLink>
+
+                        <MudFileUpload T="IBrowserFile"
+                                       Accept=".pdf"
+                                       MaxFiles="1"
+                                       MaxFileSize="5242880"
+                                       Required="string.IsNullOrWhiteSpace(Model.GodownKeysPdfFileName)"
+                                       Disabled="@IsDisabled"
+                                       FilesChanged="@(file => UploadGodownKeysPdf(file))">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Upload PDF
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+
+                    </MudStack>
+
+                    <!-- Uploaded PDF Indicator -->
+                    @if (!string.IsNullOrWhiteSpace(Model.GodownKeysPdfFileName))
+                    {
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Outlined"
+                                 StartIcon="@Icons.Material.Filled.CheckCircle">
+                            @Model.GodownKeysPdfFileName
+                        </MudChip>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="DownloadGodownKeysPdf">
+                            Download Uploaded PDF
+                        </MudButton>
+                    }
+
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+        <!-- ================= SECTION 10(a) : GOLD VERIFICATION ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#fff8e1,#fffdf5);
+                     border-left:6px solid #ffb300;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Warning" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        10(a). Gold Bag Verification
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudSwitch Color="Color.Warning"
+                           Label="Gold bag count tallies with register"
+                           @bind-Value="Model.GoldBagCountMatches" />
+            </MudPaper>
+
+        </MudPaper>
+
+        <!-- ================= SECTION 10(b) : GOLD DISCREPANCIES (PDF) ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <!-- Header -->
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#fce4ec,#fff5f8);
+                     border-left:6px solid #c2185b;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Warning"
+                             Color="Color.Error" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        10(b). Gold Discrepancies (If Any)
+                    </MudText>
+                </MudStack>
+
+                <MudText Typo="Typo.caption" Class="mt-1 ml-7">
+                    Upload consolidated details of gold discrepancies observed during verification
+                </MudText>
+            </MudPaper>
+
+            <!-- Body -->
+            <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+
+                    <MudStack Direction="Row"
+                              AlignItems="AlignItems.Center"
+                              Spacing="3"
+                              Wrap="Wrap.Wrap">
+
+                        <MudLink Href="Templates/Gold_Discrepancies_template.pdf"
+                                 Target="_blank"
+                                 Underline="Underline.Hover"
+                                 StartIcon="@Icons.Material.Filled.PictureAsPdf">
+                            Download Template
+                        </MudLink>
+
+                        <MudFileUpload T="IBrowserFile"
+                                       Accept=".pdf"
+                                       MaxFiles="1"
+                                       MaxFileSize="5242880"
+                                       Disabled="@IsDisabled"
+                                       Required="string.IsNullOrWhiteSpace(Model.GoldDiscrepanciesPdfFileName)"
+                                       FilesChanged="@(file => UploadGoldDiscrepanciesPdf(file))">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Upload PDF
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+
+                    </MudStack>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.GoldDiscrepanciesPdfFileName))
+                    {
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Outlined"
+                                 StartIcon="@Icons.Material.Filled.CheckCircle">
+                            @Model.GoldDiscrepanciesPdfFileName
+                        </MudChip>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="DownloadGoldDiscrepanciesPdf">
+                            Download Uploaded PDF
+                        </MudButton>
+                    }
+
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+
+        <!-- ================= SECTION 11 : LOCKER KEYS ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#e1f5fe,#f7fcff);
+                     border-left:6px solid #0288d1;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Key" Color="Color.Info" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        11. Locker Custodian Keys Verification
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudSwitch Color="Color.Info"
+                           Label="Locker custodian & vacant locker keys are properly held"
+                           @bind-Value="Model.LockerKeysProperlyHeld" />
+            </MudPaper>
+
+        </MudPaper>
+        <!-- ================= SECTION 12 : GUN LICENSE ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#ede7f6,#f9f7ff);
+                     border-left:6px solid #5e35b1;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Security" Color="Color.Secondary" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        12. Gun License & Ammunition Verification
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudSwitch Color="Color.Secondary"
+                           Label="Gun license and ammunition stock verified"
+                           @bind-Value="Model.GunLicenseVerified" />
+
+                <MudTextField Dense Variant="Variant.Outlined"
+                              Lines="2"
+                              Class="mt-3"
+                              Required="true"
+                              Placeholder="Discrepancies observed (if any)"
+                              @bind-Value="Model.GunDiscrepancies"
+                              Validation="@((string? value) =>
+    string.IsNullOrWhiteSpace(value)
+        ? "This field is required"
+        : value.Length < 5
+            ? "Minimum 5 characters required"
+            : null)" />
+            </MudPaper>
+
+        </MudPaper>
+
+        <!-- ================= SECTION 13 : CASH VERIFICATION ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#e8f5e9,#f9fff9);
+                     border-left:6px solid #388e3c;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Payments" Color="Color.Success" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        13. Cash Verification
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudSwitch Color="Color.Success"
+                           Label="Cash in hand tallies with Double Lock Register"
+                           @bind-Value="Model.CashTalliesWithRegister" />
+            </MudPaper>
+
+        </MudPaper>
+        <!-- ================= SECTION 14 : PERMANENT FILE ================= -->
+
+        <MudPaper Elevation="3" Class="mb-6 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#f3f6fb,#f9fbff);
+                     border-left:6px solid #3949ab;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Color="Color.Primary" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        14. Availability of Permanent File
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-4">
+                <MudSwitch Color="Color.Primary"
+                           Label="Permanent file is available and duly updated"
+                           @bind-Value="Model.PermanentFileUpdated" />
+            </MudPaper>
+
+        </MudPaper>
+        <!-- ================= SECTION 15 : OTHER MATTERS & DECLARATION ================= -->
+
+        <MudPaper Elevation="4" Class="mt-8 mb-10 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#fff8e1,#fffdf5);
+                     border-left:6px solid #ffb300;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Color="Color.Warning" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        15. Any Other Matter & Declaration
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-5">
+                <MudTextField Dense Variant="Variant.Outlined"
+                              Lines="4"
+                              Placeholder="Any other matter not covered above"
+                              @bind-Value="Model.OtherMatters" Required="true"
+                              Validation="@((string? value) =>
+    string.IsNullOrWhiteSpace(value)
+        ? "This field is required"
+        : value.Length < 5
+            ? "Minimum 5 characters required"
+            : null)" />
+
+            </MudPaper>
+
+        </MudPaper>
+
+
+        <MudPaper Elevation="4" Class="mt-8 mb-10 rounded-lg overflow-hidden">
+
+            <MudPaper Class="pa-3"
+                      Style="background:linear-gradient(90deg,#fff8e1,#fffdf5);
+                     border-left:6px solid #ffb300;">
+                <MudStack Direction="Row" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Gavel" Color="Color.Warning" />
+                    <MudText Typo="Typo.h6" Class="fw-bold">
+                        Declaration & Signature
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            <MudPaper Class="pa-5">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    I hereby confirm that I have received the Charge Handing Over Report
+                    from the outgoing Branch Head / Officer.
+                </MudAlert>
+
+                <MudGrid Spacing="3" Class="mt-4">
+                    <MudItem xs="12" md="6">
+                        <MudDatePicker Dense Variant="Variant.Outlined"
+                                       Label="Date"
+                                       @bind-Date="Model.DeclarationDate" Required="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Dense Variant="Variant.Outlined"
+                                      Label="Signature of Incoming Officer"
+                                      @bind-Value="Model.IncomingOfficerSignature" ReadOnly="true" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-4" />
+                <MudText>CC: Outgoing Branch Head / Officer<br />FGMO / RO</MudText>
+            </MudPaper>
+
+        </MudPaper>
+
+    </fieldset>
+
+</MudPaper>
+
+@code {
+    [Parameter]
+    public ChargePartBViewModel Model { get; set; } = new();
+    [Parameter] public bool IsDisabled { get; set; } = false;
+
+    private async Task UploadGoldDiscrepanciesPdf(IBrowserFile file)
+    {
+        if (file == null || file.Size > 5 * 1024 * 1024)
+            return;
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+
+        Model.GoldDiscrepanciesPdfFileName = file.Name;
+        Model.GoldDiscrepanciesPdfContentType = file.ContentType;
+        Model.GoldDiscrepanciesPdfData = ms.ToArray();
+    }
+
+    private async Task DownloadGoldDiscrepanciesPdf()
+    {
+        if (Model.GoldDiscrepanciesPdfData == null)
+            return;
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            Model.GoldDiscrepanciesPdfFileName ?? "Gold_Discrepancies.pdf",
+            Model.GoldDiscrepanciesPdfContentType ?? "application/pdf",
+            Convert.ToBase64String(Model.GoldDiscrepanciesPdfData)
+        );
+    }
+
+    private async Task UploadGodownKeysPdf(IBrowserFile file)
+    {
+        if (file == null || file.Size > 5 * 1024 * 1024)
+            return;
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+
+        Model.GodownKeysPdfFileName = file.Name;
+        Model.GodownKeysPdfContentType = file.ContentType;
+        Model.GodownKeysPdfData = ms.ToArray();
+    }
+
+    private async Task DownloadGodownKeysPdf()
+    {
+        if (Model.GodownKeysPdfData == null)
+            return;
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            Model.GodownKeysPdfFileName ?? "Godown_Keys_Verification.pdf",
+            Model.GodownKeysPdfContentType ?? "application/pdf",
+            Convert.ToBase64String(Model.GodownKeysPdfData)
+        );
+    }
+
+    private async Task UploadSundryBalancesPdf(IBrowserFile file)
+    {
+        if (file == null || file.Size > 5 * 1024 * 1024)
+            return;
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+
+        Model.SundryBalancesPdfFileName = file.Name;
+        Model.SundryBalancesPdfContentType = file.ContentType;
+        Model.SundryBalancesPdfData = ms.ToArray();
+    }
+
+    private async Task DownloadSundryBalancesPdf()
+    {
+        if (Model.SundryBalancesPdfData == null)
+            return;
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            Model.SundryBalancesPdfFileName ?? "Sundry_Balances.pdf",
+            Model.SundryBalancesPdfContentType ?? "application/pdf",
+            Convert.ToBase64String(Model.SundryBalancesPdfData)
+        );
+    }
+
+    private async Task UploadCapitalAssetsPdf(IBrowserFile file)
+    {
+        if (file == null || file.Size > 5 * 1024 * 1024)
+            return;
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+
+        Model.CapitalAssetsPdfFileName = file.Name;
+        Model.CapitalAssetsPdfContentType = file.ContentType;
+        Model.CapitalAssetsPdfData = ms.ToArray();
+    }
+
+    private async Task DownloadCapitalAssetsPdf()
+    {
+        if (Model.CapitalAssetsPdfData == null)
+            return;
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            Model.CapitalAssetsPdfFileName ?? "Capital_Assets.pdf",
+            Model.CapitalAssetsPdfContentType ?? "application/pdf",
+            Convert.ToBase64String(Model.CapitalAssetsPdfData)
+        );
+    }
+
+    private async Task UploadTimeBarredAccountsPdf(IBrowserFile file)
+    {
+        if (file == null || file.Size > 5 * 1024 * 1024)
+            return;
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+
+        Model.TimeBarredAccountsPdfFileName = file.Name;
+        Model.TimeBarredAccountsPdfContentType = file.ContentType;
+        Model.TimeBarredAccountsPdfData = ms.ToArray();
+    }
+
+    private async Task DownloadTimeBarredAccountsPdf()
+    {
+        if (Model.TimeBarredAccountsPdfData == null)
+            return;
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            Model.TimeBarredAccountsPdfFileName ?? "Time_Barred_Accounts.pdf",
+            Model.TimeBarredAccountsPdfContentType ?? "application/pdf",
+            Convert.ToBase64String(Model.TimeBarredAccountsPdfData)
+        );
+    }
+
+    private async Task UploadConsumerCasesPdf(IBrowserFile file)
+    {
+        if (file == null || file.Size > 5 * 1024 * 1024)
+            return;
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+
+        Model.ConsumerCasesPdfFileName = file.Name;
+        Model.ConsumerCasesPdfContentType = file.ContentType;
+        Model.ConsumerCasesPdfData = ms.ToArray();
+    }
+
+    private async Task DownloadConsumerCasesPdf()
+    {
+        if (Model.ConsumerCasesPdfData == null)
+            return;
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            Model.ConsumerCasesPdfFileName ?? "Consumer_Cases.pdf",
+            Model.ConsumerCasesPdfContentType ?? "application/pdf",
+            Convert.ToBase64String(Model.ConsumerCasesPdfData)
+        );
+    }
+
+    private async Task UploadCustomerComplaintsPdf(IBrowserFile file)
+    {
+        if (file == null || file.Size > 5 * 1024 * 1024)
+            return;
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+
+        Model.CustomerComplaintsPdfFileName = file.Name;
+        Model.CustomerComplaintsPdfContentType = file.ContentType;
+        Model.CustomerComplaintsPdfData = ms.ToArray();
+    }
+
+    private async Task DownloadCustomerComplaintsPdf()
+    {
+        if (Model.CustomerComplaintsPdfData == null)
+            return;
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            Model.CustomerComplaintsPdfFileName ?? "Customer_Complaints.pdf",
+            Model.CustomerComplaintsPdfContentType ?? "application/pdf",
+            Convert.ToBase64String(Model.CustomerComplaintsPdfData)
+        );
+    }
+
+    private async Task FetchFirstKeyHolderNamePartB()
+    {
+        Model.FirstKeyHolderName = null;
+
+        if (string.IsNullOrWhiteSpace(Model.FirstKeyHolder))
+            return;
+
+        var name = await ChargeReportService
+            .GetStaffNameByEmplIdAsync(Model.FirstKeyHolder.Trim());
+
+        Model.FirstKeyHolderName = name;
+    }
+
+    private async Task FetchSecondKeyHolderNamePartB()
+    {
+        Model.SecondKeyHolderName = null;
+
+        if (string.IsNullOrWhiteSpace(Model.SecondKeyHolder))
+            return;
+
+        var name = await ChargeReportService
+            .GetStaffNameByEmplIdAsync(Model.SecondKeyHolder.Trim());
+
+        Model.SecondKeyHolderName = name;
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            // ✅ Incoming Officer Name
+            Model.OfficerName =
+                user.FindFirst("employee_name")?.Value
+                ?? user.FindFirst(ClaimTypes.Name)?.Value
+                ?? "";
+
+            // ✅ Employee No = PF Number
+            Model.EmployeeNo =
+                user.FindFirst("emplid")?.Value
+                ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? "";
+
+            // ✅ Designation
+            Model.Designation =
+                user.FindFirst("employee_designation")?.Value
+                ?? "";
+
+            Model.BranchName =
+    user.FindFirst("branch_name")?.Value ?? "";
+
+            Model.RegionName =
+                user.FindFirst("region_name")?.Value ?? "";
+
+            Model.ZoneName =
+                user.FindFirst("zone_name")?.Value ?? "";
+        }
+
+        // ✅ EXISTING INITIALIZATION (keep this)
+        Model.Documents = new()
+    {
+        new() { DocumentName = "Book of RBI office’s specimen signature" },
+        new() { DocumentName = "Lease deed – Branch Premises" },
+        new() { DocumentName = "Lease deed – ATM (offsite) Premises" },
+        new() { DocumentName = "Power of Attorney of all officers working in the branch" },
+        new() { DocumentName = "Property Records in the name of the Bank" }
+    };
+
+        Model.CustomerComplaints = new();
+        Model.ConsumerCases = new();
+        Model.TimeBarredAccounts = new();
+        Model.CapitalAssets = new();
+        Model.SundryBalances = new();
+        Model.GodownKeysVerification = new();
+        Model.GoldDiscrepancies = new();
+        Model.RandomJLDiscrepancies = new();
+    }
+
+    protected override void OnInitialized()
+    {
+        // ✅ SECTION 1 – Documents
+        Model.Documents = new()
+        {
+            new() { DocumentName = "Book of RBI office’s specimen signature" },
+            new() { DocumentName = "Lease deed – Branch Premises" },
+            new() { DocumentName = "Lease deed – ATM (offsite) Premises" },
+            new() { DocumentName = "Power of Attorney of all officers working in the branch" },
+            new() { DocumentName = "Property Records in the name of the Bank" }
+        };
+
+
+        // ✅ SECTION 3–15 – ALL LISTS MUST BE INITIALIZED ON **Model**
+        Model.CustomerComplaints = new();
+        Model.ConsumerCases = new();
+        Model.TimeBarredAccounts = new();
+        Model.CapitalAssets = new();
+        Model.SundryBalances = new();
+        Model.GodownKeysVerification = new();
+        Model.GoldDiscrepancies = new();
+        Model.RandomJLDiscrepancies = new();
+    }
+
+
+    void AddCustomerComplaint()
+    {
+        Model.CustomerComplaints.Add(new PartBComplaintVm());
+    }
+    void AddConsumerCase()
+    {
+        Model.ConsumerCases.Add(new PartBComplaintVm());
+    }
+    void AddTimeBarredAccount()
+    {
+        Model.TimeBarredAccounts.Add(new PartBAccountVm());
+    }
+    void AddCapitalAsset()
+    {
+        Model.CapitalAssets.Add(new PartBCapitalAssetVm());
+    }
+    void AddSundryBalance()
+    {
+        Model.SundryBalances.Add(new PartBSundryVm());
+    }
+    void AddGodownKey()
+    {
+        Model.GodownKeysVerification.Add(new PartBAccountVm());
+    }
+    void AddGoldDiscrepancy()
+    {
+        Model.GoldDiscrepancies.Add(new PartBAccountVm());
+    }
+    void AddRandomJL()
+    {
+        Model.RandomJLDiscrepancies.Add(new PartBAccountVm());
+    }
+}

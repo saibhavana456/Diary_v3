@@ -1,0 +1,400 @@
+﻿@page "/reports/ATMWorkingDashboard"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Authorization
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<style>
+    .filters-wrap {
+        background: #fff;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+
+    .note {
+        font-weight: bold;
+        font-style: italic;
+        color: #666;
+    }
+</style>
+
+<MudPaper Class="pa-4">
+
+    <!-- Breadcrumb -->
+    @*    <div class="d-flex justify-center my-2">
+    <MudText Typo="Typo.subtitle2">
+    <u><b>You are here : <span style="color:#284e98">ATM Visit Report - MIS</span></b></u>
+    </MudText>
+    </div> *@
+
+    @if (!_dateConfirmed)
+    {
+        <!-- INITIAL VIEW: From/To + GO -->
+        <MudForm @ref="_dateForm">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="filters-wrap">
+                <MudText Typo="Typo.body1" Class="fw-bold">Select From Date (MM/DD/YYYY)</MudText>
+
+                <MudDatePicker @bind-Date="_fromDate"
+                               Label="From Date"
+                               DateFormat="MM/dd/yyyy"
+                               OpenTo="OpenTo.Month"
+                               Required="true"
+                               RequiredError="From Date is Mandatory"
+                               Style="width:320px;" />
+
+                <MudText Typo="Typo.body1" Class="fw-bold">Select To Date (MM/DD/YYYY)</MudText>
+
+                <MudDatePicker @bind-Date="_toDate"
+                               Label="To Date"
+                               DateFormat="MM/dd/yyyy"
+                               OpenTo="OpenTo.Month"
+                               Required="true"
+                               RequiredError="To Date is Mandatory"
+                               Style="width:320px;" />
+
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="text-white"
+                           Style="background:#000066"
+                           OnClick="OnGoAsync">
+                    GO
+                </MudButton>
+            </MudStack>
+        </MudForm>
+    }
+    else
+    {
+        <!-- AFTER GO: keep dates visible for quick changes -->
+        <MudForm @ref="_dateForm">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="filters-wrap">
+                <MudText Typo="Typo.body1" Class="fw-bold">Select From Date (MM/DD/YYYY)</MudText>
+
+                <MudDatePicker @bind-Date="_fromDate"
+                               Label="From Date"
+                               DateFormat="MM/dd/yyyy"
+                               OpenTo="OpenTo.Month"
+                               Required="true"
+                               RequiredError="From Date is Mandatory"
+                               Class="me-4"
+                               Style="width:320px" />
+
+                <MudText Typo="Typo.body1" Class="fw-bold">Select To Date (MM/DD/YYYY)</MudText>
+
+                <MudDatePicker @bind-Date="_toDate"
+                               Label="To Date"
+                               DateFormat="MM/dd/yyyy"
+                               OpenTo="OpenTo.Month"
+                               Required="true"
+                               RequiredError="To Date is Mandatory"
+                               Class="me-4"
+                               Style="width:320px" />
+
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="text-white"
+                           Style="background:#000066"
+                           OnClick="OnGoAsync">
+                    GO
+                </MudButton>
+            </MudStack>
+        </MudForm>
+
+@*         <div class="px-4 d-flex justify-end">
+            <MudText Typo="Typo.caption" Class="note">@_asOnRangeLabel</MudText>
+        </div> *@
+
+        <!-- MIS Grid in DynamicDashboard (it will show Zone/Region/Branch filters & Export) -->
+        <DynamicDashboard Config="_misConfig"
+                          Data="_misData"
+                          IsLoading="_loading"
+                          AsOnDateLabel="@_asOnRangeLabel"
+                          SelectedZone="@_selectedZone"
+                          SelectedRegion="@_selectedRegion"
+                          SelectedBranch="@_selectedBranch"
+                          OnFilterChanged="HandleFilterChanged"
+                          OnExportRequested="HandleExport" />
+
+        @if (_noData)
+        {
+            <MudText Color="Color.Error" Align="Align.Center" Class="mt-2">No records found!!!</MudText>
+        }
+    }
+</MudPaper>
+
+@code {
+    // ------------------- Dates -------------------
+    private MudForm? _dateForm;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private bool _dateConfirmed = false;
+
+    // ------------------- Dashboard Filters (from DynamicDashboard) -------------------
+    private string _selectedZone = "1";    // "1" => All(Summary), "all" => All(…wise)
+    private string _selectedRegion = "1";
+    private string _selectedBranch = "1";
+
+    // ------------------- Privilege placeholders (wire from claims/session) -------------------
+    // MIS uses CODE-based params; claims should provide zone_code/region_code/branch_code
+    private string _userPrivilege = "BRANCH";      // "CO","ZONE","REGION","BRANCH"
+    private string _userZoneCode = "00000";
+    private string _userRegionCode = "00000";
+    private string _userBranchCode = "00000";
+
+    // ------------------- Internal: resolved codes for SP (map solids/SOL_ID from dashboard to codes used by MIS SP) -------------------
+    private string? _resolvedZoneCode;    // from zone_solid -> zone_code
+    private string? _resolvedRegionCode;  // from region_solid -> region_code
+    private string? _resolvedBranchCode;  // from SOL_ID -> branch_code
+
+    // ------------------- UI/State -------------------
+    private bool _loading = false;
+    private bool _noData = false;
+    private string _asOnRangeLabel = "";
+
+    // ------------------- MIS Data & Columns (gvBranchDetails in ASPX) -------------------
+    private readonly ReportConfig _misConfig = new()
+        {
+            Title = "ATM Visit Report - MIS",
+            Columns = new()
+        {
+            new ColumnConfig { Header = "Report Date",       PropertyName = "MandatoryReportDate", IsDate = true, Width = "10%", Format = "dd/MM/yyyy" },
+            new ColumnConfig { Header = "Zone",              PropertyName = "ZO_Name",             Width = "14%" },
+            new ColumnConfig { Header = "Region",            PropertyName = "RO_Name",             Width = "14%" },
+            new ColumnConfig { Header = "Branch",            PropertyName = "Br_Name",             Width = "18%" },
+            new ColumnConfig { Header = "Branch SOL",        PropertyName = "SolID",               Width = "8%"  },
+            new ColumnConfig { Header = "ATM ID",            PropertyName = "ATMID",               Width = "8%"  },
+            new ColumnConfig { Header = "ATM Cleanliness",   PropertyName = "Q1",                  Width = "9%"  },
+            new ColumnConfig { Header = "ATM Working",       PropertyName = "Q2",                  Width = "9%"  },
+            new ColumnConfig { Header = "External Device Check", PropertyName = "Q3",             Width = "10%" },
+            new ColumnConfig { Header = "Air Conditioner(AC) Status", PropertyName = "Q4",        Width = "12%" },
+            new ColumnConfig { Header = "Camera Status",     PropertyName = "Q5",                  Width = "9%"  },
+        }
+        };
+
+    private List<Dictionary<string, object>> _misData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load user privilege from claims
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "BRANCH";
+            _userZoneCode = user.FindFirst("zone_code")?.Value ?? "00000";
+            _userRegionCode = user.FindFirst("region_code")?.Value ?? "00000";
+            _userBranchCode = user.FindFirst("branch_code")?.Value ?? "00000";
+        }
+    }
+
+    // ------------------- Date Submit -------------------
+    private async Task OnGoAsync()
+    {
+        // Validate dates
+        if (_fromDate is null || _toDate is null)
+        {
+            await _dateForm!.Validate();
+            return;
+        }
+        if (_fromDate.Value.Date > _toDate.Value.Date)
+        {
+            await JS.InvokeVoidAsync("alert", "From Date cannot be greater than To Date!");
+            return;
+        }
+        if ((_toDate.Value.Date - _fromDate.Value.Date).TotalDays > 31)
+        {
+            await JS.InvokeVoidAsync("alert", "The difference between from date and to date cannot be greater than 31 days!");
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+
+        _dateConfirmed = true;
+        _asOnRangeLabel = $"Report Period - {_fromDate.Value:MM-dd-yyyy} to {_toDate.Value:MM-dd-yyyy}";
+        await LoadMISAsync();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    // ------------------- Dashboard Callbacks -------------------
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+
+        _loading = true;
+        StateHasChanged();
+
+        await LoadMISAsync();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        if (_misData.Count == 0) return;
+
+        var bytes = ReportService.ExportToExcel(_misData, _misConfig.Columns, "ATM_MIS");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "ATM_Visit_MIS.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    // ------------------- Data Load -------------------
+    private async Task LoadMISAsync()
+    {
+        if (_fromDate is null || _toDate is null) return;
+
+        // Map solids/SOL_ID from dashboard → code values required by MIS SP
+        await ResolveCodesForMISAsync();
+
+        var (userType, zo, ro, br) = BuildMISParams();
+
+        var resSets = await ReportService.ExecuteStoredProcedureMultiAsync(
+            "usp_getATMDailyReport",
+            new Dictionary<string, object>
+                {
+                    ["@User_Type"] = userType,
+                    ["@Selected_ZO"] = zo,
+                    ["@Selected_RO"] = ro,
+                    ["@Selected_BR"] = br,
+                    ["@From_Date"] = _fromDate.Value.ToString("MM-dd-yyyy"),
+                    ["@To_Date"] = _toDate.Value.ToString("MM-dd-yyyy")
+                });
+
+        // MIS returns a single table in ASPX; take [0]
+        _misData = resSets.Count > 0 ? resSets[0] : new();
+        _noData = _misData.Count == 0;
+    }
+
+    /// <summary>
+    /// Resolve the dashboard selections (zone_solid / region_solid / SOL_ID) to
+    /// the MIS SP's expected values (zone_code / region_code / branch_code).
+    /// Skips resolution for "1", "all" tokens.
+    /// </summary>
+    private async Task ResolveCodesForMISAsync()
+    {
+        _resolvedZoneCode = null;
+        _resolvedRegionCode = null;
+        _resolvedBranchCode = null;
+
+        if (!string.IsNullOrWhiteSpace(_selectedZone)
+            && _selectedZone != "1" && !_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = await ReportService.GetLookupDataAsync("zone_master", "*", $"zone_solid='{_selectedZone}'", "zone_name_eng");
+            _resolvedZoneCode = rows.FirstOrDefault()?.TryGetValue("zone_code", out var zc) == true ? zc?.ToString() : null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedRegion)
+            && _selectedRegion != "1" && !_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = await ReportService.GetLookupDataAsync("region_master", "*", $"region_solid='{_selectedRegion}'", "region_name");
+            _resolvedRegionCode = rows.FirstOrDefault()?.TryGetValue("region_code", out var rc) == true ? rc?.ToString() : null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedBranch)
+            && _selectedBranch != "1" && !_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = await ReportService.GetLookupDataAsync("branch_master", "*", $"SOL_ID='{_selectedBranch}'", "BRANCH_NAME");
+            _resolvedBranchCode = rows.FirstOrDefault()?.TryGetValue("branch_code", out var bc) == true ? bc?.ToString() : null;
+        }
+    }
+
+    // ------------------- EXACT ASPX token logic, adapted for MIS -------------------
+    private (string userType, string zo, string ro, string br) BuildMISParams()
+    {
+        // Privilege → SP user type
+        string userType = _userPrivilege switch
+        {
+            "CO" => "CO",
+            "ZONE" => "ZO",
+            "REGION" => "RO",
+            "BRANCH" => "BR",
+            _ => "CO"
+        };
+
+        // Values to send to SP:
+        //  - "0"   : total-at-next-level
+        //  - "ALL" : expand-all of that level
+        //  - ""    : not applicable
+        //  - codes : zone_code / region_code / branch_code
+        string zo = string.Empty, ro = string.Empty, br = string.Empty;
+
+        // Helper flags
+        bool IsAllSummary(string v) => string.Equals(v, "1", StringComparison.OrdinalIgnoreCase);
+        bool IsAllWise(string v) => string.Equals(v, "all", StringComparison.OrdinalIgnoreCase);
+
+        if (userType == "CO")
+        {
+            // If the dashboard hasn't been interacted with yet, treat as All(Summary)
+            if (string.IsNullOrEmpty(_selectedZone) || IsAllSummary(_selectedZone))
+                return (userType, "0", "", "");
+
+            if (IsAllWise(_selectedZone))
+            {
+                if (IsAllSummary(_selectedRegion)) return (userType, "ALL", "0", "");
+                if (IsAllWise(_selectedRegion))
+                {
+                    if (IsAllSummary(_selectedBranch)) return (userType, "ALL", "ALL", "0");
+                    if (IsAllWise(_selectedBranch)) return (userType, "ALL", "ALL", "ALL");
+                    return (userType, "ALL", "ALL", _resolvedBranchCode ?? "");
+                }
+                // specific region under ALL zones
+                if (IsAllSummary(_selectedBranch)) return (userType, "ALL", _resolvedRegionCode ?? "", "0");
+                if (IsAllWise(_selectedBranch)) return (userType, "ALL", _resolvedRegionCode ?? "", "ALL");
+                return (userType, "ALL", _resolvedRegionCode ?? "", _resolvedBranchCode ?? "");
+            }
+
+            // specific zone
+            zo = _resolvedZoneCode ?? "";
+            if (IsAllSummary(_selectedRegion)) return (userType, zo, "0", "");
+            if (IsAllWise(_selectedRegion))
+            {
+                if (IsAllSummary(_selectedBranch)) return (userType, zo, "ALL", "0");
+                if (IsAllWise(_selectedBranch)) return (userType, zo, "ALL", "ALL");
+                return (userType, zo, "ALL", _resolvedBranchCode ?? "");
+            }
+
+            if (IsAllSummary(_selectedBranch)) return (userType, zo, _resolvedRegionCode ?? "", "0");
+            if (IsAllWise(_selectedBranch)) return (userType, zo, _resolvedRegionCode ?? "", "ALL");
+            return (userType, zo, _resolvedRegionCode ?? "", _resolvedBranchCode ?? "");
+        }
+        else if (userType == "ZO")
+        {
+            zo = _userZoneCode;
+            if (IsAllSummary(_selectedRegion)) return (userType, zo, "0", "");
+            if (IsAllWise(_selectedRegion))
+            {
+                if (IsAllSummary(_selectedBranch)) return (userType, zo, "ALL", "0");
+                if (IsAllWise(_selectedBranch)) return (userType, zo, "ALL", "ALL");
+                return (userType, zo, "ALL", _resolvedBranchCode ?? "");
+            }
+            if (IsAllSummary(_selectedBranch)) return (userType, zo, _resolvedRegionCode ?? "", "0");
+            if (IsAllWise(_selectedBranch)) return (userType, zo, _resolvedRegionCode ?? "", "ALL");
+            return (userType, zo, _resolvedRegionCode ?? "", _resolvedBranchCode ?? "");
+        }
+        else if (userType == "RO")
+        {
+            ro = _userRegionCode;
+            if (IsAllSummary(_selectedBranch)) return (userType, "", ro, "0");
+            if (IsAllWise(_selectedBranch)) return (userType, "", ro, "ALL");
+            return (userType, "", ro, _resolvedBranchCode ?? "");
+        }
+        else // BRANCH
+        {
+            br = _userBranchCode;
+            return (userType, "", "", br);
+        }
+    }
+}

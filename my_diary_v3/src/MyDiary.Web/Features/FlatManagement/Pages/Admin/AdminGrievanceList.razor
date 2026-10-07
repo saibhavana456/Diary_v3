@@ -1,0 +1,172 @@
+@page "/flatmgmt/admin/grievances"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminGrievanceService GrievanceService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Service Request Management - Flat Management System</PageTitle>
+
+<div class="agl-page">
+    <PageHeader Title="All Service Requests" Crumbs="_crumbs" PageKey="flatmgmt-admin-admin-grievance-list" />
+
+    <MudCard Class="agl-card mt-4" Elevation="2">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" @bind-Value="selectedLocation" Label="Location" Variant="Variant.Outlined"
+                               @bind-Value:after="HandleLocationChanged">
+                        <MudSelectItem Value="@("")">-- All --</MudSelectItem>
+                        @foreach (var loc in locations)
+                        {
+                            <MudSelectItem Value="@loc">@loc</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" @bind-Value="selectedFlatType" Label="Flat Type" Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("")">-- All --</MudSelectItem>
+                        @foreach (var type in flatTypes)
+                        {
+                            <MudSelectItem Value="@type">@type</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="empPf" Label="Employee PF" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="flatNo" Label="Flat No" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+
+            <div class="agl-actions">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="HandleView" Disabled="@isLoading">
+                    View
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Class="ml-2" OnClick="HandleReset" Disabled="@isLoading">
+                    Reset
+                </MudButton>
+            </div>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Class="agl-card mt-4" Elevation="2">
+        <MudCardContent Class="pa-0">
+            <MudTable @ref="table" ServerData="@ServerReload" Hover="true" Bordered="true" Dense="true" Class="agl-table"
+                      Loading="@isLoading" RowsPerPage="15">
+                <HeaderContent>
+                    <MudTh>S.No.</MudTh>
+                    <MudTh>Reference No.</MudTh>
+                    <MudTh>Flat Id</MudTh>
+                    <MudTh>Flat No.</MudTh>
+                    <MudTh>Location</MudTh>
+                    <MudTh>Category</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Status On</MudTh>
+                    <MudTh>Status By</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="row">
+                    <MudTd DataLabel="S.No.">@(pageStartIndex + rows.IndexOf(row) + 1)</MudTd>
+                    <MudTd DataLabel="Reference No.">
+                        <MudLink Href="@($"flatmgmt/admin/grievance-action?ref={row.RefNo}")">@row.RefNo</MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Flat Id">@row.FlatId</MudTd>
+                    <MudTd DataLabel="Flat No.">@row.FlatNo</MudTd>
+                    <MudTd DataLabel="Location">@row.Location</MudTd>
+                    <MudTd DataLabel="Category">@row.Category</MudTd>
+                    <MudTd DataLabel="Status"><MudChip T="string" Color="@StatusColor(row.Status)" Size="Size.Small">@(row.Status ?? "-")</MudChip></MudTd>
+                    <MudTd DataLabel="Status On">@(row.CreatedOn?.ToString("dd-MM-yyyy") ?? "-")</MudTd>
+                    <MudTd DataLabel="Status By">@row.CreatedByDisplay</MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>No Service Requests found.</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new[] { 15, 30, 50 }" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("All Service Requests") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private string pfNo = string.Empty;
+
+    private List<string> locations = new();
+    private List<string> flatTypes = new();
+
+    private string selectedLocation = "";
+    private string selectedFlatType = "";
+    private string empPf = "";
+    private string flatNo = "";
+
+    private bool isLoading = true;
+    private List<AdminGrievanceRow> rows = new();
+    private int pageStartIndex;
+    private MudTable<AdminGrievanceRow> table = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            pfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        var locationsTask = GrievanceService.GetLocationsAsync();
+        var flatTypesTask = GrievanceService.GetFlatTypesAsync(null);
+        await Task.WhenAll(locationsTask, flatTypesTask);
+
+        locations = locationsTask.Result;
+        flatTypes = flatTypesTask.Result;
+    }
+
+    private async Task<TableData<AdminGrievanceRow>> ServerReload(TableState state, CancellationToken ct)
+    {
+        isLoading = true;
+        var result = await GrievanceService.GetGrievancesAsync(
+            pfNo, selectedLocation, selectedFlatType, empPf, flatNo, state.Page, state.PageSize);
+        rows = result.Rows.ToList();
+        pageStartIndex = state.Page * state.PageSize;
+        isLoading = false;
+        return new TableData<AdminGrievanceRow> { TotalItems = result.TotalCount, Items = rows };
+    }
+
+    private async Task HandleLocationChanged()
+    {
+        flatTypes = await GrievanceService.GetFlatTypesAsync(selectedLocation);
+        if (!flatTypes.Contains(selectedFlatType))
+            selectedFlatType = "";
+        await table.ReloadServerData();
+    }
+
+    private async Task HandleView() => await table.ReloadServerData();
+
+    private async Task HandleReset()
+    {
+        selectedLocation = "";
+        selectedFlatType = "";
+        empPf = "";
+        flatNo = "";
+        flatTypes = await GrievanceService.GetFlatTypesAsync(null);
+        await table.ReloadServerData();
+    }
+
+    private static Color StatusColor(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return Color.Default;
+        if (status.Equals("Closed", StringComparison.OrdinalIgnoreCase) || status.Contains("Completed", StringComparison.OrdinalIgnoreCase)) return Color.Success;
+        if (status.Contains("Progress", StringComparison.OrdinalIgnoreCase)) return Color.Warning;
+        if (status.Contains("Raised", StringComparison.OrdinalIgnoreCase) || status.Equals("Open", StringComparison.OrdinalIgnoreCase)) return Color.Info;
+        return Color.Default;
+    }
+}

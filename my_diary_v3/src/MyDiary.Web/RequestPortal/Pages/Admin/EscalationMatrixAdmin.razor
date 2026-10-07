@@ -1,0 +1,427 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/escalation-matrix"
+@using ClosedXML.Excel
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@inject IMasterRepo Masters
+@inject IEscalationMatrixRepo Escalation
+@inject IClassificationMapRepo Classification
+@inject RequestPortal.Core.Abstractions.ICurrentUser Me
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Escalation Matrix — Admin</PageTitle>
+
+<PageHeader PageKey="escalation-matrix-admin" Title="Escalation Matrix — Manage" Crumbs="_crumbs" />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+            You need Request Portal Admin rights to manage the escalation matrix.
+        </MudAlert>
+    </NotAuthorized>
+    <Authorized>
+
+    @* ── Download / Template / Upload toolbar ─────────────────── *@
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <div class="d-flex flex-wrap align-center gap-3">
+            <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadExcel">
+                Download Matrix
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.Description" OnClick="DownloadTemplate">
+                Download Upload Template
+            </MudButton>
+            <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Accept=".xlsx">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Primary"
+                               StartIcon="@Icons.Material.Filled.UploadFile">
+                        Upload Matrix
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+            @if (_uploading) { <MudProgressCircular Indeterminate="true" Size="MudBlazor.Size.Small" /> }
+            <MudSpacer />
+            <MudText Typo="Typo.caption" Class="text-muted">
+                Upload/Download use names (no IDs). Template columns: Activity, Unit, RequestType, Level, PF, IP, GenericMail.
+            </MudText>
+        </div>
+    </MudPaper>
+
+    @* ── Filters (same as the view page) ──────────────────────── *@
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudText Typo="Typo.subtitle1" Class="mb-2 fw-bold">Filters</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect T="long?" Label="Request Type" Value="_requestTypeId" ValueChanged="OnRequestTypeChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                    @foreach (var r in _requestTypes) { <MudSelectItem T="long?" Value="@((long?)r.Id)">@r.Name</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect T="long?" Label="Unit Type" Value="_unitTypeId" ValueChanged="OnUnitTypeChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_unitTypes.Count==0)">
+                    @foreach (var u in _unitTypes) { <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect T="long?" Label="Unit" Value="_unitId" ValueChanged="OnUnitChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_units.Count==0)">
+                    @foreach (var u in _units) { <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect T="long?" Label="Vertical" Value="_verticalId" ValueChanged="OnVerticalChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_verticals.Count==0)">
+                    @foreach (var v in _verticals) { <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect T="long?" Label="Department" Value="_departmentId" ValueChanged="OnDepartmentChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_departments.Count==0)">
+                    @foreach (var d in _departments) { <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.Name</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <MudSelect T="long?" Label="Activity" Value="_activityId" ValueChanged="OnActivityChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_activities.Count==0)">
+                    @foreach (var a in _activities) { <MudSelectItem T="long?" Value="@((long?)a.Id)">@a.Name</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_activityId is not null)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <div class="d-flex align-center mb-3">
+                <MudText Typo="Typo.h6">Mapping — @_activityName</MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="StartAdd">Add / Edit Member</MudButton>
+            </div>
+
+            @if (_rows.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">No mappings yet for this activity.</MudAlert>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto;">
+                    <thead>
+                        <tr><th>Level</th><th>PF</th><th>Name</th><th>Scale</th><th>Role</th><th>Email</th><th>Mobile</th><th>IP</th><th>Generic Mail</th><th>Status</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _rows.OrderBy(x => x.LevelNo))
+                        {
+                            <tr>
+                                <td><b>@r.LevelNo</b></td>
+                                <td>@r.PfNumber</td><td>@r.EmpName</td><td>@r.Scale</td><td>@r.EmpRole</td>
+                                <td>@r.Email</td><td>@r.Mobile</td><td>@r.IpNumber</td><td>@r.GenericMail</td>
+                                <td>@r.IsActive</td>
+                                <td>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="MudBlazor.Size.Small"
+                                                   Color="MudBlazor.Color.Primary" OnClick="@(() => StartEdit(r))" aria-label="Edit" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="MudBlazor.Size.Small"
+                                                   Color="MudBlazor.Color.Error" OnClick="@(() => DeleteRow(r))" aria-label="Delete" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudPaper>
+
+        @if (_editing)
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="3" Style="border-left:4px solid #1b4a98;">
+                <MudText Typo="Typo.subtitle1" Class="fw-bold mb-3">@(_edit.Id==0 ? "Add" : "Edit") Team Member</MudText>
+                <MudGrid>
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="int" Label="Level" @bind-Value="_edit.LevelNo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var l in Enumerable.Range(1, 5)) { <MudSelectItem T="int" Value="@l">L@(l)</MudSelectItem> }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <div class="d-flex align-center gap-2">
+                            <MudTextField @bind-Value="_edit.PfNumber" Label="PF Number" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudButton Variant="Variant.Outlined" OnClick="LookupEmployee" StartIcon="@Icons.Material.Filled.Search">Lookup</MudButton>
+                        </div>
+                    </MudItem>
+                </MudGrid>
+
+                @if (_lookup is not null)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true" Class="my-2">
+                        <b>@_lookup.Name</b> — Scale: @_lookup.Scale · Role: @_lookup.Role · @_lookup.Email · @_lookup.Mobile
+                        <span class="text-muted"> (from employee view)</span>
+                    </MudAlert>
+                }
+                else if (_lookupTried)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="my-2">No employee found for that PF number.</MudAlert>
+                }
+
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_edit.IpNumber" Label="IP Number (entered)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_edit.GenericMail" Label="Generic Mail ID (entered)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+
+                <div class="d-flex gap-2 mt-3">
+                    <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" OnClick="SaveRow"
+                               Disabled="@(_lookup is null)">Save</MudButton>
+                    <MudButton Variant="Variant.Text" OnClick="@(() => { _editing=false; _lookup=null; _lookupTried=false; })">Cancel</MudButton>
+                </div>
+            </MudPaper>
+        }
+    }
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    { new("Admin Portal"), new("Escalation Matrix") };
+
+    private IReadOnlyList<RequestType> _requestTypes = new List<RequestType>();
+    private List<UnitType>             _unitTypes    = new();
+    private List<Unit>                 _units        = new();
+    private List<Vertical>             _verticals    = new();
+    private List<Department>           _departments  = new();
+    private List<Activity>             _activities   = new();
+
+    private long? _requestTypeId, _unitTypeId, _unitId, _verticalId, _departmentId, _activityId;
+    private string? _activityName;
+
+    private List<EscalationMatrixEntry> _rows = new();
+    private bool _uploading;
+
+    private bool _editing;
+    private EscalationMatrixEntry _edit = new();
+    private EmployeeViewRecord? _lookup;
+    private bool _lookupTried;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _requestTypes = await Masters.ListRequestTypesAllAsync();
+            _unitTypes = (await Masters.ListUnitTypesAllAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "EscalationMatrixAdmin: failed to load master data");
+        }
+    }
+
+    private async Task OnRequestTypeChanged(long? v)
+    {
+
+        _requestTypeId = v;
+    }
+    private async Task OnUnitTypeChanged(long? v)
+    {
+
+        _unitTypeId = v; _unitId = null;
+
+        _units = new(); //_entries = new();
+
+        if (v is not null) _units = (await Masters.ListUnitsAllAsync(v)).ToList();
+
+    }
+    private async Task OnUnitChanged(long? v)
+    {
+        _unitId = v;
+
+        _verticals = (await Masters.ListVerticalsAllAsyncRequest(_unitId.ToString())).ToList();
+
+    }
+    private async Task OnVerticalChanged(long? v)
+    {
+        _verticalId = v; _departmentId = null; _activityId = null;
+        _departments = new(); _activities = new(); _rows = new(); _editing = false;
+        if (v is not null) _departments = (await Masters.ListDepartmentsAllAsync(v)).ToList();
+    }
+    private async Task OnDepartmentChanged(long? v)
+    {
+        _departmentId = v; _activityId = null; _activities = new(); _rows = new(); _editing = false;
+        if (v is not null) _activities = (await Masters.ListActivitiesAllAsync(v)).ToList();
+    }
+    private async Task OnActivityChanged(long? v)
+    {
+        _activityId = v; _editing = false;
+        _activityName = _activities.FirstOrDefault(a => a.Id == v)?.Name;
+        await LoadRows();
+    }
+
+    private async Task LoadRows()
+    {
+        if (_activityId is null) { _rows = new(); return; }
+        _rows = (await Escalation.GetByActivityAsync(_activityId.Value, _unitId)).ToList();
+    }
+
+    private void StartAdd()
+    {
+        _edit = new EscalationMatrixEntry
+        {
+            ActivityId = _activityId!.Value, UnitId = _unitId, RequestTypeId = _requestTypeId, LevelNo = 1
+        };
+        _lookup = null; _lookupTried = false; _editing = true;
+    }
+    private async Task StartEdit(EscalationMatrixEntry r)
+    {
+        _edit = new EscalationMatrixEntry
+        {
+            Id = r.Id, RequestTypeId = r.RequestTypeId, ActivityId = r.ActivityId, UnitId = r.UnitId,
+            LevelNo = r.LevelNo, PfNumber = r.PfNumber, IpNumber = r.IpNumber, GenericMail = r.GenericMail
+        };
+        _lookupTried = false;
+        await LookupEmployee();
+        _editing = true;
+    }
+
+    private async Task LookupEmployee()
+    {
+        _lookupTried = true; _lookup = null;
+        if (!string.IsNullOrWhiteSpace(_edit.PfNumber))
+            _lookup = await Escalation.LookupEmployeeAsync(_edit.PfNumber.Trim());
+    }
+
+    private async Task SaveRow()
+    {
+        try
+        {
+            _edit.ActivityId = _activityId!.Value;
+            _edit.UnitId = _unitId;
+            _edit.RequestTypeId ??= _requestTypeId;
+            await Escalation.UpsertAsync(_edit, Me.EmpCode ?? "admin");
+            Snackbar.Add("Mapping saved.", Severity.Success);
+            _editing = false; _lookup = null; _lookupTried = false;
+            await LoadRows();
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "EscalationMatrixAdmin: save failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+
+    private async Task DeleteRow(EscalationMatrixEntry r)
+    {
+        try
+        {
+            await Escalation.DeleteAsync(r.Id, Me.EmpCode ?? "admin");
+            Snackbar.Add("Mapping removed.", Severity.Success);
+            await LoadRows();
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "EscalationMatrixAdmin: delete failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+
+    // ── Excel download (full matrix, names only — no IDs) ───────
+    private async Task DownloadExcel()
+    {
+        var all = await Escalation.GetAllAsync();
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("EscalationMatrix");
+        string[] headers = { "Request Type", "Unit Type", "Unit", "Vertical", "Department", "Activity",
+                             "Level", "PF", "Name", "Scale", "Role", "Email", "Mobile", "IP", "Generic Mail" };
+        for (int i = 0; i < headers.Length; i++) ws.Cell(1, i + 1).Value = headers[i];
+        ws.Row(1).Style.Font.Bold = true;
+        int row = 2;
+        foreach (var e in all)
+        {
+            ws.Cell(row, 1).Value  = e.RequestTypeName;
+            ws.Cell(row, 2).Value  = e.UnitTypeName;
+            ws.Cell(row, 3).Value  = e.UnitName;
+            ws.Cell(row, 4).Value  = e.VerticalName;
+            ws.Cell(row, 5).Value  = e.DepartmentName;
+            ws.Cell(row, 6).Value  = e.ActivityName;
+            ws.Cell(row, 7).Value  = $"L{e.LevelNo}";
+            ws.Cell(row, 8).Value  = e.PfNumber;
+            ws.Cell(row, 9).Value  = e.EmpName;
+            ws.Cell(row, 10).Value = e.Scale;
+            ws.Cell(row, 11).Value = e.EmpRole;
+            ws.Cell(row, 12).Value = e.Email;
+            ws.Cell(row, 13).Value = e.Mobile;
+            ws.Cell(row, 14).Value = e.IpNumber;
+            ws.Cell(row, 15).Value = e.GenericMail;
+            row++;
+        }
+        ws.Columns().AdjustToContents();
+        await SaveWorkbook(wb, $"EscalationMatrix_{AppTime.Now:yyyyMMdd}.xlsx");
+    }
+
+    // ── Upload template (no IDs) ────────────────────────────────
+    private async Task DownloadTemplate()
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Template");
+        string[] headers = { "Activity", "Unit", "RequestType", "Level", "PF", "IP", "GenericMail" };
+        for (int i = 0; i < headers.Length; i++) ws.Cell(1, i + 1).Value = headers[i];
+        ws.Row(1).Style.Font.Bold = true;
+        // Example rows (Unit & RequestType optional; use names/codes exactly as in the masters)
+        ws.Cell(2, 1).Value = "KYC Update";        ws.Cell(2, 4).Value = "L1"; ws.Cell(2, 5).Value = "10001"; ws.Cell(2, 6).Value = "10.20.1.11"; ws.Cell(2, 7).Value = "kyc.l1@bank.co.in";
+        ws.Cell(3, 1).Value = "KYC Update";        ws.Cell(3, 4).Value = "L2"; ws.Cell(3, 5).Value = "10002"; ws.Cell(3, 6).Value = "10.20.1.12"; ws.Cell(3, 7).Value = "kyc.l2@bank.co.in";
+        ws.Cell(5, 1).Value = "NOTE: Activity is required (name or code). Unit & RequestType are optional. Level = L1..L5 or 1..5. Name/Scale/Role/Email/Mobile come from the employee view (do not enter).";
+        ws.Row(5).Style.Font.Italic = true; ws.Row(5).Style.Font.FontColor = XLColor.Gray;
+        ws.Columns().AdjustToContents();
+        await SaveWorkbook(wb, "EscalationMatrix_UploadTemplate.xlsx");
+    }
+
+    private async Task SaveWorkbook(XLWorkbook wb, string fileName)
+    {
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        var b64 = Convert.ToBase64String(ms.ToArray());
+        await JS.InvokeVoidAsync("appDownloadFile", fileName, b64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    // ── Excel upload (resolve names → ids) ──────────────────────
+    private async Task OnFileSelected(IBrowserFile file)
+    {
+        if (file is null) return;
+        _uploading = true; StateHasChanged();
+        try
+        {
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(10 * 1024 * 1024).CopyToAsync(ms);
+            ms.Position = 0;
+            using var wb = new XLWorkbook(ms);
+            var ws = wb.Worksheets.First();
+            var rows = new List<EscalationMatrixEntry>();
+            int skipped = 0;
+            foreach (var r in ws.RowsUsed().Skip(1))
+            {
+                var activity = r.Cell(1).GetValue<string>()?.Trim();
+                var level    = r.Cell(4).GetValue<string>();
+                var pf       = r.Cell(5).GetValue<string>()?.Trim();
+                if (string.IsNullOrWhiteSpace(activity) || string.IsNullOrWhiteSpace(pf) || string.IsNullOrWhiteSpace(level))
+                    continue; // blank/notes row
+
+                var actId = await Escalation.ResolveActivityIdAsync(activity);
+                if (actId is null) { skipped++; continue; }
+
+                var unitName = r.Cell(2).GetValue<string>()?.Trim();
+                var rtName   = r.Cell(3).GetValue<string>()?.Trim();
+                var unitId = string.IsNullOrWhiteSpace(unitName) ? (long?)null : await Escalation.ResolveUnitIdAsync(unitName);
+                var rtId   = string.IsNullOrWhiteSpace(rtName)   ? (long?)null : await Escalation.ResolveRequestTypeIdAsync(rtName);
+                var lvlNum = new string(level.Where(char.IsDigit).ToArray());
+                if (!int.TryParse(lvlNum, out var lvl) || lvl < 1 || lvl > 5) { skipped++; continue; }
+
+                rows.Add(new EscalationMatrixEntry
+                {
+                    ActivityId = actId.Value, UnitId = unitId, RequestTypeId = rtId, LevelNo = lvl,
+                    PfNumber = pf, IpNumber = r.Cell(6).GetValue<string>(), GenericMail = r.Cell(7).GetValue<string>()
+                });
+            }
+            var n = await Escalation.BulkImportAsync(rows, Me.EmpCode ?? "admin");
+            Snackbar.Add($"Imported {n} mapping(s)." + (skipped > 0 ? $" Skipped {skipped} unmatched row(s)." : ""),
+                skipped > 0 ? Severity.Warning : Severity.Success);
+            await LoadRows();
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "EscalationMatrixAdmin: upload failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _uploading = false; }
+    }
+}

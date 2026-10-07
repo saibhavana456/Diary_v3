@@ -1,0 +1,401 @@
+@page "/reports/ATRMISReport"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<style>
+    /* Keep it simple: utility widths only */
+    .w-200 {
+        width: 200px;
+    }
+
+    .w-220 {
+        width: 220px;
+    }
+
+    .w-260 {
+        width: 260px;
+    }
+</style>
+
+<MudPaper Class="pa-3">
+
+    <!-- Step 1: show ONLY Date + GO initially -->
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3">
+        <MudItem>
+            <MudText Typo="Typo.subtitle1" Class="mb-1">Select the Report Date (MM/DD/YYYY)</MudText>
+            <MudDatePicker @bind-Date="_reportDate"
+                           DateFormat="MM/dd/yyyy"
+                           Clearable="false"
+                           Style="width:320px;" />
+            @if (!string.IsNullOrWhiteSpace(_dateError))
+            {
+                <MudText Color="Color.Error" Typo="Typo.caption">@_dateError</MudText>
+            }
+        </MudItem>
+
+        <MudItem>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OnGoClicked">GO</MudButton>
+        </MudItem>
+    </MudStack>
+
+    @if (_hasSearched)
+    {
+        <!-- Step 2: AFTER GO, render dashboard + header + export -->
+@*         <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-2">
+            <MudText Typo="Typo.subtitle2" Class="fw-bold">
+                ATR Report - Submitted Details - @_asOnDateLabel
+            </MudText>
+            <MudSpacer />
+             <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="HandleExport">
+        Export To Excel
+        </MudButton>
+        </MudStack> *@
+
+        <!-- Your reusable dashboard with built-in Zone/Region/Branch filters -->
+        <DynamicDashboard Config="_activeConfig"
+                          Data="_data"
+                          IsLoading="_loading"
+                          AsOnDateLabel="@_asOnDateLabel"
+                          SelectedZone="@_selectedZone"
+                          SelectedRegion="@_selectedRegion"
+                          SelectedBranch="@_selectedBranch"
+                          OnFilterChanged="HandleFilterChanged"
+                          OnExportRequested="HandleExport" />
+    }
+
+</MudPaper>
+
+@code {
+    [SupplyParameterFromQuery] public string? Title { get; set; }
+
+    // Visibility: only show dashboard AFTER GO
+    private bool _hasSearched = false;
+
+    // Page state
+    private DateTime? _reportDate = AppTime.Today;
+    private string _dateError = "";
+    private bool _loading = false;
+
+    // Dashboard data/config
+    private List<Dictionary<string, object>> _data = new();
+    private ReportConfig _activeConfig = new();
+    private string _asOnDateLabel = "";
+
+    // Filters (driven by DynamicDashboard)
+    private string _selectedZone = "1";
+    private string _selectedRegion = "1";
+    private string _selectedBranch = "1";
+
+    // User privilege context (replace WebForms Session)
+    private string _userPrivilege = "BRANCH";
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // 34 group titles (we'll embed into flat column headers)
+    private readonly List<string> _exceptionGroups = new()
+    {
+        "Accounts - Drawing Power modified",
+        "Accounts - Sanction limit modified",
+        "Stock statement Due more than 60 days",
+        "LC opened with specific amount breached as per branch category",
+        "BG opened with specific amount breached as per branch category",
+        "Bills lodged more than 2500000",
+        "Inward Remittance more than 2500000",
+        "Outward remittance exceeds as per branch category",
+        "Transaction more than 25000 in IN-OPERATIVE Savings and Current Account",
+        "TDS Deduction in CIFs having NOPAN/NRNPN TDS Table code",
+        "Manual Transaction in Impersonal accounts",
+        "Employee verified transaction belongs to his/her own account",
+        "Value dated manual transaction",
+        "Manual Transaction in Dormant/Inactive Accounts",
+        "Transaction breach in SB/CA/TD account based on branch category",
+        "Transaction breach in CC/OD/LA account based on branch category",
+        "Concession has been given in DD/Clearing Rejection/Stop Payment/Processing charges",
+        "Status is changed from Dormant to Active",
+        "User Lien Lifted",
+        "Transaction above 5000 made using instrument WF & all transactions using instrument LCHQ",
+        "Unfreezing of Account done",
+        "Transaction in DD/TT exceeds as per branch category",
+        "Cash Payment done by Other SOL for your branch customer",
+        "Cash Payment done for Other SOL Accounts by your branch",
+        "Accounts transferred OUT to other SOLs",
+        "Accounts transferred IN from other SOLs",
+        "Account Status is changed to Dormant",
+        "Account Status is changed to Inactive",
+        "Customer Account transaction exceeds as per branch category",
+        "Manual Transaction in Bank accounts '10100','51200','53100'",
+        "Manual transaction in Partition Expenditure Account 84100720",
+        "Manual transaction in INCOME/EXPENDITURE accounts",
+        "Notice generation for Accounts turned IN_ACTIVE as on given date",
+        "Notice generation for Accounts turned DORMANT as on given date"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeConfig.Title = Title ?? "ATR - MIS Report";
+        _activeConfig.Columns = BuildAtrColumns(); // set once
+
+        // Load user privilege from claims
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "BRANCH";
+            _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+            _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+            _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        }
+
+        // Do NOT load data yet; we wait for GO (per your requirement)
+    }
+
+    private async Task OnGoClicked()
+    {
+        _dateError = "";
+        if (_reportDate is null)
+        {
+            _dateError = "Date is mandatory";
+            return;
+        }
+
+        // Reveal dashboard and load first time
+
+        // Keep legacy label & SP date format (MM-dd-yyyy)
+        _asOnDateLabel = $"ATR Report - Submitted Details - {_reportDate.Value.ToString("MM-dd-yyyy")}";
+        _hasSearched = true;
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // MandatoryReportDate in DB compared as MM-dd-yyyy (from your WebForms logic)
+        string rptDateForDb = _reportDate!.Value.ToString("MM-dd-yyyy");
+
+        // Base WHERE
+        var where = new List<string>
+        {
+            "region_solid <> '00000'",
+            "region_solid <> ''",
+            "MandatoryReportDate = @rpt"
+        };
+
+        // SolId projection (to mimic your WebForms RowCreated/DisplayData behavior)
+        string solExpr = "A.SolId";
+
+        // Apply privilege + filter logic (CO/ZONE/REGION/BRANCH)
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1")
+            {
+                // All Summary
+                solExpr = "Zone_SolId";
+            }
+            else if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_selectedRegion == "1")
+                {
+                    solExpr = "Zone_SolId";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1")
+                        solExpr = "region_SolId";
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        solExpr = "C.Sol_Id";
+                    else
+                    {
+                        solExpr = "C.Sol_Id";
+                        where.Add("C.sol_id = @branch");
+                    }
+                }
+                else // specific region
+                {
+                    where.Add("region_solid = @region");
+                    if (_selectedBranch == "1")
+                        solExpr = "region_SolId";
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        solExpr = "C.Sol_Id";
+                    else
+                    {
+                        solExpr = "C.Sol_Id";
+                        where.Add("C.sol_id = @branch");
+                    }
+                }
+            }
+            else // specific zone
+            {
+                where.Add("zone_solid = @zone");
+                if (_selectedRegion == "1")
+                {
+                    solExpr = "Zone_SolId";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1")
+                        solExpr = "region_SolId";
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        solExpr = "C.Sol_Id";
+                    else
+                    {
+                        solExpr = "C.Sol_Id";
+                        where.Add("C.sol_id = @branch");
+                    }
+                }
+                else
+                {
+                    where.Add("region_solid = @region");
+                    if (_selectedBranch == "1")
+                        solExpr = "region_SolId";
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        solExpr = "C.Sol_Id";
+                    else
+                    {
+                        solExpr = "C.Sol_Id";
+                        where.Add("C.sol_id = @branch");
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where.Add("Zone_solid = @userZone");
+            if (_selectedRegion == "1")
+            {
+                solExpr = "A.SolId";
+            }
+            else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_selectedBranch == "1")
+                    solExpr = "region_solid";
+                else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    solExpr = "C.Sol_Id";
+                else
+                {
+                    solExpr = "C.Sol_Id";
+                    where.Add("C.sol_id = @branch");
+                }
+            }
+            else
+            {
+                where.Add("region_solid = @region");
+                if (_selectedBranch == "1")
+                    solExpr = "region_solid";
+                else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    solExpr = "C.Sol_Id";
+                else
+                {
+                    solExpr = "C.Sol_Id";
+                    where.Add("C.sol_id = @branch");
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where.Add("region_solid = @userRegion");
+            if (_selectedBranch == "1")
+                solExpr = "region_solid";
+            else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                solExpr = "C.Sol_Id";
+            else
+            {
+                solExpr = "C.Sol_Id";
+                where.Add("C.sol_id = @branch");
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            where.Add("C.sol_id = @userBranch");
+            solExpr = "C.Sol_Id";
+        }
+
+        string whereClause = string.Join(" AND ", where);
+
+        string columns = $@"A.*,
+                            C.Branch_Name,
+                            C.region_name,
+                            C.zone_name_eng,
+                    {solExpr} AS SolId";
+
+        string sql = $@"
+            SELECT {columns}
+            FROM ATRReportData A
+            JOIN Branch_Master C ON A.SolId = C.Sol_Id
+            WHERE {whereClause}
+            ORDER BY zone_name_eng, region_name, Branch_Name";
+
+        var parameters = new Dictionary<string, object?>
+            {
+                ["@rpt"] = rptDateForDb,
+                ["@zone"] = _selectedZone,
+                ["@region"] = _selectedRegion,
+                ["@branch"] = _selectedBranch,
+                ["@userZone"] = _userZoneSolid,
+                ["@userRegion"] = _userRegionSolid,
+                ["@userBranch"] = _userBranchSolid
+            };
+
+        _data = await ReportService.ExecuteRawQueryAsync(sql, parameters);
+
+        // Footer / header text
+        //_asOnDateLabel = rptDateForDb; // matches your header: "ATR Report - Submitted Details - {date}"
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private List<ColumnConfig> BuildAtrColumns()
+    {
+        var cols = new List<ColumnConfig>
+        {
+            new ColumnConfig { Header="Zone",   PropertyName="zone_name_eng", Width="140px" },
+            new ColumnConfig { Header="Region", PropertyName="region_name",   Width="140px" },
+            new ColumnConfig { Header="Branch", PropertyName="Branch_Name",   Width="220px" },
+            new ColumnConfig { Header="SolID",  PropertyName="SolId",         Width="90px"  },
+        };
+
+        // Add Q1..Q34 OPT/Comment as flat columns with group titles in headers
+        for (int i = 1; i <= 34; i++)
+        {
+            var g = _exceptionGroups[i - 1];
+            cols.Add(new ColumnConfig { Header = $"{g} - Action Taken", PropertyName = $"Q{i}OPT", Width = "160px" });
+            cols.Add(new ColumnConfig { Header = $"{g} - Remarks", PropertyName = $"Q{i}Comment", Width = "260px" });
+        }
+
+        cols.Add(new ColumnConfig { Header = "Response Submitted By", PropertyName = "PF_NAME_ENTRY", Width = "200px" });
+        cols.Add(new ColumnConfig { Header = "Response Submitted Date", PropertyName = "ResponseSubmittedDate", Width = "200px" });
+
+        return cols;
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "ATRMISReport");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "ATRMISReport.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

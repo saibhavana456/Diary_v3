@@ -1,0 +1,358 @@
+@page "/svc/vendor/{CategoryCode}/edit/{RecordIdRaw}"
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject IStaffVendorConnectService SvcService
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_isNew ? "Add" : "Edit") @(_category?.CategoryName) - Staff and Vendor Connect</PageTitle>
+
+<AuthenticatedOnly>
+
+<PageHeader Title="@($"{(_isNew ? "Add" : "Edit")} {_category?.CategoryName}")" Crumbs="_crumbs" PageKey="svc-vendor-form" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_isNew && !_canManage)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+        You are not authorized to add records in this category.
+    </MudAlert>
+    <MudButton Variant="Variant.Outlined" Class="mt-3" OnClick="@(() => Nav.NavigateTo($"svc/vendor/{CategoryCode}"))">Back</MudButton>
+}
+else
+{
+    @if (!_canManage)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            Read-only view. Some personal/contact fields are masked.
+        </MudAlert>
+    }
+
+    @if (_errors.Count > 0)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            <ul class="mb-0">
+                @foreach (var e in _errors) { <li>@e</li> }
+            </ul>
+        </MudAlert>
+    }
+
+    @foreach (var fieldGroup in _fields.GroupBy(f => f.SectionName ?? "Details"))
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">@fieldGroup.Key</MudText>
+            <MudGrid>
+                @foreach (var field in fieldGroup)
+                {
+                    <MudItem xs="12" sm="6" md="4">
+                        @(_canManage ? RenderField(field) : RenderReadOnlyField(field))
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    }
+
+    @if (_canManage)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving">
+            @(_saving ? "Saving..." : "Save")
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Class="ml-2" OnClick="@(() => Nav.NavigateTo($"svc/vendor/{CategoryCode}"))">Cancel</MudButton>
+    }
+    else
+    {
+        <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo($"svc/vendor/{CategoryCode}"))">Back</MudButton>
+    }
+}
+
+</AuthenticatedOnly>
+
+@code {
+    [Parameter] public string CategoryCode { get; set; } = "";
+    [Parameter] public string RecordIdRaw { get; set; } = "new";
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private List<PageHeader.Crumb> _crumbs = new();
+    private bool _loading = true, _saving;
+    private bool _isNew => !long.TryParse(RecordIdRaw, out _) || RecordIdRaw == "new";
+    private long? _recordId;
+    private SvcCategory? _category;
+    private List<SvcFieldDefinition> _fields = new();
+    private Dictionary<string, string?> _values = new();
+    private List<string> _errors = new();
+    private string _pfNo = "";
+    private bool _canManage;
+    private System.Security.Claims.ClaimsPrincipal? _user;
+
+    // The branch resolved from the SOL ID the user last entered (via ValidateSolIdAsync). Used at
+    // save time to write the ACTUAL branch code into the record's BRANCH_CODE header column.
+    private SvcBranchInfo? _resolvedBranch;
+
+    private string? _loadedForKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            _user = state.User;
+            _pfNo = state.User.FindFirst("emplid")?.Value ?? "";
+        }
+        await LoadAsync();
+    }
+
+    // Same Blazor-component-reuse concern as VendorRecordList: navigating straight from one
+    // edit/add URL to another (e.g. Cancel back to the list is fine, but a direct link between
+    // two records of this page type would not be) must re-run the load, which OnInitializedAsync
+    // alone would miss.
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{CategoryCode}/{RecordIdRaw}";
+        if (key != _loadedForKey)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _values = new();
+        _errors = new();
+        _category = await SvcService.GetCategoryAsync(CategoryCode);
+        _fields = await SvcService.GetFieldDefinitionsAsync(CategoryCode);
+        _canManage = _user is not null && await SvcService.CanManageCategoryAsync(_user, CategoryCode);
+
+        if (!_isNew && long.TryParse(RecordIdRaw, out var rid))
+        {
+            _recordId = rid;
+            // canSeeUnmasked = _canManage: a viewer who can't manage this category (an ordinary
+            // employee, or a vertical-scoped admin looking at a category outside their verticals)
+            // gets IS_PII fields masked by the service itself before the values ever reach this page.
+            var record = await SvcService.GetVendorRecordDetailAsync(rid, canSeeUnmasked: _canManage);
+            if (record is not null) _values = record.Values;
+
+            // Re-resolve the branch from the stored SOL ID so a save that doesn't re-touch the SOL
+            // ID field still writes the correct branch code/name into the header.
+            var solIdKey = SvcService.GetBranchSolIdFieldKey(_fields);
+            if (_values.TryGetValue(solIdKey, out var loadedSolId) && !string.IsNullOrWhiteSpace(loadedSolId))
+            {
+                try { _resolvedBranch = await SvcService.GetBranchBySolIdAsync(loadedSolId.Trim()); }
+                catch { _resolvedBranch = null; }
+            }
+        }
+        else
+        {
+            _recordId = null;
+            _resolvedBranch = null;
+        }
+
+        foreach (var f in _fields.Where(f => !_values.ContainsKey(f.FieldKey)))
+            _values[f.FieldKey] = null;
+
+        _crumbs = new()
+        {
+            new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"),
+            new("Vendor Records", "svc/vendor/categories"), new(_category?.CategoryName ?? CategoryCode, $"svc/vendor/{CategoryCode}"),
+            new(_isNew ? "Add New" : "Edit")
+        };
+        _loadedForKey = $"{CategoryCode}/{RecordIdRaw}";
+        _loading = false;
+    }
+
+    private string? GetVal(string key) => _values.TryGetValue(key, out var v) ? v : null;
+    private void SetVal(string key, string? val) => _values[key] = val;
+
+    // When a "driver" master field changes (e.g. Area of Operation - State), any field cascading
+    // off it (District, then City off District) may hold a value that's no longer valid under
+    // the new parent — clear the whole downstream chain rather than leave a stale mismatched
+    // selection sitting in the form. Conversely, picking a value further down the chain (e.g. PIN
+    // Code, which sits below City) implies its whole ancestor chain — auto-fill upward too, so
+    // "pin code first ... auto populate the details" works without the user re-picking City/
+    // District/State by hand.
+    private void OnMasterFieldChanged(SvcFieldDefinition field, string? val)
+    {
+        SetVal(field.FieldKey, val);
+        ClearDependents(field.FieldKey);
+        FillAncestors(field, val);
+    }
+
+    private void ClearDependents(string fieldKey)
+    {
+        foreach (var dependent in _fields.Where(f => f.MasterParentFieldKey == fieldKey))
+        {
+            SetVal(dependent.FieldKey, null);
+            ClearDependents(dependent.FieldKey);
+        }
+    }
+
+    // Walks MasterParentFieldKey upward from the field just changed, using each field's own
+    // MasterValueParents to resolve what its selected value's parent label is — the exact reverse
+    // of ClearDependents' downward walk. Pure lookup against data already loaded with the form
+    // (no extra DB round trip).
+    private void FillAncestors(SvcFieldDefinition field, string? val)
+    {
+        if (string.IsNullOrEmpty(val) || field.MasterParentFieldKey is null) return;
+        var parentField = _fields.FirstOrDefault(f => f.FieldKey == field.MasterParentFieldKey);
+        if (parentField is null) return;
+
+        var parentLabel = field.MasterValueParents.FirstOrDefault(p => p.Label == val).ParentLabel;
+        if (string.IsNullOrEmpty(parentLabel)) return;
+
+        SetVal(parentField.FieldKey, parentLabel);
+        FillAncestors(parentField, parentLabel);
+    }
+
+    private RenderFragment RenderField(SvcFieldDefinition field) => __builder =>
+    {
+        <MudText Typo="Typo.caption" Class="mud-input-label" Style="display:block;margin-bottom:2px;">
+            @field.FieldLabel @(field.IsMandatory ? "*" : "")
+        </MudText>
+
+        @if (field.DropdownSource == "BRANCH")
+        {
+            <MudTextField T="string"
+                          Value="@GetVal(field.FieldKey)"
+                          ValueChanged="@((string v) => SetVal(field.FieldKey, v))"
+                          Immediate="true"
+                          Label="SOL ID"
+                          Variant="Variant.Outlined"
+                          Dense="true"
+                          OnBlur="@(_ => ValidateSolIdAsync(field.FieldKey))" />
+        }
+        else if (field.IsReadonly)
+        {
+            <MudTextField T="string" Value="@GetVal(field.FieldKey)" ReadOnly="true" Variant="Variant.Outlined" Dense="true" />
+        }
+        else if (field.FieldType == "DROPDOWN")
+        {
+            // AREA_PINCODE sits below City in the master hierarchy (for FillAncestors to walk
+            // upward from it) but is meant to be entered independently, first — "pin code first
+            // ... if not available then state then district then city" — so it's exempt from the
+            // usual "disabled until its driver is chosen" cascade rule and always shows every
+            // active PIN code.
+            var isCascaded = field.MasterParentFieldKey is not null && field.FieldKey != "AREA_PINCODE";
+            var parentVal = isCascaded ? GetVal(field.MasterParentFieldKey!) : null;
+            var options = isCascaded
+                ? field.MasterValueParents.Where(v => v.ParentLabel == parentVal).Select(v => v.Label).ToList()
+                : field.DropdownOptions;
+            <MudSelect T="string" Value="@GetVal(field.FieldKey)" ValueChanged="@((string v) => OnMasterFieldChanged(field, v))" Variant="Variant.Outlined" Dense="true"
+                       Disabled="@(isCascaded && string.IsNullOrEmpty(parentVal))"
+                       HelperText="@(isCascaded && string.IsNullOrEmpty(parentVal) ? $"Select {_fields.FirstOrDefault(f => f.FieldKey == field.MasterParentFieldKey)?.FieldLabel} first" : null)">
+                @foreach (var opt in options)
+                {
+                    <MudSelectItem T="string" Value="@opt">@opt</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        else if (field.FieldType == "DATE")
+        {
+            <MudDatePicker Date="@(DateTime.TryParse(GetVal(field.FieldKey), out var d) ? d : (DateTime?)null)"
+                           DateChanged="@((DateTime? v) => SetVal(field.FieldKey, v?.ToString("yyyy-MM-dd")))"
+                           Variant="Variant.Outlined" />
+        }
+        else if (field.FieldType == "TEXTAREA")
+        {
+            <MudTextField T="string" Value="@GetVal(field.FieldKey)" ValueChanged="@((string v) => SetVal(field.FieldKey, v))"
+                          Variant="Variant.Outlined" Lines="3" Dense="true" MaxLength="@(field.MaxLength ?? 4000)" />
+        }
+        else
+        {
+            <MudTextField T="string" Value="@GetVal(field.FieldKey)" ValueChanged="@((string v) => SetVal(field.FieldKey, v))"
+                          Variant="Variant.Outlined" Dense="true" MaxLength="@(field.MaxLength ?? 4000)"
+                          HelperText="@field.ValidationHint" />
+        }
+    };
+
+    // Clean view-only rendering for a non-admin/non-manager — same field order/sections as the
+    // edit form, but a plain label+value with no editable input (values were already masked by
+    // GetVendorRecordDetailAsync above when the caller can't manage this category).
+    private RenderFragment RenderReadOnlyField(SvcFieldDefinition field) => __builder =>
+    {
+        <MudText Typo="Typo.caption" Class="mud-input-label" Style="display:block;margin-bottom:2px;">@field.FieldLabel</MudText>
+        <MudText Typo="Typo.body1" Class="mb-2">@(string.IsNullOrWhiteSpace(GetVal(field.FieldKey)) ? "—" : GetVal(field.FieldKey))</MudText>
+    };
+
+    private async Task SaveAsync()
+    {
+        // Server-side re-check — a non-privileged user could otherwise invoke this even with the
+        // Save button hidden client-side (mirrors FormBuilder.razor's SaveFieldAsync pattern).
+        if (!_canManage)
+        {
+            Snackbar.Add("You are not authorized to save records in this category.", Severity.Error);
+            return;
+        }
+        _saving = true;
+        _errors.Clear();
+        try
+        {
+            // The editable SOL-ID input carries the SOL ID; the readonly Branch/Region/Zone fields
+            // were auto-populated from the Branch Diary DB by ValidateSolIdAsync (on blur).
+            var branch = _resolvedBranch;
+            var (success, recordId, errors) = await SvcService.SaveVendorRecordAsync(
+                _recordId, CategoryCode,
+                branch?.BranchCode ?? GetVal("BRANCH_CODE") ?? "",
+                GetVal("BRANCH_NAME") ?? branch?.BranchName ?? "",
+                GetVal("REGION_CODE") ?? branch?.RegionCode ?? "",
+                GetVal("REGION_NAME") ?? branch?.RegionName ?? "",
+                GetVal("ZONE_CODE") ?? branch?.ZoneCode ?? "",
+                GetVal("ZONE_NAME") ?? branch?.ZoneName ?? "",
+                _values, _pfNo);
+
+            if (success)
+            {
+                Snackbar.Add("Saved successfully.", Severity.Success);
+                Nav.NavigateTo($"svc/vendor/{CategoryCode}");
+            }
+            else
+            {
+                _errors = errors;
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    // SOL-ID → branch resolution and the field auto-population both live in
+    // StaffVendorConnectService now (GetBranchBySolIdAsync + ApplyBranchToReadonlyFields /
+    // ClearBranchReadonlyFields), so the vendor form and the bulk upload share exactly one branch
+    // lookup, one connection (branchDiaryConnString), and one field-mapping rule.
+    private async Task ValidateSolIdAsync(string fieldKey)
+    {
+        var solId = GetVal(fieldKey);
+
+        if (string.IsNullOrWhiteSpace(solId))
+        {
+            _resolvedBranch = null;
+            SvcService.ClearBranchReadonlyFields(_fields, _values);
+            return;
+        }
+
+        try
+        {
+            var branch = await SvcService.GetBranchBySolIdAsync(solId.Trim());
+
+            if (branch == null)
+            {
+                _resolvedBranch = null;
+                Snackbar.Add("Invalid SOL ID.", Severity.Warning);
+                SvcService.ClearBranchReadonlyFields(_fields, _values);
+                return;
+            }
+
+            _resolvedBranch = branch;
+            SvcService.ApplyBranchToReadonlyFields(branch, _fields, _values);
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            _resolvedBranch = null;
+            Snackbar.Add("Failed to validate SOL ID.", Severity.Error);
+        }
+    }
+}

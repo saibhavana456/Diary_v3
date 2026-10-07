@@ -1,0 +1,74 @@
+@namespace RequestPortal.Web.Pages.Handler
+@page "/handler/inbox"
+@inject IRequestService Requests
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+
+<PageTitle>Handler Inbox</PageTitle>
+
+<PageHeader PageKey="handler-inbox" Title="Handler Inbox" Crumbs="_crumbs"
+            Subtitle="Click a row to open the request and act inline." />
+
+<MudTabs Outlined="true" Position="Position.Top" KeepPanelsAlive="true">
+    <MudTabPanel Text="My Inbox"        OnClick="@(() => SetTab(null, false))" />
+    <MudTabPanel Text="In Progress"     OnClick="@(() => SetTab("InProgress", false))" />
+    <MudTabPanel Text="Awaiting reply"  OnClick="@(() => SetTab("ClarificationSought", false))" />
+    <MudTabPanel Text="Breached"        OnClick="@(() => SetTab(null, true))" />
+</MudTabs>
+
+<MudDataGrid T="RequestListItem" ServerData="@Load" Dense="true" Hover="true" @ref="_grid" Class="rp-data-table"
+             RowClick="@OnRowClick">
+    <Columns>
+        <PropertyColumn Property="x => x.ReqNo" Title="#">
+            <CellTemplate>
+                <MudLink Href="@($"requests/{context.Item.Id}")" Color="Color.Primary">@context.Item.ReqNo</MudLink>
+            </CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.RequestTypeName" Title="Type" />
+        <PropertyColumn Property="x => x.Subject" />
+        <PropertyColumn Property="x => x.RaisedByName" Title="Raised by" />
+        <PropertyColumn Property="x => x.UnitName" Title="Unit" />
+        <PropertyColumn Property="x => x.CurrentLevel" Title="L" />
+        <PropertyColumn Property="x => x.Status" />
+        <PropertyColumn Property="x => x.SlaDueUtc" Title="SLA due" Format="g" />
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="RequestListItem" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Handler"),
+        new("Inbox"),
+    };
+
+    private MudDataGrid<RequestListItem>? _grid;
+    private string? _statusFilter;
+    private bool _breachedOnly;
+
+    private async Task SetTab(string? status, bool breached)
+    {
+        _statusFilter = status;
+        _breachedOnly = breached;
+        if (_grid is not null) await _grid.ReloadServerData();
+    }
+
+    private async Task<GridData<RequestListItem>> Load(GridState<RequestListItem> state)
+    {
+        var sortBy = state.SortDefinitions.FirstOrDefault();
+        var f = new FilterDto(
+            Status: _statusFilter,
+            BreachedOnly: _breachedOnly ? true : null,
+            Page: state.Page + 1,
+            PageSize: state.PageSize,
+            SortBy: sortBy?.SortBy,
+            SortDesc: sortBy?.Descending ?? true);
+        var (items, total) = await Requests.ListAsync(f, CurrentUser.EmpCode, null);
+        return new GridData<RequestListItem> { Items = items, TotalItems = total };
+    }
+
+    private void OnRowClick(DataGridRowClickEventArgs<RequestListItem> args) =>
+        Nav.NavigateTo($"requests/{args.Item.Id}");
+}

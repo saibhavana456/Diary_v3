@@ -1,0 +1,229 @@
+@page "/capitaline"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Components.Layout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout PublicLayout
+<PageTitle>Capitaline – Defaulter Lists | UBINET</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4 mb-8">
+
+    <!-- Page Header -->
+    <MudPaper Elevation="3" Class="pa-4 mb-4"
+              Style="background: linear-gradient(135deg, #b71c1c 0%, #7f0000 100%);
+                     color:white; border-radius:12px;
+                     box-shadow: 0 4px 20px rgba(183,28,28,0.35) !important;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance"
+                     Style="font-size:2.8rem; color:#ffcdd2;" />
+            <div>
+                <MudText Typo="Typo.h5" Style="font-weight:700; color:white; letter-spacing:0.3px;">
+                    Capitaline – Defaulter Lists
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color:#ffcdd2; margin-top:2px;">
+                    Wilful &amp; Non-Wilful Defaulter Data — Union Bank of India
+                </MudText>
+            </div>
+        </MudStack>
+    </MudPaper>
+
+    <!-- Breadcrumb -->
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 pa-0" />
+
+    <!-- Info Alert -->
+    <MudAlert Severity="Severity.Warning" Class="mb-5" Style="border-radius:10px; font-size:0.9rem;">
+        The following lists are published by Union Bank of India as required under RBI guidelines.
+        Files are available in <strong>Excel (.xlsx)</strong> format. For queries, please contact the concerned department.
+    </MudAlert>
+
+    <!-- Search -->
+    <MudPaper Elevation="1" Class="pa-3 mb-4" Style="border-radius:10px;">
+        <MudTextField @bind-Value="_searchText"
+                      Placeholder="Search lists..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      AdornmentColor="Color.Primary"
+                      Variant="Variant.Outlined"
+                      Clearable="true"
+                      Immediate="true"
+                      Margin="Margin.Dense"
+                      FullWidth="true"
+                      Style="font-size:0.9rem;" />
+    </MudPaper>
+
+    <!-- Sections -->
+    @foreach (var sec in FilteredSections)
+    {
+        <MudPaper Elevation="2" Class="pa-4 mb-4"
+                  Style=@($"border-radius:12px; border-left:4px solid {sec.AccentColor};")>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+                <MudIcon Icon="@sec.Icon" Style=@($"color:{sec.AccentColor};") />
+                <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a237e;">
+                    @sec.Title
+                </MudText>
+                <MudChip T="string" Size="Size.Small"
+                         Style=@($"background:{sec.AccentColor}; color:white; font-size:0.75rem;font-weight:600; height:22px; margin-left:auto;")>
+                    @sec.Items.Count file@(sec.Items.Count != 1 ? "s" : "")
+                </MudChip>
+            </MudStack>
+            <MudDivider Class="mb-3" />
+
+            <MudList T="string" Dense="true" DisablePadding="true">
+                @foreach (var item in sec.Items)
+                {
+                    <MudListItem T="string" Class="px-0 py-1">
+                        <MudPaper Elevation="0" Class="pa-3"
+                                  Style="border-radius:10px; border:1px solid #e8eaf6;
+                                         display:flex; align-items:center;
+                                         justify-content:space-between; gap:12px;">
+                            <MudStack Row="true" AlignItems="AlignItems.Center"
+                                      Spacing="2" Style="flex:1; min-width:0;">
+                                <MudIcon Icon="@Icons.Material.Filled.TableChart"
+                                         Style="color:#2e7d32; flex-shrink:0; font-size:1.4rem;" />
+                                <div Style="min-width:0;">
+                                    <MudText Typo="Typo.body2"
+                                             Style="font-weight:600; color:#1a237e;
+                                                    font-size:0.875rem; line-height:1.4;
+                                                    word-break:break-word;">
+                                        @item.Label
+                                    </MudText>
+                                    @if (!string.IsNullOrEmpty(item.Period))
+                                    {
+                                        <MudText Typo="Typo.caption" Style="color:#888;">
+                                            As of: @item.Period
+                                        </MudText>
+                                    }
+                                </div>
+                            </MudStack>
+                            <MudButton Variant="Variant.Filled"
+                                       Style=@($"background:{sec.AccentColor}; color:white;border-radius:8px; font-size:0.75rem;font-weight:600; flex-shrink:0; white-space:nowrap;")
+                                       StartIcon="@Icons.Material.Filled.Download"
+                                       Size="Size.Small"
+                                       Href="@item.Url"
+                                       Target="_blank">
+                                Download
+                            </MudButton>
+                        </MudPaper>
+                    </MudListItem>
+                }
+            </MudList>
+        </MudPaper>
+    }
+
+    @if (!FilteredSections.Any())
+    {
+        <MudAlert Severity="Severity.Info" Style="border-radius:10px;">
+            No lists found matching "<strong>@_searchText</strong>".
+        </MudAlert>
+    }
+
+    <!-- Capitaline Portal Link -->
+    <MudPaper Elevation="1" Class="pa-4 mt-2"
+              Style="border-radius:12px; background:#f5f5f5;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Style="color:#00569b;" />
+            <MudText Typo="Typo.body2" Style="color:#555;">
+                Access the full Capitaline Plus database for company financials and market data:
+            </MudText>
+            <MudButton Variant="Variant.Outlined"
+                       Style="border-color:#00569b; color:#00569b; border-radius:8px;
+                              font-weight:600; flex-shrink:0;"
+                       Size="Size.Small"
+                       Href="http://www.capitaline.com"
+                       Target="_blank">
+                Capitaline.com
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+
+</MudContainer>
+
+@code {
+    private string _searchText = "";
+
+    private List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Home",       href: "", icon: Icons.Material.Filled.Home),
+        new BreadcrumbItem("Capitaline", href: null, disabled: true),
+    };
+
+    private record ListItem(string Label, string Period, string Url);
+    private record SectionGroup(string Title, string Icon, string AccentColor, List<ListItem> Items);
+
+    private IEnumerable<SectionGroup> FilteredSections =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _sections
+            : _sections
+                .Select(s => new SectionGroup(s.Title, s.Icon, s.AccentColor,
+                    s.Items.Where(i =>
+                        i.Label.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                        i.Period.Contains(_searchText, StringComparison.OrdinalIgnoreCase))
+                    .ToList()))
+                .Where(s => s.Items.Any());
+
+    private List<SectionGroup> _sections = new()
+    {
+        new("Wilful Defaulters – Union Bank of India",
+            Icons.Material.Filled.Warning,
+            "#b71c1c",
+            new()
+            {
+                new("List of Wilful Defaulters declared by Union Bank of India",
+                    "31 May 2025",
+                    "https://ubinet.unionbankofindia.co.in/download/List of Wilful Defaulters declared by Union Bank of India as of 31.05.2025.xlsx"),
+            }),
+
+        new("Non-Suit Filed Defaulters",
+            Icons.Material.Filled.Gavel,
+            "#e65100",
+            new()
+            {
+                new("List of Defaulters (Non-Suit Filed) of ₹1 Crore & above",
+                    "May 2025",
+                    "https://ubinet.unionbankofindia.co.in/download/List of Defaulter (Non-Suit Filed acs) of Rs.1 crore & above as of May 2025.xlsx"),
+            }),
+
+        new("Suit Filed Defaulters",
+            Icons.Material.Filled.StarOutline,
+            "#880e4f",
+            new()
+            {
+                new("List of Defaulters (Suit Filed) of ₹1 Crore & above",
+                    "May 2025",
+                    "https://ubinet.unionbankofindia.co.in/download/List of Defaulter (Suit Filed acs) of Rs.1 crore & above as of May 2025.xlsx"),
+                new("List of Defaulters (Suit Filed) of ₹1 Crore & above",
+                    "May 2023",
+                    "https://ubinet.unionbankofindia.co.in/download/List of defaluter (Suit file )of Rs. 1 crore  above as of May 2023.xlsx"),
+            }),
+
+        new("CIBIL Wilful Defaulters – Non-Suit Filed",
+            Icons.Material.Filled.ReportProblem,
+            "#4a148c",
+            new()
+            {
+                new("CIBIL List of Wilful Defaulters (Non-Suit Filed) of ₹25 Lacs & above",
+                    "June 2025",
+                    "https://ubinet.unionbankofindia.co.in/download/CIBIL List of Wilful Defaulters (Non Suit Filed) Rs. 25.00 Lacs & Above for the month of June 2025.xlsx"),
+            }),
+
+        new("CIBIL Wilful Defaulters – Suit Filed",
+            Icons.Material.Filled.Report,
+            "#1a237e",
+            new()
+            {
+                new("CIBIL List of Wilful Defaulters (Suit Filed) of ₹25 Lacs & above",
+                    "June 2025",
+                    "https://ubinet.unionbankofindia.co.in/download/CIBIL List of Wilful Defaulters (Suit Filed) Rs. 25.00 Lacs & Above for the month of June 2025.xlsx"),
+            }),
+
+        new("Caution Advice List",
+            Icons.Material.Filled.WorkOutline,
+            "#37474f",
+            new()
+            {
+                new("List of Caution Advice",
+                    "March 2005",
+                    "https://app3.unionbankofindia.co.in/cybercline/user/ubicautiondefault.asp"),
+            }),
+    };
+}

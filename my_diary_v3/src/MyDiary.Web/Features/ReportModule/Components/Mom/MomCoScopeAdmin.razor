@@ -1,0 +1,235 @@
+﻿@page "/reports/mom-developer/co-scope"
+@using MudBlazor
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IMomRepo MomRepo
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>MoM CO Scope Assignment</PageTitle>
+
+<PageHeader PageKey="mom-co-scope" Title="MoM CO Scope Assignment" Crumbs="_crumbs" />
+
+<SuperAdminOnly>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+        Item 6 (RBAC): for the "IR/ER &amp; Welfare Association Meetings" MoM type, a CO-level user with no
+        row below sees everything (fail-open, unchanged). Assign a CO user here to narrow them to just
+        <b>ERD</b> (Award Staff Union + Officers Union — sees RO+ZO+CO) or just <b>WELFARE</b>
+        (Welfare Association only — sees ZO+CO, never RO).
+    </MudAlert>
+
+    <MudPaper Elevation="1" Class="pa-3 mb-4">
+        <div class="d-flex flex-wrap align-end gap-3 mb-3">
+            <MudSelect T="long?" Label="MoM Type" Value="_selectedMomTypeId" ValueChanged="OnMomTypeChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:320px">
+                @foreach (var t in _momTypes)
+                {
+                    <MudSelectItem T="long?" Value="@((long?)t.Id)">@t.TypeName</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenAddDialog" Disabled="@(_selectedMomTypeId is null)">Assign User</MudButton>
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else if (_selectedMomTypeId is null)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">Select a MoM type to view its CO scope assignments.</MudAlert>
+        }
+        else if (_scopes.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No CO scope assignments yet for this MoM type — every CO user currently sees everything.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_scopes" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Employee</MudTh>
+                    <MudTh>Scope</MudTh>
+                    <MudTh>Assigned By</MudTh>
+                    <MudTh>Assigned At</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Employee">
+                        <div style="font-weight:600">@(context.EmpName ?? "—")</div>
+                        <div style="font-size:11px;color:#59636e;font-family:monospace">@context.EmpCode</div>
+                    </MudTd>
+                    <MudTd DataLabel="Scope">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.ScopeCode == "ERD" ? Color.Info : Color.Success)" Variant="Variant.Filled">
+                            @(context.ScopeCode == "ERD" ? "ERD (Award Staff / Officers Union)" : "Welfare Cell (Welfare Association)")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Assigned By">@context.AssignedByEmp</MudTd>
+                    <MudTd DataLabel="Assigned At">@context.AssignedAt.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" Title="Remove"
+                                       OnClick="@(() => ConfirmRemove(context))" aria-label="Remove" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+</SuperAdminOnly>
+
+<MudDialog @bind-Visible="_addOpen" Options="_dialogOptions">
+    <TitleContent>Assign CO Scope</TitleContent>
+    <DialogContent>
+        <MudTextField T="string" Label="Employee Code (PF Number)" @bind-Value="_newEmpCode" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+        @if (_scopeGroups.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-3">
+                This MoM type has no CO scope groups defined yet — tag one or more meeting types with a
+                "CO Scope Code" on the <MudLink Href="@($"reports/mom-developer/edit/{_selectedMomTypeId}")">MoM Developer</MudLink>
+                edit page first.
+            </MudAlert>
+        }
+        else
+        {
+            <MudSelect T="string" Label="Scope" @bind-Value="_newScopeCode" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3">
+                @foreach (var g in _scopeGroups)
+                {
+                    <MudSelectItem T="string" Value="@g.ScopeCode">@g.Label</MudSelectItem>
+                }
+            </MudSelect>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync" Disabled="@_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_removeConfirmOpen" Options="_smallDialogOptions">
+    <TitleContent>Remove CO Scope Assignment?</TitleContent>
+    <DialogContent>
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            This removes @(_scopeToRemove?.EmpName ?? _scopeToRemove?.EmpCode)'s narrowed scope. They will fall back to
+            seeing everything at CO level (fail-open), same as any other unscoped CO user.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _removeConfirmOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="RemoveAsync" Disabled="@_removing">Remove</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Reports"), new("MoM Developer", "reports/mom-developer"), new("CO Scope Assignment") };
+
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+    private DialogOptions _smallDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _loading = true, _saving, _removing;
+    private List<MomType> _momTypes = new();
+    private long? _selectedMomTypeId;
+    private List<MomCoScope> _scopes = new();
+
+    private bool _addOpen;
+    private string _newEmpCode = "";
+    private string _newScopeCode = "";
+    private List<(string ScopeCode, string Label)> _scopeGroups = new();
+
+    private bool _removeConfirmOpen;
+    private MomCoScope? _scopeToRemove;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var all = await MomRepo.ListTypesAsync(null);
+        // Item 6 only applies to the "IR/ER & Welfare Association Meetings" MoM type, but the
+        // dropdown lists every active type in case another MoM type adopts CO-scope splitting later.
+        _momTypes = all.Where(t => t.IsActive).ToList();
+        var defaultType = _momTypes.FirstOrDefault(t => string.Equals(t.TypeCode, "ir-er-welfare", StringComparison.OrdinalIgnoreCase))
+                           ?? _momTypes.FirstOrDefault();
+        if (defaultType is not null)
+        {
+            _selectedMomTypeId = defaultType.Id;
+            await ReloadScopesAsync();
+        }
+        _loading = false;
+    }
+
+    private async Task OnMomTypeChangedAsync(long? momTypeId)
+    {
+        _selectedMomTypeId = momTypeId;
+        await ReloadScopesAsync();
+    }
+
+    private async Task ReloadScopesAsync()
+    {
+        if (_selectedMomTypeId is null) { _scopes = new(); _scopeGroups = new(); return; }
+        _loading = true;
+        _scopes = (await MomRepo.ListCoScopeAsync(_selectedMomTypeId.Value)).ToList();
+        _scopeGroups = (await MomRepo.ListCoScopeGroupsAsync(_selectedMomTypeId.Value)).ToList();
+        _loading = false;
+    }
+
+    private void OpenAddDialog()
+    {
+        _newEmpCode = "";
+        _newScopeCode = _scopeGroups.Count > 0 ? _scopeGroups[0].ScopeCode : "";
+        _addOpen = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_selectedMomTypeId is null) return;
+        if (string.IsNullOrWhiteSpace(_newEmpCode)) { Snackbar.Add("Employee code is required.", Severity.Warning); return; }
+        if (string.IsNullOrWhiteSpace(_newScopeCode)) { Snackbar.Add("Select a scope — this MoM type has no scope groups defined yet.", Severity.Warning); return; }
+
+        _saving = true;
+        try
+        {
+            var actor = CurrentUser.EmplId ?? "";
+            await MomRepo.AddCoScopeAsync(_selectedMomTypeId.Value, _newEmpCode.Trim(), _newScopeCode, actor);
+            Snackbar.Add("CO scope assignment saved.", Severity.Success);
+            _addOpen = false;
+            await ReloadScopesAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "MomCoScopeAdmin: save failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ConfirmRemove(MomCoScope s)
+    {
+        _scopeToRemove = s;
+        _removeConfirmOpen = true;
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (_scopeToRemove is null) return;
+        _removing = true;
+        try
+        {
+            await MomRepo.RemoveCoScopeAsync(_scopeToRemove.Id);
+            Snackbar.Add("CO scope assignment removed.", Severity.Success);
+            _removeConfirmOpen = false;
+            _scopeToRemove = null;
+            await ReloadScopesAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "MomCoScopeAdmin: remove failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _removing = false;
+        }
+    }
+}

@@ -1,0 +1,265 @@
+@page "/reports"
+@using MudBlazor
+@using Microsoft.Extensions.Options
+@using Microsoft.JSInterop
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using MyDiary.Web.Features.ReportModule.Services
+@using MyDiary.Web.Features.Focus360.Models
+@using global::RequestPortal.Web.Shared
+@inject IReportRepo ReportRepo
+@inject IMasterRepo Masters
+@inject ICurrentUser CurrentUser
+@inject ReportExecutionService ExecSvc
+@inject ReportExportService ExportSvc
+@inject IOptions<GapReportSettings> ReportConfig
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>Reports</PageTitle>
+
+<PageHeader PageKey="report-module-reports" Title="Reports" Subtitle="Filter, load and export reports published by Report Developer." Crumbs="_crumbs" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="long?" Label="Vertical" Value="_verticalId" ValueChanged="OnVerticalChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (var v in _verticals) { <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="long?" Label="Department" Value="_departmentId" ValueChanged="OnDepartmentChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_departments.Count == 0)">
+                @foreach (var d in _departments) { <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.Name</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="long?" Label="Report Name" Value="_selectedDefId" ValueChanged="OnDefChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_defs.Count == 0)">
+                @foreach (var d in _defs)
+                {
+                    <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.ReportName@(d.IsActive ? "" : " (Disabled)")</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        @if (_filters.Count > 0)
+        {
+            <MudItem xs="12">
+                <MudDivider Class="my-2" />
+                <MudText Typo="Typo.caption" Class="text-muted d-block mb-1">Filters</MudText>
+                <div class="d-flex flex-wrap gap-3">
+                    @foreach (var f in _filters)
+                    {
+                        <MudTextField T="string" Label="@f.Label" Value="@_filterValues.GetValueOrDefault(f.ColumnName)"
+                                      ValueChanged="@(v => _filterValues[f.ColumnName] = v)"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:200px" />
+                    }
+                </div>
+            </MudItem>
+        }
+        <MudItem xs="12" Class="d-flex align-center gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="LoadReport" Disabled="@(_selectedDefId is null || _loading)">Load Report</MudButton>
+            @if (_loading)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+            }
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_disabled)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4" Icon="@Icons.Material.Filled.Block">Report disabled</MudAlert>
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+else if (_result is not null)
+{
+    <MudPaper Class="pa-4" Elevation="1">
+        <div class="d-flex flex-wrap align-center gap-3 mb-3">
+            <MudText Typo="Typo.subtitle1" Class="fw-bold">@_activeReportName</MudText>
+            <MudChip T="string" Size="Size.Small" Color="@(_activeRunningFrom == ReportSite.Dr ? Color.Warning : Color.Info)">
+                @(_activeRunningFrom == ReportSite.Dr ? "DR" : "DC")
+            </MudChip>
+            <MudSpacer />
+            <MudText Typo="Typo.caption" Class="text-muted">
+                Showing @_result.Rows.Count row(s) @(_result.Truncated ? "(capped at 200)" : "")
+            </MudText>
+            <MudSelect T="int" Value="_pageSize" ValueChanged="OnPageSizeChangedAsync" Dense="true" Variant="Variant.Outlined"
+                       Style="min-width:150px" Label="Rows per page">
+                @foreach (var s in _pageSizeOptions) { <MudSelectItem T="int" Value="@s">@s rows</MudSelectItem> }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.GridOn" OnClick="DownloadExcel">Excel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="DownloadPdf">PDF</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="DownloadCsv">CSV</MudButton>
+        </div>
+
+        @if (_result.Rows.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">This report returned no rows.</MudAlert>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <MudTable Items="_result.Rows" Dense="true" Hover="true" Bordered="true" Striped="true"
+                          RowsPerPage="_pageSize" @ref="_mudTable">
+                    <HeaderContent>
+                        @foreach (var c in _result.Columns)
+                        {
+                            <MudTh>@c</MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        @for (int i = 0; i < _result.Columns.Count; i++)
+                        {
+                            var idx = i;
+                            <MudTd DataLabel="@_result.Columns[idx]">@(idx < context.Length ? context[idx]?.ToString() : "")</MudTd>
+                        }
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="_pageSizeOptions" />
+                    </PagerContent>
+                </MudTable>
+            </div>
+        }
+    </MudPaper>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Reports") };
+
+    private List<Vertical> _verticals = new();
+    private List<Department> _departments = new();
+    private List<ReportDef> _defs = new();
+
+    private long? _verticalId, _departmentId, _selectedDefId;
+    private string _activeReportName = "";
+    private ReportSite? _activeRunningFrom;
+
+    private List<ReportFilterDef> _filters = new();
+    private readonly Dictionary<string, string?> _filterValues = new();
+
+    private bool _loading;
+    private bool _disabled;
+    private string? _error;
+    private ReportResult? _result;
+
+    private readonly int[] _pageSizeOptions = { 25, 50, 100 };
+    private int _pageSize = 25;
+    private MudTable<object?[]>? _mudTable;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = (await Masters.ListVerticalsAllAsync()).ToList();
+    }
+
+    private async Task OnVerticalChangedAsync(long? verticalId)
+    {
+        _verticalId = verticalId;
+        _departmentId = null;
+        _selectedDefId = null;
+        _departments = verticalId.HasValue ? (await Masters.ListDepartmentsAllAsync(verticalId)).ToList() : new();
+        await ReloadDefsAsync();
+    }
+
+    private async Task OnDepartmentChangedAsync(long? departmentId)
+    {
+        _departmentId = departmentId;
+        _selectedDefId = null;
+        await ReloadDefsAsync();
+    }
+
+    private async Task ReloadDefsAsync()
+        => _defs = (await ReportRepo.ListDefsAsync(_verticalId, _departmentId, null, activeOnly: false)).ToList();
+
+    private async Task OnDefChangedAsync(long? defId)
+    {
+        _selectedDefId = defId;
+        _filterValues.Clear();
+        _filters = defId.HasValue ? (await ReportRepo.ListFiltersAsync(defId.Value)).ToList() : new();
+    }
+
+    private async Task LoadReport()
+    {
+        if (_selectedDefId is null) return;
+        _loading = true; _error = null; _result = null; _disabled = false;
+        StateHasChanged();
+
+        var actor = CurrentUser.EmpCode ?? "";
+        try
+        {
+            var def = await ReportRepo.GetDefAsync(_selectedDefId.Value);
+            if (def is null) { _error = "Report definition not found."; return; }
+            _activeReportName = def.ReportName;
+            _activeRunningFrom = def.RunningFrom;
+
+            var result = await ExecSvc.ExecuteAsync(def, _filterValues);
+
+            if (result.Disabled)
+            {
+                _disabled = true;
+                await ReportRepo.LogAccessAsync(def.Id, def.ReportName, actor, null, null, success: false, "Report disabled");
+                return;
+            }
+            if (result.Error is not null)
+            {
+                _error = result.Error;
+                await ReportRepo.LogAccessAsync(def.Id, def.ReportName, actor, def.RunningFrom, null, success: false, result.Error);
+                return;
+            }
+
+            _pageSize = result.Columns.Count switch { <= 6 => 25, <= 12 => 25, _ => 15 };
+            _result = result;
+            await ReportRepo.LogAccessAsync(def.Id, def.ReportName, actor, def.RunningFrom, result.Rows.Count, success: true, null);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Reports: failed to load report '{_activeReportName}'");
+            _error = UserFacingError.Generic;
+            await ReportRepo.LogAccessAsync(_selectedDefId.Value, _activeReportName, actor, _activeRunningFrom, null, success: false, ex.Message);
+        }
+        finally { _loading = false; }
+    }
+
+    private Task OnPageSizeChangedAsync(int size)
+    {
+        _pageSize = size;
+        return Task.CompletedTask;
+    }
+
+    private string FileBase => $"{(_activeReportName.Length > 0 ? _activeReportName.Replace(' ', '_') : "Report")}_{AppTime.Now:yyyyMMdd}";
+    private string AppLogo => Path.Combine(Environment.CurrentDirectory, ReportConfig.Value.AppLogoPath);
+    private string CoLogo => Path.Combine(Environment.CurrentDirectory, ReportConfig.Value.LogoPath);
+
+    private async Task DownloadExcel()
+    {
+        if (_result is null) return;
+        var bytes = ExportSvc.ExportToExcel(_activeReportName, ReportConfig.Value.BankName, AppLogo, CoLogo, _result.Columns, _result.Rows);
+        await JS.InvokeVoidAsync("focus360Download", $"{FileBase}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
+    }
+
+    private async Task DownloadCsv()
+    {
+        if (_result is null) return;
+        var bytes = ExportSvc.ExportToCsv(_result.Columns, _result.Rows);
+        await JS.InvokeVoidAsync("focus360Download", $"{FileBase}.csv", "text/csv", bytes);
+    }
+
+    private async Task DownloadPdf()
+    {
+        if (_result is null) return;
+        try
+        {
+            var bytes = ExportSvc.ExportToPdf(_activeReportName, ReportConfig.Value.BankName, AppLogo, CoLogo, _result.Columns, _result.Rows);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("focus360DownloadStream", $"{FileBase}.pdf", streamRef);
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "Reports: PDF export failed"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+}

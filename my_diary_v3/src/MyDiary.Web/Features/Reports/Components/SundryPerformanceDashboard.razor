@@ -1,0 +1,259 @@
+@page "/reports/SundryDashboard"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Sundry Performance Dashboard — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Column configurations with fixed widths
+    private List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "10%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "BRANCH_NAME", Width = "10%" },
+        new ColumnConfig { Header = "Solid", PropertyName = "branchsol", Width = "10%" },
+        new ColumnConfig { Header = "No Of Entries Prev Day", PropertyName = "No_Of_Entries_Prev_Day",  Width = "5%" },
+        new ColumnConfig { Header = "Amt On Prev Day", PropertyName = "Amt_On_Prev_Day", IsNumeric = true, Width = "10%" },
+        new ColumnConfig { Header = "No Of Entries Added", PropertyName = "No_Of_Entries_added",   Width = "5%" },
+        new ColumnConfig { Header = "Amt Added", PropertyName = "Amt_Added", IsNumeric = true, Width = "10%" },
+        new ColumnConfig { Header = "No Of Entries Reduced", PropertyName = "No_Of_Entries_Reduced",  Width = "5%" },
+        new ColumnConfig { Header = "Amt Reduced", PropertyName = "Amt_Reduced", IsNumeric = true, Width = "10%" },
+        new ColumnConfig { Header = "No Of Entries Progress Made", PropertyName = "No_Of_Entries_Progress_Made",   Width = "5%" },
+        new ColumnConfig { Header = "Progress Made Amt", PropertyName = "Progress_Made_Amt", IsNumeric = true, Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Sundry Performance Dashboard";
+
+        // Load User Context
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "region_solid <> '' and Flag='SUND' ";
+        string groupBy = "";        
+
+        // EXACT Logic from SundrySuspenseDashboard.aspx.cs
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt, 'All' As branchsol,'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As SolId";
+            }
+            else if (_selectedZone == "all") // All(Zonewise)
+            {
+                if (_selectedRegion == "1")
+                {
+                    columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,  'All' As branchsol,'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,  'All' As branchsol,'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Branchwise Detailed
+                    {
+                        //isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+                    }
+                }
+                else // Specific Region Selected
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,  'All' As branchsol,'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        //isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+                    }
+                }
+            }
+            else // Specific Zone Selected
+            {
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (_selectedRegion == "1")
+                {
+                    columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,  'All' As branchsol,'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,  'All' As branchsol,'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        //isSummary = false;
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+                    }
+                }
+                else // Particular Region selected in Particular Zone
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,  'All' As branchsol,'All' As Branch_Name,b.region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        //isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userZoneSolid}'";
+            if (_selectedRegion == "1")
+            {
+                columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,  'All' As branchsol,'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId";
+                groupBy = " Group By zone_name_eng, Zone_SolId";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1")
+                {
+                    columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt,'All' As branchsol,'All' As Branch_Name,b.region_name,zone_name_eng, region_solid As SolId";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    //isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+                }
+            }
+            else // Specific Region
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt, 'All' As branchsol,'All' As Branch_Name,b.region_name,zone_name_eng, region_solid As SolId";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    //isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userRegionSolid}'";
+            if (_selectedBranch == "1")
+            {
+                columns = "SUM(a.No_Of_Entries_Prev_Day)No_Of_Entries_Prev_Day,SUM(a.Amt_On_Prev_Day)Amt_On_Prev_Day,SUM(a.No_Of_Entries_added)No_Of_Entries_added,SUM(a.Amt_Added)Amt_Added,SUM(a.No_Of_Entries_Reduced)No_Of_Entries_Reduced,SUM(a.Amt_Reduced)Amt_Reduced,SUM(a.No_Of_Entries_Progress_Made)No_Of_Entries_Progress_Made,SUM(a.Progress_Made_Amt)Progress_Made_Amt, 'All' As branchsol,'All' As Branch_Name,b.region_name,zone_name_eng, region_solid As SolId";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+            else
+            {
+                //isSummary = false;
+                if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            //isSummary = false;
+            where += $" and b.sol_id = '{_userBranchSolid}'";
+            columns = "zone_name_eng,b.region_name,b.BRANCH_NAME,b.sol_id branchsol,a.No_Of_Entries_Prev_Day,a.Amt_On_Prev_Day,a.No_Of_Entries_added,a.Amt_Added,a.No_Of_Entries_Reduced,a.Amt_Reduced,a.No_Of_Entries_Progress_Made,a.Progress_Made_Amt";
+        }
+
+        // Execute Query
+        string finalQuery = $"SELECT {columns} FROM Sundry_Suspense_Dashboard A JOIN Branch_Master B On A.SolID = B.SOL_ID WHERE {where} {groupBy}";
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("Sundry_Suspense_Dashboard");
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+        string date = dateTask.Result;
+        
+        _activeConfig.Columns = _detailedCols;
+        _asOnDateLabel = $"Data As On - {date} (Rs. in Actuals)";
+        
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "SundryDashboardReport");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "SundryDashboardReport.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

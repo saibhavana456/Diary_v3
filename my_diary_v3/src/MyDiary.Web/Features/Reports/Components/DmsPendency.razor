@@ -1,0 +1,295 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/dms-pendency"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>DMS Scanning Pendency — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // Defaults; hook to auth claims if needed (same pattern as your other pages)
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ===== Columns =====
+    // Summary (counts)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",                 PropertyName = "zone_name_eng", Width = "25%" },
+        new ColumnConfig { Header = "Region",               PropertyName = "region_name",    Width = "25%" },
+        new ColumnConfig { Header = "Branch",               PropertyName = "Branch_Name",    Width = "25%" },
+        new ColumnConfig { Header = "DMS Pendency Count",   PropertyName = "DMSPendency",    IsNumeric = true, Format = "N0", Width = "20%" }
+    };
+
+    // Detailed (accounts list)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",                  PropertyName = "zone_name_eng",     Width = "12%" },
+        new ColumnConfig { Header = "Region",                PropertyName = "region_name",       Width = "12%" },
+        new ColumnConfig { Header = "Branch",                PropertyName = "Branch_Name",       Width = "16%" },
+        new ColumnConfig { Header = "Sol ID",                PropertyName = "SolId",             Width = "8%"  },
+        new ColumnConfig { Header = "Account Number",        PropertyName = "AccountNumber",     Width = "14%" },
+        new ColumnConfig { Header = "Customer Id",           PropertyName = "CustId",            Width = "12%" },
+        new ColumnConfig { Header = "Account Opening Date",  PropertyName = "AcOpeningDate",     IsDate = true, Width = "12%" },
+        new ColumnConfig { Header = "Mobile Number",         PropertyName = "MobileNo",          Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "DMS Scanning Pendency";
+
+        // Optional: read user claims (uncomment if you already have this in your app)
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "1=1"; // We join with Branch_Master; filters will be applied on B.*
+        string groupBy = "";
+        string orderBy = " ORDER BY b.zone_name_eng, b.region_name, b.BRANCH_NAME";
+        bool isSummary = true;
+
+        // ===== Logic ported from ListofDMSScanPendency.aspx.cs =====
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId";
+                orderBy = ""; // single row
+            }
+            else if (_selectedZone == "all") // All(Zonewise) / Regionwise / Branchwise
+            {
+                if (_selectedRegion == "1") // Zonewise summary
+                {
+                    columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, 'All' AS region_name, b.zone_name_eng, b.Zone_SolId AS SolId";
+                    groupBy = " GROUP BY b.Zone_SolId, b.zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Regionwise summary
+                    {
+                        columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId AS SolId";
+                        groupBy = " GROUP BY b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else // Branchwise detailed (all branches)
+                    {
+                        isSummary = false;
+                        columns = DetailedColumns(distinct: true);
+                    }
+                }
+                else // Specific Region
+                {
+                    where += $" AND b.region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId AS SolId";
+                        groupBy = " GROUP BY b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                        columns = DetailedColumns(distinct: true);
+                    }
+                }
+            }
+            else // Specific Zone
+            {
+                where += $" AND b.zone_solid = '{_selectedZone}'";
+                if (_selectedRegion == "1") // Zonewise summary (only this zone)
+                {
+                    columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, 'All' AS region_name, b.zone_name_eng, b.Zone_SolId AS SolId";
+                    groupBy = " GROUP BY b.Zone_SolId, b.zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Regionwise summary within zone
+                    {
+                        columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId AS SolId";
+                        groupBy = " GROUP BY b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else // Detailed within zone
+                    {
+                        isSummary = false;
+                        columns = DetailedColumns(distinct: true);
+                    }
+                }
+                else // Specific Region inside the specific Zone
+                {
+                    where += $" AND b.region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, b.region_name, b.zone_name_eng, b.region_SolId AS SolId";
+                        groupBy = " GROUP BY b.region_name, b.region_SolId, b.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                        columns = DetailedColumns(distinct: true);
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" AND b.Zone_solid = '{_userZoneSolid}'";
+            if (_selectedRegion == "1") // Summary of ZO
+            {
+                columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, 'All' AS region_name, b.zone_name_eng, b.Zone_SolId AS SolId";
+                groupBy = " GROUP BY b.zone_name_eng, b.Zone_SolId";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1") // Regionwise summary
+                {
+                    columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, b.region_name, b.zone_name_eng, b.region_solid AS SolId";
+                    groupBy = " GROUP BY b.region_name, b.region_SolId, b.zone_name_eng";
+                }
+                else // Detailed (all or specific branch)
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                    columns = DetailedColumns(distinct: true);
+                }
+            }
+            else // Specific Region within zone
+            {
+                where += $" AND b.region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, b.region_name, b.zone_name_eng, b.region_solid AS SolId";
+                    groupBy = " GROUP BY b.region_name, b.region_SolId, b.zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                    columns = DetailedColumns(distinct: true);
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" AND b.region_solid = '{_userRegionSolid}'";
+            if (_selectedBranch == "1") // Region summary
+            {
+                columns = "COUNT(DISTINCT A.ACCOUNTNUMBER) AS DMSPendency, 'All' AS Branch_Name, b.region_name, b.zone_name_eng, b.region_solid AS SolId";
+                groupBy = " GROUP BY b.region_name, b.region_SolId, b.zone_name_eng";
+            }
+            else // Detailed (all branches or specific)
+            {
+                isSummary = false;
+                if (_selectedBranch != "all") where += $" AND b.sol_id = '{_selectedBranch}'";
+                columns = DetailedColumns(distinct: true);
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" AND b.sol_id = '{_userBranchSolid}'";
+            columns = DetailedColumns(distinct: true);
+        }
+
+        string selectPrefix = isSummary ? "SELECT " : "SELECT ";
+        string finalQuery =
+            $"{selectPrefix}{columns} " +
+            "FROM dmspendingaccounts A " +
+            "JOIN Branch_Master B ON A.SolId = B.SOL_ID " +
+            $"WHERE {where}{groupBy}{(isSummary ? orderBy : orderBy)}";
+
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+        // ===== As On Date (independent of data - fire in parallel next time) =====
+        string asOnDate = "";
+        try
+        {
+            var asOnRows = await ReportService.ExecuteRawQueryAsync("SELECT CONVERT(varchar, MAX(LastUpdateDate), 103) AS AsOn FROM dmspendingaccounts");
+            asOnDate = asOnRows.FirstOrDefault()?["AsOn"]?.ToString() ?? "";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[DmsPendency] Unhandled error: " + ex.Message);
+            asOnDate = "";
+        }
+
+        _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+        _asOnDateLabel = string.IsNullOrWhiteSpace(asOnDate) ? "" : $"Data As On - {asOnDate}";
+
+        _loading = false;
+        StateHasChanged();
+
+        // Helper: Detailed SELECT list; using DISTINCT to mirror WebForms
+        static string DetailedColumns(bool distinct) =>
+            (distinct ? "DISTINCT " : "") +
+            "b.zone_name_eng, b.region_name, b.BRANCH_NAME AS Branch_Name, " +
+            "b.SOL_ID AS SolId, " +
+            "A.accountnumber AS AccountNumber, A.custid AS CustId, " +
+            "A.acopeningdate AS AcOpeningDate, A.mobileno AS MobileNo";
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "DMSPendency");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "DMSPendency.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

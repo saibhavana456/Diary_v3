@@ -1,0 +1,113 @@
+﻿@page "/reports/user-lookup"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Reports.Services
+@using MyDiary.Web.Features.Reports.Models
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Services
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject UserApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>MIS Report — My Diary</PageTitle>
+
+@code {
+    private string BaseUrl { get; set; } = "https://mydiary.unionbankofindia.co.in/Qlik_build/redirect";
+    private string UserId { get; set; } = "744895";
+    private UserResponse? User;
+    private string? Error;
+    private bool IsLoading;
+    private List<Dictionary<string, object>> _data = new();
+    private List<Dictionary<string, object>> _insertRet = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppLogger.LogInfo($"[Reports/MIS] Initializing user-lookup page. UserId={UserId}, BaseUrl={BaseUrl}");
+        Error = null;
+        User = null;
+        IsLoading = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(BaseUrl))
+                throw new ArgumentException("Base URL is required.");
+
+            if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out _))
+                throw new ArgumentException("Base URL must be an absolute URI (e.g., https://...)");
+
+            if (string.IsNullOrWhiteSpace(UserId))
+                throw new ArgumentException("User ID is required.");
+
+            AppLogger.LogInfo($"[Reports/MIS] Checking for existing Qlik ticket for UserId={UserId}.");
+            string finalQuery = "SELECT * FROM Qlik_ticket_details WHERE user_id = 'unionbank\\" + UserId + "' AND ISDATE(entry_date_timestamp) = 1 AND DATEDIFF(MINUTE, CONVERT(datetime, entry_date_timestamp, 105), GETDATE()) < 20 AND status = 'A' ORDER BY CONVERT(datetime, entry_date_timestamp, 105) DESC";
+            _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+            if (_data.Count == 0)
+            {
+                AppLogger.LogInfo($"[Reports/MIS] No cached ticket found. Calling external API for UserId={UserId}.");
+                User = await Api.GetUserAsync(BaseUrl, UserId);
+
+                if (User == null)
+                {
+                    AppLogger.LogWarning($"[Reports/MIS] External API returned null for UserId={UserId}.");
+                    Error = "Failed to obtain ticket from external API.";
+                    return;
+                }
+
+                AppLogger.LogInfo($"[Reports/MIS] API returned ticket. Inserting into Qlik_ticket_details for UserId={UserId}.");
+                _insertRet = await ReportService.InsertQlikTicketdetails("Qlik_ticket_details", "user_id,qlik_url,qlik_ticket,entry_date_timestamp,status", "'" + User.user + "','" + User.hubUrl + "','" + User.ticket + "','" + User.timeStamp + "','A'");
+
+                if (_insertRet[0]["retVal"].ToString() == "1")
+                {
+                    string url = "/qlikdia/hub/stream/b1fb2355-c853-4940-bd9a-7bc9935cddde";
+                    url = User.hubUrl + url + "?qlikTicket=" + User.ticket;
+
+                    AppLogger.LogInfo($"[Reports/MIS] Ticket inserted successfully. Redirecting to Qlik for UserId={UserId}.");
+
+                    @if (!string.IsNullOrWhiteSpace(url) && Uri.IsWellFormedUriString(url, UriKind.Absolute))
+                    {
+                        await JS.InvokeVoidAsync("open", url, "_blank");
+                    }
+                    else
+                    {
+                        AppLogger.LogWarning($"[Reports/MIS] Constructed URL is not well-formed: {url}");
+                    }
+                }
+                else
+                {
+                    Error = _insertRet[0].Values.First().ToString();
+                    AppLogger.LogWarning($"[Reports/MIS] Ticket insert failed for UserId={UserId}. Error: {Error}");
+                }
+            }
+            else
+            {
+                AppLogger.LogInfo($"[Reports/MIS] Found existing cached ticket for UserId={UserId}. Redirecting.");
+                string url = "/qlikdia/sense/app/b1fb2355-c853-4940-bd9a-7bc9935cddde";
+                url = _data[0]["qlik_url"].ToString() + url + "?qlikTicket=" + _data[0]["qlik_ticket"].ToString();
+
+                @if (!string.IsNullOrWhiteSpace(url) && Uri.IsWellFormedUriString(url, UriKind.Absolute))
+                {
+                    await JS.InvokeVoidAsync("open", url, "_blank");
+                }
+                else
+                {
+                    AppLogger.LogWarning($"[Reports/MIS] Constructed URL from cached data is not well-formed: {url}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"[Reports/MIS] Unhandled exception during initialization for UserId={UserId}.");
+            Error = UserFacingError.Generic;
+        }
+        finally
+        {
+            IsLoading = false;
+            AppLogger.LogInfo($"[Reports/MIS] Page initialization complete. IsLoading={IsLoading}, HasError={!string.IsNullOrEmpty(Error)}");
+        }
+    }
+}

@@ -1,0 +1,360 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/unioneaseregistration"
+@using Microsoft.JSInterop
+@using System.Linq
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>VYOM Registration Report — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // CO | ZONE | REGION | BRANCH
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // A: VYOMRegistrationDataReport (day-wise), B: VYOMRegistrationDataFYReport (FY cumulative), C: Branch_Master
+    private const string FromJoin =
+        " FROM VYOMRegistrationDataReport A " +
+        " RIGHT JOIN VYOMRegistrationDataFYReport B ON A.SolID = B.SolId AND A.TranDate = B.ToDate " +
+        " JOIN Branch_Master C ON B.SolId = C.Sol_Id ";
+
+    // Baseline WHERE
+    private const string WhereBase = " C.region_solid <> '00000' AND C.region_solid <> ' ' ";
+
+    // Grid columns (match SELECT aliases)
+    private readonly List<ColumnConfig> _cols = new() {
+        new ColumnConfig { Header = "Zone",                   PropertyName = "zone_name_eng", Width = "22%" },
+        new ColumnConfig { Header = "Region",                 PropertyName = "region_name",   Width = "22%" },
+        new ColumnConfig { Header = "Branch",                 PropertyName = "Branch_Name",   Width = "22%" },
+        new ColumnConfig { Header = "SolID",                  PropertyName = "solid",         Width = "10%" },
+        new ColumnConfig { Header = "FY Registrations",       PropertyName = "FY_Count",      IsNumeric = true, Format = "N0", Width = "12%" },
+        new ColumnConfig { Header = "Registrations (On Date)",PropertyName = "Count",         IsNumeric = true, Format = "N0", Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Union Ease App Registration Report";
+        _activeConfig.Columns = _cols;
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) f)
+    {
+        _selectedZone = f.zone;
+        _selectedRegion = f.region;
+        _selectedBranch = f.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            string columns = "";
+            string where = WhereBase;
+            string groupBy = "";
+            string orderBy = ""; // per mode
+
+            // Projections
+            string SummaryAll() =>
+                " SUM(COALESCE(A.Count,0)) AS Count, " +
+                " CONVERT(varchar, B.FromDate, 103) AS FromDate, " +
+                " CONVERT(varchar, B.ToDate, 103) AS ToDate, " +
+                " SUM(B.Count) AS FY_Count, " +
+                " 'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS solid ";
+
+            string ZoneWiseSummary() =>
+                " SUM(COALESCE(A.Count,0)) AS Count, " +
+                " CONVERT(varchar, B.FromDate, 103) AS FromDate, " +
+                " CONVERT(varchar, B.ToDate, 103) AS ToDate, " +
+                " SUM(B.Count) AS FY_Count, " +
+                " 'All' AS Branch_Name, 'All' AS region_name, C.zone_name_eng, C.Zone_SolId AS solid ";
+
+            string RegionWiseSummary() =>
+                " SUM(COALESCE(A.Count,0)) AS Count, " +
+                " CONVERT(varchar, B.FromDate, 103) AS FromDate, " +
+                " CONVERT(varchar, B.ToDate, 103) AS ToDate, " +
+                " SUM(B.Count) AS FY_Count, " +
+                " 'All' AS Branch_Name, C.region_name, C.zone_name_eng, C.region_SolId AS solid ";
+
+            string BranchWiseSummary() =>
+                " SUM(COALESCE(A.Count,0)) AS Count, " +
+                " CONVERT(varchar, B.FromDate, 103) AS FromDate, " +
+                " CONVERT(varchar, B.ToDate, 103) AS ToDate, " +
+                " SUM(B.Count) AS FY_Count, " +
+                " C.Branch_Name, C.region_name, C.zone_name_eng, C.Sol_Id AS solid ";
+
+            string BranchDetail() =>
+                " B.SolId, COALESCE(A.Count,0) AS Count, " +
+                " CONVERT(varchar, B.FromDate, 103) AS FromDate, " +
+                " CONVERT(varchar, B.ToDate, 103) AS ToDate, " +
+                " B.Count AS FY_Count, " +
+                " C.Branch_Name, C.region_name, C.zone_name_eng, C.Sol_Id AS solid ";
+
+            // Privilege branching
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1") // All(Summary)
+                {
+                    columns = SummaryAll();
+                    groupBy = " GROUP BY B.FromDate, B.ToDate ";
+                    orderBy = " ORDER BY B.FromDate, B.ToDate";
+                }
+                else if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedRegion == "1") // Zonewise Data
+                    {
+                        columns = ZoneWiseSummary();
+                        groupBy = " GROUP BY B.FromDate, B.ToDate, C.Zone_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng";
+                    }
+                    else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_selectedBranch == "1") // Regionwise Summary
+                        {
+                            columns = RegionWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase)) // Branchwise Summary (All)
+                        {
+                            columns = BranchWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else // Specific Branch Detail
+                        {
+                            columns = BranchDetail();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                    else // Specific Region selected (across all)
+                    {
+                        where += $" AND C.region_solid = '{_selectedRegion}'";
+                        if (_selectedBranch == "1")
+                        {
+                            columns = RegionWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            columns = BranchWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else
+                        {
+                            columns = BranchDetail();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                }
+                else // Specific Zone selected
+                {
+                    where += $" AND C.zone_solid = '{_selectedZone}'";
+                    if (_selectedRegion == "1")
+                    {
+                        columns = ZoneWiseSummary();
+                        groupBy = " GROUP BY B.FromDate, B.ToDate, C.Zone_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng";
+                    }
+                    else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_selectedBranch == "1")
+                        {
+                            columns = RegionWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            columns = BranchWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else
+                        {
+                            columns = BranchDetail();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                    else // Particular Region selected in Particular Zone
+                    {
+                        where += $" AND C.region_solid = '{_selectedRegion}'";
+                        if (_selectedBranch == "1")
+                        {
+                            columns = RegionWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            columns = BranchWiseSummary();
+                            groupBy = " GROUP BY B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else
+                        {
+                            columns = BranchDetail();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND C.Zone_solid = '{_userZoneSolid}'";
+                if (_selectedRegion == "1") // Summary of ZO
+                {
+                    columns = SummaryAll();
+                    groupBy = " GROUP BY B.FromDate, B.ToDate ";
+                    orderBy = " ORDER BY B.FromDate, B.ToDate";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1") // Regionwise Summary
+                    {
+                        columns = RegionWiseSummary();
+                        groupBy = " GROUP BY B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                    }
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase)) // Branchwise summary in zone
+                    {
+                        columns = BranchWiseSummary();
+                        groupBy = " GROUP BY B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                    else // Selected Branch
+                    {
+                        columns = BranchDetail();
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                }
+                else
+                {
+                    where += $" AND C.region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1") // Selected Region Summary
+                    {
+                        columns = RegionWiseSummary();
+                        groupBy = " GROUP BY B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                    }
+                    else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        columns = BranchWiseSummary();
+                        groupBy = " GROUP BY B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                    else // Selected Branch
+                    {
+                        columns = BranchDetail();
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND C.region_solid = '{_userRegionSolid}'";
+                if (_selectedBranch == "1") // Region Summary
+                {
+                    columns = RegionWiseSummary();
+                    groupBy = " GROUP BY B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                    orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                }
+                else if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    columns = BranchWiseSummary();
+                    groupBy = " GROUP BY B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                    orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                }
+                else // Selected Branch
+                {
+                    columns = BranchDetail();
+                    orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                where += $" AND C.sol_id = '{_userBranchSolid}'";
+                columns = BranchDetail();
+                orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+            }
+
+            // Execute query
+            var finalQuery = $"SELECT {columns} {FromJoin} WHERE {where}{groupBy}{orderBy}";
+            _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+            // Header dates (max across same join set)
+            var dateRow = (await ReportService.ExecuteRawQueryAsync(
+                "SELECT " +
+                " CONVERT(nvarchar, MAX(A.TranDate), 103) AS TranDate, " +
+                " CONVERT(nvarchar, MAX(B.FromDate), 103) AS FromDate, " +
+                " CONVERT(nvarchar, MAX(B.ToDate), 103) AS ToDate " +
+                FromJoin +
+                " WHERE 1=1")).FirstOrDefault() ?? new Dictionary<string, object>();
+
+            string tranDate = dateRow.TryGetValue("TranDate", out var t) ? t?.ToString() ?? "" : "";
+            string fromDate = dateRow.TryGetValue("FromDate", out var f) ? f?.ToString() ?? "" : "";
+            string toDate = dateRow.TryGetValue("ToDate", out var d) ? d?.ToString() ?? "" : "";
+
+            _asOnDateLabel = $"FY Registrations: {fromDate} to {toDate}  |  No. of Registrations on {tranDate}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[UnionEaseRegistration] Unhandled error: " + ex.Message);
+            _data = new();
+            _asOnDateLabel = "No data available.";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "UnionEaseAppRegistration");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "UnionEaseAppRegistration.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

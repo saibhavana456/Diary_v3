@@ -1,0 +1,186 @@
+@namespace RequestPortal.Web.Pages.Masters
+@page "/masters/role-allocation"
+@inject IServiceProvider SP
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject ModuleContext Module
+
+<PageTitle>Role Allocation</PageTitle>
+<PageHeader PageKey="masters-role-allocation" Title="Role Allocation Master"
+            Subtitle="View and manage role assignments for all employees. Roles are derived from Sol ID type and position; module-scoped admins are added here."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Request Portal"), new("People & Access"), new("Role Allocation") })" />
+
+<SuperAdminOnly>
+@* ── Legend ──────────────────────────────────────────────────────────────── *@
+<MudPaper Elevation="1" Class="pa-4 mb-4">
+    <MudText Typo="Typo.subtitle2" Class="mb-3" Style="font-weight:700;color:var(--rp-navy)">Role Derivation Rules (Sol ID Type × Position → Portal Role)</MudText>
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="background:#f1f5f9;">
+                    <th style="padding:8px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0;white-space:nowrap">Sol ID Type</th>
+                    <th style="padding:8px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0;white-space:nowrap">Position</th>
+                    <th style="padding:8px 4px;text-align:center;border-bottom:2px solid #e2e8f0;"></th>
+                    <th style="padding:8px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0;white-space:nowrap">Derived Role</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var rule in _rules)
+                {
+                    <tr style="border-bottom:1px solid #f1f5f9;">
+                        <td style="padding:7px 12px;">
+                            <MudChip T="string" Size="Size.Small" Color="@SolTypeColor(rule.SolType)" Variant="Variant.Outlined" Style="margin:0">@DemoStore.SolIdTypeLabel(rule.SolType)</MudChip>
+                        </td>
+                        <td style="padding:7px 12px;color:#475569;white-space:nowrap">@DemoStore.PositionLabel(rule.Pos)</td>
+                        <td style="padding:7px 4px;text-align:center;color:#94a3b8;">→</td>
+                        <td style="padding:7px 12px;">
+                            <MudChip T="string" Size="Size.Small" Color="@RoleColor(rule.Role)" Variant="Variant.Filled" Style="margin:0">@DemoStore.RoleLabel(rule.Role)</MudChip>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</MudPaper>
+
+@* ── Allocations table ────────────────────────────────────────────────────── *@
+<MudPaper Elevation="1">
+    <MudTable T="AllocRow" Items="@_rows" Dense="true" Hover="true" Striped="true" Class="rp-data-table"
+              Filter="@(r => Filter(r, _search))">
+        <ToolBarContent>
+            <MudText Typo="Typo.subtitle1" Class="mr-4"><b>@_rows.Count</b> allocations</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_search" Placeholder="Search employee / role…"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Clearable="true" Immediate="true" Style="max-width:280px" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Employee</MudTh>
+            <MudTh>Sol ID</MudTh>
+            <MudTh>Sol ID Type</MudTh>
+            <MudTh>Position</MudTh>
+            <MudTh>Derived Role</MudTh>
+            <MudTh>Allocated Role</MudTh>
+            <MudTh>Module Scope</MudTh>
+            <MudTh>Notes</MudTh>
+            <MudTh>Valid Until</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <div>
+                    <div style="font-weight:600;font-size:13px">@context.Name</div>
+                    <div style="font-size:11px;color:#59636e;font-family:monospace">@context.EmpCode</div>
+                </div>
+            </MudTd>
+            <MudTd><span style="font-size:12px;font-family:monospace;font-weight:600">@context.SolCode</span></MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="@SolTypeColor(context.SolType)" Variant="Variant.Outlined">@DemoStore.SolIdTypeLabel(context.SolType)</MudChip></MudTd>
+            <MudTd><MudText Typo="Typo.caption">@DemoStore.PositionLabel(context.Position)</MudText></MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="@RoleColor(context.DerivedRole)" Variant="Variant.Outlined">@DemoStore.RoleLabel(context.DerivedRole)</MudChip></MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="@RoleColor(context.AllocRole)" Variant="Variant.Filled">@DemoStore.RoleLabel(context.AllocRole)</MudChip></MudTd>
+            <MudTd>
+                @if (context.ModuleScope is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@context.ModuleScope Admin</MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Portal-wide</MudText>
+                }
+            </MudTd>
+            <MudTd><MudText Typo="Typo.caption" Color="Color.Secondary">@(context.Notes ?? "—")</MudText></MudTd>
+            <MudTd>
+                @if (context.ValidTo.HasValue)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="@(context.ValidTo < DateTime.UtcNow ? Color.Error : Color.Default)" Variant="Variant.Outlined">
+                        @context.ValidTo.Value.ToString("dd-MMM-yyyy")
+                    </MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">No expiry</MudText>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+</SuperAdminOnly>
+
+@code {
+    private List<AllocRow> _rows = new();
+    private string _search = "";
+
+    private static readonly List<(SolIdType SolType, EmployeePosition Pos, RoleCode Role)> _rules = new()
+    {
+        (SolIdType.Branch,         EmployeePosition.Officer,       RoleCode.BranchUser),
+        (SolIdType.Branch,         EmployeePosition.Head,          RoleCode.BranchHead),
+        (SolIdType.RegionalOffice, EmployeePosition.Officer,       RoleCode.RoUser),
+        (SolIdType.RegionalOffice, EmployeePosition.Head,          RoleCode.RoHead),
+        (SolIdType.ZonalOffice,    EmployeePosition.Officer,       RoleCode.ZoUser),
+        (SolIdType.ZonalOffice,    EmployeePosition.Head,          RoleCode.ZoHead),
+        (SolIdType.CoVertical,     EmployeePosition.Officer,       RoleCode.CoUser),
+        (SolIdType.CoVertical,     EmployeePosition.SeniorOfficer, RoleCode.CoHead),
+        (SolIdType.CoVertical,     EmployeePosition.Head,          RoleCode.CoVertAdmin),
+        (SolIdType.CoVertical,     EmployeePosition.VerticalAdmin, RoleCode.AppAdmin),
+    };
+
+    protected override void OnInitialized()
+    {
+        Module.SwitchTo(PortalModule.AccessManagement);
+        var demo = SP.GetService<DemoStore>();
+        if (demo is null) return;
+
+        var empMap = demo.EmployeeMasters.ToDictionary(e => e.EmpCode);
+        var solMap = demo.SolIds.ToDictionary(s => s.Id);
+
+        _rows = demo.RoleAllocations.Where(a => a.IsActive)
+            .Select(a =>
+            {
+                empMap.TryGetValue(a.EmpCode, out var emp);
+                var sol     = emp is not null ? solMap.GetValueOrDefault(emp.SolId) : null;
+                var derived = emp is not null ? DemoStore.DeriveRole(emp.SolIdType, emp.Position) : RoleCode.BranchUser;
+                return new AllocRow(
+                    a.EmpCode,
+                    emp?.Name ?? "Unknown",
+                    sol?.Code ?? "—",
+                    emp?.SolIdType ?? SolIdType.Branch,
+                    emp?.Position ?? EmployeePosition.Officer,
+                    derived,
+                    a.Role,
+                    a.ModuleScope,
+                    a.Notes,
+                    a.ValidTo
+                );
+            })
+            .OrderBy(r => (int)r.SolType * -1)
+            .ThenBy(r => r.Name)
+            .ToList();
+    }
+
+    private static bool Filter(AllocRow r, string s) =>
+        string.IsNullOrWhiteSpace(s) ||
+        r.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+        r.EmpCode.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+        r.AllocRole.ToString().Contains(s, StringComparison.OrdinalIgnoreCase);
+
+    private static Color SolTypeColor(SolIdType t) => t switch
+    {
+        SolIdType.CoVertical     => Color.Error,
+        SolIdType.ZonalOffice    => Color.Warning,
+        SolIdType.RegionalOffice => Color.Info,
+        _                        => Color.Success
+    };
+
+    private static Color RoleColor(RoleCode r) => r switch
+    {
+        RoleCode.AppAdmin or RoleCode.SuperAdmin => Color.Error,
+        RoleCode.VertL5                          => Color.Info,
+        RoleCode.VertL4 or RoleCode.VertL3      => Color.Warning,
+        RoleCode.VertL2 or RoleCode.VertL1      => Color.Success,
+        _                                        => Color.Default
+    };
+
+    private sealed record AllocRow(string EmpCode, string Name, string SolCode,
+        SolIdType SolType, EmployeePosition Position, RoleCode DerivedRole, RoleCode AllocRole,
+        string? ModuleScope, string? Notes, DateTime? ValidTo);
+}

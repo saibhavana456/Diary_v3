@@ -1,0 +1,559 @@
+﻿@page "/strike-corner/strike-committee-meeting"
+
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.StrikeCorner.Models
+@using MyDiary.Web.Features.StrikeCorner.Services
+
+@inject IStrikeCornerService Svc
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Strike Committee Meeting</PageTitle>
+
+<PageHeader Title="Strike Committee Meeting"
+            Subtitle="Manage Strike Committee Meeting records."
+            Crumbs="_crumbs" />
+
+<MudPaper Elevation="1" Class="pa-3 mb-4">
+
+    <div class="d-flex align-center">
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.GridOn"
+                   OnClick="ExportToExcelAsync">
+            Export to Excel
+        </MudButton>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Class="ml-2"
+                   OnClick="OpenNewEntry">
+            New Entry
+        </MudButton>
+
+    </div>
+
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_entries.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        No records found.
+    </MudAlert>
+}
+else
+{
+    <MudTable T="StrikeCommitteeMeeting"
+              Items="_entries"
+              Dense="true"
+              Hover="true"
+              Bordered="true">
+
+        <HeaderContent>
+
+            <MudTh>Date</MudTh>
+            <MudTh>Remarks</MudTh>
+            <MudTh>MOM File</MudTh>
+            <MudTh>Attachments</MudTh>
+            <MudTh>Actions</MudTh>
+
+        </HeaderContent>
+
+        <RowTemplate>
+
+            <MudTd DataLabel="Date">
+                @context.MeetingDate.ToString("dd-MMM-yyyy")
+            </MudTd>
+
+            <MudTd DataLabel="Remarks">
+                @context.Remarks
+            </MudTd>
+            <MudTd DataLabel="MOM File">
+
+                <div class="d-flex align-center gap-2">
+
+                    <MudText>
+                        @context.FileName
+                    </MudText>
+
+                </div>
+
+            </MudTd>
+
+            <MudTd DataLabel="Attachments">
+
+                <MudButton Size="Size.Small"
+                           Variant="Variant.Text"
+                           OnClick="@(() => ShowAttachments(context))">
+
+                    @context.AttachmentCount File(s)
+
+                </MudButton>
+
+            </MudTd>
+
+            <MudTd DataLabel="Actions">
+
+                <MudIconButton 
+                    Icon="@Icons.Material.Filled.Visibility"
+                    Size="Size.Small"
+                    Href="@(GetFileUrl(context.Id, true))"
+                    Target="_blank" />
+
+                <MudIconButton 
+                    Icon="@Icons.Material.Filled.Edit"                               
+                    Size="Size.Small"
+                    OnClick="async () => await EditEntry(context)" />
+
+                <MudIconButton
+                    Icon="@Icons.Material.Filled.Delete"
+                    Size="Size.Small"
+                    Color="Color.Error"
+                    OnClick="@(() => ConfirmDelete(context))" />
+
+            </MudTd>
+
+        </RowTemplate>
+
+    </MudTable>
+}
+
+<MudDialog @bind-Visible="_entryOpen">
+
+    <TitleContent>
+        @(_editingId == 0
+            ? "New Strike Committee Meeting"
+            : "Edit Strike Committee Meeting")
+    </TitleContent>
+
+    <DialogContent>
+
+        <MudGrid>
+
+            <MudItem xs="12" md="6">
+
+                <MudDatePicker Label="Meeting Date"
+                               @bind-Date="_meetingDate"
+                               Required="true" />
+
+            </MudItem>
+
+            <MudItem xs="12">
+
+                <MudTextField T="string"
+                              Label="Remarks"
+                              @bind-Value="_remarks"
+                              Lines="3"
+                              Required="true"
+                              Variant="Variant.Outlined" />
+
+            </MudItem>
+
+            <MudItem xs="12">
+
+                <MudText Typo="Typo.caption">
+                    MOM File @(_editingId == 0 ? "(Mandatory)" : "(leave blank to keep existing file)")
+                </MudText>
+
+                <MudFileUpload T="IBrowserFile"
+                               FilesChanged="OnPrimaryFilePicked">
+
+                    <ActivatorContent>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.Upload">
+
+                            @(_primaryFile is null ? "Select MOM File" : "Replace MOM File")
+
+                        </MudButton>
+
+                    </ActivatorContent>
+
+                </MudFileUpload>
+
+                @if (_primaryFile is not null)
+                {
+                    <div>@_primaryFile.Name</div>
+                }
+                else if (!string.IsNullOrWhiteSpace(_existingMomFileName))
+                {
+                    <div>@_existingMomFileName</div>
+                }
+
+            </MudItem>
+
+            <MudItem xs="12">
+
+                <MudText Typo="Typo.caption">
+                    Supporting Documents
+                </MudText>
+
+                <MudFileUpload T="IBrowserFile"
+                               FilesChanged="OnAttachmentPicked">
+
+                    <ActivatorContent>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.AttachFile">
+
+                            Add Attachment
+
+                        </MudButton>
+
+                    </ActivatorContent>
+
+                </MudFileUpload>
+
+                @if (_editingId != 0 && _activeAttachments.Any())
+                {
+                    <MudDivider Class="my-2" />
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @_activeAttachments.Count existing attachment(s) will be kept.
+                        Use the Attachments column to view or download them.
+                    </MudText>
+                }
+
+                @if (_attachments.Any())
+                {
+                    <MudDivider Class="my-2" />
+
+                    <MudText Typo="Typo.subtitle2">
+                        New Attachments
+                    </MudText>
+
+                    @foreach (var file in _attachments)
+                    {
+                        <div class="d-flex align-center">
+
+                            <span>@file.Name</span>
+
+                            <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                           Size="Size.Small"
+                                           OnClick="@(() => _attachments.Remove(file))" />
+
+                        </div>
+                    }
+                }
+
+            </MudItem>
+
+        </MudGrid>
+
+    </DialogContent>
+
+    <DialogActions>
+
+        <MudButton OnClick="@(() => _entryOpen = false)">
+            Cancel
+        </MudButton>
+
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="SaveAsync">
+            Save
+        </MudButton>
+
+    </DialogActions>
+
+</MudDialog>
+
+<MudDialog @bind-Visible="_attachmentsOpen"
+           Options="_dialogOptions">
+
+    <TitleContent>
+        Supporting Documents
+    </TitleContent>
+
+    <DialogContent>
+
+        @if (_activeAttachments.Count == 0)
+        {
+            <MudText>No supporting documents.</MudText>
+        }
+        else
+        {
+            @foreach (var a in _activeAttachments)
+            {
+                <div class="d-flex align-center gap-2 mb-1">
+                    <span>@a.FileName</span>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Href="@AttachmentUrl(a.Id, false)" Target="_blank" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" Href="@AttachmentUrl(a.Id, true)" Target="_blank" />
+                </div>
+            }
+        }
+
+    </DialogContent>
+
+    <DialogActions>
+
+        <MudButton OnClick="@(() => _attachmentsOpen = false)">
+            Close
+        </MudButton>
+
+    </DialogActions>
+
+</MudDialog>
+
+@code
+{
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Assurance 360°", "assurance-360"),
+        new("Strike Committee Meeting")
+    };
+
+    private bool _loading = true;
+    private bool _entryOpen;
+
+    private long _editingId;
+
+    private DateTime? _meetingDate;
+    private string? _remarks;
+
+    private IBrowserFile? _primaryFile;
+
+    private List<IBrowserFile> _attachments = new();
+
+    private List<StrikeCommitteeMeeting> _entries = new();
+
+    private string? _existingMomFileName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private bool _attachmentsOpen;
+
+    private List<StrikeCommitteeAttachment>
+        _activeAttachments = new();
+
+    private readonly DialogOptions _dialogOptions =
+        new()
+            {
+                CloseButton = true,
+                MaxWidth = MaxWidth.Medium,
+                FullWidth = true
+            };
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            _entries = await Svc.ListStrikeCommitteeMeetingsAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenNewEntry()
+    {
+        _editingId = 0;
+
+        _meetingDate = DateTime.Today;
+        _remarks = string.Empty;
+
+        _primaryFile = null;
+        _attachments.Clear();
+
+        _existingMomFileName = null;
+        _activeAttachments.Clear();
+
+        _entryOpen = true;
+    }
+
+    private async Task EditEntry(StrikeCommitteeMeeting item)
+    {
+        _editingId = item.Id;
+
+        _meetingDate = item.MeetingDate;
+        _remarks = item.Remarks;
+
+        _primaryFile = null;
+        _attachments.Clear();
+
+        _existingMomFileName = item.FileName;
+
+        _activeAttachments =
+            await Svc.ListStrikeCommitteeAttachmentsAsync(item.Id);
+
+        _entryOpen = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_meetingDate == null)
+        {
+            Snackbar.Add(
+                "Meeting Date is mandatory.",
+                Severity.Warning);
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_remarks))
+        {
+            Snackbar.Add(
+                "Remarks are mandatory.",
+                Severity.Warning);
+
+            return;
+        }
+
+        if (_editingId == 0 && _primaryFile == null)
+        {
+            Snackbar.Add(
+                "MOM File is mandatory.",
+                Severity.Warning);
+
+            return;
+        }
+
+        try
+        {
+            byte[] fileBytes = Array.Empty<byte>();
+            string fileName = "";
+            string contentType = "";
+
+            if (_primaryFile != null)
+            {
+                using var ms = new MemoryStream();
+
+                await using var stream =
+                    _primaryFile.OpenReadStream(
+                        10 * 1024 * 1024);
+
+                await stream.CopyToAsync(ms);
+
+                fileBytes = ms.ToArray();
+                fileName = _primaryFile.Name;
+                contentType = _primaryFile.ContentType;
+            }
+
+            var meetingId = await Svc.SaveStrikeCommitteeMeetingAsync(
+                            _editingId == 0 ? null : _editingId,
+                            _meetingDate.Value,
+                            _remarks ?? "",
+                            fileBytes,
+                            contentType,
+                            fileName,
+                            "SYSTEM");
+
+            foreach (var attachment in _attachments)
+            {
+                using var ms = new MemoryStream();
+
+                await using var stream =
+                    attachment.OpenReadStream(10 * 1024 * 1024);
+
+                await stream.CopyToAsync(ms);
+
+                await Svc.SaveStrikeCommitteeAttachmentAsync(
+                    meetingId,
+                    ms.ToArray(),
+                    attachment.ContentType,
+                    attachment.Name,
+                    "SYSTEM");
+            }
+
+            _entryOpen = false;
+
+            await ReloadAsync();
+
+            Snackbar.Add(
+                "Record saved successfully.",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                ex.Message,
+                Severity.Error);
+        }
+    }
+
+    private void OnPrimaryFilePicked(
+        IBrowserFile file)
+    {
+        _primaryFile = file;
+    }
+
+    private void OnAttachmentPicked(
+        IBrowserFile file)
+    {
+        _attachments.Add(file);
+    }
+
+    private async Task ShowAttachments(
+        StrikeCommitteeMeeting item)
+    {
+        _activeAttachments =
+            await Svc.ListStrikeCommitteeAttachmentsAsync(item.Id);
+
+        Snackbar.Add(
+            $"{_activeAttachments.Count} attachment(s) found.",
+            Severity.Info);
+
+        _attachmentsOpen = true;
+    }
+
+    private string AttachmentUrl(long attachmentId, bool download)
+    {
+        return $"{Nav.BaseUri}strike-committee/attachment/{attachmentId}?download={download}";
+    }
+
+    private async Task ConfirmDelete(
+        StrikeCommitteeMeeting item)
+    {
+        var confirmed =
+            await JS.InvokeAsync<bool>(
+                "confirm",
+                $"Delete meeting dated {item.MeetingDate:dd-MMM-yyyy}?");
+
+        if (!confirmed)
+            return;
+
+        await Svc.DeleteStrikeCommitteeMeetingAsync(
+            item.Id);
+
+        await ReloadAsync();
+
+        Snackbar.Add(
+            "Meeting deleted.",
+            Severity.Success);
+    }
+
+    private Task ExportToExcelAsync()
+    {
+        Snackbar.Add(
+            "Export functionality pending.",
+            Severity.Info);
+
+        return Task.CompletedTask;
+    }
+
+    private string GetFileUrl(
+        long id,
+        bool download)
+    {
+        return
+            $"{Nav.BaseUri}strike-committee/file/{id}?download={download}";
+    }
+}

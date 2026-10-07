@@ -1,0 +1,117 @@
+@page "/flatmgmt/my"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@inject NavigationManager Nav
+
+<PageTitle>Flat Management - Flat Management System</PageTitle>
+
+<PageHeader Title="Flat Management" Subtitle="View your flat, raise or track service requests — and, if you're a module admin, manage the whole estate." Crumbs="_crumbs" PageKey="flatmgmt-my-hub" />
+
+<div class="fm-hub-section-heading">MY FLAT</div>
+<div class="fm-hub-grid mb-6">
+    <div class="fm-hub-card" @onclick="@(() => Nav.NavigateTo("flatmgmt/my/flat-details"))">
+        <MudIcon Icon="@Icons.Material.Filled.Apartment" Class="fm-hub-card-icon" />
+        <div class="fm-hub-card-title">My Flat Details</div>
+        <div class="fm-hub-card-desc">View the flat currently allotted to you — location, building, room, occupancy dates.</div>
+    </div>
+
+    <div class="fm-hub-card" @onclick="@(() => Nav.NavigateTo("flatmgmt/my/submit-grievance"))">
+        <MudIcon Icon="@Icons.Material.Filled.NoteAdd" Class="fm-hub-card-icon" />
+        <div class="fm-hub-card-title">Submit Grievance</div>
+        <div class="fm-hub-card-desc">Raise a service request against your allotted flat, with an optional attachment.</div>
+    </div>
+
+    <div class="fm-hub-card" @onclick="@(() => Nav.NavigateTo("flatmgmt/my/track-grievance"))">
+        <MudIcon Icon="@Icons.Material.Filled.TrackChanges" Class="fm-hub-card-icon" />
+        <div class="fm-hub-card-title">Track Grievance</div>
+        <div class="fm-hub-card-desc">Check the status and action history of service requests you've raised.</div>
+    </div>
+</div>
+
+@* ── Administration — visible only to module admins. Individual admin pages ─
+     are still independently protected by [Authorize(Policy="AppAdmin")], this
+     just keeps a non-admin from even seeing the section exists. ──────────── *@
+<AuthorizeView Policy="AppAdmin">
+    <Authorized>
+        <MudDivider Class="mb-6" />
+        <div class="fm-hub-section-heading fm-hub-section-admin">
+            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" Class="mr-1" />
+            ADMINISTRATION
+        </div>
+        <div class="fm-hub-grid">
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/home"))">
+                <MudIcon Icon="@Icons.Material.Filled.Dashboard" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">All Flat Details</div>
+                <div class="fm-hub-card-desc">Searchable list of every flat with owner/occupant, location and flat number.</div>
+            </div>
+
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/flats"))">
+                <MudIcon Icon="@Icons.Material.Filled.Domain" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">Flat Master</div>
+                <div class="fm-hub-card-desc">Add and edit flats in the Flat Master (location, society, BHK, usability, ownership).</div>
+            </div>
+
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/flat-allocation"))">
+                <MudIcon Icon="@Icons.Material.Filled.AssignmentInd" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">Manage Allocation</div>
+                <div class="fm-hub-card-desc">Allocate or deallocate flats to/from employees, with occupancy dates and remarks.</div>
+            </div>
+
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/flat-assets"))">
+                <MudIcon Icon="@Icons.Material.Filled.Inventory" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">Manage Assets</div>
+                <div class="fm-hub-card-desc">Furniture &amp; fixture asset allocation for each flat.</div>
+            </div>
+
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/flat-bills"))">
+                <MudIcon Icon="@Icons.Material.Filled.Receipt" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">Manage Utility Bills</div>
+                <div class="fm-hub-card-desc">Electricity, water and other utility bills recorded against each flat.</div>
+            </div>
+
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/flat-maintenance"))">
+                <MudIcon Icon="@Icons.Material.Filled.Build" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">Flat Maintenance</div>
+                <div class="fm-hub-card-desc">Maintenance records for each flat — type, vendor, bill amount.</div>
+            </div>
+
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/grievances"))">
+                <MudIcon Icon="@Icons.Material.Filled.Assignment" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">Service Requests</div>
+                <div class="fm-hub-card-desc">All resident service requests/grievances across every flat, with status and vendor action.</div>
+            </div>
+
+            <div class="fm-hub-card fm-hub-card-admin" @onclick="@(() => Nav.NavigateTo("flatmgmt/admin/users"))">
+                <MudIcon Icon="@Icons.Material.Filled.ManageAccounts" Class="fm-hub-card-icon" />
+                <div class="fm-hub-card-title">Admin Management</div>
+                <div class="fm-hub-card-desc">Module admins and maintenance vendors.</div>
+            </div>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+<style>
+    .fm-hub-section-heading {
+        font-size: .8rem;
+        font-weight: 700;
+        letter-spacing: .06em;
+        color: var(--mud-palette-text-secondary);
+        margin-bottom: 12px;
+    }
+    .fm-hub-section-admin { color: var(--rp-navy, #1E3A8A); display: flex; align-items: center; }
+
+    .fm-hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .fm-hub-card { cursor: pointer; border-radius: 12px; padding: 20px; background: #fff; border: 1px solid rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s; }
+    .fm-hub-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .fm-hub-card-admin { border-left: 3px solid var(--rp-navy, #1E3A8A); }
+    .mud-theme-dark .fm-hub-card, .cc-dark .fm-hub-card { background: #1c1f24; border-color: #2a2e35; }
+    .fm-hub-card-icon { font-size: 2rem; color: var(--mud-palette-primary); margin-bottom: 8px; }
+    .fm-hub-card-title { font-weight: 600; font-size: 1rem; margin-bottom: 4px; }
+    .fm-hub-card-desc { font-size: .82rem; opacity: .75; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Flat Management") };
+}

@@ -1,0 +1,19 @@
+.vaf-title {
+    color: #0b4498;
+    font-weight: 700;
+}
+
+::deep .vaf-card {
+    border-radius: 12px;
+}
+
+.vaf-label {
+    font-weight: 700;
+    color: #667085;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+::deep .vaf-table td {
+    line-height: 1.5;
+}

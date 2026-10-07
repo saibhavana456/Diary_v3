@@ -1,0 +1,111 @@
+@page "/feedback-admin"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "FeedbackAdmin")]
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IFeedbackRepo FeedbackRepo
+@inject NavigationManager Nav
+
+<PageTitle>Feedback — Admin</PageTitle>
+<PageHeader PageKey="feedback-admin" Title="Feedback" Subtitle="All user-submitted feedback tickets — triage severity and post updates." Crumbs="_crumbs" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="FeedbackStatus?" Label="Status" @bind-Value="_status" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (FeedbackStatus s in Enum.GetValues<FeedbackStatus>()) { <MudSelectItem T="FeedbackStatus?" Value="@((FeedbackStatus?)s)">@s</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="FeedbackCategory?" Label="Category" @bind-Value="_category" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (FeedbackCategory c in Enum.GetValues<FeedbackCategory>()) { <MudSelectItem T="FeedbackCategory?" Value="@((FeedbackCategory?)c)">@CategoryLabel(c)</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudTextField T="string" Label="Zone" @bind-Value="_zone" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudTextField T="string" Label="Region" @bind-Value="_region" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="ReloadAsync">Apply</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudTable Items="@_tickets" Hover="true" Dense="true" Striped="true" Loading="@_loading" T="FeedbackTicket" OnRowClick="@(row => Nav.NavigateTo($"feedback-admin/{row.Item.Id}"))">
+        <HeaderContent>
+            <MudTh>Ticket #</MudTh><MudTh>Category</MudTh><MudTh>Submitted By</MudTh><MudTh>Zone/Region</MudTh>
+            <MudTh>Severity</MudTh><MudTh>Level</MudTh><MudTh>Status</MudTh><MudTh>Submitted</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Ticket #">@context.TicketNo</MudTd>
+            <MudTd DataLabel="Category">@CategoryLabel(context.Category)</MudTd>
+            <MudTd DataLabel="Submitted By">@context.EmpName (@context.EmpCode)</MudTd>
+            <MudTd DataLabel="Zone/Region">@context.Zone / @context.Region</MudTd>
+            <MudTd DataLabel="Severity">
+                @if (context.Severity is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="@SeverityColor(context.Severity.Value)">@context.Severity</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">Not triaged</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Level">L@(context.CurrentLevel)</MudTd>
+            <MudTd DataLabel="Status"><MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.Status</MudChip></MudTd>
+            <MudTd DataLabel="Submitted">@context.CreatedAt.ToString("dd-MMM-yyyy")</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No feedback tickets match this filter.</MudAlert>
+        </NoRecordsContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("MIS", "MIS"), new("Feedback") };
+
+    private bool _loading = true;
+    private FeedbackStatus? _status;
+    private FeedbackCategory? _category;
+    private string? _zone, _region;
+    private List<FeedbackTicket> _tickets = new();
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        var data = await FeedbackRepo.ListAllTicketsAsync(_status, _category, string.IsNullOrWhiteSpace(_zone) ? null : _zone, string.IsNullOrWhiteSpace(_region) ? null : _region);
+        _tickets = data.ToList();
+        _loading = false;
+    }
+
+    private static string CategoryLabel(FeedbackCategory c) => c switch
+    {
+        FeedbackCategory.FunctionalDefects => "Functional Defects",
+        FeedbackCategory.PerformanceIssues => "Performance Issues",
+        FeedbackCategory.UiUxImprovements => "UI/UX Improvements",
+        FeedbackCategory.NewFeatureRequests => "New Feature Requests",
+        FeedbackCategory.DataIssues => "Data Issues",
+        _ => c.ToString()
+    };
+
+    private static Color SeverityColor(FeedbackSeverity s) => s switch
+    {
+        FeedbackSeverity.Critical => Color.Error,
+        FeedbackSeverity.High => Color.Warning,
+        FeedbackSeverity.Medium => Color.Info,
+        _ => Color.Default
+    };
+
+    private static Color StatusColor(FeedbackStatus s) => s switch
+    {
+        FeedbackStatus.Closed => Color.Success,
+        FeedbackStatus.InProgress => Color.Warning,
+        _ => Color.Default
+    };
+}

@@ -1,0 +1,151 @@
+@using MudBlazor
+@using System.Globalization
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@inject NavigationManager Nav
+@inject IConfiguration Configuration
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject MyDiary.Web.Core.Services.Storage.ISessionStorageService SessionStorage
+@inject MyDiary.Web.Services.IEncryptionService EncryptionService
+@inject ILandingDashboardV2Service DashboardService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MudGrid GutterSize="24px">
+    @foreach (var card in _cards)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="3" Class="d-flex">
+            <div class="app-card-btn" style="width:100%;">
+                <div class="card-content-wrapper">
+                    <div class="d-flex align-start gap-4">
+                        <div class="icon-badge">
+                            <MudIcon Icon="@card.Icon"
+                                     Style="@($"font-size:2rem; color:{card.IconColor};")" />
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="card-title">@card.Title</div>
+                        </div>
+                    </div>
+                    <MudDivider Class="my-3" />
+                    <div style="font-size:0.85rem; color:#444; flex-grow:1;">
+                        @foreach (var item in card.Items)
+                        {
+                            <div class="mb-1"><b>@item.Key:</b> @item.Value</div>
+                        }
+                    </div>
+                    @if (card.ShowGo)
+                    {
+                        <div class="d-flex justify-end mt-4">
+                            <MudButton Class="rounded-pill px-4 go-btn-style"
+                                       EndIcon="@Icons.Material.Filled.ArrowRightAlt"
+                                       OnClick="@GoToHandoverTakeover">GO</MudButton>
+                        </div>
+                    }
+                </div>
+            </div>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private record CardData(
+        string Title,
+        string Icon,
+        string IconColor,
+        List<KeyValuePair<string, string>> Items,
+        bool ShowGo = false
+    );
+
+    private List<CardData> _cards = new();
+    private BranchProfile _profile = new();
+
+    private string _userRole = "";
+    private string _brSolid = "";
+    private string _regionSolid = "";
+    private string _zoneSolid = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get user claims
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userRole    = user.FindFirst(ClaimTypes.Role)?.Value
+                        ?? user.FindFirst("Role")?.Value ?? "";
+            _brSolid     = user.FindFirst("branch_solid")?.Value
+                        ?? user.FindFirst("br_solid")?.Value ?? "";
+            _regionSolid = user.FindFirst("region_solid")?.Value ?? "";
+            _zoneSolid   = user.FindFirst("zone_solid")?.Value ?? "";
+        }
+
+        // Fetch branch profile using the same service as Landing_Dashboard_V2_1
+        try
+        {
+            _profile = await DashboardService.GetBranchProfileAsync(
+                _userRole, _brSolid, _regionSolid, _zoneSolid);
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "BranchProfileModule: failed to load branch profile"); /* show defaults */ }
+
+        BuildCards();
+    }
+
+    private void BuildCards()
+    {
+		_cards = new List<CardData>
+		{
+			new("Branch Basic Details",
+				Icons.Material.Filled.Business, "#1565C0",
+				new()
+				{
+					new("Branch Opening Date",
+						_profile.SolOpnDt?.ToString("dd-MMM-yyyy") ?? "—"),
+					new("Branch License No.", _profile.LicenseNumber),
+					new("Premises Lease Expiry",
+						!string.IsNullOrWhiteSpace(_profile.LeaseValidity)
+							? _profile.LeaseValidity : "—"),
+				}),
+			new("Keys & Security Items",
+				Icons.Material.Filled.Key, "#C62828",
+				new()
+				{
+					new("Strong Room Keys", "2 Sets"),
+					new("Cash Safe Keys", "2 Sets"),
+					new("ATM Room Keys", "1 Set"),
+					new("Alarm System", "Active"),
+				}),
+            @* new("Asset Register",
+                Icons.Material.Filled.Inventory, "#1565C0",
+                new()
+		        {
+			        new("Total Assets", "48"),
+			        new("Furniture & Fixtures", "22"),
+			    new("IT Equipment", "18"),
+			        new("Others", "8"),
+		        }) *@
+		};
+    }
+
+    private async Task GoToHandoverTakeover()
+    {
+        var userId = await SessionStorage.GetAsync<string>("UserId") ?? "";
+        var pwd = await SessionStorage.GetAsync<string>("Pwd") ?? "";
+
+        var baseUrl = Configuration["ApiEndpoints:HandoverTakeoverUrl"] ?? "#";
+        string finalUrl = baseUrl;
+
+        if (!string.IsNullOrEmpty(userId))
+        {
+            string formattedDateTime = AppTime.Now.ToString(
+                "MM/dd/yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
+            string plainText = $"{userId}|{pwd}|{formattedDateTime}";
+            string ssoData = EncryptionService.EncryptStringAES(plainText);
+            finalUrl = $"{baseUrl}?data={ssoData}";
+        }
+
+        await JS.InvokeVoidAsync("window.open", finalUrl, "_blank");
+    }
+}

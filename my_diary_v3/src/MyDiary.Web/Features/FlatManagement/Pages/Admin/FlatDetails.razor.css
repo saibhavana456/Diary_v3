@@ -1,0 +1,31 @@
+.fd-back {
+    display: inline-block;
+    margin-bottom: 8px;
+    color: #1E3A8A;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.fd-back:hover {
+    text-decoration: underline;
+}
+
+.fd-title {
+    color: #1E3A8A;
+    font-weight: 700;
+}
+
+::deep .fd-card {
+    border-radius: 12px;
+}
+
+.fd-label {
+    font-weight: 700;
+    color: #667085;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+::deep .fd-table td {
+    line-height: 1.5;
+}

@@ -1,0 +1,77 @@
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject NavigationManager NavigationManager
+@inject IConfiguration Configuration
+@inject AuthenticationStateProvider AuthStateProvider
+@inject MyDiary.Web.Features.Shared.Services.IQlikNavigationService QlikNavService
+
+<MudGrid Spacing="3">
+
+    @* --- CARD 1: AUDIT DETAILS --- *@
+    <MudItem xs="6">
+        <MudPaper Class="border rounded-lg" Elevation="0" Style="height: 320px; padding: 0; overflow: hidden;">
+            <button class="qlik-link-card"
+                    @onclick="OpenQlikAuditDetails"
+                    aria-label="Open Audit Details (ETHIC Reports) dashboard in a new tab">
+                <div class="qlik-link-card-icon">
+                    <MudIcon Icon="@Icons.Material.Filled.FactCheck" Style="color: #E65100; font-size: 2rem;" />
+                </div>
+                <div class="qlik-link-card-title">Audit Details</div>
+                <div class="qlik-link-card-subtitle">Click to open dashboard</div>
+                <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Style="color: #94a3b8; font-size: 1.1rem;" />
+            </button>
+        </MudPaper>
+    </MudItem>
+
+    @* --- CARD 2: COMPLIANCE --- *@
+    <MudItem xs="6">
+        <MudPaper Class="border rounded-lg" Elevation="0" Style="height: 320px; padding: 0; overflow: hidden;">
+            <button class="qlik-link-card"
+                    @onclick="OpenQlikCompliance"
+                    aria-label="Open Compliance (COR Dashboard) in a new tab">
+                <div class="qlik-link-card-icon">
+                    <MudIcon Icon="@Icons.Material.Filled.Shield" Style="color: #2E7D32; font-size: 2rem;" />
+                </div>
+                <div class="qlik-link-card-title">Compliance</div>
+                <div class="qlik-link-card-subtitle">Click to open dashboard</div>
+                <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Style="color: #94a3b8; font-size: 1.1rem;" />
+            </button>
+        </MudPaper>
+    </MudItem>
+
+    @* --- CARD 3: OPERATIONS DASHBOARD --- *@
+    @* <MudItem xs="6">
+        <MudPaper Class="border rounded-lg" Elevation="0" Style="height: 320px; padding: 0; overflow: hidden;">
+            <button class="qlik-link-card"
+                    @onclick="OpenQlikOperationsDashboard"
+                    aria-label="Open Operations Dashboard in a new tab">
+                <div class="qlik-link-card-icon">
+                    <MudIcon Icon="@Icons.Material.Filled.Dashboard" Style="color: #1565C0; font-size: 2rem;" />
+                </div>
+                <div class="qlik-link-card-title">Operations Dashboard</div>
+                <div class="qlik-link-card-subtitle">Click to open dashboard</div>
+                <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Style="color: #94a3b8; font-size: 1.1rem;" />
+            </button>
+        </MudPaper>
+    </MudItem> *@
+
+</MudGrid>
+
+@code {
+    private async Task OpenQlikLink(string configKey)
+    {
+        var url = Configuration[$"QlikLinks:{configKey}"] ?? "";
+        if (string.IsNullOrEmpty(url)) return;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+        await QlikNavService.NavigateAsync(userId, url);
+    }
+
+    private Task OpenQlikAuditDetails() => OpenQlikLink("AuditDetails");
+    private Task OpenQlikCompliance() => OpenQlikLink("Compliance");
+    private Task OpenQlikOperationsDashboard() => OpenQlikLink("OperationsDashboard");
+}

@@ -1,0 +1,770 @@
+﻿@page "/rates-charges"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@using MyDiary.Web.Features.RatesCharges.Models
+@using MyDiary.Web.Features.RatesCharges.Services
+@using Microsoft.AspNetCore.WebUtilities
+@layout MyDiary.Web.Components.Layout.LandingLayout
+@inject IRatesChargesService RatesService
+@inject NavigationManager Nav
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
+
+<PageTitle>Rates &amp; Charges — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        --primary-color: #1E3A8A;
+        --secondary-color: #EF4444;
+    }
+
+    .main-content-wrapper {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        min-height: 85vh;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+    }
+
+    .hero-section {
+        background: var(--primary-gradient);
+        color: white;
+        padding: 2rem;
+        border-radius: 16px;
+        margin-bottom: 0;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .content-row {
+        display: flex;
+        gap: 20px;
+    }
+
+    @@media (max-width: 900px) {
+        .content-row {
+            flex-direction: column;
+        }
+        .filter-panel {
+            width: 100% !important;
+        }
+    }
+
+    .filter-panel {
+        width: 240px;
+        flex-shrink: 0;
+        background: white;
+        border-radius: 12px;
+        padding: 15px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        align-self: flex-start;
+    }
+
+    .custom-chipset .mud-chip {
+        width: 100%;
+        justify-content: start;
+        padding: 12px 16px;
+        height: auto;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        transition: 0.3s;
+        font-size: 0.9rem;
+        background-color: transparent;
+        color: inherit;
+    }
+
+        .custom-chipset .mud-chip:hover {
+            background-color: #f1f5f9;
+        }
+
+    .custom-chipset .mud-chip-selected {
+        background: var(--primary-gradient) !important;
+        color: white !important;
+        font-weight: 600;
+    }
+
+    .rates-container {
+        flex: 1;
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        min-width: 0;
+    }
+
+    .subcat-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 24px;
+    }
+
+    .subcat-btn {
+        background: white;
+        border: 1.5px solid #e5e7eb;
+        color: #1f2937;
+        padding: 8px 18px;
+        border-radius: 999px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.25s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+        .subcat-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            box-shadow: 0 4px 14px rgba(30,58,138,0.15);
+            transform: translateY(-2px);
+        }
+
+        .subcat-btn.active {
+            background: var(--primary-gradient);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 8px 20px rgba(30,58,138,0.35);
+        }
+
+    .rate-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+        margin-top: 10px;
+    }
+
+        .rate-table th {
+            background: linear-gradient(135deg, #1E3A8A, #2563EB);
+            color: white;
+            padding: 12px 16px;
+            text-align: center;
+            font-weight: 600;
+            border: 1px solid #1E3A8A;
+        }
+
+        .rate-table td {
+            padding: 10px 16px;
+            border: 1px solid #e5e7eb;
+            color: #1f2937;
+        }
+
+        .rate-table tr:nth-child(even) {
+            background: #f8fafc;
+        }
+
+        .rate-table tr:hover {
+            background: #eff6ff;
+        }
+
+        .rate-table td:not(:first-child) {
+            text-align: center;
+            font-weight: 600;
+        }
+
+    .effective-date {
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-bottom: 16px;
+        font-style: italic;
+    }
+
+    .sub-section-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--primary-color);
+        margin: 24px 0 8px 0;
+        text-decoration: underline;
+        text-align: center;
+    }
+
+    .note-text {
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-top: 16px;
+        line-height: 1.6;
+    }
+
+    .mclr-links {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0 0 0;
+    }
+
+        .mclr-links li {
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+            .mclr-links li:last-child {
+                border-bottom: none;
+            }
+
+        .mclr-links a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+
+            .mclr-links a:hover {
+                color: var(--secondary-color);
+                text-decoration: underline;
+            }
+
+            .mclr-links a::before {
+                content: "📄 ";
+            }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .content-fade {
+        animation: fadeIn 0.35s ease-in-out;
+    }
+
+    
+    .dynamic-rate-content table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+        margin-top: 10px;
+    }
+
+    .dynamic-rate-content th {
+        background: linear-gradient(135deg, #1E3A8A, #2563EB);
+        color: white;
+        padding: 10px 14px;
+        text-align: center;
+        font-weight: 600;
+        border: 1px solid #1E3A8A;
+    }
+
+    .dynamic-rate-content td {
+        padding: 8px 14px;
+        border: 1px solid #e5e7eb;
+        color: #1f2937;
+        text-align: center;
+        vertical-align: middle;
+    }
+
+    .dynamic-rate-content th:first-child,
+    .dynamic-rate-content td:first-child {
+        text-align: left;
+    }
+
+    .dynamic-rate-content tbody tr:nth-child(even) {
+        background: #f8fafc;
+    }
+
+    .dynamic-rate-content tbody tr:hover {
+        background: #eff6ff;
+    }
+
+    .dynamic-rate-content ul,
+    .dynamic-rate-content ol {
+        margin-top: 16px;
+        padding-left: 20px;
+        color: #6b7280;
+        font-size: 0.85rem;
+        line-height: 1.6;
+    }
+
+    .dynamic-rate-content li {
+        margin-bottom: 6px;
+    }
+
+    .dynamic-rate-content p {
+        margin: 6px 0;
+        color: #1f2937;
+        font-size: 0.92rem;
+    }
+
+    .dynamic-rate-content b,
+    .dynamic-rate-content strong {
+        color: #1f2937;
+    }
+
+    .bulk-main-title {
+        text-align: center;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1f2937;
+        margin-bottom: 15px;
+    }
+
+    .bulk-note-normal {
+        text-align: center;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .bulk-note-danger {
+        text-align: center;
+        color: red;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .bulk-footer-text {
+        text-align: center;
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-top: 20px;
+    }
+
+</style>
+
+<div class="main-content-wrapper">
+
+@*     <div class="hero-section">
+        <MudText Typo="Typo.h4" Style="font-weight: 700;">Rates &amp; Charges</MudText>
+    </div> *@
+
+    <div class="content-row">
+
+        @* ── LEFT: Main Category Panel ── *@
+        <aside class="filter-panel" aria-label="Rate categories">
+            <MudText Typo="Typo.h6" Class="mb-4 px-2" Style="font-weight: 700;" data-i18n="CATEGORIES">Categories</MudText>
+
+            <MudChipSet T="string"
+                        SelectedValue="@activeTab"
+                        SelectedValueChanged="@OnTabChanged"
+                        Mandatory="true"
+                        Class="custom-chipset d-flex flex-column"
+                        aria-label="Select rate category">
+                <MudChip Value=@("Deposits") Text="Deposits" data-i18n="DEPOSITS" Variant="Variant.Text" Ripple="false" />
+                <MudChip Value=@("Retail Loans") Text="Retail Loans" data-i18n="RETAIL_LOANS" Variant="Variant.Text" Ripple="false" />
+                <MudChip Value=@("MCLR") Text="Lending Rate" data-i18n="LENDING_RATE" Variant="Variant.Text" Ripple="false" />
+                <MudChip Value=@("Treasury") Text="Treasury" data-i18n="TREASURY" Variant="Variant.Text" Ripple="false" />
+                <MudChip Value=@("Service Charges") Text="Service Charges" data-i18n="SERVICE_CHARGES" Variant="Variant.Text" Ripple="false" />
+                <MudChip Value=@("Gold Loan Vertical") Text="Gold Loan Vertical" data-i18n="GOLD_LOAN_VERTICAL" Variant="Variant.Text" Ripple="false" />
+            </MudChipSet>
+        </aside>
+
+        @* ── RIGHT: Content Panel ── *@
+        <section class="rates-container">
+            
+            @if (activeTab == "Deposits")
+            {
+                @if (isLoading)
+                {
+                    <MudProgressCircular Indeterminate="true" Color="MudBlazor.Color.Primary" />
+                }
+                else if (categories.Any())
+                {
+                    @* Subcategory pill buttons at top *@
+                    <div class="subcat-bar" role="group" aria-label="Deposit subcategories">
+                        @foreach (var cat in categories)
+                        {
+                            <button type="button"
+                                    class="subcat-btn @(activeCategoryId == cat.CategoryId ? "active" : "")"
+                                    aria-pressed="@(activeCategoryId == cat.CategoryId ? "true" : "false")"
+                                    @onclick="() => SelectCategory(cat.CategoryId, cat.CategoryCode)">
+                                @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(cat.CategoryName_HI)
+                                    ? cat.CategoryName_HI
+                                    : cat.CategoryName)
+                            </button>
+                        }
+                    </div>
+
+                    <div class="content-fade">
+                        @if (isHtmlDriven)
+                        {
+                            @* ✅ NEW — free-form content path: table shape + footnotes come entirely
+                               from dbo.CategoryContentBlock, so a column/layout change never requires
+                               touching this component. *@
+                            <div class="dynamic-rate-content">
+                                @foreach (var block in contentBlocks)
+                                {
+                                    <div class="effective-date">
+                                        <span data-i18n="EFFECTIVE_WEF">Effective w.e.f.</span>
+                                        @block.EffectiveDate.ToString("dd/MM/yyyy")
+                                    </div>
+                                    @((MarkupString)(_currentLang == "hi" && !string.IsNullOrWhiteSpace(block.HtmlContent_HI)
+                                        ? block.HtmlContent_HI
+                                        : block.HtmlContent))
+                                }
+                            </div>
+                        }
+                        else if (isMultiCurrency)
+                        {
+                            @if (activeCode == "BULK" && bulkEffectiveDate.HasValue)
+                            {
+                                <div class="bulk-main-title">
+                                    @bulkUiConfig.HeaderTemplate.Replace(
+                                             "{DATE}",
+                                             bulkEffectiveDate.Value.ToString("dd-MM-yyyy"))
+                                </div>
+
+                                @foreach (var msg in bulkUiConfig.HeaderMessages)
+                                {
+                                    <div class="@(msg.Type == "Danger" ? "bulk-note-danger" : "bulk-note-normal")">
+                                        @msg.Text
+                                    </div>
+                                }
+                            }
+
+                            @foreach (var mcSection in multiCurrencySections)
+                            {
+                                <div class="sub-section-title">
+                                    @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(mcSection.SubSection_HI)
+                                        ? mcSection.SubSection_HI
+                                        : mcSection.SubSection)
+                                </div>
+
+                                @if (activeCode != "BULK")
+                                {
+                                    <div class="effective-date">
+                                        <span data-i18n="EFFECTIVE_WEF">Effective w.e.f.</span>
+                                        @mcSection.EffectiveDate.ToString("dd/MM/yyyy")
+                                    </div>
+                                }
+
+                                <table class="rate-table">
+                                    <caption class="visually-hidden">
+                                        @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(mcSection.SubSection_HI)
+                                            ? mcSection.SubSection_HI
+                                            : mcSection.SubSection) interest rates
+                                    </caption>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" style="text-align:left;">Period</th>
+                                            @foreach (var cur in mcSection.Currencies)
+                                            {
+                                                <th scope="col">@cur</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in mcSection.Rows)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(row.Period_HI)
+                                                        ? row.Period_HI
+                                                        : row.Period)
+                                                </td>
+
+                                                @foreach (var cur in mcSection.Currencies)
+                                                {
+                                                    <td>@(row.RateByCurrency.GetValueOrDefault(cur, "-"))</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+
+                            @* BulkDeposit Rates & Charges Footer section *@
+                            @if (activeCode == "BULK")
+                            {
+                                @foreach (var msg in bulkUiConfig.FooterMessages)
+                                {
+                                    <div class="bulk-footer-text">
+                                        @msg.Text
+                                    </div>
+                                }
+                            }
+                        }
+                        else if (singleRates.Any())
+                        {
+                            <div class="effective-date">Effective w.e.f. @singleRates.First().EffectiveDate.ToString("dd/MM/yyyy")</div>
+                            <table class="rate-table">
+                                <caption class="visually-hidden">
+                                    @(activeCode == "GOVT" ? "Government account" : "Deposit") interest rates effective @singleRates.First().EffectiveDate.ToString("dd/MM/yyyy")
+                                </caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col" style="text-align:left;">@(activeCode == "GOVT" ? "Type of Account" : "Period")</th>
+                                        <th scope="col">
+                                            @(singleRates.First().ColumnHeader is { Length: > 0 } h
+                                                ? $"Rate (% p.a.) {h}"
+                                                : "Rate (% p.a.)")
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in singleRates)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(r.Period_HI)
+                                                    ? r.Period_HI
+                                                    : r.Period)
+                                            </td>
+                                            <td>@r.Rate</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            @if (activeCode == "SAVING")
+                            {
+                                <div class="note-text">
+                                    <span data-i18n="SAVING_NOTE">
+                                        Interest is calculated on daily product basis and is credited on quarterly basis
+                                        in the months of April, July, October and January every year.
+                                    </span>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body1" Style="color:#64748b; font-style:italic;">
+                                <span data-i18n="NO_RATE_DATA">No rate data available for this category.</span>
+                            </MudText>
+                        }
+                    </div>
+                }
+            }
+            else if (activeTab == "MCLR")
+            {
+                @if (isMclrLoading)
+                {
+                    <MudProgressCircular Indeterminate="true" Color="MudBlazor.Color.Primary" />
+                }
+                else
+                {
+                    <div class="content-fade">
+                        @if (mclrRates.Any())
+                        {
+                            <div class="sub-section-title">
+                                <span data-i18n="MCLR_TITLE">
+                                    Marginal Cost of Funds Based Lending Rate (MCLR)
+                                </span>
+                            </div>
+                            <div class="effective-date">
+                                Effective from @mclrRates.First().EffectiveFrom.ToString("dd.MM.yyyy")
+                                to @mclrRates.First().EffectiveTo.ToString("dd.MM.yyyy")
+                            </div>
+                            <table class="rate-table">
+                                <caption class="visually-hidden">Marginal Cost of Funds Based Lending Rate (MCLR)</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col" style="text-align:left;">Tenor</th>
+                                        <th scope="col">MCLR %</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in mclrRates)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(r.Tenor_HI)
+                                                    ? r.Tenor_HI
+                                                    : r.Tenor)
+                                            </td>
+                                            <td>@r.Rate</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        @if (baseRateBplrRates.Any())
+                        {
+                            <div class="sub-section-title" style="margin-top:32px;">
+                                <span data-i18n="BASE_RATE_BPLR_TITLE">
+                                    Base Rate and Benchmark Prime Lending Rate [BPLR]
+                                </span>
+                            </div>
+                            <table class="rate-table">
+                                <caption class="visually-hidden">Base Rate and Benchmark Prime Lending Rate (BPLR)</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col" style="text-align:left;">Rate Type</th>
+                                        <th scope="col">Effective Date</th>
+                                        <th scope="col">Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in baseRateBplrRates)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(r.RateType_HI)
+                                                    ? r.RateType_HI
+                                                    : r.RateType)
+                                            </td>
+                                            <td>@r.EffectiveDate</td>
+                                            <td>@r.Rate</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        @if (!mclrRates.Any() && !baseRateBplrRates.Any())
+                        {
+                            <MudText Typo="Typo.body1" Style="color:#64748b; font-style:italic;">
+                                <span data-i18n="NO_MCLR_DATA">No MCLR / Base Rate data available.</span>
+                            </MudText>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                @* Retail Loans / Treasury / Service Charges / Gold Loan Vertical *@
+                @if (isLinksLoading)
+                {
+                    <MudProgressCircular Indeterminate="true" Color="MudBlazor.Color.Primary" />
+                }
+                else if (activeLinks.Any())
+                {
+                    <div class="content-fade">
+                        <ul class="mclr-links">
+                            @foreach (var link in activeLinks)
+                            {
+                                <li>
+                                    <a href="@link.Url" target="_blank">
+                                        @(_currentLang == "hi" && !string.IsNullOrWhiteSpace(link.Title_HI)
+                                            ? link.Title_HI
+                                            : link.Title)
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body1" Style="color:#64748b; font-style:italic;">
+                        <span data-i18n="NO_LINKS">No links available.</span>
+                    </MudText>
+                }
+            }
+
+        </section>
+    </div>
+</div>
+
+@code {
+    private string activeTab = "Deposits";
+
+    // Deposits
+    private List<DepositCategory> categories = new();
+    private List<DepositRate> singleRates = new();
+    private List<MultiCurrencySection> multiCurrencySections = new();
+    private int activeCategoryId;
+    private string activeCode = "";
+    private bool isLoading = true;
+    private bool isMultiCurrency;
+    private bool isHtmlDriven;                                    // ✅ NEW
+    private List<CategoryContentBlock> contentBlocks = new();      // ✅ NEW
+    private string _currentLang = "en";
+
+    // MCLR
+    private List<MclrRate> mclrRates = new();
+    private List<BaseRateBplr> baseRateBplrRates = new();
+    private bool isMclrLoading;
+    private bool mclrLoaded;
+
+    // Links
+    private List<RatesChargesLink> activeLinks = new();
+    private bool isLinksLoading;
+
+    private static readonly HashSet<string> MultiCurrencyCodes = new() { "FCNR", "OBU", "RFC", "BULK" };
+
+    // Bulk Deposit rates and Charges
+    private BulkDepositUiConfig bulkUiConfig = new();
+    private DateTime? bulkEffectiveDate;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _currentLang = await JS.InvokeAsync<string>(
+            "localStorage.getItem", "lang"
+        ) ?? "en";
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Read ?tab= query param to support direct navigation to a specific tab
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("tab", out var tabParam) && !string.IsNullOrWhiteSpace(tabParam))
+            activeTab = tabParam.ToString();
+
+        bulkUiConfig = Configuration.GetSection("BulkDepositUi").Get<BulkDepositUiConfig>() ?? new BulkDepositUiConfig();
+
+        categories = await RatesService.GetCategoriesAsync();
+        if (categories.Any())
+            await SelectCategory(categories.First().CategoryId, categories.First().CategoryCode);
+        isLoading = false;
+
+        // If a non-Deposits tab was requested, load its data now
+        if (activeTab != "Deposits")
+            await OnTabChanged(activeTab);
+    }
+
+    private async Task OnTabChanged(string tab)
+    {
+        activeTab = tab;
+        if (tab == "MCLR" && !mclrLoaded)
+        {
+            isMclrLoading = true;
+            mclrRates = await RatesService.GetMclrRatesAsync();
+            baseRateBplrRates = await RatesService.GetBaseRateBplrAsync();
+            mclrLoaded = true;
+            isMclrLoading = false;
+        }
+        else if (tab is "Retail Loans" or "Treasury" or "Service Charges" or "Gold Loan Vertical")
+        {
+            isLinksLoading = true;
+            activeLinks = await RatesService.GetLinksBySectionAsync(tab);
+            isLinksLoading = false;
+        }
+    }
+
+    private async Task SelectCategory(int categoryId, string code)
+    {
+        activeCategoryId = categoryId;
+        activeCode = code;
+        isMultiCurrency = MultiCurrencyCodes.Contains(code);
+
+        // ✅ NEW — categories flagged ContentMode="HTML" in dbo.DepositCategory skip the
+        // structured DepositRate/DepositRateMultiCurrency path entirely and render whatever
+        // is stored in dbo.CategoryContentBlock. Everything else behaves exactly as before.
+        var cat = categories.FirstOrDefault(c => c.CategoryId == categoryId);
+        isHtmlDriven = cat?.ContentMode == "HTML";
+
+        if (isHtmlDriven)
+        {
+            contentBlocks = await RatesService.GetCategoryContentAsync(categoryId);
+            singleRates.Clear();
+            multiCurrencySections.Clear();
+            return;
+        }
+        if (cat?.ContentMode == "BULKDB")
+        {
+            contentBlocks.Clear();
+
+            bulkEffectiveDate = await RatesService.GetBulkEffectiveDateAsync();
+
+            multiCurrencySections =
+            await RatesService.GetBulkDepositRatesAsync();
+
+            singleRates.Clear();
+
+            return;
+        }
+
+        contentBlocks.Clear();
+
+        if (isMultiCurrency)
+        {
+            multiCurrencySections = await RatesService.GetMultiCurrencyRatesAsync(categoryId);
+            singleRates.Clear();
+        }
+        else
+        {
+            singleRates = await RatesService.GetRatesByCategoryAsync(categoryId);
+            multiCurrencySections.Clear();
+        }
+    }
+}

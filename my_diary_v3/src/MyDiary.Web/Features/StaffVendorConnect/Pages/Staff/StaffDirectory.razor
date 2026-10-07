@@ -1,0 +1,158 @@
+@page "/svc/staff"
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@using MyDiary.Web.Features.StaffVendorConnect.Components
+@inject IStaffVendorConnectService SvcService
+@inject IDialogService DialogService
+
+<PageTitle>Staff Directory - Staff and Vendor Connect</PageTitle>
+
+<AuthenticatedOnly>
+
+<PageHeader Title="Staff Directory" Subtitle="Internal staff — IT/Technical/Law Officers — synced from HRMS." Crumbs="_crumbs" PageKey="svc-staff-directory" />
+
+<div class="d-flex justify-end mb-3">
+    <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Send" OnClick="OpenSendDialog">
+        Send Communication
+    </MudButton>
+</div>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudGrid>
+            <MudItem xs="12" sm="4" md="2">
+                <MudSelect T="string" @bind-Value="_categoryCode" Label="Category" Variant="Variant.Outlined" Dense="true" @bind-Value:after="ReloadAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var c in _staffCategories)
+                    {
+                        <MudSelectItem T="string" Value="@c">@c</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" md="2">
+                <MudSelect T="string" @bind-Value="_zone" Label="Zone" Variant="Variant.Outlined" Dense="true" @bind-Value:after="ReloadAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var z in _options.Zones) { <MudSelectItem T="string" Value="@z">@z</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" md="2">
+                <MudSelect T="string" @bind-Value="_region" Label="Region" Variant="Variant.Outlined" Dense="true" @bind-Value:after="ReloadAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var z in _options.Regions) { <MudSelectItem T="string" Value="@z">@z</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" md="2">
+                <MudSelect T="string" @bind-Value="_branch" Label="Branch" Variant="Variant.Outlined" Dense="true" @bind-Value:after="ReloadAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var z in _options.Branches) { <MudSelectItem T="string" Value="@z">@z</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            @* Specialization filter — hidden until the StaffDetails column mapping is confirmed.
+            <MudItem xs="12" sm="4" md="2">
+                <MudSelect T="string" @bind-Value="_specialization" Label="Specialization" Variant="Variant.Outlined" Dense="true" @bind-Value:after="ReloadAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var z in _options.Specializations) { <MudSelectItem T="string" Value="@z">@z</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+            *@
+            <MudItem xs="12" sm="4" md="2">
+                <MudSelect T="string" @bind-Value="_scale" Label="Scale" Variant="Variant.Outlined" Dense="true" @bind-Value:after="ReloadAsync">
+                    <MudSelectItem T="string" Value="@((string?)null)">All</MudSelectItem>
+                    @foreach (var z in _options.Scales) { <MudSelectItem T="string" Value="@z">@z</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudTable Items="@_staff" Hover="true" Dense="true" Bordered="true" RowsPerPage="20">
+        <HeaderContent>
+            <MudTh>Employee</MudTh>
+            <MudTh>Category</MudTh>
+            @* Specialization column — hidden until the StaffDetails mapping is confirmed. *@
+            @* <MudTh>Specialization</MudTh> *@
+            <MudTh>Branch</MudTh>
+            <MudTh>Region</MudTh>
+            <MudTh>Zone</MudTh>
+            <MudTh>Scale</MudTh>
+            <MudTh>Designation</MudTh>
+            <MudTh>Contact</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.EmpName<br /><MudText Typo="Typo.caption" Color="Color.Secondary">@context.EmpId</MudText></MudTd>
+            <MudTd>@context.StaffCategoryCode</MudTd>
+            @* Specialization cell — hidden until the StaffDetails mapping is confirmed. *@
+            @* <MudTd>@context.SpecialistType</MudTd> *@
+            <MudTd>@context.BranchName</MudTd>
+            <MudTd>@context.RegionName</MudTd>
+            <MudTd>@context.ZoneName</MudTd>
+            <MudTd>@context.ScaleDesc</MudTd>
+            <MudTd>@context.DesignationDesc</MudTd>
+            <MudTd>@context.MobileNumber<br /><MudText Typo="Typo.caption">@context.EmailAddress</MudText></MudTd>
+        </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 20, 50, 100 }" /></PagerContent>
+    </MudTable>
+}
+
+</AuthenticatedOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"), new("Staff Directory") };
+    private bool _loading = true;
+    // Category dropdown values now come live from StaffDetails.UBI_SPCL_OFFICER (see
+    // GetStaffCategoriesAsync) rather than the static RP_SVC_CATEGORY_MASTER list.
+    private List<string> _staffCategories = new();
+    private List<SvcStaffRow> _staff = new();
+    private (List<string> Zones, List<string> Regions, List<string> Branches, List<string> Specializations, List<string> Scales) _options;
+
+    private string? _categoryCode, _zone, _region, _branch, _specialization, _scale;
+    private string _pfNo = "";
+    // Staff Directory has no category/vertical concept (unlike vendor records), so "admin" here
+    // is simply App Admin OR any active RP_SVC_CATEGORY_ADMIN row — flat or vertical-scoped,
+    // doesn't matter which, since there's no category to scope against. IsSvcCategoryAdminAsync
+    // already implements exactly that check.
+    private bool _isAdmin;
+    private System.Security.Claims.ClaimsPrincipal? _user;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            _user = state.User;
+            _pfNo = state.User.FindFirst("emplid")?.Value ?? "";
+            _isAdmin = await SvcService.IsSvcCategoryAdminAsync(state.User);
+        }
+
+        _staffCategories = await SvcService.GetStaffCategoriesAsync();
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task OpenSendDialog()
+    {
+        var parameters = new DialogParameters<SendCommunicationDialog>
+        {
+            { x => x.TargetModule, "STAFF" },
+            { x => x.CategoryCode, _categoryCode },
+            { x => x.ActorPfNo, _pfNo }
+        };
+        await DialogService.ShowAsync<SendCommunicationDialog>("Send Communication", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true });
+    }
+
+    private async Task ReloadAsync()
+    {
+        _options = await SvcService.GetStaffFilterOptionsAsync(_categoryCode);
+        _staff = await SvcService.GetStaffAsync(_categoryCode, _zone, _region, _branch, _specialization, _scale, canSeeUnmasked: _isAdmin);
+        StateHasChanged();
+    }
+}

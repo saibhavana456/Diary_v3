@@ -1,0 +1,79 @@
+@namespace RequestPortal.Web.Pages.Requests
+@page "/requests/mine"
+@inject IRequestService Requests
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+
+<PageTitle>My Requests</PageTitle>
+
+<PageHeader PageKey="requests-mine" Title="My Requests" Crumbs="_crumbs" />
+
+<MudDataGrid T="RequestListItem" ServerData="@LoadAsync" Dense="true" Hover="true" Class="rp-data-table"
+             SortMode="SortMode.Single" Filterable="false" RowClick="@OnRowClick">
+    <Columns>
+        <PropertyColumn Property="x => x.ReqNo" Title="Request #">
+            <CellTemplate>
+                <MudLink Href="@($"requests/{context.Item.Id}")" Color="Color.Primary">@context.Item.ReqNo</MudLink>
+            </CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.RequestTypeName" Title="Type" />
+        <PropertyColumn Property="x => x.Subject" />
+        <PropertyColumn Property="x => x.CurrentLevel" Title="Level" />
+        <PropertyColumn Property="x => x.Status" Title="Status">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Item.Status)">@context.Item.Status</MudChip>
+            </CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.SlaDueUtc" Title="SLA due (UTC)" Format="g" />
+        <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="RequestListItem" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("My Requests") };
+    private string _empCode = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Resolve the current user in an async context so the emp-code filter is
+            // reliable (the sync ICurrentUser getters can block/return empty on the
+            // circuit thread — see New.razor).
+            await CurrentUser.RefreshAsync();
+            _empCode = CurrentUser.EmpCode ?? "";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Mine: failed to refresh current user");
+        }
+    }
+
+    private async Task<GridData<RequestListItem>> LoadAsync(GridState<RequestListItem> state)
+    {
+        var sortBy = state.SortDefinitions.FirstOrDefault();
+        var f = new FilterDto(
+            Page: state.Page + 1,
+            PageSize: state.PageSize,
+            SortBy: sortBy?.SortBy,
+            SortDesc: sortBy?.Descending ?? true);
+        var (items, total) = await Requests.ListAsync(f, null, string.IsNullOrWhiteSpace(_empCode) ? null : _empCode);
+        return new GridData<RequestListItem> { Items = items, TotalItems = total };
+    }
+
+    private void OnRowClick(DataGridRowClickEventArgs<RequestListItem> args) =>
+        Nav.NavigateTo($"requests/{args.Item.Id}");
+
+    private Color StatusColor(string s) => s switch
+    {
+        "Resolved" => Color.Success,
+        "Closed" => Color.Dark,
+        "Cancelled" => Color.Error,
+        "ClarificationSought" => Color.Warning,
+        "Reopened" => Color.Tertiary,
+        _ => Color.Primary
+    };
+}

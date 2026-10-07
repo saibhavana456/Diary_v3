@@ -1,0 +1,297 @@
+﻿@page "/network"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@layout MyDiary.Web.Components.Layout.LandingLayout
+@inject NavigationManager Nav
+
+<PageTitle>Network — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        --primary-color: #1E3A8A;
+        --secondary-color: #EF4444;
+    }
+
+    /* Standard Background Container */
+    .main-content-container {
+        padding: 25px;
+        background: rgba(255,255,255,0.95);
+        min-height: 85vh;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+    }
+
+    /* Card Grid Styling */
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+    }
+
+    /* MudButton styled as a card */
+    .card-button-component {
+        background-color: #F8FAFC !important;
+        border-radius: 16px !important;
+        padding: 20px !important;
+        min-height: 160px !important;
+        border: 1px solid #e2e8f0 !important;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        text-transform: none !important;
+        width: 100%;
+    }
+
+        .card-button-component:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.12) !important;
+            border-color: var(--primary-color) !important;
+        }
+
+        /* Top Gradient Strip */
+        .card-button-component::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        }
+
+    .card-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1F2937;
+        margin-left: 14px;
+        text-align: left;
+    }
+
+    .icon-container {
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+
+<div class="main-content-container">
+    <div class="d-flex justify-space-between align-center mb-6">
+        <div style="font-size: 1.5rem; font-weight: 600; color: white;">
+            <span data-i18n="NETWORK">Network</span>
+        </div>
+
+        <MudToggleGroup T="string" Value="@_viewMode" ValueChanged="v => { _viewMode = v; StateHasChanged(); }"
+                        Delimiter="false" Color="MudBlazor.Color.Info" Rounded="true"
+                        aria-label="View mode">
+            <MudToggleItem Value='@("List")' Icon="@Icons.Material.Filled.List" aria-label="List view" />
+            <MudToggleItem Value='@("Grid")' Icon="@Icons.Material.Filled.GridView" aria-label="Grid view" />
+        </MudToggleGroup>
+    </div>
+
+    @if (_viewMode == "Grid")
+    {
+    <div class="cards-grid">
+        @* 1. IP Directory - Internal Navigation *@
+        <MudButton Class="card-button-component" OnClick='() => Nav.NavigateTo("ip-directory")' Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.ContactPhone" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                    <div class="card-title">
+                        <span data-i18n="IP_PHONE_DIRECTORY">IP Phone Directory</span>
+                    </div>
+            </div>
+        </MudButton>
+
+        @* 2. BRANCH - External Link *@
+        <MudButton Class="card-button-component" Href="https://app2.unionbankofindia.co.in/branchsearch/Br_Keyword.aspx" target="_blank" Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                    <div class="card-title"><span data-i18n="BRANCH">BRANCH</span></div>
+            </div>
+        </MudButton>
+
+        @* 3. Existing Branch - Excel Download *@
+        <MudButton Class="card-button-component"
+                   Href="download/Existing_Branch_Merged_Branch_details_with_New_and_Old_IFSC_Code(30-11-2025).xlsx"
+                   target="_blank"
+                   Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                    <div class="card-title"><span data-i18n="EXISTING_CLOSED_BRANCH">Existing and Closed Branch List</span></div>
+            </div>
+        </MudButton>
+
+        @* 4. Closed Branch - Excel Download *@
+        @* <MudButton Class="card-button-component"
+                   Href="downloads/Closed_Branches.xlsx"
+                   target="_blank"
+                   Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                <div class="card-title">Closed Branch</div>
+            </div>
+        </MudButton> *@
+
+        @* 5. REGION - External Link *@
+        <MudButton Class="card-button-component" Href="https://app2.unionbankofindia.co.in/branchsearch/intermediateubinet.aspx?id=2" target="_blank" Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.Map" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                    <div class="card-title"><span data-i18n="REGION">REGION</span></div>
+            </div>
+        </MudButton>
+
+        @* 6. ZONE - External Link *@
+        <MudButton Class="card-button-component" Href="https://app2.unionbankofindia.co.in/branchsearch/intermediateubinet.aspx?id=1" target="_blank" Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.Public" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                    <div class="card-title"><span data-i18n="ZONE">ZONE</span></div>
+            </div>
+        </MudButton>
+
+        @* 7. ATM - External Link *@
+        <MudButton Class="card-button-component" Href="https://app2.unionbankofindia.co.in/branchsearch/ATMSearch.aspx" target="_blank" Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.LocalAtm" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                    <div class="card-title"><span data-i18n="ATM">ATM</span></div>
+            </div>
+        </MudButton>
+
+        @* 8. Specialized Branch - External Link *@
+        <MudButton Class="card-button-component" Href="https://app2.unionbankofindia.co.in/branchsearch/SearchMain.aspx" target="_blank" Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.WorkspacePremium" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                    <div class="card-title"><span data-i18n="SPECIALIZED_BRANCH">Specialized Branch</span></div>
+            </div>
+        </MudButton>
+
+        @* 9. Locators - External Link *@
+        @* <MudButton Class="card-button-component" Href="departments" target="_blank" Ripple="false">
+            <div class="d-flex align-center w-100">
+                <div class="icon-container">
+                    <MudIcon Icon="@Icons.Material.Filled.LocationOn" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                </div>
+                <div class="card-title">Locators</div>
+            </div>
+        </MudButton> *@
+
+        @* 10. HELPDESK - External Link *@
+        @*  <MudButton Class="card-button-component" Href="/Contactus.jsp" target="_blank" Ripple="false">
+              <div class="d-flex align-center w-100">
+                  <div class="icon-container">
+                      <MudIcon Icon="@Icons.Material.Filled.SupportAgent" Style="color: #1E3A8A; font-size: 2.5rem;" />
+                  </div>
+                  <div class="card-title">HELPDESK</div>
+              </div>
+        </MudButton> *@
+
+        @* 9. SARAL BRANCHES - External Link *@
+        @* <MudButton Class="card-button-component" Href="/download/List_Of_Sarals.xlsx" target="_blank" Ripple="false">
+        <div class="d-flex align-center w-100">
+        <div class="icon-container">
+        <MudIcon Icon="@Icons.Material.Filled.Description" Style="color: #1E3A8A; font-size: 2.5rem;" />
+        </div>
+        <div class="card-title">SARAL BRANCHES</div>
+        </div>
+        </MudButton> *@
+
+        @* 9. MID CORPORATE BRANCHES - External Link *@
+        @* <MudButton Class="card-button-component" Href="/download/MCB BRANCHES LIST TO BE UPDATED IN NETWORK UPDATED-19112025.xlsx" target="_blank" Ripple="false">
+        <div class="d-flex align-center w-100">
+        <div class="icon-container">
+        <MudIcon Icon="@Icons.Material.Filled.TableView" Style="color: #1E3A8A; font-size: 2.5rem;" />
+        </div>
+        <div class="card-title">MID CORPORATE BRANCHES</div>
+        </div>
+        </MudButton> *@
+    </div>
+    }
+    else
+    {
+        <MudTable Items="_networkItems" Dense="true" Hover="true" Striped="true" Bordered="true">
+            <HeaderContent>
+                <MudTh>
+                    <span data-i18n="NAME">Name</span>
+                </MudTh>
+                <MudTh>
+                    <span data-i18n="ACTION">Action</span>
+                </MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <b>
+                        <span data-i18n="@GetNetworkKey(context.Title)">
+                            @context.Title
+                        </span>
+                    </b>
+                </MudTd>
+                <MudTd>
+                    @if (!string.IsNullOrEmpty(context.Href))
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="MudBlazor.Color.Primary"
+                                       Href="@context.Href" Target="_blank"
+                                       AriaLabel="@($"Open {context.Title} (opens in new tab)")" />
+                    }
+                    else
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="MudBlazor.Color.Primary"
+                                       AriaLabel="@($"Open {context.Title}")"
+                                       OnClick="@(() => Nav.NavigateTo(context.Route!))" />
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</div>
+
+@code {
+    private string _viewMode = "Grid";
+
+    private record NetworkItem(string Title, string? Href = null, string? Route = null);
+
+    private readonly List<NetworkItem> _networkItems = new()
+    {
+        new("IP Phone Directory", Route: "ip-directory"),
+        new("BRANCH", Href: "https://app2.unionbankofindia.co.in/branchsearch/Br_Keyword.aspx"),
+        new("Existing and Closed Branch List", Href: "download/Existing_Branch_Merged_Branch_details_with_New_and_Old_IFSC_Code(30-11-2025).xlsx"),
+        new("REGION", Href: "https://app2.unionbankofindia.co.in/branchsearch/intermediateubinet.aspx?id=2"),
+        new("ZONE", Href: "https://app2.unionbankofindia.co.in/branchsearch/intermediateubinet.aspx?id=1"),
+        new("ATM", Href: "https://app2.unionbankofindia.co.in/branchsearch/ATMSearch.aspx"),
+        new("Specialized Branch", Href: "https://app2.unionbankofindia.co.in/branchsearch/SearchMain.aspx"),
+    };
+
+    private string GetNetworkKey(string title) => title switch
+    {
+        "IP Phone Directory" => "IP_PHONE_DIRECTORY",
+        "BRANCH" => "BRANCH",
+        "Existing and Closed Branch List" => "EXISTING_CLOSED_BRANCH",
+        "REGION" => "REGION",
+        "ZONE" => "ZONE",
+        "ATM" => "ATM",
+        "Specialized Branch" => "SPECIALIZED_BRANCH",
+        _ => title
+    };
+}

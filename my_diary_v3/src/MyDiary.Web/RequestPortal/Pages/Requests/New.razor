@@ -1,0 +1,337 @@
+@namespace RequestPortal.Web.Pages.Requests
+@page "/requests/new"
+@inject IMasterRepo Masters
+@inject IRequestService Requests
+@inject IAttachmentService Attachments
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Raise a Request</PageTitle>
+
+<PageHeader PageKey="requests-new" Title="Raise a Request" Crumbs="_crumbs" />
+
+<MudPaper Class="pa-6" Elevation="1">
+    <MudTabs Outlined="true" Position="Position.Top" Rounded="true" PanelClass="pa-4" KeepPanelsAlive="true" @bind-ActivePanelIndex="_step">
+        <MudTabPanel Text="1. Classify">
+            <MudGrid>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="long?" Label="Request Type" Value="_requestTypeId" ValueChanged="OnRequestTypeChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var r in _requestTypes)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)r.Id)">@r.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="long?" Label="Unit Type" Value="_unitTypeId" ValueChanged="OnUnitTypeChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_unitTypes.Count==0)">
+                        @foreach (var u in _unitTypes)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="long?" Label="Unit" Value="_unitId" ValueChanged="OnUnitChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_units.Count==0)">
+                        @foreach (var u in _units)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="long?" Label="Vertical" Value="_verticalId" ValueChanged="OnVerticalChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_verticals.Count==0)">
+                        @foreach (var v in _verticals)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="long?" Label="Department" Value="_departmentId" ValueChanged="OnDepartmentChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_departments.Count==0)">
+                        @foreach (var d in _departments)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)d.Id)">@d.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="long?" Label="Activity" Value="_activityId" ValueChanged="OnActivityChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Disabled="@(_activities.Count==0)">
+                        @foreach (var a in _activities)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)a.Id)">@a.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _step = 1)"
+                               Disabled="@(!Step1Valid)">Next</MudButton>
+                </MudItem>
+            </MudGrid>        
+        </MudTabPanel>
+
+        <MudTabPanel Text="2. Describe">
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField Label="Subject" @bind-Value="_dto.Subject" MaxLength="500" Required="true" Counter="500"
+                                  aria-label="Request subject" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField Label="Description" @bind-Value="_dto.Description" Lines="6" Required="true"
+                                  Placeholder="Describe the issue or request in detail…"
+                                  aria-label="Request description" />
+                </MudItem>
+
+                @* ── File attachment ─────────────────────────────────────────── *@
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Attachment <span style="color:#59636e;font-weight:400">(optional)</span></MudText>
+                    <MudText Typo="Typo.caption" Class="mb-2" Color="Color.Secondary">
+                        Accepted: PDF, JPG, PNG · Max size: 2 MB
+                    </MudText>
+
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnNewRequestFilePicked"
+                                   Accept=".pdf,.jpg,.jpeg,.png"
+                                   MaximumFileCount="1">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.AttachFile" Size="Size.Small"
+                                       aria-label="Attach file">
+                                @(_newFile is null ? "Attach file" : "Replace attachment")
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+
+                    @if (_newFile is not null)
+                    {
+                        <div class="rp-file-chip mt-2">
+                            <MudIcon Icon="@FileIcon(_newFile.Name)" Size="Size.Small" Class="mr-1" />
+                            <span class="rp-file-name">@_newFile.Name</span>
+                            <span class="rp-file-size">@($"{_newFile.Size / 1024.0:0.#} KB")</span>
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="ClearNewFile" aria-label="Remove attachment" />
+                        </div>
+                    }
+                    @if (_fileError is not null)
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_fileError</MudAlert>
+                    }
+                </MudItem>
+
+                <MudItem xs="12" Class="d-flex gap-2 flex-wrap">
+                    <MudButton OnClick="@(() => _step = 0)" Variant="Variant.Outlined"
+                               aria-label="Go back to classify step">Back</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _step = 2)"
+                               Disabled="@(!Step2Valid)" aria-label="Go to review step">Next</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
+        <MudTabPanel Text="3. Review">
+            <MudList T="string" Dense="true">
+                <MudListItem Icon="@Icons.Material.Filled.Category">Type: <b>@NameOf(_requestTypes, _dto.RequestTypeId)</b></MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.Business">Unit: <b>@NameOf(_units, _dto.UnitId)</b></MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.AccountTree">@NameOf(_verticals, _dto.VerticalId) / @NameOf(_departments, _dto.DepartmentId) / @NameOf(_activities, _dto.ActivityId)</MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.Subject">Subject: <b>@_dto.Subject</b></MudListItem>
+            </MudList>
+            <MudButton Class="mt-2" OnClick="@(() => _step = 1)">Back</MudButton>
+            <MudButton Class="mt-2 ml-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit" Disabled="@_busy">
+                @(_busy ? "Submitting..." : "Submit")
+            </MudButton>
+        </MudTabPanel>
+    </MudTabs>
+</MudPaper>
+
+@code {
+
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("My Requests", "/requests/mine"),
+        new("Raise a Request"),
+    };
+
+    // ── File attachment state ────────────────────────────────────────────
+    private const long  MaxFileBytes = 2 * 1024 * 1024;  // 2 MB
+    private static readonly string[] AllowedMimes = { "application/pdf", "image/jpeg", "image/png" };
+    private static readonly string[] AllowedExts  = { ".pdf", ".jpg", ".jpeg", ".png" };
+
+    private IBrowserFile? _newFile;
+    private string? _fileError;
+
+    private CreateRequestForm _dto = new();
+
+    private bool _busy;
+    private int _step;
+
+    private IReadOnlyList<RequestType> _requestTypes = new List<RequestType>();
+    private List<UnitType> _unitTypes = new();
+    private List<Unit> _units = new();
+    private List<Vertical> _verticals = new();
+    private List<Department> _departments = new();
+    private List<Activity> _activities = new();
+    private long? _requestTypeId, _unitTypeId, _unitId, _verticalId, _departmentId, _activityId;
+    private string? _activityName;
+    private List<EscalationMatrixEntry> _entries = new();
+    private bool _loading;
+
+    private bool Step1Valid =>
+        _dto.RequestTypeId.HasValue && _dto.UnitId.HasValue &&
+        _dto.VerticalId.HasValue && _dto.DepartmentId.HasValue && _dto.ActivityId.HasValue;
+    private bool Step2Valid => !string.IsNullOrWhiteSpace(_dto.Subject) && !string.IsNullOrWhiteSpace(_dto.Description);
+
+    private string _empCode = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Resolve the current user in this async context (safe) so the emp code is
+            // cached before Submit — reading it from the sync ICurrentUser getter on
+            // the click path could otherwise block the circuit on a session read.
+            await CurrentUser.RefreshAsync();
+            _empCode = CurrentUser.EmpCode ?? "";
+
+            // These 2 master list lookups are independent — run in parallel.
+            var rtTask = Masters.ListRequestTypesAllAsync();
+            var utTask = Masters.ListUnitTypesAllAsync();
+            await Task.WhenAll(rtTask, utTask);
+
+            _requestTypes = rtTask.Result;
+            _unitTypes = utTask.Result.ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "New Request: failed to initialize page data");
+        }
+    }
+
+    private void OnRequestTypeChanged(long? v)
+    {
+        // Independent filter — like New Request, it does not cascade.
+        _requestTypeId = v;
+        _dto.RequestTypeId = _requestTypeId;
+
+    }
+
+    private async Task OnUnitTypeChanged(long? v)
+    {
+        // Unit Type → Unit branch (independent of Vertical/Department/Activity).
+        _unitTypeId = v; _dto.UnitId = null;
+        _units = new(); _entries = new();
+        if (v is not null) _units = (await Masters.ListUnitsAllAsync(v)).ToList();
+    }
+
+    private async Task OnUnitChanged(long? v)
+    {
+        // Unit is an optional filter on the matrix; reload with the current activity.
+        _unitId = v;
+        _dto.UnitId = _unitId;
+        _verticals = (await Masters.ListVerticalsAllAsyncRequest(_unitId.ToString())).ToList();
+    }
+   
+    private async Task OnVerticalChanged(long? v)
+    {
+        // Vertical → Department branch (independent of Unit Type/Unit).
+        _verticalId = v; _departmentId = null; _activityId = null;
+        _departments = new(); _activities = new(); _entries = new();
+        _dto.VerticalId = _verticalId;
+        if (v is not null) _departments = (await Masters.ListDepartmentsAllAsync(v)).ToList();
+    }
+
+    private async Task OnDepartmentChanged(long? v)
+    {
+        _departmentId = v; _activityId = null; _activities = new(); _entries = new();
+        _dto.DepartmentId = _departmentId;
+        if (v is not null) _activities = (await Masters.ListActivitiesAllAsync(v)).ToList();
+    }
+
+    private async Task OnActivityChanged(long? v)
+    {
+        _activityId = v;
+        _dto.ActivityId = _activityId;
+        _activityName = _activities.FirstOrDefault(a => a.Id == v)?.Name;       
+    }
+
+    private void OnNewRequestFilePicked(IBrowserFile file)
+    {
+        _fileError = null;
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+        if (!AllowedExts.Contains(ext))
+        { _fileError = $"File type '{ext}' is not allowed. Please upload a PDF, JPG, or PNG."; _newFile = null; return; }
+        if (file.Size > MaxFileBytes)
+        { _fileError = $"File is too large ({file.Size / 1024.0 / 1024.0:0.##} MB). Maximum allowed is 2 MB."; _newFile = null; return; }
+        _newFile = file;
+    }
+
+    private void ClearNewFile() { _newFile = null; _fileError = null; }
+
+    private static string FileIcon(string name) =>
+        Path.GetExtension(name).ToLowerInvariant() switch
+        {
+            ".pdf"  => Icons.Material.Filled.PictureAsPdf,
+            ".png" or ".jpg" or ".jpeg" => Icons.Material.Filled.Image,
+            _       => Icons.Material.Filled.AttachFile
+        };
+
+    private async Task Submit()
+    {
+        if (!Step1Valid || !Step2Valid) { Snackbar.Add("Please fill all fields.", Severity.Warning); return; }
+        if (_fileError is not null)     { Snackbar.Add(_fileError, Severity.Warning); return; }
+        if (string.IsNullOrWhiteSpace(_empCode))
+        { Snackbar.Add("Could not resolve your employee code — please re-login.", Severity.Error); return; }
+        _busy = true;
+        try
+        {
+            var empCode = _empCode;
+            var id  = await Requests.CreateAsync(new CreateRequestDto(
+                _dto.RequestTypeId!.Value, _dto.UnitId!.Value, _dto.VerticalId!.Value,
+                _dto.DepartmentId!.Value, _dto.ActivityId!.Value,
+                _dto.Subject!, _dto.Description!), empCode);
+
+            // Upload attachment if provided
+            if (_newFile is not null)
+            {
+                var mime = _newFile.ContentType.Contains("pdf")  ? "application/pdf"
+                         : _newFile.ContentType.Contains("png")  ? "image/png"
+                         : _newFile.ContentType.Contains("jpeg") || _newFile.ContentType.Contains("jpg") ? "image/jpeg"
+                         : "application/octet-stream";
+                await using var stream = _newFile.OpenReadStream(MaxFileBytes);
+                await Attachments.StoreAsync(id, null, _newFile.Name, mime, stream, empCode);
+            }
+
+            Snackbar.Add("Request raised successfully.", Severity.Success);
+            Nav.NavigateTo("requests/mine");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "New Request: submit failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+
+    private static string NameOf<T>(IReadOnlyList<T> list, long? id) where T : class
+    {
+        if (!id.HasValue) return "—";
+        var prop = typeof(T).GetProperty("Id");
+        var nameProp = typeof(T).GetProperty("Name");
+        var match = list.FirstOrDefault(x => (long?)prop?.GetValue(x) == id);
+        return match is null ? "—" : (string?)nameProp?.GetValue(match) ?? "—";
+    }
+
+    private sealed class CreateRequestForm
+    {
+        public long? RequestTypeId { get; set; }
+        public long? UnitId { get; set; }
+        public long? VerticalId { get; set; }
+        public long? DepartmentId { get; set; }
+        public long? ActivityId { get; set; }
+        public string? Subject { get; set; }
+        public string? Description { get; set; }
+    }
+}

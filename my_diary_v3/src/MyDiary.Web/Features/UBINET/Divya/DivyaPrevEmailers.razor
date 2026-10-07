@@ -1,0 +1,850 @@
+@page "/divya-previous-emailers"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Components.Layout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout PublicLayout
+<PageTitle>Empower Through Access – Previous Month Emailers</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudPaper Elevation="3" Class="pa-4 mb-5"
+              Style="background: linear-gradient(135deg, #1a237e 0%, #283593 60%, #3949ab 100%);
+                     color:white; border-radius:12px;
+                     box-shadow: 0 4px 20px rgba(26,35,126,0.35) !important;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudIcon Icon="@Icons.Material.Filled.Email" Style="font-size:2.5rem; color:#90caf9;" />
+            <div>
+                <MudText Typo="Typo.h4" Style="font-weight:700; color:white; letter-spacing:0.5px;">
+                    Empower Through Access
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color:#bbdefb; margin-top:2px;">
+                    Previous Month Emailers Archive
+                </MudText>
+            </div>
+        </MudStack>
+    </MudPaper>
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 pa-0" />
+    <MudGrid Spacing="3" Class="mb-5">
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top: 3px solid #1a237e;">
+                <MudText Typo="Typo.h5" Style="font-weight:700; color:#1a237e;">@_monthGroups.Count</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#555;">Monthly Archives</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top: 3px solid #388e3c;">
+                    <MudText Typo="Typo.h5" Style="font-weight:700; color:#388e3c;">@_monthGroups.Sum(g => g.Items.Count)</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#555;">Total Emailers</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top: 3px solid #f57c00;">
+                    <MudText Typo="Typo.h5" Style="font-weight:700; color:#f57c00;">2024–2026</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#555;">Coverage Period</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-radius:10px; border-top: 3px solid #7b1fa2;">
+                    <MudText Typo="Typo.h5" Style="font-weight:700; color:#7b1fa2;">PDF</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#555;">All Formats</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <!-- Search / Filter -->
+        <MudPaper Elevation="1" Class="pa-3 mb-4" Style="border-radius:10px;">
+            <MudTextField @bind-Value="_searchText"
+                          Placeholder="Search emailers by subject or domain..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          AdornmentColor="Color.Primary"
+                          Variant="Variant.Outlined"
+                          Clearable="true"
+                          Immediate="true"
+                          FullWidth="true"
+                          Margin="Margin.Dense"
+                          Style="font-size:0.9rem;" />
+        </MudPaper>
+
+        <!-- Expand / Collapse All -->
+        <MudStack Row="true" Spacing="2" Class="mb-3" JustifyContent="JustifyContent.FlexEnd">
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.UnfoldMore"
+                       OnClick="ExpandAll">Expand All</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.UnfoldLess"
+                       OnClick="CollapseAll">Collapse All</MudButton>
+        </MudStack>
+        @{
+        var filtered = GetFiltered();
+        if (!filtered.Any())
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-4" Style="border-radius:10px;">
+                No emailers found matching "<strong>@_searchText</strong>". Try a different keyword.
+            </MudAlert>
+        }
+        else
+        {
+            <MudExpansionPanels MultiExpansion="true" @ref="_expansionPanels" Class="prevemail-panels">
+                @foreach (var (group, idx) in filtered.Select((g, i) => (g, i)))
+                {
+                    var color = _monthColors[idx % _monthColors.Length];
+                    var isExpanded = _expandedStates.TryGetValue(group.MonthLabel, out var exp) ? exp : false;
+
+                    <MudExpansionPanel @key="group.MonthLabel"
+                                       IsExpanded="isExpanded"
+                                       IsExpandedChanged="(v) => OnPanelExpandedChanged(group.MonthLabel, v)"
+                                       Class="mb-2 prevemail-panel"
+                                       Style=@($"border-radius:10px !important; overflow:hidden; border-left: 4px solid {color};")>
+                        <TitleContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Style="width:100%;">
+                                <MudIcon Icon="@Icons.Material.Filled.CalendarMonth" Style=@($"color:{color}; font-size:1.3rem;") />
+                                <MudText Typo="Typo.subtitle1" Style="font-weight:700; color:#1a237e; flex:1;">
+                                    @group.MonthLabel
+                                </MudText>
+                                <MudChip T="string" Size="Size.Small"
+                                         Style=@($"background:{color}; color:white; font-size:0.75rem; font-weight:600; height:22px;")>
+                                    @group.Items.Count emailer@(group.Items.Count != 1 ? "s" : "")
+                                </MudChip>
+                            </MudStack>
+                        </TitleContent>
+                        <ChildContent>
+                            <MudTable Items="@group.Items" Hover="true" Striped="true" Dense="true" Bordered="false"
+                                      Breakpoint="Breakpoint.Sm"
+                                      Style="font-size:0.855rem; margin-top:4px;">
+                                <HeaderContent>
+                                    <MudTh Style="width:110px; white-space:nowrap; font-weight:700; color:#1a237e; background:#f0f4ff;">Date</MudTh>
+                                    <MudTh Style="font-weight:700; color:#1a237e; background:#f0f4ff;">Subject</MudTh>
+                                    <MudTh Style="width:200px; font-weight:700; color:#1a237e; background:#f0f4ff;">Domain</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Date">
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                                 Style="font-size:0.78rem; height:24px; font-weight:600; color:#555; border-color:#ccc;">
+                                            @context.Date
+                                        </MudChip>
+                                    </MudTd>
+                                    <MudTd DataLabel="Subject">
+                                        @if (!string.IsNullOrWhiteSpace(context.Url) && context.Url != "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/")
+                                        {
+                                            <MudLink Href="@context.Url" Target="_blank" Color="Color.Primary"
+                                                     Style="font-size:0.85rem; display:flex; align-items:flex-start; gap:5px; line-height:1.45;">
+                                                <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf"
+                                                         Size="Size.Small" Style="color:#e53935; flex-shrink:0; margin-top:1px;" />
+                                                <span>@context.Subject</span>
+                                            </MudLink>
+                                        }
+                                        else
+                                        {
+                                            <MudText Style="font-size:0.85rem; color:#666;">@context.Subject</MudText>
+                                        }
+                                    </MudTd>
+                                    <MudTd DataLabel="Domain">
+                                        @if (!string.IsNullOrWhiteSpace(context.Domain))
+                                        {
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Style="background:#e8eaf6; color:#3949ab; font-size:0.75rem; height:auto; white-space:normal; padding:3px 8px; line-height:1.4;">
+                                                @context.Domain
+                                            </MudChip>
+                                        }
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </ChildContent>
+                    </MudExpansionPanel>
+                }
+            </MudExpansionPanels>
+        }
+    }
+    <MudStack Row="true" JustifyContent="JustifyContent.FlexStart" Class="mt-5">
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                   Href="divya">
+            Back to Divya Portal
+        </MudButton>
+    </MudStack>
+
+</MudContainer>
+
+<style>
+    .prevemail-panels .mud-expand-panel {
+        border-radius: 10px !important;
+        margin-bottom: 8px !important;
+    }
+
+    .prevemail-panels .mud-expand-panel-header {
+        background: #fafbff !important;
+        border-radius: 10px !important;
+        padding: 10px 16px !important;
+        transition: background 0.2s;
+    }
+
+        .prevemail-panels .mud-expand-panel-header:hover {
+            background: #eef1fb !important;
+        }
+
+    .prevemail-panels .mud-expand-panel-text {
+        padding: 0 8px 12px 8px !important;
+    }
+
+    .prevemail-panels .mud-table-row:hover td {
+        background-color: #e8eaf6 !important;
+    }
+</style>
+
+@code {
+    private string _searchText = string.Empty;
+    private MudExpansionPanels? _expansionPanels;
+    private Dictionary<string, bool> _expandedStates = new();
+
+    private readonly string[] _monthColors =
+    {
+        "#1a237e", "#283593", "#1565c0", "#0277bd", "#00695c",
+        "#2e7d32", "#558b2f", "#f57f17", "#e65100", "#6a1b9a",
+        "#880e4f", "#b71c1c", "#37474f", "#4e342e", "#00838f",
+        "#1b5e20", "#0d47a1", "#4a148c", "#bf360c", "#1a237e"
+    };
+
+    private List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Home", href: "/", icon: Icons.Material.Filled.Home),
+        new BreadcrumbItem("Divya Portal", href: "/divya"),
+        new BreadcrumbItem("Previous Emailers", href: null, disabled: true)
+    };
+
+    // ---- Data Model ----
+    private record EmailerItem(string Date, string Subject, string Url, string Domain);
+    private record MonthGroup(string MonthLabel, List<EmailerItem> Items);
+
+    private void OnPanelExpandedChanged(string label, bool value)
+    {
+        _expandedStates[label] = value;
+    }
+
+    private void ExpandAll()
+    {
+        foreach (var g in _monthGroups)
+            _expandedStates[g.MonthLabel] = true;
+    }
+
+    private void CollapseAll()
+    {
+        foreach (var g in _monthGroups)
+            _expandedStates[g.MonthLabel] = false;
+    }
+
+    private List<MonthGroup> GetFiltered()
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+            return _monthGroups;
+
+        var q = _searchText.Trim().ToLowerInvariant();
+        return _monthGroups
+            .Select(g => new MonthGroup(g.MonthLabel,
+                g.Items.Where(i =>
+                    i.Subject.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    i.Domain.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    i.Date.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .ToList()))
+            .Where(g => g.Items.Any())
+            .ToList();
+    }
+
+    // ===================== DATA =====================
+    private List<MonthGroup> _monthGroups = new()
+    {
+        new("Empower Through Access – April 2026", new()
+        {
+            new("30-04-2026", "Empower Through Access - GAAD 2026 Awareness Series Small Steps Big Access Images with Alt Text and Infographic",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/30  April GAAD 2026 Awareness Series Small Steps. Big Access  Images with Alt Text and Info graphic.pdf",
+                "GAAD 2026"),
+
+            new("30-04-2026", "Empower Through Access – GAAD 2026 जागरूकता श्रृंखला लघु स्तरीय प्रयास व्यापक सुगम्यता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/30 April GAAD 2026 जागरूकता श्रृंखला  लघु स्तरीय  प्रयास  व्यापक सुगम्यता  छवियाँ  Alt Text और इन्फोग्राफिक.pdf",
+                "GAAD 2026"),
+
+            new("23-04-2026", "GAAD 2026 Awareness Series Structured Content",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/23 April GAAD 2026 Awareness Series Small Steps. Big Access. Structured Content.pdf",
+                "GAAD 2026"),
+
+            new("23-04-2026", "GAAD 2026 जागरूकता श्रृंखला संरचित सामग्री",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/23 April GAAD 2026 जागरूकता श्रृंखला सूक्ष्म पहल विस्तृत अभिगम संरचित सामग्री.pdf",
+                "GAAD 2026"),
+
+            new("16-04-2026", "GAAD 2026 Awareness Fonts & Typography",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/16th April  GAAD 2026 Awareness Series  Small Steps. Big Access  Fonts & Typography.pdf",
+                "GAAD 2026"),
+
+            new("16-04-2026", "GAAD 2026 जागरूकता श्रृंखला फ़ॉन्ट एवं टाइपोग्राफी",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/16th April GAAD 2026 जागरूकता श्रृंखला   सूक्ष्म कदम  व्यापक सुगम्यता  फ़ॉन्ट एवं टाइपोग्राफी.pdf",
+                "GAAD 2026"),
+
+            new("09-04-2026", "GAAD 2026 Awareness Colour Contrast",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/9 April 2026 GAAD 2026 Awareness Series Small Steps. Big Access. – Colour Contrast.pdf",
+                "GAAD 2026"),
+
+            new("09-04-2026", "GAAD 2026 जागरूकता श्रृंखला रंग कंट्रास्ट",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/9 April  GAAD 2026 जागरूकता श्रृंखला  छोटे कदम  व्यापक पहुँच   रंग कंट्रास्ट Colour Contrast.pdf",
+                "GAAD 2026"),
+
+            new("02-04-2026", "Inclusive Banking – समावेशी शुरुआत",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/2 April समावेशी शुरुआत – सभी के लिए सुगम्य एवं समावेशी बैंकिंग वातावरण के माध्यम से उपयोगकर्ता अनुभव को सुदृढ़ करना.pdf",
+                "Inclusive Banking"),
+
+            new("01-04-2026", "Inclusive Banking – Enhancing User Experience",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/1 April Inclusive Beginning – Enhancing User experience for all by creating Accessible and Inclusive Banking Environment.pdf",
+                "Inclusive Banking"),
+        }),
+        new("Empower Through Access – March 2026", new()
+        {
+            new("26-03-2026", "Purple Day – Invisible Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/26 March Purple Day Understanding Invisible Disabilities and Inclusive Practices.pdf",
+                "Purple Day"),
+
+            new("20-03-2026", "World Down Syndrome Day",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/20th March  World Down Syndrome Day  Understanding Differences, Removing Barriers.pdf",
+                "World Down Syndrome Day"),
+
+            new("20-03-2026", "विश्व डाउन सिंड्रोम दिवस",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/20 March विश्व डाउन सिंड्रोम दिवस – भिन्नताओं को समझना, बाधाओं को दूर करना.pdf",
+                "विश्व डाउन सिंड्रोम दिवस"),
+
+            new("10-03-2026", "Celebrating Women with Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/10 March Breaking Barriers Celebrating the Spirit of Women with Disabilities in India.pdf",
+                "Women Empowerment"),
+
+            new("06-03-2026", "सुगम्यता को सशक्त बनाना",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/6 March सुगम्यता को सशक्त बनाना, हर संकेत को महत्व देना.pdf",
+                "Accessibility"),
+
+            new("05-03-2026", "Strengthening Accessibility",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/5 March Strengthening Accessibility, Valuing Every Sign.pdf",
+                "Accessibility"),
+        }),
+        new("Empower Through Access – February 2026", new()
+        {
+            new("26-02-2026", "Low Vision Awareness",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/26th Feb  Building Awareness to Support Colleagues & Customers with Low Vision.pdf",
+                "Low Vision"),
+
+            new("26-02-2026", "दृष्टिबाधित समर्थन जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/26th Feb  दृष्टिबाधित सहकर्मियों एवं ग्राहकों के सहयोग हेतु जागरूकता निर्माण.pdf",
+                "Low Vision"),
+
+            new("19-02-2026", "Inclusive Work Environment for Low Vision",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/19th Feb  Bringing Accessibility to Official Documents for Creating an Inclusive Work Environment for Low Vision Employees.pdf",
+                "Inclusive Workplace"),
+
+            new("19-02-2026", "दृष्टिबाधित कर्मचारियों हेतु समावेशन",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/19th Feb दृष्टिबाधित कर्मचारियों के लिए समावेशी कार्य वातावरण निर्माण हेतु आधिकारिक दस्तावेज़ों को सुगम्य बनाना.pdf",
+                "Inclusive Workplace"),
+
+            new("13-02-2026", "Assistive Technology for Low Vision",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/13th Feb  Accessibility Through Assistive Technologies- for Low Vision.pdf",
+                "Assistive Technology"),
+
+            new("13-02-2026", "सहायक तकनीक (Low Vision)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/13th Feb सहायक तकनीकों के माध्यम से सुगम्यता (दृष्टिबाधित के लिए).pdf",
+                "Assistive Technology"),
+
+            new("05-02-2026", "Low Vision Disability & Myths",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/5th Feb Low Vision Disability & Myths.pdf",
+                "Low Vision"),
+
+            new("05-02-2026", "दृष्टिबाधिता और भ्रांतियाँ",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/5 Feb दृष्टि की सीमाओं से परे  दृष्टिबाधिता (Low विज़न) और भ्रांतियाँ.pdf",
+                "Low Vision"),
+        }),
+        new("Empower Through Access – January 2026", new()
+        {
+            new("27-01-2026", "Chhonzin Angmo 4th Summit",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/27th Jan  Chhonzin Angmos 4th Summit Join Her Journey to the Top.pdf",
+                "Achievement"),
+
+            new("27-01-2026", "छोन्झिन आंगमो शिखर सम्मेलन",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/27th Jan Chhonzin Angmo का चौथा शिखर सम्मेलन उनके ऊँचाइयों की यात्रा में शामिल हों.pdf",
+                "Achievement"),
+
+            new("22-01-2026", "Digital Braille Empowerment",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/22nd Jan  Breaking Myths How Digital Braille Empowers Independence.pdf",
+                "Braille"),
+
+            new("22-01-2026", "डिजिटल ब्रेल आत्मनिर्भरता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/22nd Jan मिथकों को तोड़ते हुए डिजिटल ब्रेल कैसे आत्मनिर्भरता को सशक्त बनाता है_1.pdf",
+                "Braille"),
+
+            new("16-01-2026", "Braille in Banking",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/16th Jan Braille in Banking Enabling Inclusion Beyond Visibility.pdf",
+                "Braille"),
+
+            new("16-01-2026", "बैंकिंग में ब्रेल",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/16th Jan बैंक िं ग में ब्रेल  दृश्यता से परे समावेशन.pdf",
+                "Braille"),
+
+            new("05-01-2026", "Louis Braille Day",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/5 Jan  Step into a World You Don’t Usually See – Louis Braille Day.pdf",
+                "Louis Braille Day"),
+
+            new("05-01-2026", "लुई ब्रेल दिवस",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/5 Jan उस अनुभव की दुननया में कदम रखें जो अक्सर नदखाई नहीीं देती   लुई.pdf",
+                "Louis Braille Day"),
+        }),
+        new("Empower Through Access – December 2025", new()
+        {
+            new("31-12-2025", "Empower Through Access IC 101452-2025 Mandatory Accessibility Requirements under RPwD RBI DFS EASE 8.0 BIS IS 17802 compliance",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/31st Dec IC 101452 2025 Mandatory Accessibility Requirements under RPwD RBI  DFS EASE 8.0  BIS IS 17802 compliance.pdf",
+                "IC 101452-2025 Mandatory Accessibility Requirements"),
+            new("31-12-2025", "Empower Through Access RPwD अधिनियम RBI एवं DFS के अंतर्गत अनिवार्य सुगम्यता आवश्यकताएँ EASE 8.0 तथा BIS IS 17802 का अनुपालन",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/31st Dec RPwD अधिनियम  RBI एवं DFS के अंतर्गत अनिवार्य सुगम्यता आवश्यकताएँ EASE 8.0 तथा BIS IS 17802 का अनुपालन.pdf",
+                "RPwD अधिनियम – EASE 8.0 BIS IS 17802 अनुपालन"),
+            new("30-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Other Categories of Disability Multiple Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/30th Dec IDPD 2025 Awareness Series Spotlight on Other Categories of Disability Multiple Disabilities.pdf",
+                "IDPD 2025 – Multiple Disabilities"),
+            new("30-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला रक्त विकार दिव्यांगता के बारे में जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/30th Dec IDPD 2025 जागरूकता श्रृंखला  रक्त विकार दिव्यांगता के बारे में जागरूकता.pdf",
+                "जागरूकता श्रृंखला – रक्त विकार दिव्यांगता"),
+            new("26-12-2025", "Empower Through Access IDPD 2025 Three Peaks One Message – Determination Has No Barriers: Celebrating Ms. Chhonzin Angmo",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/26th Dec Three Peaks  One Message Determination Has No Barriers Celebrating the Determination of Ms. Chhonzin Angmo .pdf",
+                "Three Peaks One Message – Chhonzin Angmo"),
+            new("26-12-2025", "Empower Through Access IDPD 2025 तीन पर्वत एक संदेश दृढ़ संकल्प के सामने कोई बाधा नहीं – सुश्री छोन्झिन अंगमो की प्रेरक यात्रा",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/26th Dec तीन पर्वत  एक संदेश दृढ़ संकल्प के सामने कोई बाधा नहीं  सुश्री छोन्झिन  अंगमो की प्रेरक यात्रा का उत्सर .pdf",
+                "तीन पर्वत एक संदेश – छोन्झिन अंगमो"),
+            new("24-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Parkinson's Disease Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/24th Dec IDPD 2025 Awareness Series Spotlight on Parkinson's Disease Disability.pdf",
+                "Awareness Series – Parkinson's Disease"),
+            new("24-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला पार्किंसन रोग दिव्यांगता के बारे में",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/24th Dec IDPD 2025 जागरूकता श्रृंखला  पार्किं सन रोग र्िव्ाृंगता के बारे में .pdf",
+                "जागरूकता श्रृंखला – पार्किंसन रोग"),
+            new("23-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Multiple Sclerosis Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/23 Dec IDPD 2025 Awareness Series Spotlight on Multiple Sclerosis Disability.pdf",
+                "Awareness Series – Multiple Sclerosis"),
+            new("23-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला मल्टीपल स्क्लेरोसिस दिव्यांगता के बारे",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/23 Dec IDPD 2025 जागरूकता श्रृंखला मल्टीपल स्क्लेरोसिि सिव्ाृंगता के बारे.pdf",
+                "जागरूकता श्रृंखला – मल्टीपल स्क्लेरोसिस"),
+            new("22-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Chronic Neurological Conditions Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/22 Dec IDPD 2025 Awareness Series Spotlight on Chronic Neurological Conditions Disability.pdf",
+                "Awareness Series – Chronic Neurological Conditions"),
+            new("22-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला – दीर्घकालिक न्यूरोलॉजिकल स्थितियाँ (Chronic Neurological Conditions)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/22nd DecIDPD 2025 जागरूकता श्रृंखला– दीर्घकाललक न्यूरोलॉलजकल स्थिलतयााँ (Chronic Neurological Conditions) लदव्ाृंगता के बारे में जागरूकता.pdf",
+                "जागरूकता श्रृंखला – Chronic Neurological Conditions"),
+            new("20-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Muscular Dystrophy Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/20th Dec  IDPD 2025 Awareness Series Spotlight on Muscular Dystrophy Disability.pdf",
+                "Awareness Series – Muscular Dystrophy"),
+            new("19-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Cerebral Palsy",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/19th Dec IDPD 2025 Awareness Series Spotlight on Cerebral Palsy.pdf",
+                "Awareness Series – Cerebral Palsy"),
+            new("19-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला मस्तिष्क पक्षाघात (Cerebral Palsy)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/19th Dec IDPD 2025 जागरूकता श्रृंखला मस्तिष्क पक्षाघात (Cerebral Palsy).pdf",
+                "जागरूकता श्रृंखला – Cerebral Palsy"),
+            new("18-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Mental Illness Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/18th Dec IDPD 2025 Awareness Serie  Spotlight on Mental illness Disabilities.pdf",
+                "Awareness Series – Mental Illness"),
+            new("18-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला मानसिक स्वास्थ्य से संबंधित दिव्यांगता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/18th Dec IDPD 2025 जागरूकता श्रृंखला मानसि  स्वास्थ्य िे िृंबृंसित सिव्ाृंगता.pdf",
+                "जागरूकता श्रृंखला – मानसिक स्वास्थ्य"),
+            new("16-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Specific Learning Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/16th Dec DPD 2025 Awareness Series Spotlight on Specific Learning Disabilities.pdf",
+                "IDPD 2025 – Specific Learning Disabilities"),
+            new("16-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला विशिष्ट अधिगम दिव्यांगताओं (Specific Learning Disabilities) से जुड़ी जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/16th Dec IDPD 2025 जागरूकता श्रृंखला विशिष्ट अधिगम दिव्यांगताओं (Specific Learning Disabilities) से जुड़ी दिव्यांगता के बारे में जागरूकता.pdf",
+                "जागरूकता श्रृंखला – Specific Learning Disabilities"),
+            new("15-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Autism Spectrum",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/15th Dec IDPD 2025 Awareness Series Spotlight on Autism Spectrum .pdf",
+                "IDPD 2025 – Autism Spectrum"),
+            new("15-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला ऑटिज़्म स्पेक्ट्रम डिसऑर्डर से जुड़ी दिव्यांगता के बारे में जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/15 Dec  IDPD 2025 जागरूकता श्रृंखला ऑटिज़्म स्पेक्ट्रम डिसऑर्डर से जुड़ी दिव्यांगता के बारे में जागरूकता.pdf",
+                "जागरूकता श्रृंखला – ऑटिज़्म स्पेक्ट्रम"),
+            new("12-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Intellectual Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/12th Dec IDPD 2025 Awareness Series Spotlight on Intellectual Disability.pdf",
+                "IDPD 2025 – Intellectual Disability"),
+            new("12-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला बौद्धिक दिव्यांगता के बारे में जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/12th Dec  IDPD 2025 जागरूकता श्रृंखला बौद्धिक दिव्ाृंगता के बारेमेंजागरूकता.pdf",
+                "जागरूकता श्रृंखला – बौद्धिक दिव्यांगता"),
+            new("11-12-2025", "Empower Through Access IDPD 2025 Awareness Series Spotlight on Dwarfism",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/11th Dec Awareness Series Spotlight on Dwarfism.pdf",
+                "IDPD 2025 – Dwarfism"),
+            new("11-12-2025", "Empower Through Access IDPD 2025 जागरूकता श्रृंखला कद विकास से जुड़ी दिव्यांगता के बारे में जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/11th Dec  IDPD 2025 जागरूकता श्रृंखला कद विकास से जुड़ी वदव्ाृंगता के बारे में जागरूकता.pdf",
+                "जागरूकता श्रृंखला – कद विकास दिव्यांगता"),
+            new("10-12-2025", "Empower Through Access – IDPD 2025 Awareness Series Spotlight on Leprosy Cured",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/10th Dec IDPD 2025 Awareness Series Spotlight on Leprosy Cured.pdf",
+                "IDPD 2025 – Leprosy Cured"),
+            new("10-12-2025", "Empower Through Access – IDPD 2025 जागरूकता श्रृंखला लेप्रोसी उपचारित व्यक्ति दिव्यांगता के बारे में जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/10th Dec  IDPD 2025 जागरूकता श्रृंखला लेप्रोसी उपचारित व्यक्ति कक.pdf",
+                "जागरूकता श्रृंखला – लेप्रोसी उपचारित"),
+            new("09-12-2025", "Empower Through Access – IDPD 2025 Awareness Series Spotlight on Locomotor Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/9th Dec IDPD 2025 Awareness Series  Spotlight on Locomotor Disability.pdf",
+                "IDPD 2025 – Locomotor Disability"),
+            new("09-12-2025", "Empower Through Access – IDPD 2025 जागरूकता श्रृंखला लोकोमोटर दिव्यांगता के बारे में जागरूकता",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/9th Dec  IDPD 2025 जागरूकता श्रृंखला लोकोमोटर दिव्ाृंगता के.pdf",
+                "जागरूकता श्रृंखला – लोकोमोटर दिव्यांगता"),
+            new("08-12-2025", "Empower Through Access – IDPD 2025 Awareness Series Spotlight on Speech & Learning",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/8th Dec IDPD 2025 Awareness Series Spotlight on Speech & learning.pdf",
+                "Awareness Series – Speech & Learning"),
+            new("08-12-2025", "Empower Through Access – IDPD 2025 जागरूकता श्रृंखला भाषण एवं अधिगम दिव्यांगता के बारे",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/8th Dec  IDPD 2025 जागरूकता श्रृंखला भाषण एवृं अधिगम धिव्ाृंगता के बारे.pdf",
+                "जागरूकता श्रृंखला – भाषण एवं अधिगम"),
+            new("06-12-2025", "Empower Through Access – IDPD 2025 Awareness Series Spotlight on Hearing Impairment",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/6 Dec IDPD 2025 Awareness Series Spotlight on Hearing impairment.pdf",
+                "IDPD 2025 – Hearing Impairment"),
+            new("06-12-2025", "Empower Through Access – IDPD 2025 जागरूकता श्रृंखला RPwD अधिनियम 2016 के अंतर्गत श्रवण बाधितता के बारे में जानकारी",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/6 Dec  IDPD 2025 जागरूकता श्रृंखला RPwD अधिधियम, 2016 के अृंतगगत श्वण बाधितता के बारे में जािकारी .pdf",
+                "जागरूकता श्रृंखला – श्रवण बाधितता"),
+            new("05-12-2025", "Empower Through Access – IDPD 2025 Awareness Series Spotlight on Low Vision",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/5th Dec IDPD 2025 Awareness Series Spotlight on low vision.pdf",
+                "Awareness Series – Low Vision"),
+            new("04-12-2025", "Empower Through Access – IDPD 2025 Awareness Series Spotlight on Blindness",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/4th Dec IDPD 2025 Awareness Series Spotlight on Blindness.pdf",
+                "IDPD 2025 – Blindness"),
+            new("03-12-2025", "Empower Through Access – Union Gyan Kasuati Quiz on Disability Inclusion, Accessible Banking Products and Inclusive Product",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/3rd Dec Union Gyan Kasuati Quiz on Disability Inclusion, Accessible Banking Products and Inclusive Product.pdf",
+                "Union Gyan Kasuati Quiz"),
+            new("01-12-2025", "Empower Through Access – Celebrating IDPD 2025: Victory of the Indian Blind Women's Cricket Team",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/1st Dec Celebrating IDPD 2025 - Victory of the Indian Blind Women's.pdf",
+                "IDPD 2025 – Blind Women's Cricket"),
+        }),
+
+        new("Empower Through Access – November 2025", new()
+        {
+            new("20-11-2025", "Empower Through Access – 107 Years of Legacy Celebrating Inclusion and Accessible Banking",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/December/20th Nov 107 Years of Legacy Celebrating Inclusion and Accessible Banking.pdf",
+                "107 Years of Legacy – Accessible Banking"),
+            new("06-11-2025", "Empower Through Access – Our Shared Responsibility of Vigilance Towards Accessibility",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/6th Nov Our Shared Responsibility of Vigilance Towards Accessibility.pdf",
+                "Vigilance Awareness Week"),
+        }),
+
+        new("Empower Through Access – October 2025", new()
+        {
+            new("30-10-2025", "Empower Through Access – Building a Safer, More Inclusive Digital World For Everyone",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/30th Oct Building a Safer, More Inclusive Digital World   For Everyone.pdf",
+                "NCSAM 2025-2026"),
+            new("22-10-2025", "Empower Through Access – Enhancing Accessibility: SOP Manual for using IP Messenger with JAWS Screen Reader",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/22 Oct Enhancing Accessibility SOP Manual for using IP Messenger with JAWS Screen Reader.pdf",
+                "IP Messenger with JAWS Screen Reader"),
+            new("15-10-2025", "Empower Through Access – White Cane: A Symbol of Independence, Self-Reliance and Respect for Persons with Visual Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/15th October White Cane A Symbol of Independence Self Reliance and Respect for Persons with Visual Disabilities.pdf",
+                "White Cane Safety Day 2025"),
+        }),
+
+        new("Empower Through Access – September 2025", new()
+        {
+            new("25-09-2025", "Empower Through Access – Breaking Barriers of Communication for Deaf Individuals | Sign Language Day 2025",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/25rh Sept Breaking Barriers of Communication for Deaf Individuals Sign Language Day 2025.pdf",
+                "Sign Language Day 2025"),
+            new("19-09-2025", "Empower Through Access – हिंदी राजभाषा के महिमामय 76 वर्ष",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/19th Sept हिंदी राजभाष के महिमामय 76 वर्ष.pdf",
+                "हिंदी राजभाषा – 76 वर्ष"),
+            new("11-09-2025", "Empower Through Access – Empowering persons with hearing impairments in the workplace via assistive technologies (Deaf Awareness Month)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/11 Sept Empowering persons with hearing impairments or Hard of Hearing in the workplace via assistive technologies Deaf Awareness Month.pdf",
+                "Deaf Awareness Month"),
+            new("04-09-2025", "Empower Through Access – Bringing Inclusivity and Diversity in Workplace (Deaf Awareness Month)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/4 Sept Bringing Inclusivity and Diversity in Workplace Deaf Awareness Month.pdf",
+                "Deaf Awareness Month"),
+        }),
+
+        new("Empower Through Access – August 2025", new()
+        {
+            new("28-08-2025", "Empower Through Access – Banking for Everyone through Universal Design in Digital Banking",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/28 Aug Banking for Everyone through Universal Design in Digital Banking.pdf",
+                "Universal Design in Digital Banking"),
+            new("21-08-2025", "Empower Through Access – Celebrating Freedom to Achieve Dreams with NDFDC Loan Schemes",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/21st Aug  Celebrating Freedom to Achieve Dreams with NDFDC loan Schemes.pdf",
+                "NDFDC Loan Schemes"),
+            new("13-08-2025", "Empower Through Access – Celebrating the Financial Independence: Circulars and Guidelines on banking services to PwDs",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/13th Aug  Celebrating the Financial Independence Circulars  and Guidelines on banking services to PwDs.pdf",
+                "Banking services for PwDs"),
+            new("06-08-2025", "Empower Through Access – Inclusive and Accessible Banking Services",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/6th Aug  Celebrating the Financial Independence.pdf",
+                "Inclusive and Accessible Banking"),
+        }),
+
+        new("Empower Through Access – July 2025", new()
+        {
+            new("30-07-2025", "Empower Through Access – Celebrating Achievements of Employees with Disabilities on the occasion of Disability Pride Month July 2025",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/30 Jul Celebrating Achievements of Employees with Disabilities on the occasion of Disability Pride Month July 2025.pdf",
+                "Disability Pride Month"),
+            new("25-07-2025", "Empower Through Access – Human Resources Week: Celebrating HR initiatives for Employees with Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/25 July Human Resources Week-Celebrating HR initiatives for Employees with Disabilities.pdf",
+                "HR Week"),
+            new("23-07-2025", "Empower Through Access – Celebrating Disability Pride Month: Honouring Prashant Naik's Outstanding Achievements",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/23 July  Celebrating Disability Pride Month - Honouring Prashant Naik's Outstanding Achievements.pdf",
+                "Disability Pride Month"),
+            new("17-07-2025", "Empower Through Access – DISABILITY PRIDE MONTH: Webinar \"Leading without Limits: The Power of Will & Wisdom\"",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/17 July  Empower Through Access DISABILTY PRIDE MONTH Webinar Leading without Limits The Power of Will & Wisdom.pdf",
+                "Disability Pride Month"),
+            new("16-07-2025", "Empower Through Access – Celebrating Disability Pride Month: Honoring Ramanjee's Outstanding Achievements",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/16 July  Celebrating Disability Pride Month - Honoring Ramanjee's Outstanding Achievements.pdf",
+                "Disability Pride Month"),
+            new("09-07-2025", "Empower Through Access – Celebrating Disability Pride Month: Honoring Dr. Kalyanlakshmi Chitta's Outstanding Achievements",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/9 July Celebrating Disability Pride Month - Honoring Dr. Kalyanlakshmi Chitta's Outstanding Achievements.pdf",
+                "Disability Pride Month"),
+            new("02-07-2025", "Empower Through Access – Celebrating Achievements of Employees with Disabilities on the occasion of Disability Pride Month July 2025",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/2 July Celebrating Achievements of Employees with Disabilities on the occasion of Disability Pride Month July 2025.pdf",
+                "Achievements of PwD Staff"),
+        }),
+
+        new("Empower Through Access – June 2025", new()
+        {
+            new("27-06-2025", "Empower Through Access – Honouring Helen Keller Day – Advancing Accessible Banking",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/27 June Honouring Helen Keller Day – Advancing Accessible Banking.pdf",
+                "Helen Keller Day"),
+            new("25-06-2025", "Empower Through Access – Enhancing Inclusion through E-learning modules in Union Vidya",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/25 June Enhancing Inclusion through E-learning modules in Union Vidya.pdf",
+                "Inclusion through Union Vidya"),
+            new("10-06-2025", "Empower Through Access – Digital Accessibility Learning Series: Celebrating 13 Years of Accessible and Talking ATMs",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/10 June  Digital Accessibility Learning Series - Celebrating 13 Years of Accessible and Talking ATMs.pdf",
+                "Accessible Talking ATM"),
+            new("04-06-2025", "Empower Through Access – Enhancing Inclusion through E-learning Modules in Union Vidya",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/4 June enhancing inclusion through E-learning Modules in Union Vidya.pdf",
+                "Inclusion through Union Vidya"),
+        }),
+
+        new("Empower Through Access – May 2025", new()
+        {
+            new("28-05-2025", "Empower Through Access – Celebrating GAAD 2025: Understanding Digital Accessibility (3)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/28 May Celebrating GAAD 2025 – Understanding Digital Accessibility (3).pdf",
+                "GAAD 2025"),
+            new("21-05-2025", "Empower Through Access – Celebrating GAAD 2025: Understanding Digital Accessibility (2)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/",
+                "GAAD 2025"),
+            new("14-05-2025", "Empower Through Access – Celebrating GAAD 2025: Understanding Digital Accessibility (1)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/14 May Celebrating GAAD 2025 – Understanding Digital Accessibility (1).pdf",
+                "GAAD 2025"),
+        }),
+
+        new("Empower Through Access – April 2025", new()
+        {
+            new("30-04-2025", "Empower Through Access – Customer Services for Persons with Disabilities (PwDs) – Branch Operations Policy F.Y. 2025-26 (4)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/30th Apr  Customer Services for Persons with Disabilities (PwDs) - Branch Operations Policy F.Y. 2025-26 (4).pdf",
+                "Branch Operations Policy"),
+            new("16-04-2025", "Empower Through Access – Customer Services for Persons with Disabilities (PwDs) – Branch Operations Policy F.Y. 2025-26 (3)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/16th Apr  Customer Services for Persons with Disabilities (PwDs) - Branch Operations Policy F.Y. 2025-26 (3).pdf",
+                "Branch Operations Policy"),
+            new("09-04-2025", "Empower Through Access – Customer Services for Persons with Disabilities (PwDs) – Branch Operations Policy F.Y. 2025-26 (2)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/09th Apr  Customer Services for Persons with Disabilities (PwDs) - Branch Operations Policy F.Y. 2025-26 (2).pdf",
+                "Branch Operations Policy"),
+            new("02-04-2025", "Empower Through Access – Customer Services for Persons with Disabilities (PwDs) – Branch Operations Policy F.Y. 2025-26",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/02nd Apr Customer Services for Persons with Disabilities (PwDs) - Branch Operations Policy F.Y. 2025-26.pdf",
+                "Branch Operations Policy"),
+        }),
+
+        new("Empower Through Access – March 2025", new()
+        {
+            new("26-03-2025", "Empower Through Access – Series on Compliance with DFS Accessibility Guidelines for Banking Sector (3)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/26th Mar Series on Compliance with DFS Accessibility Guidelines for Banking Sector (3).pdf",
+                "DFS Accessibility Guidelines"),
+            new("19-03-2025", "Empower Through Access – Series on Compliance with DFS Accessibility Guidelines for Banking Sector (2.2 and 2.3)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/19th Mar  Series on Compliance with DFS Accessibility Guidelines for Banking Sector (2.2 and 2.3).pdf",
+                "DFS Accessibility Guidelines"),
+            new("12-03-2025", "Empower Through Access – Series on Compliance with DFS Accessibility Guidelines for Banking Sector",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/12th Mar Series on Compliance with DFS Accessibility Guidelines for Banking Sector.pdf",
+                "DFS Accessibility Guidelines"),
+            new("05-03-2025", "Empower Through Access – Series on Compliance with DFS Accessibility Guidelines for Banking Sector",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/05th Mar Series on Compliance with DFS Accessibility Guidelines for Banking Sector.pdf",
+                "DFS Accessibility Guidelines"),
+            new("01-03-2025", "Empower Through Access – Series on Compliance with DFS Accessibility Guidelines for Banking Sector",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/01st Mar  Series on Compliance with DFS Accessibility Guidelines for banking sector.pdf",
+                "DFS Accessibility Guidelines"),
+        }),
+
+        new("Empower Through Access – February 2025", new()
+        {
+            new("19-02-2025", "Empower Through Access – Series on Compliance with DFS Accessibility Guidelines for Banking Sector",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/19th Feb 2025  Series on Compliance with DFS Accessibility Guidelines for banking sector.pdf",
+                "DFS Accessibility Guidelines"),
+            new("13-02-2025", "Empower Through Access – Series on Compliance with DFS Accessibility Guidelines for Banking Sector",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/13th Feb Series on Compliance with DFS Accessibility Guidelines for banking sector.pdf",
+                "DFS Accessibility Guidelines"),
+            new("05-02-2025", "Empower Through Access – Facilitating Accessibility to Digital Payment Systems",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/5th Feb Facilitating Accessibility to Digital Payment Systems.pdf",
+                "Digital Payment Accessibility"),
+        }),
+
+        new("Empower Through Access – January 2025", new()
+        {
+            new("29-01-2025", "Empower Through Access – Building Inclusive Workspaces with Braille and Assistive Technologies",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/29th Jan Building Inclusive Workspaces with Braille and Assistive Technologies.pdf",
+                "Inclusive Workplace"),
+            new("22-01-2025", "Empower Through Access – Union Sparsh Debit Card with Braille Features",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/22 Jan Union Sparsh Debit Card with Braille Features.pdf",
+                "Union Sparsh Debit Card"),
+            new("15-01-2025", "Empower Through Access – Braille on Mobile Devices",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/15 Jan Braille on Mobile Devices.pdf",
+                "Braille on Mobile Devices"),
+            new("08-01-2025", "Empower Through Access – Let's Learn How Technology Enhances Braille",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/8th Jan Lets learn How Technology Enhances Braille.pdf",
+                "Braille"),
+        }),
+
+        new("Empower Through Access – December 2024", new()
+        {
+            new("30-12-2024", "Empower Through Access – 21 प्रकार की दिव्यांगताओं के प्रति जागरूकता – दिव्यांगजन अधिकार अधिनियम, 2016",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/30 Dec 21 प्रकार की दिव्यांगताओं के प्रति जागरूकता - दिव्यांगजन अधिकार अधिनियम, 2016.pdf",
+                "Disability Awareness"),
+            new("27-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Multiple Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/27 Dec  Multiple Disabilities.pdf",
+                "Disability Awareness"),
+            new("26-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Deaf-Blindness",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/26 Dec Deaf Blindness.pdf",
+                "Disability Awareness"),
+            new("24-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Acid Attack Victim",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/24 Dec Acid Attack Victim.pdf",
+                "Disability Awareness"),
+            new("23-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Parkinson's Disease",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/23 Dec Parkinsons Disease.pdf",
+                "Disability Awareness"),
+            new("21-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Blood Disorder Diseases",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/21 Dec  Blood Disorder.pdf",
+                "Disability Awareness"),
+            new("20-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Speech and Language Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/20 Dec  Speech and Language Disability.pdf",
+                "Disability Awareness"),
+            new("19-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Multiple Sclerosis",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/19 Dec  Multiple Sclerosis.pdf",
+                "Disability Awareness"),
+            new("18-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Specific Learning Disabilities (Dyslexia)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/18 Dec Dyslexia.pdf",
+                "Disability Awareness"),
+            new("17-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Chronic Neurological Conditions",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/17 Dec Chronic Neurological Condition.pdf",
+                "Disability Awareness"),
+            new("16-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Muscular Dystrophy",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/16 Dec Muscular Dystrophy.pdf",
+                "Disability Awareness"),
+            new("13-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Cerebral Palsy (CP)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/13 Dec Cerebral Palisy.pdf",
+                "Disability Awareness"),
+            new("12-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Autism Spectrum Disorder",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/12 Dec Autism.pdf",
+                "Disability Awareness"),
+            new("11-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Mental Illness",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/11 Dec Mental Illness.pdf",
+                "Disability Awareness"),
+            new("10-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Intellectual Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/10 Dec Intellectual Disability.pdf",
+                "Disability Awareness"),
+            new("09-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Locomotor Disability",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/9 Dec Locomotor Disability.pdf",
+                "Disability Awareness"),
+            new("07-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Hearing Impairment (Deaf and Hard of Hearing)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/7 Dec Hearing impaired.pdf",
+                "Disability Awareness"),
+            new("06-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Low Vision",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/6th Dec Low Vision.pdf",
+                "Disability Awareness"),
+            new("05-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Blindness",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/5th Dec Blindness.pdf",
+                "Disability Awareness"),
+            new("04-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: Disability Etiquettes",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/4th Dec An Awareness Series on disability and diversity Disability Etiquettes.pdf",
+                "Disability Awareness"),
+            new("03-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity: \"Say This, Not That\"",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/3rd Dec An Awareness Series on disability and diversity Say This, Not That.pdf",
+                "Disability Awareness"),
+            new("02-12-2024", "Empower Through Access – An Awareness Series on Disability and Diversity",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/",
+                "Disability Awareness"),
+        }),
+
+        new("Empower Through Access – November 2024", new()
+        {
+            new("27-11-2024", "Empower Through Access – Celebrating Accessibility Milestones: Dedicated Disability Support Options",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/27th Nov  Celebrating Accessibility Milestones Dedicated Disability Support Options.pdf",
+                "Accessible Product"),
+            new("13-11-2024", "Empower Through Access – Celebrating Accessibility Milestones: Talking ATM & Union Sparsh Braille Debit Card",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/13th Nov  Celebrating Accessibility Milestones Talking ATM & Union Sparsh Braille Debit Card.pdf",
+                "Accessible Product"),
+            new("07-11-2024", "Empower Through Access – Barrier Free Access in Branches/ATMs for Persons with Disabilities",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/7th Nov Barrier free access in branchesATMs for Persons with Disabilities.pdf",
+                "Policy"),
+        }),
+
+        new("Empower Through Access – October 2024", new()
+        {
+            new("31-10-2024", "Empower Through Access – Availability of Magnifying Glasses in the Branches",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/31st Oct Availability of Magnifying Glasses in the Branches.pdf",
+                "Availability of Magnifying Glasses"),
+            new("23-10-2024", "Empower Through Access – Issuing Debit Card to Visually Impaired Customers",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/23rd Oct Issuing Debit Card to Visually Impaired Customers.pdf",
+                "Policy"),
+            new("10-10-2024", "Empower Through Access – World Sight Day 2024",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/10th Oct  World Sight Day 2024.pdf",
+                "Disability Awareness"),
+            new("03-10-2024", "Empower Through Access – Banking Services to Persons with Disabilities (Divyangjan)",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/3rd Oct Banking Services to Persons with Disabilities (Divyangjan).pdf",
+                "Policy"),
+        }),
+
+        new("Empower Through Access – September 2024", new()
+        {
+            new("19-09-2024", "Empower Through Access – E-learning module: Introductory Course on Indian Sign Language available in Union Vidya",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/19th Sep E-learning module- Introductory Course on Indian Sign Language available in Union Vidya.pdf",
+                "E-Learning"),
+            new("11-09-2024", "Empower Through Access – E-learning module: Capacity Building Module for IT and Digital Banking on Digital Accessibility available in Union Vidya",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/11 Sep  E-learning module- Capacity Building Module for IT and Digital Banking on Digital Accessibility  available in Union Vidya.pdf",
+                "E-Learning"),
+            new("04-09-2024", "Empower Through Access – E-learning module: Disability Etiquette available in Union Vidya",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/4 Sep  E-learning module Disability Etiquette available in Union Vidya.pdf",
+                "E-Learning"),
+        }),
+
+        new("Empower Through Access – August 2024", new()
+        {
+            new("28-08-2024", "Empower Through Access – Promoting Inclusive Banking Services: Equal Opportunity Policy 2023-24",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/28th Aug Promoting Inclusive Banking Services –Equal Opportunity Policy 2023-24.pdf",
+                "Policy"),
+            new("21-08-2024", "Empower Through Access – Promoting Inclusive Banking Services: Information Technology Policy and IT Procurement Policy",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/21st Aug  Promoting Inclusive Banking Services – Information Technology Policy and IT Procurement Policy.pdf",
+                "Policy"),
+            new("14-08-2024", "Empower Through Access – Promoting Inclusive Banking Services: ATM Policy",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/14th Aug  Promoting Inclusive Banking Services – ATM Policy.pdf",
+                "Policy"),
+            new("07-08-2024", "Empower Through Access – Promoting Inclusive Banking Services: Debit and Credit Card Policy",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/7th Aug Promoting Inclusive Banking Services – Debit and Credit Card Policy.pdf",
+                "Policy"),
+        }),
+
+        new("Empower Through Access – July 2024", new()
+        {
+            new("31-07-2024", "Empower Through Access – Disability Pride Month: Banking Access to Deaf and Hearing Impairment Persons",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/31st Jul  Disability Pride Month – Banking Access to Deaf and Hearing Impairment Persons.pdf",
+                "Accessible Product"),
+            new("24-07-2024", "Empower Through Access – Disability Pride Month: Accessible CAPTCHAs Solution",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/24th Jul Disability Pride Month – Accessible CAPTCHAs solution.pdf",
+                "Accessible Product"),
+            new("18-07-2024", "Empower Through Access – Disability Pride Month: Accessible Internet Banking",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/18th Jul Disability Pride Month – Accessible Internet banking.pdf",
+                "Accessible Product"),
+            new("10-07-2024", "Empower Through Access – Disability Pride Month: UVConn, an Inclusive Service Offering",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/10th Jul  Disability Pride Month – UVConn, an inclusive service offering.pdf",
+                "Accessible Product"),
+            new("03-07-2024", "Empower Through Access – Disability Pride Month: Union Voice Assistant, an Inclusive Service Offering",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/3rd Jul Disability Pride Month - Union Voice Assistant an inclusive service offering.pdf",
+                "Accessible Product"),
+        }),
+
+        new("Empower Through Access – June 2024", new()
+        {
+            new("27-06-2024", "Empower Through Access – Digital Accessibility Learning Series: Helen Keller Day Special – Sparsh Debit Card for Visually Impaired Customers",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/27th Jun Digital Accessibility Learning Series - Helen Keller Day Special - Sparsh Debit card for the Visually Impaired Customers.pdf",
+                "Accessible Product"),
+            new("19-06-2024", "Empower Through Access – Digital Accessibility Learning Series: Unveiling the JAWS SOP for Digital Accessibility",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/19th Jun  Digital Accessibility Learning Series - Unveiling the JAWS SOP for Digital Accessibility.pdf",
+                "Assistive Technology"),
+            new("12-06-2024", "Empower Through Access – Digital Accessibility Learning Series: Tips for Creating Universally Accessible Documents",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/12th Jun Digital Accessibility Learning Series - Tips for Creating Universally Accessible Documents.pdf",
+                "Digital Accessibility"),
+            new("06-06-2024", "Empower Through Access – Digital Accessibility Learning Series: Celebrating 12 Years of Accessible and Talking ATMs",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/6 Jun Digital Accessibility Learning Series - Celebrating 12 Years of Accessible and Talking ATMs.pdf",
+                "Accessible Product"),
+        }),
+
+        new("Empower Through Access – May 2024", new()
+        {
+            new("29-05-2024", "Empower Through Access – Digital Accessibility Learning Series",
+                "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/Empower Through Access PDF files/29th May Digital Accessibility Learning Series.pdf",
+                "Digital Accessibility"),
+        }),
+    };
+}

@@ -1,0 +1,241 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/holidays"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@using RequestPortal.Web.Pages.Admin.Dialogs
+@inject IMasterRepo MasterRepo
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject ICurrentUser CurrentUser
+@inject IAuditService AuditSvc
+
+<PageTitle>Holiday Calendars</PageTitle>
+
+<PageHeader PageKey="admin-holidays" Title="Holiday Calendars" Crumbs="_crumbs" />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudGrid>
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="1" Class="pa-3">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.h6">Calendars</MudText>
+                <MudSpacer />
+                <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary"
+                               Size="Size.Small" OnClick="AddCalendar" />
+            </div>
+            <MudList T="HolidayCalendar" Dense="true">
+                @foreach (var c in _calendars)
+                {
+                    var cal = c;
+                    <MudListItem T="HolidayCalendar" Value="@cal" OnClick="@(() => SelectCalendar(cal))"
+                                 Style="@(_selected?.Id == cal.Id ? "background-color: var(--mud-palette-action-default-hover);" : "")">
+                        <ChildContent>
+                            <div class="d-flex align-center">
+                                <MudText>@cal.Name <small class="ml-1" style="color:#888">@cal.Code</small></MudText>
+                                <MudSpacer />
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => EditCalendar(cal))" aria-label="Edit" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                               OnClick="@(() => DeleteCalendar(cal))" aria-label="Delete" />
+                            </div>
+                        </ChildContent>
+                    </MudListItem>
+                }
+            </MudList>
+            @if (_calendars.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No calendars yet. Add one to get started.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="8">
+        <MudPaper Elevation="1" Class="pa-3">
+            @if (_selected is null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Select a calendar on the left to manage its dates.</MudText>
+            }
+            else
+            {
+                <div class="d-flex align-center mb-2">
+                    <MudText Typo="Typo.h6">@_selected.Name &mdash; dates</MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="AddDay">Add date</MudButton>
+                </div>
+                <MudTable Items="@_days" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.HolidayDate.ToString("yyyy-MM-dd (ddd)")</MudTd>
+                        <MudTd>@context.Description</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="@(() => EditDay(context))" aria-label="Edit" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           OnClick="@(() => DeleteDay(context))" aria-label="Delete" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("Holiday Calendars"),
+    };
+
+    private List<HolidayCalendar> _calendars = new();
+    private List<Holiday> _days = new();
+    private HolidayCalendar? _selected;
+
+    protected override async Task OnInitializedAsync() => await ReloadCalendarsAsync();
+
+    private async Task ReloadCalendarsAsync()
+    {
+        _calendars = (await MasterRepo.ListHolidayCalendarsAsync()).ToList();
+        if (_selected is not null)
+            _selected = _calendars.FirstOrDefault(c => c.Id == _selected.Id);
+        await ReloadDaysAsync();
+    }
+
+    private async Task ReloadDaysAsync()
+    {
+        if (_selected is null) { _days = new(); return; }
+        _days = (await MasterRepo.ListHolidaysForAdminAsync(_selected.Id)).ToList();
+    }
+
+    private async Task SelectCalendar(HolidayCalendar c)
+    {
+        _selected = c;
+        await ReloadDaysAsync();
+    }
+
+    // ---- Calendar CRUD ----
+    private async Task AddCalendar()
+    {
+        var dlg = await Dialogs.ShowAsync<HolidayCalendarDialog>("Add calendar", new DialogParameters());
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not HolidayCalendarDialog.HolidayCalendarFormResult f) return;
+        var now = DateTime.UtcNow;
+        var cal = new HolidayCalendar { Code = f.Code, Name = f.Name, CreatedByUserId = CurrentUser.UserId, CreatedAt = now };
+        var id = await MasterRepo.InsertHolidayCalendarAsync(cal);
+        await AuditSvc.LogAsync(AuditEntityNames.HolidayCalendar, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { cal.Code, cal.Name });
+        Snackbar.Add("Calendar added.", Severity.Success);
+        await ReloadCalendarsAsync();
+        _selected = _calendars.FirstOrDefault(c => c.Id == id);
+        await ReloadDaysAsync();
+    }
+
+    private async Task EditCalendar(HolidayCalendar c)
+    {
+        var dlg = await Dialogs.ShowAsync<HolidayCalendarDialog>("Edit calendar", new DialogParameters
+        {
+            ["Code"] = c.Code,
+            ["Name"] = c.Name
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not HolidayCalendarDialog.HolidayCalendarFormResult f) return;
+        var old = new { c.Code, c.Name };
+        c.Code = f.Code; c.Name = f.Name;
+        c.ModifiedByUserId = CurrentUser.UserId; c.ModifiedAt = DateTime.UtcNow;
+        await MasterRepo.UpdateHolidayCalendarAsync(c);
+        await AuditSvc.LogAsync(AuditEntityNames.HolidayCalendar, c.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { c.Code, c.Name });
+        Snackbar.Add("Calendar updated.", Severity.Success);
+        await ReloadCalendarsAsync();
+    }
+
+    private async Task DeleteCalendar(HolidayCalendar c)
+    {
+        var ok = await Dialogs.ShowMessageBox("Delete calendar",
+            $"Delete '{c.Name}' and all its dates? Units that reference it will lose their holiday calendar.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        try
+        {
+            await MasterRepo.DeleteHolidayCalendarAsync(c.Id);
+            await AuditSvc.LogAsync(AuditEntityNames.HolidayCalendar, c.Id, AuditEntityNames.ActionDelete, CurrentUser.EmpCode, new { c.Code, c.Name }, null);
+            Snackbar.Add("Calendar deleted.", Severity.Info);
+            if (_selected?.Id == c.Id) _selected = null;
+            await ReloadCalendarsAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Holidays: delete failed — {ex.Message}");
+            AppLogger.LogError(ex, "Holidays: delete failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    // ---- Day CRUD ----
+    private async Task AddDay()
+    {
+        if (_selected is null) return;
+        var dlg = await Dialogs.ShowAsync<HolidayDayDialog>("Add holiday", new DialogParameters
+        {
+            ["HolidayDate"] = (DateTime?)AppTime.Today
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not HolidayDayDialog.HolidayDayFormResult f) return;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var h = new Holiday { CalId = _selected.Id, HolidayDate = f.HolidayDate, Description = f.Description,
+                CreatedByUserId = CurrentUser.UserId, CreatedAt = now };
+            var id = await MasterRepo.InsertHolidayAsync(h);
+            await AuditSvc.LogAsync(AuditEntityNames.Holiday, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { CalId = _selected.Id, f.HolidayDate, f.Description });
+            Snackbar.Add("Holiday added.", Severity.Success);
+            await ReloadDaysAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Holidays: save failed — {ex.Message}");
+            AppLogger.LogError(ex, "Holidays: save failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task EditDay(Holiday h)
+    {
+        var dlg = await Dialogs.ShowAsync<HolidayDayDialog>("Edit holiday", new DialogParameters
+        {
+            ["HolidayDate"] = (DateTime?)h.HolidayDate,
+            ["Description"] = h.Description
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not HolidayDayDialog.HolidayDayFormResult f) return;
+        var old = new { h.HolidayDate, h.Description };
+        h.HolidayDate = f.HolidayDate; h.Description = f.Description;
+        h.ModifiedByUserId = CurrentUser.UserId; h.ModifiedAt = DateTime.UtcNow;
+        await MasterRepo.UpdateHolidayAsync(h);
+        await AuditSvc.LogAsync(AuditEntityNames.Holiday, h.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { h.HolidayDate, h.Description });
+        Snackbar.Add("Holiday updated.", Severity.Success);
+        await ReloadDaysAsync();
+    }
+
+    private async Task DeleteDay(Holiday h)
+    {
+        var ok = await Dialogs.ShowMessageBox("Delete date",
+            $"Remove {h.HolidayDate:yyyy-MM-dd}?", yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        await MasterRepo.DeleteHolidayAsync(h.Id);
+        await AuditSvc.LogAsync(AuditEntityNames.Holiday, h.Id, AuditEntityNames.ActionDelete, CurrentUser.EmpCode, new { h.HolidayDate, h.Description }, null);
+        Snackbar.Add("Holiday deleted.", Severity.Info);
+        await ReloadDaysAsync();
+    }
+}

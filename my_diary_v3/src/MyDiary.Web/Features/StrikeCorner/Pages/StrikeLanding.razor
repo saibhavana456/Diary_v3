@@ -1,0 +1,78 @@
+@page "/strike-corner"
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.StrikeCorner.Services
+@inject IStrikeCornerService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<PageTitle>Strike Corner - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="Strike Corner" Subtitle="Strike Monitoring Committee minutes, FAQs/SOPs and strike data — all in one place." Crumbs="_crumbs" PageKey="strike-corner-landing" />
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <div class="sc-grid">
+            @if (_canCreateMom)
+            {
+                <div class="sc-card" @onclick="@(() => Nav.NavigateTo("strike-corner/strike-committee-meeting"))">
+                    <MudIcon Icon="@Icons.Material.Filled.Gavel" Class="sc-card-icon" />
+                    <div class="sc-card-title">Strike Monitoring Committee  MOM</div>
+                    <div class="sc-card-desc">Minutes of Meeting for the Strike Monitoring Committee — record the date and upload (or re-upload) the MOM PDF.</div>
+                </div>
+            }
+
+            <div class="sc-card" @onclick="@(() => Nav.NavigateTo("strike-corner/faq-sop"))">
+                <MudIcon Icon="@Icons.Material.Filled.MenuBook" Class="sc-card-icon" />
+                <div class="sc-card-title">FAQs and SOPs</div>
+                <div class="sc-card-desc">Document library — upload, view and download FAQ and SOP documents (PDF / Office files).</div>
+            </div>
+
+            <div class="sc-card" @onclick="@(() => Nav.NavigateTo("strike-corner/data"))">
+                <MudIcon Icon="@Icons.Material.Filled.QueryStats" Class="sc-card-icon" />
+                <div class="sc-card-title">Strike Data</div>
+                <div class="sc-card-desc">Strike-related data and metrics.</div>
+            </div>
+        </div>
+    }
+</AuthenticatedOnly>
+
+<style>
+    .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
+    .sc-card { cursor: pointer; border-radius: 12px; padding: 22px; background: #fff; border: 1px solid rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s; }
+    .sc-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .sc-card-icon { font-size: 2.6rem !important; color: var(--mud-palette-primary); margin-bottom: 10px; }
+    .sc-card-title { font-weight: 700; font-size: 1.15rem; margin-bottom: 6px; }
+    .sc-card-desc { font-size: .85rem; opacity: .75; }
+    .mud-theme-dark .sc-card, .cc-dark .sc-card { background: #1c1f24; border-color: #2a2e35; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Strike Corner") };
+    private bool _loading = true, _canCreateMom;
+    private int _scaleCode;
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _canCreateMom = await Svc.CanCreateMomAsync(state.User);
+
+        int.TryParse(
+       state.User.FindFirst("employee_scale_code")?.Value,
+       out _scaleCode);
+
+        var isSuperAdmin = state.User.HasClaim("rp_super_admin", "true");
+        if (!isSuperAdmin &&
+      _scaleCode != 1 &&
+      _scaleCode != 2 &&
+      _scaleCode != 17)
+        {
+            Nav.NavigateTo("home", true);
+            return;
+        }
+        _loading = false;
+    }
+}

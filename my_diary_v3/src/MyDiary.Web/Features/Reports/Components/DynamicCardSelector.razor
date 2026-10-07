@@ -1,0 +1,70 @@
+﻿@using MudBlazor
+@using MyDiary.Web.Features.Menus.Models
+@using MyDiary.Web.Features.Menus.Services
+@inject IMenuService MenuService
+@inject NavigationManager Nav
+
+<div class="pa-6">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <MudText Typo="Typo.h5" Class="mb-6" Style="font-weight:700; color:#1E3A8A;">@Title</MudText>
+    }
+
+    <MudGrid Spacing="4">
+        @foreach (var child in _childMenus)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudButton OnClick="@(() => NavigateToChild(child))"
+                           Class="dynamic-selector-card"
+                           Variant="Variant.Filled"
+                           FullWidth="true">
+                    <div class="d-flex flex-column align-center py-4">
+                        @* Using your existing child.svg pattern *@
+                        <img src="images/child.svg" style="width:40px; height:40px; margin-bottom:12px; opacity:0.8;" />
+                        <MudText Typo="Typo.h6" Style="font-weight: 700;">@child.MenuName</MudText>
+                        </div>
+                    </MudButton>
+                </MudItem>
+        }
+    </MudGrid>
+</div>
+
+<style>
+    .dynamic-selector-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f6f9ff 70%) !important;
+        border: 1px solid #e0e0e0 !important;
+        border-radius: 18px !important;
+        text-transform: none !important;
+        transition: all 0.35s ease;
+    }
+
+        .dynamic-selector-card:hover {
+            transform: translateY(-7px);
+            box-shadow: 0 18px 32px rgba(0,0,0,0.14) !important;
+            border-color: #0C83CE !important;
+        }
+</style>
+
+@code {
+    [Parameter] public string Title { get; set; }
+    [Parameter] public string ParentMenuCode { get; set; }
+
+    private List<MenuModel> _childMenus = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var allMenus = await MenuService.GetMenusAsync();
+        // Filter children based on the provided ParentMenuCode
+        _childMenus = allMenus.Where(m => m.ParentMenuCode == ParentMenuCode).ToList();
+    }
+
+    private void NavigateToChild(MenuModel child)
+    {
+        // Follows your standard pattern of passing the Name as a title query
+        var uri = Nav.GetUriWithQueryParameters(child.MenuUrl, new Dictionary<string, object?>
+        {
+            { "title", child.MenuName }
+        });
+        Nav.NavigateTo(uri);
+    }
+}

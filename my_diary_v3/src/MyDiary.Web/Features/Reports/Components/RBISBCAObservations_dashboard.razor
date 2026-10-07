@@ -1,0 +1,302 @@
+@page "/reports/RBISBCAObservationsDashBoard_new"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using System.Text
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  SelectedStatus="@_selectedStatus"
+                  ShowStatusFilter="true"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    // Optional: title & search via query (?Title=&CustId=)
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+    [SupplyParameterFromQuery][Parameter] public string? CustId { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+
+    // Selections: "1" = All, otherwise actual code
+    private string _selectedZone = "1";
+    private string _selectedRegion = "1";
+    private string _selectedBranch = "1";
+    private string _selectedStatus = "Sel"; // "Sel" => no status filter
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    private ReportConfig _activeConfig = new()
+        {
+            Title = "Dashboard - RBI SBCA Observations",
+            Columns = new List<ColumnConfig>() // Will be auto-generated after first load
+        };
+
+    // ===== Privilege defaults – wire from claims/session in your app =====
+    private string _userPrivilege = "CO";     // CO | CRBD | ZONE | REGION | BRANCH
+    private string _userZoneCode = "00000";  // zone_code (a.k.a zone_solid in SP params)
+    private string _userRegionCode = "00000";  // region_code (a.k.a region_solid in SP params)
+    private string _userBranchCode = "00000";  // branch_code (a.k.a branch_solid in SP params)
+
+    // ===== Paging (optional; SP supports it) =====
+    // For the classic “ExecuteRawQueryAsync” pattern we’ll grab all rows.
+    // If your dataset is big, set _pageSize to a reasonable number.
+    private int _pageIndex = 0;
+    private int _pageSize = 100000; // pull all rows; change if needed
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneCode = __scope.ZoneCode;
+            _userRegionCode = __scope.RegionCode;
+            _userBranchCode = __scope.BranchCode;
+        }
+        _activeConfig.Title = Title ?? "Dashboard - RBI SBCA Observations (New)";
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Build EXEC statement for SP, mapping privilege + selections
+            var execSql = BuildExecForCurrentSelection();
+
+            // Console.WriteLine("[RBISBCA] " + execSql);
+            _data = await ReportService.ExecuteRawQueryAsync(execSql);
+
+            // Auto-generate columns on first load or schema change
+            if (_data.Count > 0 && (_activeConfig.Columns is null || _activeConfig.Columns.Count == 0))
+            {
+                AutoBuildColumnsFromData(_data[0]);
+            }
+
+            // As-On (WebForms shows current date; replace with DB-driven date if you have a table for it)
+            _asOnDateLabel = $"As on - {AppTime.Now:dd/MM/yyyy}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, ex.ToString());
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string BuildExecForCurrentSelection()
+    {
+        // Helper: convert string -> SQL literal or NULL
+        static string SqlOrNull(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return "NULL";
+            var safe = s.Replace("'", "''");
+            return $"'{safe}'";
+        }
+
+  
+        string selZone = (_selectedZone == "1" || string.IsNullOrWhiteSpace(_selectedZone)) ? null : _selectedZone;
+        string selRegion = (_selectedRegion == "1" || string.IsNullOrWhiteSpace(_selectedRegion)) ? null : _selectedRegion;
+        string selBranch = (_selectedBranch == "1" || string.IsNullOrWhiteSpace(_selectedBranch)) ? null : _selectedBranch;
+
+        string? custId = CustId; // optional from query (or wire from your own UI)
+        string? status = (_selectedStatus == "Sel" ? null : _selectedStatus);
+
+       
+        string? pZone = null;
+        string? pRegion = null;
+        string? pBranch = null;
+
+        switch (_userPrivilege.ToUpperInvariant())
+        {
+            case "BRANCH":
+                pBranch = _userBranchCode; // force branch scope
+                break;
+
+            case "REGION":
+                if (string.IsNullOrEmpty(selBranch))
+                {
+                    pRegion = _userRegionCode; // region scope
+                }
+                else
+                {
+                    pBranch = selBranch;
+                }
+                break;
+
+            case "ZONE":
+                if (string.IsNullOrEmpty(selRegion))
+                {
+                    if (string.IsNullOrEmpty(selBranch))
+                    {
+                        pZone = _userZoneCode;
+                    }
+                    else
+                    {
+                        pBranch = selBranch;
+                    }
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(selBranch))
+                        pRegion = selRegion;
+                    else
+                        pBranch = selBranch;
+                }
+                break;
+
+            case "CRBD":
+            case "CO":
+            default:
+                if (string.IsNullOrEmpty(selZone))
+                {
+                    if (string.IsNullOrEmpty(selRegion))
+                    {
+                        if (string.IsNullOrEmpty(selBranch))
+                        {
+                            // all NULL => entire bank
+                        }
+                        else
+                        {
+                            pBranch = selBranch;
+                        }
+                    }
+                    else
+                    {
+                        if (string.IsNullOrEmpty(selBranch))
+                            pRegion = selRegion;
+                        else
+                            pBranch = selBranch;
+                    }
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(selRegion))
+                    {
+                        if (string.IsNullOrEmpty(selBranch))
+                            pZone = selZone;
+                        else
+                            pBranch = selBranch;
+                    }
+                    else
+                    {
+                        if (string.IsNullOrEmpty(selBranch))
+                            pRegion = selRegion;
+                        else
+                            pBranch = selBranch;
+                    }
+                }
+                break;
+        }
+
+        // Build EXEC (no output TotalRow here; pulling all rows)
+        // If you want true paging + total row => I can add a minimal API endpoint.
+        var sql = new StringBuilder();
+        sql.Append("EXEC usp_rbisbca_observations_new_dashboard ");
+        sql.Append($"@Zone_solid={SqlOrNull(pZone)}, ");
+        sql.Append($"@Region_solid={SqlOrNull(pRegion)}, ");
+        sql.Append($"@branch_solid={SqlOrNull(pBranch)}, ");
+        sql.Append($"@cust_id={SqlOrNull(custId)}, ");
+        sql.Append($"@status={SqlOrNull(status)}, ");
+        sql.Append($"@PageIndex={_pageIndex}, ");
+        sql.Append($"@PageSize={_pageSize}");
+
+        return sql.ToString();
+    }
+
+    private void AutoBuildColumnsFromData(Dictionary<string, object> sampleRow)
+    {
+        var cols = new List<ColumnConfig>();
+
+        foreach (var kv in sampleRow)
+        {
+            var name = kv.Key;
+            cols.Add(new ColumnConfig
+                {
+                    Header = ToHeader(name),
+                    PropertyName = name,
+                    IsNumeric = IsNumericValue(kv.Value),
+                    // Optional widths: tweak as needed
+                });
+        }
+
+        _activeConfig.Columns = cols;
+    }
+
+    private static string ToHeader(string key)
+    {
+        // Pretty header from snake/camel: "zone_name_eng" => "Zone Name Eng"; "cust_id" => "Cust Id"
+        var s = key.Replace("_", " ");
+        var parts = new List<string>();
+        foreach (var p in s.Split(' '))
+        {
+            if (string.IsNullOrWhiteSpace(p)) continue;
+            parts.Add(char.ToUpperInvariant(p[0]) + (p.Length > 1 ? p[1..] : ""));
+        }
+        return string.Join(" ", parts);
+    }
+
+    private static bool IsNumericValue(object? v)
+        => v is sbyte or byte or short or ushort or int or uint or long or ulong or float or double or decimal;
+
+    // Export pipe-separated
+    private async Task HandleExport()
+    {
+        if (_data is null || _data.Count == 0 || _activeConfig.Columns is null || _activeConfig.Columns.Count == 0)
+        {
+            await JS.InvokeVoidAsync("alert", "No data to export.");
+            return;
+        }
+
+        var sb = new StringBuilder();
+
+        // Header
+        sb.AppendLine(string.Join("|", _activeConfig.Columns.Select(c => c.Header)));
+
+        // Rows
+        foreach (var row in _data)
+        {
+            var vals = _activeConfig.Columns
+                        .Select(c => row.TryGetValue(c.PropertyName, out var v) ? (v?.ToString() ?? "") : "")
+                        .ToArray();
+            sb.AppendLine(string.Join("|", vals));
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "RBISBCAObservations.txt",
+            "text/plain",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

@@ -1,0 +1,247 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/api-help"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+
+<PageTitle>API Help</PageTitle>
+
+<PageHeader PageKey="admin-api-help" Title="API Help — Push Notifications"
+            Crumbs="_crumbs"
+            Subtitle="External portals (mobile apps, microservices, partner systems) can push bell notifications into Request Portal via REST. All endpoints authenticate with a server-to-server API key (X-Api-Key header)." />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-6" Elevation="1">
+            <MudText Typo="Typo.h6">Base URL</MudText>
+            <MudText Class="rp-mono mt-1">@_baseUrl/api/notifications</MudText>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Authentication</MudText>
+            <MudText Typo="Typo.body2">
+                Every request must carry an <span class="rp-mono">X-Api-Key</span> header whose value
+                matches a configured key (<span class="rp-mono">ApiKeys:{client}</span> in configuration).
+                Users are addressed by their <span class="rp-mono">RP_USER.ID</span>. No cookie/session is used.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Endpoints</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Send"   Text="POST /api/notifications                            — push a notification" />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Inbox"  Text="GET  /api/notifications/user/{userId}              — list a user's notifications" />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Numbers" Text="GET  /api/notifications/user/{userId}/unread-count" />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Done"   Text="POST /api/notifications/user/{userId}/{id}/read    — mark one as read" />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.DoneAll" Text="POST /api/notifications/user/{userId}/read-all     — mark all as read" />
+            </MudList>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Push a notification — Request</MudText>
+            <MudText Typo="Typo.body2">POST <span class="rp-mono">@_baseUrl/api/notifications</span></MudText>
+            <pre class="rp-codeblock">@CreateRequestSample</pre>
+
+            <MudText Typo="Typo.h6" Class="mt-4">Field reference</MudText>
+            <MudSimpleTable Dense="true" Striped="true" Class="rp-help-table">
+                <thead>
+                    <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>userId</td><td>long</td><td>yes</td><td>Target user's RP_USER.ID. Use the search API or Admin → Users to look up.</td></tr>
+                    <tr><td>title</td><td>string (≤200)</td><td>yes</td><td>One-line headline shown in the bell and on the Notifications page.</td></tr>
+                    <tr><td>message</td><td>string</td><td>no</td><td>Optional body text shown under the title.</td></tr>
+                    <tr><td>category</td><td>string</td><td>no</td><td>Free-text tag (e.g., "Bank-wide", "Branch", "RBI") shown as a chip.</td></tr>
+                    <tr><td>redirectUrl</td><td>string</td><td>no</td><td>Where to land when the user clicks the notification. Relative to portal root.</td></tr>
+                    <tr><td>source</td><td>enum</td><td>no</td><td>One of <span class="rp-mono">System</span>, <span class="rp-mono">Mail</span>, <span class="rp-mono">Sms</span>. Default: System.</td></tr>
+                    <tr><td>eventCode</td><td>string</td><td>no</td><td>Use <span class="rp-mono">Broadcast</span> for org-wide pushes; otherwise an event name like <span class="rp-mono">Created</span>, <span class="rp-mono">Resolved</span>.</td></tr>
+                    <tr><td>requestId</td><td>long</td><td>no</td><td>If this push is tied to a Request Portal ticket, supply its ID so the bell links back.</td></tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Push a notification — Response (201 Created)</MudText>
+            <pre class="rp-codeblock">@CreateResponseSample</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">List a user's notifications</MudText>
+            <MudText Typo="Typo.body2">GET <span class="rp-mono">@_baseUrl/api/notifications/user/1042?take=20&unreadOnly=false</span></MudText>
+            <pre class="rp-codeblock">@ListResponseSample</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Unread count</MudText>
+            <MudText Typo="Typo.body2">GET <span class="rp-mono">@_baseUrl/api/notifications/user/1042/unread-count</span></MudText>
+            <pre class="rp-codeblock">@UnreadCountSample</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">curl examples</MudText>
+            <pre class="rp-codeblock">@CurlSamples</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Errors</MudText>
+            <MudSimpleTable Dense="true" Striped="true" Class="rp-help-table">
+                <thead>
+                    <tr><th>Status</th><th>Meaning</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>401 Unauthorized</td><td>Missing or invalid <span class="rp-mono">X-Api-Key</span> header.</td></tr>
+                    <tr><td>400 Bad Request</td><td>Missing required field — typically <span class="rp-mono">userId</span> or <span class="rp-mono">title</span>.</td></tr>
+                    <tr><td>404 Not Found</td><td>Mark-read endpoint with an unknown notification id.</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6">Tips</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Lightbulb"
+                             Text="Set requestId when the push is about a ticket — the bell auto-links to the request detail page." />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Lightbulb"
+                             Text="Use eventCode = Broadcast so the user's Push-Notification bell picks it up; everything else lands on the Request-updates bell." />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Lightbulb"
+                             Text="Need to push to many users at once? Loop server-side and call the endpoint per recipient — this keeps the audit chain per user clean." />
+            </MudList>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mt-3" Elevation="1">
+            <MudText Typo="Typo.h6">Real-time</MudText>
+            <MudText Typo="Typo.body2">
+                A SignalR hub at <span class="rp-mono">/hubs/notifications</span> pushes new bell rows
+                to the user's connected browsers. External callers don't need to call it directly —
+                the create endpoint fans out automatically.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+    </Authorized>
+</AuthorizeView>
+
+<style>
+    .rp-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .rp-codeblock {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 6px;
+        overflow-x: auto; font-size: 12.5px; line-height: 1.5; margin: 8px 0;
+        white-space: pre;
+    }
+    .rp-help-table th { background: #f4f5f7; font-weight: 600; }
+    .rp-help-table td, .rp-help-table th { padding: 8px 10px; vertical-align: top; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("API Help"),
+    };
+
+    private string _baseUrl = "https://requestportal.example.com";
+
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Nav.BaseUri.TrimEnd('/'));
+        _baseUrl = $"{uri.Scheme}://{uri.Authority}";
+    }
+
+    private const string CreateRequestSample = @"{
+  ""userId"": 1042,
+  ""title"": ""Cash-out alert at ATM-0241"",
+  ""message"": ""Cassette balance dropped below 5%. Refill recommended."",
+  ""category"": ""ATM Ops"",
+  ""redirectUrl"": ""/requests/918"",
+  ""source"": ""System"",
+  ""eventCode"": ""Broadcast"",
+  ""requestId"": 918
+}";
+
+    private const string CreateResponseSample = @"HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  ""id"": 50231,
+  ""userId"": 1042,
+  ""title"": ""Cash-out alert at ATM-0241"",
+  ""message"": ""Cassette balance dropped below 5%. Refill recommended."",
+  ""category"": ""ATM Ops"",
+  ""redirectUrl"": ""/requests/918"",
+  ""source"": ""System"",
+  ""eventCode"": ""Broadcast"",
+  ""requestId"": 918,
+  ""createdAt"": ""2026-05-08T09:14:22Z"",
+  ""readAt"": null,
+  ""isRead"": false
+}";
+
+    private const string ListResponseSample = @"HTTP/1.1 200 OK
+Content-Type: application/json
+
+[
+  {
+    ""id"": 50231,
+    ""userId"": 1042,
+    ""title"": ""Cash-out alert at ATM-0241"",
+    ""message"": ""Cassette balance dropped below 5%. Refill recommended."",
+    ""category"": ""ATM Ops"",
+    ""redirectUrl"": ""/requests/918"",
+    ""source"": ""System"",
+    ""eventCode"": ""Broadcast"",
+    ""requestId"": 918,
+    ""createdAt"": ""2026-05-08T09:14:22Z"",
+    ""readAt"": null,
+    ""isRead"": false
+  },
+  {
+    ""id"": 50230,
+    ""userId"": 1042,
+    ""title"": ""GRV-2026-0011 escalated to L4"",
+    ""message"": ""Cross-team SLA breach — DC capacity uplift required."",
+    ""category"": null,
+    ""redirectUrl"": ""/requests/911"",
+    ""source"": ""System"",
+    ""eventCode"": ""Forwarded"",
+    ""requestId"": 911,
+    ""createdAt"": ""2026-05-08T08:02:11Z"",
+    ""readAt"": ""2026-05-08T08:05:01Z"",
+    ""isRead"": true
+  }
+]";
+
+    private const string UnreadCountSample = @"HTTP/1.1 200 OK
+Content-Type: application/json
+
+{ ""count"": 7 }";
+
+    private const string CurlSamples = @"# Push a notification
+curl -X POST ""https://requestportal.example.com/api/notifications"" \
+     -H ""X-Api-Key: <your-key>"" \
+     -H ""Content-Type: application/json"" \
+     -d '{
+           ""userId"": 1042,
+           ""title"": ""Cash-out alert at ATM-0241"",
+           ""message"": ""Cassette balance dropped below 5%."",
+           ""category"": ""ATM Ops"",
+           ""redirectUrl"": ""/requests/918"",
+           ""source"": ""System"",
+           ""eventCode"": ""Broadcast"",
+           ""requestId"": 918
+         }'
+
+# List a user's notifications
+curl -H ""X-Api-Key: <your-key>"" ""https://requestportal.example.com/api/notifications/user/1042?take=20""
+
+# Unread count
+curl -H ""X-Api-Key: <your-key>"" ""https://requestportal.example.com/api/notifications/user/1042/unread-count""
+
+# Mark one as read
+curl -H ""X-Api-Key: <your-key>"" -X POST ""https://requestportal.example.com/api/notifications/user/1042/50231/read""
+
+# Mark all as read
+curl -H ""X-Api-Key: <your-key>"" -X POST ""https://requestportal.example.com/api/notifications/user/1042/read-all""";
+}

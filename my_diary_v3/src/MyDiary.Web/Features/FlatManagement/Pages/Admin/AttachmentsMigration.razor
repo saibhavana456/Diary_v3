@@ -1,0 +1,72 @@
+@page "/flatmgmt/admin/attachments-migrate"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using Microsoft.AspNetCore.Authorization
+@using MyDiary.Web.Features.FlatManagement.Services
+@using global::RequestPortal.Web.Shared
+@inject IGrievanceActionService GrievanceService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+
+<PageTitle>Migrate Attachments - Flat Management System</PageTitle>
+
+@* One-time internal admin utility (not linked from any hub card/nav — reach it directly if ever
+   needed again). Was previously reachable by any authenticated Vendor via FlatMgmtVendorAuth —
+   an external maintenance vendor could trigger a database migration operation, which had nothing
+   to do with their role. Moved to AppAdmin-only. *@
+<PageHeader Title="Migrate Attachments" Crumbs="_crumbs" PageKey="flatmgmt-admin-attachments-migrate" />
+
+<div class="mig-panel">
+    <h2>Move folder attachments into the database</h2>
+    <p>
+        Scans FLAT_GRIEVANCE (Attachment, Feedback Attachment, Vendor Feedback Attachment) and
+        GRIEVANCE_ACTION_DESC (Attachment) for paths that still point at wwwroot/Uploads, reads
+        those files, stores them in GRIEVANCE_ATTACHMENTS, and updates the path column to the
+        new /vendor/attachments/{id} URL. Existing table structures are untouched.
+    </p>
+
+    <button class="mig-btn" disabled="@isRunning" @onclick="RunMigration">
+        @(isRunning ? "Running..." : "Run Migration")
+    </button>
+
+    @if (result is not null)
+    {
+        <div class="mig-result">
+            <div><strong>Migrated:</strong> @result.Migrated</div>
+            <div><strong>Skipped:</strong> @result.Skipped</div>
+
+            @if (result.Errors.Count > 0)
+            {
+                <details open>
+                    <summary>Details (@result.Errors.Count)</summary>
+                    <ul>
+                        @foreach (var err in result.Errors)
+                        {
+                            <li>@err</li>
+                        }
+                    </ul>
+                </details>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Migrate Attachments") };
+
+    private bool isRunning;
+    private MyDiary.Web.Features.FlatManagement.Models.DTO.AttachmentMigrationResult? result;
+
+    private async Task RunMigration()
+    {
+        isRunning = true;
+        result = null;
+        try
+        {
+            var actor = CurrentUser.EmplId ?? "system";
+            result = await GrievanceService.MigrateFolderAttachmentsToDbAsync(actor);
+        }
+        finally
+        {
+            isRunning = false;
+        }
+    }
+}

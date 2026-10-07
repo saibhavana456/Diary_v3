@@ -1,0 +1,168 @@
+﻿@page "/reports/branchImportantContacts"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    private List<ColumnConfig> _detailedCols = new() {
+    new ColumnConfig { Header = "Zone",         PropertyName = "zone_name_eng", Width = "14%" },
+    new ColumnConfig { Header = "Region",       PropertyName = "region_name",   Width = "14%" },
+    new ColumnConfig { Header = "Branch",       PropertyName = "BRANCH_NAME",   Width = "18%" },
+    new ColumnConfig { Header = "Name",         PropertyName = "name",          Width = "16%" },
+    new ColumnConfig { Header = "Designation",  PropertyName = "Designation",   Width = "16%" },
+    new ColumnConfig { Header = "Contact No.",  PropertyName = "phone",         Width = "11%" },
+    new ColumnConfig { Header = "Email",        PropertyName = "email",         Width = "11%" }
+};
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeConfig.Title = Title ?? "branch important contact";
+
+        // Load User Context
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _activeConfig.Title = Title ?? "Branch Important Contacts";
+        _activeConfig.Columns = _detailedCols;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(@"
+SELECT
+    b.zone_name_eng                         AS zone_name_eng,
+    b.region_name                           AS region_name,
+    b.BRANCH_NAME                           AS BRANCH_NAME,
+    a.name                                  AS name,
+    a.Emp_Desgn_Desc                        AS Designation,
+    a.phone                                 AS phone,
+    a.email                                 AS email
+FROM StaffDetails a
+JOIN Branch_Master b
+  ON a.BRSOLID = b.SOL_ID
+WHERE
+    b.region_solid <> '00000'
+    AND b.region_solid <> ' '
+");
+
+        // ------------------------
+        // Privilege-based scoping (same as ASPX DisplayData)
+        // ------------------------
+        switch ((_userPrivilege ?? "CO").ToUpperInvariant())
+        {
+            case "CO":
+                // no restriction
+                break;
+
+            case "ZONE":
+                if (!string.IsNullOrWhiteSpace(_userZoneSolid) && _userZoneSolid != "00000")
+                    sb.AppendLine($"  AND b.zone_solid = '{_userZoneSolid}'");
+                break;
+
+            case "REGION":
+                if (!string.IsNullOrWhiteSpace(_userRegionSolid) && _userRegionSolid != "00000")
+                    sb.AppendLine($"  AND b.region_solid = '{_userRegionSolid}'");
+                break;
+
+            case "BRANCH":
+                if (!string.IsNullOrWhiteSpace(_userBranchSolid) && _userBranchSolid != "00000")
+                    sb.AppendLine($"  AND b.SOL_ID = '{_userBranchSolid}'");
+                break;
+        }
+
+        // ------------------------
+        // UI filter scoping
+        // Semantics identical to ASPX:
+        //  "1"  → All  (no filter)
+        //  "all"→ All(<scope>wise) (no filter)
+        //  else → specific selection (apply filter)
+        // ------------------------
+        if (!string.Equals(_selectedZone, "1", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_selectedZone, "all", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(_selectedZone))
+        {
+            sb.AppendLine($"  AND b.zone_solid = '{_selectedZone}'");
+        }
+
+        if (!string.Equals(_selectedRegion, "1", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_selectedRegion, "all", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(_selectedRegion))
+        {
+            sb.AppendLine($"  AND b.region_solid = '{_selectedRegion}'");
+        }
+
+        if (!string.Equals(_selectedBranch, "1", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_selectedBranch, "all", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(_selectedBranch))
+        {
+            sb.AppendLine($"  AND b.SOL_ID = '{_selectedBranch}'");
+        }
+
+        // Exact ordering used in ASPX (uses columns from b and a)
+        sb.AppendLine("ORDER BY b.Zone_Name_Eng, b.Region_Name, b.Branch_Name, CAST(a.EMP_SCALE_CODE AS INT)");
+
+        string finalQuery = sb.ToString();
+
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+        _asOnDateLabel = $"As on {AppTime.Now:dd-MMM-yyyy}";
+        _loading = false;
+        StateHasChanged();
+    }
+
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "SundryReport");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "BranchImportantContacts.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

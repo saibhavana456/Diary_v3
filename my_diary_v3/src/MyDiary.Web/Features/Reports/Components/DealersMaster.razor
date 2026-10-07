@@ -1,0 +1,221 @@
+﻿@page "/reports/dealers-master"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Reports.Models
+@using MyDiary.Web.Features.Reports.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject IDealerReportService DealerService
+@inject IJSRuntime JS
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Dealers Master — My Diary</PageTitle>
+
+<style>
+    /* Copied exactly from your DynamicDashboard to match styling */
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+
+    .mud-table-sort-label .mud-button-root .mud-icon-root {
+        opacity: 1 !important;
+        color: rgba(255, 255, 255, 0.7) !important;
+    }
+
+    .mud-table-sort-label.mud-table-sort-label-active .mud-button-root .mud-icon-root {
+        color: white !important;
+    }
+
+    /* Auto-assign S.No using CSS Counters */
+    .auto-index-table {
+        counter-reset: rowNumber;
+    }
+
+        .auto-index-table tbody tr:has(td:nth-child(2)) {
+            counter-increment: rowNumber;
+        }
+
+            .auto-index-table tbody tr:has(td:nth-child(2)) td:first-child::before {
+                content: counter(rowNumber);
+            }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <div id="report-page-root" class="mb-4">
+            <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+
+                @* --- LEVEL 2: Filters & Export --- *@
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string" Label="State" Value="SelectedStateCode" ValueChanged="OnStateChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            @if (States != null)
+                            {
+                                @foreach (var state in States)
+                                {
+                                    <MudSelectItem Value="@(state.StateCodeFinacle == "All" ? "All" : state.StateCodeFinacle)">
+                                        @state.StateNameEng
+                                    </MudSelectItem>
+                                }
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudSpacer />
+
+                    <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                        <MudButton Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Download"
+                                   Style="background-color: #000066; color: white; font-size: 11px;"
+                                   OnClick="ExportToExcel">Export To Excel</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                @* --- LEVEL 3: Table Section --- *@
+                <div class="px-4 d-flex justify-end">
+                    <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                        @AsOnDateLabel
+                    </MudText>
+                </div>
+
+                <MudItem xs="12" Class="pa-4">
+                    <MudTable ServerData="ServerReload"
+                              @ref="table" Dense="true" Striped="true" Bordered="true" FixedHeader="true"
+                              Height="750px" Elevation="2" Class="fixed-table auto-index-table" Style="font-size:12px;" RowsPerPage="50">
+                        <HeaderContent>
+                            <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="name" T="DealerModel">NAME</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="addr3" T="DealerModel">ADDRESS</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="city" T="DealerModel">CITY</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="state" T="DealerModel">STATE</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="pin" T="DealerModel">PINCODE</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="mobno" T="DealerModel">MOBILE NO</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="contper" T="DealerModel">CONTACT PERSON</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="contpermob" T="DealerModel">C.P. MOBILE</MudTableSortLabel></MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;"><MudTableSortLabel SortLabel="email" T="DealerModel">EMAIL</MudTableSortLabel></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd Style="text-align: center;"></MudTd>
+                            <MudTd>@context.Name</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.Address) ? "NA" : context.Address)</MudTd>
+                            <MudTd>@context.City</MudTd>
+                            <MudTd>@context.State</MudTd>
+                            <MudTd>@context.Pincode</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.MobileNo) ? "NA" : context.MobileNo)</MudTd>
+                            <MudTd>@context.ContactPerson</MudTd>
+                            <MudTd>@context.ContactPersonMobile</MudTd>
+                            <MudTd>@context.Email</MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <td colspan="10" style="text-align:center; padding: 40px;">
+                                <MudText Typo="Typo.subtitle1" Color="Color.Error">No dealer records found.</MudText>
+                            </td>
+                        </NoRecordsContent>
+                        <PagerContent>
+                            <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                        </PagerContent>
+                    </MudTable>
+                </MudItem>
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private MudTable<DealerModel> table;
+    private List<StateMasterModel> States = new();
+    private string SelectedStateCode = "All";
+    private string AsOnDateLabel = "";
+
+    // Track sorting so the Excel export matches the screen
+    private string _currentSortColumn = "name";
+    private string _currentSortDirection = "ASC";
+    private bool _isExporting = false; // Prevents spam clicking the export button
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatesAsync();
+    }
+
+    private async Task LoadStatesAsync()
+    {
+        States = await DealerService.GetStatesAsync();
+
+        if (!States.Any(s => s.StateNameEng == "All"))
+        {
+            States.Insert(0, new StateMasterModel { StateNameEng = "All", StateCodeFinacle = "All" });
+        }
+    }
+
+    private async Task<TableData<DealerModel>> ServerReload(TableState state, CancellationToken token)
+    {
+        // Save the current sort state so the Export button can use it!
+        _currentSortColumn = string.IsNullOrEmpty(state.SortLabel) ? "name" : state.SortLabel;
+        _currentSortDirection = state.SortDirection == SortDirection.Descending ? "DESC" : "ASC";
+
+        var result = await DealerService.GetDealersAsync(
+            stateCode: SelectedStateCode,
+            pageNumber: state.Page + 1,
+            pageSize: state.PageSize,
+            sortColumn: _currentSortColumn,
+            sortDirection: _currentSortDirection
+        );
+
+        if (result.AsOnDate.HasValue)
+        {
+            AsOnDateLabel = $"Data from LAS, as on: {result.AsOnDate.Value.ToString("dd/MM/yyyy")}";
+        }
+
+        return new TableData<DealerModel>()
+        {
+            TotalItems = result.Dealers.Count == 0 ? 0 : result.TotalCount,
+            Items = result.Dealers
+        };
+    }
+
+    private async Task OnStateChanged(string newValue)
+    {
+        SelectedStateCode = newValue;
+        await table.ReloadServerData();
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (_isExporting) return;
+        _isExporting = true;
+        StateHasChanged(); // Optional: You could show a loading spinner on the button here
+
+        try
+        {
+            // 1. Get the Excel byte array from the server
+            var fileBytes = await DealerService.ExportDealersToExcelAsync(
+                stateCode: SelectedStateCode,
+                sortColumn: _currentSortColumn,
+                sortDirection: _currentSortDirection
+            );
+
+            // 2. Prepare the stream for JavaScript
+            using var streamRef = new DotNetStreamReference(stream: new MemoryStream(fileBytes));
+
+            // 3. Trigger the download securely in the browser
+            string fileName = $"Dealers_Master_{AppTime.Now.ToString("yyyyMMdd_HHmmss")}.xlsx";
+            await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+        }
+        finally
+        {
+            _isExporting = false;
+            StateHasChanged();
+        }
+    }
+}

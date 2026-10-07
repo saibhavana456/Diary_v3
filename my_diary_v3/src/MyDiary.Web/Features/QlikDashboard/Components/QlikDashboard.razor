@@ -1,0 +1,194 @@
+@page "/qlik-dashboard"
+@page "/app/qlik-dashboard"
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.Options
+@using MudBlazor
+@using MyDiary.Web.Features.QlikDashboard
+@inject IJSRuntime JS
+@inject IOptions<QlikOptions> Options
+@inject IQlikTicketService Ticket
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@implements IAsyncDisposable
+
+<PageTitle>Qlik Dashboard</PageTitle>
+
+<PageHeader PageKey="qlik-dashboard" Title="Qlik Dashboard"
+            Crumbs="@(new List<PageHeader.Crumb>{ new("MIS"), new("Qlik Dashboard") })" />
+
+@* Print isolation: only the dashboard area prints (browser "Save as PDF"). *@
+<style>
+    @@media print {
+        body * { visibility: hidden !important; }
+        #qlik-print-area, #qlik-print-area * { visibility: visible !important; }
+        #qlik-print-area { position: absolute; left: 0; top: 0; width: 100%; }
+        #qlik-object-grid { height: auto !important; overflow: visible !important; }
+        .qlik-noprint { display: none !important; }
+        @@page { size: A4 landscape; margin: 10mm; }
+    }
+</style>
+
+@* ── Page header (matches Focus 360 / Business 360 styling) ──────────────────── *@
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper id="qlik-print-area" Elevation="0" Style="background-color:#ffffff;">
+   @*          <MudCard Elevation="2" Style="border-top-left-radius:10px; border-top-right-radius:10px;">
+                <MudCardHeader Class="justify-center text-white"
+                               Style="height:48px; font-weight:800; background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    <h2 class="ma-0" style="font-size:1.25rem; font-weight:800; color:white;">@_o.Title</h2>
+                </MudCardHeader>
+            </MudCard> *@
+
+            <div class="d-flex align-center px-3 py-2 qlik-noprint" style="gap:10px; flex-wrap:wrap;">
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined"
+                         Icon="@Icons.Material.Filled.Dashboard">Qlik Sense</MudChip>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(_o.IsMock ? Color.Warning : Color.Info)">
+                    @(_o.IsMock ? "Mock (dev)" : "qlik-embed")
+                </MudChip>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">App: @_o.AppId</MudText>
+
+                <MudSpacer />
+
+                @* Whole-sheet mode uses Qlik's own toolbar (export per object); the
+                   Excel/CSV controls apply only when rendering individual objects. *@
+                @if (!_o.IsMock && _rendersObjects && _o.ObjectIds.Count > 0)
+                {
+                    <MudSelect T="string" @bind-Value="_exportId" Dense="true" Margin="Margin.Dense"
+                               Variant="Variant.Outlined" Style="max-width:220px;" Label="Object">
+                        @foreach (var id in _o.ObjectIds)
+                        {
+                            <MudSelectItem T="string" Value="@id">@id</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.GridOn" OnClick="@(() => ExportAsync("OOXML"))">Excel</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Description" OnClick="@(() => ExportAsync("CSV_T"))">CSV</MudButton>
+                }
+                @* Native onclick → prints client-side without a Blazor server round-trip,
+                   which would otherwise lose the user-gesture and let Chrome block window.print(). *@
+                <button type="button"
+                        onclick="window.print()"
+                        style="border:1px solid var(--mud-palette-error);color:var(--mud-palette-error);background:transparent;border-radius:4px;padding:5px 12px;font-size:0.8125rem;font-weight:500;cursor:pointer;text-transform:uppercase;display:inline-flex;align-items:center;letter-spacing:.02em;">
+                    Save As PDF
+                </button>
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Refresh" OnClick="RenderAsync">Reload</MudButton>
+            </div>
+
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mx-3 mb-2" Dense="true">@_error</MudAlert>
+            }
+
+            @* ── Native Qlik object grid (objects injected via Capability API) ────── *@
+            <div class="px-3 pb-3">
+                <div id="qlik-object-grid"
+                     style="width:100%; min-height:560px; height:calc(100vh - 230px);
+                            display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px;
+                            border:1px solid #e5e5e5; border-radius:6px; background:#f4f4f4; padding:12px; overflow:auto;">
+                    @if (!_rendered)
+                    {
+                        <div class="d-flex justify-center align-center" style="grid-column:1 / -1; height:100%;">
+                            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Medium" />
+                            <MudText Class="ml-3" Color="Color.Secondary">Loading Qlik dashboard…</MudText>
+                        </div>
+                    }
+                </div>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private QlikOptions _o = new();
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<QlikDashboard>? _selfRef;
+    private bool _rendered;
+    private string? _error;
+    private string? _exportId;
+    private bool _rendersObjects => string.Equals(_o.Render, "objects", StringComparison.OrdinalIgnoreCase);
+
+    protected override void OnInitialized()
+    {
+        _o = Options.Value;
+        _exportId = _o.ObjectIds.FirstOrDefault();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _selfRef = DotNetObjectReference.Create(this);
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/qlik-embed.js");
+            await RenderAsync();
+        }
+    }
+
+    private async Task RenderAsync()
+    {
+        if (_module is null) return;
+        _error = null;
+        _rendered = false;
+        StateHasChanged();
+
+        try
+        {
+            // Server-side (in the Blazor circuit): mint a QPS ticket for THIS user.
+            var userId = CurrentUser.EmplId ?? "";
+            var ticket = await Ticket.GetTicketAsync(userId);
+
+            await _module.InvokeVoidAsync("render", new
+            {
+                mode           = _o.Mode,
+                host           = _o.Host,
+                prefix         = _o.VirtualProxyPrefix,
+                redeemUrl      = ticket.RedeemUrl,
+                appId          = _o.AppId,
+                sheetId        = _o.SheetId,
+                objectIds      = _o.ObjectIds,
+                render         = _o.Render,
+                embedScriptUrl = _o.EmbedScriptUrl,
+                authType       = _o.AuthType,
+                clientId       = _o.ClientId,
+                redirectUri    = _o.RedirectUri
+            }, _selfRef);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "QlikDashboard: failed to initialize");
+            _error = UserFacingError.Generic;
+        }
+
+        _rendered = true;
+        StateHasChanged();
+    }
+
+    private async Task ExportAsync(string format)
+    {
+        if (_module is null || string.IsNullOrEmpty(_exportId)) return;
+        await _module.InvokeVoidAsync("exportObject", _exportId, format);
+    }
+
+    [JSInvokable] public void OnObjectRendered(string id) { /* hook for per-object UI if needed */ }
+
+    [JSInvokable]
+    public void OnQlikError(string message)
+    {
+        _error = message;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_module is not null)
+            {
+                await _module.InvokeVoidAsync("dispose");
+                await _module.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException) { }
+        _selfRef?.Dispose();
+    }
+}

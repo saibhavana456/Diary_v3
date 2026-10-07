@@ -1,0 +1,174 @@
+﻿@using System.Data
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.OperationDashboard.Models
+@using MyDiary.Web.Features.OperationDashboard.Services
+@inject IOperationDashboardService DashboardService
+
+<div class="card mb-2 shadow-sm">
+    <div class="card-header text-white py-1 px-2"
+         style="min-height:28px;
+            background: #1E3A8A;">
+        <h6 class="mb-0" style="font-size:12.5px;">Customer Complaints</h6>
+    </div>
+
+    <div class="card-body p-1" style="padding:2px !important;">
+        @if (isLoading)
+        {
+            <div class="p-2 text-center">
+                <div class="spinner-border text-primary" style="width:18px;height:18px;"></div>
+            </div>
+        }
+        else if (data == null || hasError)
+        {
+            <div class="p-3 text-center text-muted small">
+                <i class="fa-solid fa-folder-open mb-1"></i><br />
+                <strong>No record present currently.</strong>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm mb-0 text-center compact-table">
+
+                    <thead>
+                        <tr style="line-height:1; height:18px;">
+                            <th>Prev Month</th>
+                            <th>Prev Day</th>
+                            <th class="text-primary">Today</th>
+                        </tr>
+
+                        <tr style="line-height:1; height:18px;">
+                            <th><small>(@data.PrevMonthDt.ToString("dd/MM/yyyy"))</small></th>
+                            <th><small>(@data.PrevDay2Dt.ToString("dd/MM/yyyy"))</small></th>
+                            <th class="text-primary">
+                                <small>(@data.PrevDayDt.ToString("dd/MM/yyyy"))</small>
+                            </th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        <tr>
+                            <td>@data.PrevMonthNoOfComplaints.ToString("N0")</td>
+                            <td>@data.PrevDay2NoOfComplaints.ToString("N0")</td>
+                            <td class="bg-light fw-bold text-primary">
+                                @data.PrevDayNoOfComplaints.ToString("N0")
+                            </td>
+                        </tr>
+
+                        <tr class="table-warning">
+                            <td colspan="2" class="text-end fw-bold small">Var:</td>
+                            <td>
+                                @RenderVariation(data.PrevDayNoOfComplaints, data.PrevDay2NoOfComplaints, "N0")
+                            </td>
+                        </tr>
+                    </tbody>
+
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .compact-table {
+        font-size: 10.5px;
+        border-collapse: collapse;
+    }
+
+    .compact-table th,
+    .compact-table td {
+        padding: 2px 4px !important;
+        line-height: 1 !important;
+        height: 18px !important;
+        min-height: 18px !important;
+        vertical-align: middle !important;
+    }
+
+    .compact-table thead th {
+        font-size: 10px;
+        padding: 1px 3px !important;
+    }
+
+    .compact-table small {
+        font-size: 9px;
+    }
+
+    .table.compact-table > :not(caption) > * > * {
+        padding: 2px 4px !important;
+    }
+</style>
+
+@code {
+    [Parameter] public DataSet DashboardData { get; set; }
+    private bool isLoading = true;
+    private bool hasError = false;
+
+    private BOComplaintReportDto data;
+
+    protected override void OnParametersSet()
+    {
+        isLoading = true;
+        hasError = false;
+
+        try
+        {
+            if (DashboardData != null)
+            {
+                data = ExtractCustomerComplaints(DashboardData);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[CustomerComplaintsTable] Error: " + ex.Message);
+            hasError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private BOComplaintReportDto ExtractCustomerComplaints(DataSet ds)
+    {
+        foreach (DataTable table in ds.Tables)
+        {
+            if (table.Rows.Count > 0 && table.Columns.Contains("TableName"))
+            {
+                var row = table.Rows[0];
+
+                if (row["TableName"]?.ToString() == "BOComplaintReport")
+                {
+                    return new BOComplaintReportDto
+                        {
+                            PrevDayDt = Convert.ToDateTime(row["PrevDayDt"]),
+                            PrevDayNoOfComplaints = Convert.ToInt32(row["PrevDayNoOfComplaints"]),
+
+                            PrevDay2Dt = Convert.ToDateTime(row["PrevDay2Dt"]),
+                            PrevDay2NoOfComplaints = Convert.ToInt32(row["PrevDay2NoOfComplaints"]),
+
+                            PrevMonthDt = Convert.ToDateTime(row["PrevMonthDt"]),
+                            PrevMonthNoOfComplaints = Convert.ToInt32(row["PrevMonthNoOfComplaints"]),
+
+                            TableName = "BOComplaintReport"
+                        };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private RenderFragment RenderVariation(decimal current, decimal previous, string format) => __builder =>
+    {
+        var metrics = VariationMetrics.Calculate(current, previous);
+
+        // Decreasing complaints = GOOD
+        string colorClass = metrics.AbsoluteChange <= 0 ? "text-success" : "text-danger";
+        string sign = metrics.AbsoluteChange > 0 ? "+" : "";
+
+        <span class="@colorClass fw-bold small">
+            @sign@metrics.AbsoluteChange.ToString(format)
+        </span>
+        ;
+    };
+}

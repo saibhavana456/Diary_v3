@@ -1,0 +1,35 @@
+﻿<MudThemeProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+@inherits LayoutComponentBase
+
+<MudLayout>
+    @* --- Main Content Area --- *@
+    <MudMainContent Class="bg-light" Style="min-height: 100vh; display: flex; flex-direction: column;">
+
+        @* This @Body tag is CRITICAL. It is where Divya.razor will be rendered! *@
+        <div style="flex: 1;">
+            <ErrorBoundary>
+                <ChildContent>
+                    @Body
+                </ChildContent>
+                <ErrorContent>
+                    <MudContainer MaxWidth="MaxWidth.Small" Class="mt-8 text-center">
+                        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+                            An error occurred. Please refresh the page.
+                        </MudAlert>
+                    </MudContainer>
+                </ErrorContent>
+            </ErrorBoundary>
+        </div>
+
+        @* --- Simple Footer --- *@
+        <MudPaper Elevation="0" Class="pa-4 mt-auto" Style="background-color: transparent; text-align: center;">
+            <MudText Typo="Typo.body2" Color="MudBlazor.Color.Surface" Style="color: #6c757d !important;">
+                © @AppTime.Now.Year Union Bank of India. All Rights Reserved.
+            </MudText>
+        </MudPaper>
+
+    </MudMainContent>
+</MudLayout>

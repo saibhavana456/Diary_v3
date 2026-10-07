@@ -1,0 +1,130 @@
+﻿@page "/operation-dashboard"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Features.OperationDashboard.Components
+@using MyDiary.Web.Features.Shared.Components
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.OperationDashboard.Services
+@inject IOperationDashboardService DashboardService
+@using System.Data
+ @inject BreadcrumbState Breadcrumb
+
+<PageTitle>Operations Dashboard — My Diary</PageTitle>
+<ReportBreadcrumb />
+<MudGrid Spacing="3" Style="height: 100vh; overflow: hidden; margin: 0;">
+    <MudItem xs="12" md="12" Class="d-flex flex-column h-100 pb-4">
+
+        <!-- White Paper Background container spanning the full height -->
+        <MudPaper Elevation="0"
+                  Class="d-flex flex-column h-100 overflow-hidden"
+                  Style="border-top-left-radius:16px; border-top-right-radius:16px;">
+
+            <!-- 2. Fixed Filters Section (Cannot shrink, padded for spacing) -->
+            <div class="flex-shrink-0 p-3">
+                <HierarchyFilter OnFilterApplied="RefreshDashboard" />
+            </div>
+
+            <!-- 3. Scrollable Main Content Area (Takes remaining space) -->
+            <div class="flex-grow-1 overflow-auto pa-3">
+                @if (isLoading)
+                {
+                    <div class="d-flex justify-center align-center h-100">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+                    </div>
+                }
+                else
+                {
+                    <!-- Flex column with gap-4 adds consistent vertical space between every table -->
+                   <MudGrid Spacing="3">
+
+    <!-- Row 1 -->
+    <MudItem xs="12" md="6">
+        <SundryEntriesTable DashboardData="dashboardData" />
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+                            <SuspenseEntriesTable DashboardData="dashboardData" />
+    </MudItem>
+
+    <!-- Row 2 -->
+    <MudItem xs="12">
+                            <DefaultingAccountsTable DashboardData="dashboardData" />
+    </MudItem>
+    <MudItem xs="12">
+                            <LockerVacancyTable DashboardData="dashboardData" />
+    </MudItem>
+
+    
+
+    <!-- Row 3 -->
+    <MudItem xs="12" md="6">
+                            <CashHoldingTable DashboardData="dashboardData" />
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+                            <CKYCPendencyTable DashboardData="dashboardData" />
+    </MudItem>
+
+    <!-- Row: Add after CKYC -->
+
+<MudItem xs="12" md="6">
+    <ReKYCPendencyTable DashboardData="dashboardData" />
+</MudItem>
+
+<MudItem xs="12" md="6">
+    <OCRMComplaintsTable DashboardData="dashboardData" />
+</MudItem>
+
+    <MudItem xs="12" md="6">
+                            <UCICAadhaarPendencyTable DashboardData="dashboardData" />
+    </MudItem>
+
+    <!-- Row 5 -->
+    <MudItem xs="12" md="6">
+                            <UCICPanPendencyTable DashboardData="dashboardData" />
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+                            <BeneficiaryOwnerReportTable DashboardData="dashboardData" />
+    </MudItem>
+
+    <!-- Last row full width -->
+    <MudItem xs="12" md="6">
+                            <CustomerComplaintsTable DashboardData="dashboardData" />
+    </MudItem>
+
+</MudGrid>
+                }
+            </div>
+
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string currentSolId = null; 
+    private bool isLoading = true; 
+   
+    private DataSet dashboardData;
+    
+    private async Task RefreshDashboard(string newSolId)
+    {
+        isLoading = true;
+        dashboardData = null; 
+    StateHasChanged();
+
+        currentSolId = string.IsNullOrWhiteSpace(newSolId) ? null : newSolId;
+
+        dashboardData = await DashboardService.GetDashboardDataAsync(currentSolId);
+
+        isLoading = false;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override void OnInitialized()
+    {
+        Breadcrumb.SetFromDashboard("Operations Dashboard", null, null);
+    }
+
+}

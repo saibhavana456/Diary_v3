@@ -1,0 +1,202 @@
+﻿@using System.Data
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.OperationDashboard.Models
+@using MyDiary.Web.Features.OperationDashboard.Services
+
+<div class="card mb-2 shadow-sm">
+    <div class="card-header text-white py-1 px-2"
+         style="min-height:28px;
+            background: #1E3A8A;">
+        <h6 class="mb-0" style="font-size:13px;">Cash Holding</h6>
+    </div>
+
+    <div class="card-body p-1" style="padding:2px !important;">
+        @if (isLoading)
+        {
+            <div class="p-2 text-center">
+                <div class="spinner-border text-primary" style="width:18px;height:18px;"></div>
+            </div>
+        }
+        else if (data == null || hasError)
+        {
+            <div class="p-3 text-center text-muted small">
+                <i class="fa-solid fa-folder-open mb-1"></i><br />
+                <strong>No record present currently.</strong>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm mb-0 text-center compact-table">
+
+                    <thead>
+                        <tr style="line-height:1; height:18px;">
+                            <th colspan="2">Prev Month Avg</th>
+                            <th colspan="2">Prev Day</th>
+                            <th colspan="2" class="text-primary">Today</th>
+                        </tr>
+
+                        <tr style="line-height:1; height:18px;">
+                            <th colspan="2">
+                                <small>(@data.PrevMonthFromDt.ToString("dd/MM/yyyy") - @data.PrevMonthDt.ToString("dd/MM/yyyy"))</small>
+                            </th>
+                            <th colspan="2">
+                                <small>(@data.PrevDay2Dt.ToString("dd/MM/yyyy"))</small>
+                            </th>
+                            <th colspan="2" class="text-primary">
+                                <small>(@data.PrevDayDt.ToString("dd/MM/yyyy"))</small>
+                            </th>
+                        </tr>
+
+                        <tr style="line-height:1; height:18px;">
+                            <th>Limit</th>
+                            <th>Actual</th>
+                            <th>Limit</th>
+                            <th>Actual</th>
+                            <th>Limit</th>
+                            <th>Actual</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        <tr>
+                            <td>@data.PrevMonthLimit.ToString("N2")</td>
+                            <td class="@GetActualColorClass(data.PrevMonthTotal, data.PrevMonthLimit)">
+                                @data.PrevMonthTotal.ToString("N2")
+                            </td>
+
+                            <td>@data.PrevDay2Limit.ToString("N2")</td>
+                            <td class="@GetActualColorClass(data.PrevDay2Total, data.PrevDay2Limit)">
+                                @data.PrevDay2Total.ToString("N2")
+                            </td>
+
+                            <td class="bg-light fw-bold">@data.PrevDayLimit.ToString("N2")</td>
+                            <td class="bg-light fw-bold @GetActualColorClass(data.PrevDayTotal, data.PrevDayLimit)">
+                                @data.PrevDayTotal.ToString("N2")
+                            </td>
+                        </tr>
+
+                        <tr class="table-warning">
+                            <td colspan="4" class="text-end fw-bold small">Var:</td>
+                            <td>@RenderVariation(data.PrevDayLimit, data.PrevDay2Limit, "N2")</td>
+                            <td>@RenderVariation(data.PrevDayTotal, data.PrevDay2Total, "N2")</td>
+                        </tr>
+                    </tbody>
+
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .compact-table {
+        font-size: 10.5px;
+        border-collapse: collapse;
+    }
+
+        .compact-table th,
+        .compact-table td {
+            padding: 2px 4px !important;
+            line-height: 1 !important;
+            height: 18px !important;
+            min-height: 18px !important;
+            vertical-align: middle !important;
+        }
+
+        .compact-table thead th {
+            font-size: 10px;
+            padding: 1px 3px !important;
+        }
+
+        .compact-table small {
+            font-size: 9px;
+        }
+
+    .table.compact-table > :not(caption) > * > * {
+        padding: 2px 4px !important;
+    }
+</style>
+
+@code {
+    [Parameter] public DataSet DashboardData { get; set; }
+
+    private bool isLoading = true;
+    private bool hasError = false;
+    private CashHoldingReportDto data;
+
+    protected override void OnParametersSet()
+    {
+        isLoading = true;
+        hasError = false;
+
+        try
+        {
+            if (DashboardData != null)
+            {
+                data = ExtractCashHolding(DashboardData);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[CashHoldingTable] Error: " + ex.Message);
+            hasError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private CashHoldingReportDto ExtractCashHolding(DataSet ds)
+    {
+        foreach (DataTable table in ds.Tables)
+        {
+            if (table.Rows.Count > 0 && table.Columns.Contains("TableName"))
+            {
+                var row = table.Rows[0];
+
+                if (row["TableName"]?.ToString() == "CashHoldingReport")
+                {
+                    return new CashHoldingReportDto
+                        {
+                            PrevDayDt = Convert.ToDateTime(row["PrevDayDt"]),
+                            PrevDayLimit = Convert.ToDecimal(row["PrevDayLimit"]),
+                            PrevDayTotal = Convert.ToDecimal(row["PrevDayTotal"]),
+
+                            PrevDay2Dt = Convert.ToDateTime(row["PrevDay2Dt"]),
+                            PrevDay2Limit = Convert.ToDecimal(row["PrevDay2Limit"]),
+                            PrevDay2Total = Convert.ToDecimal(row["PrevDay2Total"]),
+
+                            PrevMonthFromDt = Convert.ToDateTime(row["PrevMonthFromDt"]),
+                            PrevMonthDt = Convert.ToDateTime(row["PrevMonthDt"]),
+                            PrevMonthLimit = Convert.ToDecimal(row["PrevMonthLimit"]),
+                            PrevMonthTotal = Convert.ToDecimal(row["PrevMonthTotal"]),
+
+                            TableName = "CashHoldingReport"
+                        };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private string GetActualColorClass(decimal actual, decimal limit)
+    {
+        return actual > limit ? "text-danger fw-bold" : "text-success fw-bold";
+    }
+
+    private RenderFragment RenderVariation(decimal current, decimal previous, string format) => __builder =>
+    {
+        var metrics = VariationMetrics.Calculate(current, previous);
+
+        string colorClass = metrics.AbsoluteChange <= 0 ? "text-success" : "text-danger";
+        string sign = metrics.AbsoluteChange > 0 ? "+" : "";
+
+        <span class="@colorClass fw-bold small">
+            @sign@metrics.AbsoluteChange.ToString(format)
+        </span>
+        ;
+    };
+}

@@ -1,0 +1,288 @@
+﻿@page "/reports/AttritionRiskReport"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+@* @inject AuthenticationStateProvider AuthStateProvider *@
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Attrition Risk Report — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // User context (replace defaults with authenticated values if you have them in claims, as in your sample)
+    private string _userPrivilege = "CO";         // "CO" | "ZONE" | "REGION" | "BRANCH"
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // --- Column definitions ---
+    // Summary grid (count)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",                PropertyName = "zone_name_eng", Width = "25%" },
+        new ColumnConfig { Header = "Region",              PropertyName = "region_name",   Width = "25%" },
+        new ColumnConfig { Header = "Branch",              PropertyName = "Branch_Name",   Width = "25%" },
+        new ColumnConfig { Header = "Number of Accounts",  PropertyName = "ChurnAccounts", IsNumeric = true, Format = "N0", Width = "20%" },
+    };
+
+    // Detailed grid (top of your GridView columns)
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone name",           PropertyName = "zone_name_eng", Width = "12%" },
+        new ColumnConfig { Header = "Region Name",         PropertyName = "region_name",   Width = "12%" },
+        new ColumnConfig { Header = "Branch",              PropertyName = "BRANCH_NAME",   Width = "12%" },
+        new ColumnConfig { Header = "SolID",               PropertyName = "sol_id",        Width = "8%"  },
+        new ColumnConfig { Header = "CustomerID",          PropertyName = "CUST_ID",       Width = "10%" },
+        new ColumnConfig { Header = "Account No",          PropertyName = "FORACID",       Width = "12%" },
+        new ColumnConfig { Header = "Average Balance(12 M)", PropertyName = "AVGBAL_12M",  IsNumeric = true, Width = "12%" },
+        new ColumnConfig { Header = "PhoneNo",             PropertyName = "PHONE_CELL",    Width = "10%" },
+        new ColumnConfig { Header = "EmailId",             PropertyName = "EMAIL_HOME",    Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Churn Predictions";
+
+        // --- Optional: Load user context from claims (keep as in your sample) ---
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "1=1";   // global condition bucket (WebForms used many concatenations)
+        string groupBy = "";
+        bool isSummary = true;
+
+        // --- Ported logic from DisplayData() in WebForms (zone/region/branch + privilege rules) ---
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As SolId";
+            }
+            else if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase)) // All (Zonewise)
+            {
+                if (_selectedRegion == "1")
+                {
+                    columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1") // Regionwise summary
+                    {
+                        columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, b.region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Detailed (all or specific branch)
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+                    }
+                }
+                else // Specific Region selected
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, b.region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                            where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+                    }
+                }
+            }
+            else // Specific Zone selected
+            {
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (_selectedRegion == "1")
+                {
+                    columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, b.region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Detailed
+                    {
+                        isSummary = false;
+                        columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+                    }
+                }
+                else // Particular Region selected inside Zone
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, b.region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                            where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userZoneSolid}'";
+            if (_selectedRegion == "1")
+            {
+                columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId";
+                groupBy = " Group By zone_name_eng, Zone_SolId";
+            }
+            else if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_selectedBranch == "1")
+                {
+                    columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, b.region_name, zone_name_eng, region_solid As SolId";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+                }
+            }
+            else // Specific Region
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, b.region_name, zone_name_eng, region_solid As SolId";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userRegionSolid}'";
+            if (_selectedBranch == "1")
+            {
+                columns = "count(FORACID) As ChurnAccounts, 'All' As Branch_Name, b.region_name, zone_name_eng, region_solid As SolId";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+            else
+            {
+                isSummary = false;
+                if (!_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    where += $" and b.sol_id = '{_selectedBranch}'";
+                columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" and b.sol_id = '{_userBranchSolid}'";
+            columns = "zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id, a.CUST_ID, a.FORACID, a.AVGBAL_12M, a.PHONE_CELL, a.EMAIL_HOME";
+        }
+
+        // Build final SQL (matches your original FROM/JOINs)
+        string baseSql = $"SELECT {columns} " +
+                         $"FROM ChurnData A JOIN Branch_Master B On A.Sol_ID = B.SOL_ID " +
+                         $"WHERE {where} {groupBy}";
+        // Detailed screens were ordered by AVGBAL_12M desc in WebForms
+        if (!isSummary) baseSql += " ORDER BY AVGBAL_12M DESC";
+
+        _data = await ReportService.ExecuteRawQueryAsync(baseSql);
+
+        // Footer and Config
+        string date = await GetChurnAsOnDateAsync(); // from ChurnData.data_as_on
+        _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+        _asOnDateLabel = string.IsNullOrWhiteSpace(date) ? "" : $"Data As On - {date}";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task<string> GetChurnAsOnDateAsync()
+    {
+        // WebForms used: convert(varchar,max(data_as_on),103)
+        var rows = await ReportService.ExecuteRawQueryAsync("SELECT convert(varchar, max(data_as_on), 103) as d FROM ChurnData");
+        return rows.FirstOrDefault()?.TryGetValue("d", out var v) == true ? Convert.ToString(v) ?? "" : "";
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "ChurnPredictions");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "ChurnPredictions.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

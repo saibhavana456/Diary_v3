@@ -1,0 +1,46 @@
+@namespace RequestPortal.Web.Pages.Admin.Dialogs
+@* Routing assignee \u2014 user picker + IsPrimary flag *@
+@inject IUserRepo UserRepo
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudAutocomplete T="AppUser"
+                                 Label="User"
+                                 SearchFunc="SearchUsers"
+                                 @bind-Value="User"
+                                 ToStringFunc="@(u => u is null ? "" : $"{u.Name} \u00b7 {u.AdSamAccountName}")"
+                                 Required="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSwitch T="bool" @bind-Value="IsPrimary" Label="Primary assignee" Color="Color.Primary" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(User is null)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public AppUser? User { get; set; }
+    [Parameter] public bool IsPrimary { get; set; } = false;
+
+
+
+    private async Task<IEnumerable<AppUser>> SearchUsers(string value, CancellationToken cancellationToken)
+
+    {
+        if (string.IsNullOrWhiteSpace(value)) return Array.Empty<AppUser>();
+        return await UserRepo.SearchAsync(value, 20);
+    }
+
+    private void Save() => Dialog.Close(DialogResult.Ok(new AssigneeFormResult(User!.EmpCode ?? "", IsPrimary)));
+    private void Cancel() => Dialog.Cancel();
+
+    public sealed record AssigneeFormResult(string EmpCode, bool IsPrimary);
+}

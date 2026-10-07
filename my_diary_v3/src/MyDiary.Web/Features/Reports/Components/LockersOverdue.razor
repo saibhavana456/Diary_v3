@@ -1,0 +1,410 @@
+﻿@page "/reports/locker-overdue"
+@using System.Linq
+@using Microsoft.AspNetCore.Components
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Lockers Overdue — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    // ---------------- Query Parameter (optional page title) ----------------
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    // ---------------- State ----------------
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+    private bool _isSummary = true; // toggles summary vs detail columns
+
+    // ---------------- User Context (replace with your auth/claims) ----------------
+    // Same privilege model as WebForms: "CO" | "ZONE" | "REGION" | "BRANCH"
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    // ---------------- Columns (summary & detail) ----------------
+    // Summary grid columns: Zone, Region, Branch, No of Lockers with Overdue Rent, Overdue Rent (Lacs)
+    private readonly List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone",     PropertyName = "zone_name_eng", Width = "20%" },
+        new ColumnConfig { Header = "Region",   PropertyName = "region_name",   Width = "20%" },
+        new ColumnConfig { Header = "Branch",   PropertyName = "Branch_Name",   Width = "26%" },
+        new ColumnConfig { Header = "No of Lockers with OverDue Rent", PropertyName = "no_acct", IsNumeric = true, Format="N0", Width = "18%" },
+        new ColumnConfig { Header = "Overdue Rent (₹ in Lacs)",        PropertyName = "DueRent", IsNumeric = true, Format="N2", Width = "16%" },
+        // If you later need penalty / totals, add here: PenaltyAmount / amount
+    };
+
+    // Detail grid columns (mirrors gv_vaccant_locker visible fields)
+    private readonly List<ColumnConfig> _detailCols = new() {
+        new ColumnConfig { Header = "S No.",        PropertyName = "SNo",         IsNumeric = true, Format="N0", Width = "6%"  },
+        new ColumnConfig { Header = "Zone",         PropertyName = "zone_name_eng",                Width = "14%" },
+        new ColumnConfig { Header = "Region",       PropertyName = "region_name",                  Width = "14%" },
+        new ColumnConfig { Header = "Branch",       PropertyName = "BRANCH_NAME",                  Width = "16%" },
+        new ColumnConfig { Header = "Solid",        PropertyName = "branchsol",                    Width = "8%"  },
+        new ColumnConfig { Header = "Customer Id",  PropertyName = "custid",       IsNumeric=false, Width = "10%" },
+        new ColumnConfig { Header = "Customer Name",PropertyName = "custname",                    Width = "16%" },
+        new ColumnConfig { Header = "Operative A/c",PropertyName = "OperativeAc",                 Width = "12%" },
+        new ColumnConfig { Header = "Locker No",    PropertyName = "LockerNo",                    Width = "10%" },
+        new ColumnConfig { Header = "Locker Type",  PropertyName = "LockerType",                  Width = "10%" },
+        new ColumnConfig { Header = "Overdue Amount (₹)", PropertyName = "DueRent", IsNumeric = true, Format="N2", Width = "14%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Locker Overdue";
+        // Default load: summary view
+        _activeConfig.Columns = _summaryCols;
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Base WHERE: Due only (as in WebForms)
+        var wheres = new List<string> { "(DueRent) > 0" };
+
+        // Apply privilege baseline (Page_Load logic)
+        switch (_userPrivilege?.ToUpperInvariant())
+        {
+            case "ZONE":
+                wheres.Add($"zone_solid   = '{_userZoneSolid}'"); break;
+            case "REGION":
+                wheres.Add($"region_solid = '{_userRegionSolid}'"); break;
+            case "BRANCH":
+                wheres.Add($"b.sol_id     = '{_userBranchSolid}'"); break;
+                // CO → no baseline
+        }
+
+        // Tri-state UI semantics: "1"=All(Summary), "all"=All(X-wise), else=specific id
+        string z = _selectedZone?.ToLowerInvariant() ?? "1";
+        string r = _selectedRegion?.ToLowerInvariant() ?? "1";
+        string b = _selectedBranch?.ToLowerInvariant() ?? "1";
+
+        // We’ll map to one of: Global Summary, Zone Summary, Region Summary, or Detail rows.
+        string columns = "";
+        string groupBy = "";
+        string orderBy = "";
+
+        // Helper to set group by quickly
+        void SetGroup(params string[] keys) =>
+            groupBy = keys != null && keys.Length > 0 ? $" GROUP BY {string.Join(", ", keys)}" : "";
+
+        // Helper to add WHERE segment safely
+        string WhereSql() => wheres.Count > 0 ? $"WHERE {string.Join(" AND ", wheres)}" : "";
+
+        // ---------------- PRIVILEGE: CO ----------------
+        if (_userPrivilege == "CO")
+        {
+            if (z == "1")
+            {
+                // Global Summary
+                _isSummary = true;
+                columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                          "'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId";
+                SetGroup(); // no group
+                orderBy = "";
+            }
+            else if (z == "all")
+            {
+                if (r == "1")
+                {
+                    // Zone-wise Summary
+                    _isSummary = true;
+                    columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                              "'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId";
+                    SetGroup("Zone_SolId", "zone_name_eng");
+                    orderBy = " ORDER BY zone_name_eng";
+                }
+                else if (r == "all")
+                {
+                    if (b == "1")
+                    {
+                        // Region-wise Summary (across all regions)
+                        _isSummary = true;
+                        columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                                  "'All' AS Branch_Name, b.region_name, zone_name_eng, region_SolId AS SolId";
+                        SetGroup("b.region_name", "region_SolId", "zone_name_eng");
+                        orderBy = " ORDER BY zone_name_eng, b.region_name";
+                    }
+                    else if (b == "all")
+                    {
+                        // Branch-wise DETAIL across all regions
+                        _isSummary = false;
+                        columns = DetailColumns();
+                        SetGroup(); // none
+                        orderBy = DetailOrder();
+                    }
+                    else
+                    {
+                        // Specific branch DETAIL
+                        _isSummary = false;
+                        wheres.Add($"b.sol_id = '{_selectedBranch}'");
+                        columns = DetailColumns();
+                        orderBy = DetailOrder();
+                    }
+                }
+                else
+                {
+                    // Specific Region (across all zones) → Summary (if Branch "1"), otherwise detail
+                    wheres.Add($"region_solid = '{_selectedRegion}'");
+                    if (b == "1")
+                    {
+                        _isSummary = true;
+                        columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                                  "'All' AS Branch_Name, b.region_name, zone_name_eng, region_SolId AS SolId";
+                        SetGroup("b.region_name", "region_SolId", "zone_name_eng");
+                        orderBy = " ORDER BY zone_name_eng, b.region_name";
+                    }
+                    else
+                    {
+                        _isSummary = false;
+                        if (b != "all") wheres.Add($"b.sol_id = '{_selectedBranch}'");
+                        columns = DetailColumns();
+                        orderBy = DetailOrder();
+                    }
+                }
+            }
+            else
+            {
+                // Specific Zone selected
+                wheres.Add($"zone_solid = '{_selectedZone}'");
+                if (r == "1")
+                {
+                    _isSummary = true;
+                    // Zone-wise Summary (only this zone)
+                    columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                              "'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId";
+                    SetGroup("Zone_SolId", "zone_name_eng");
+                    orderBy = " ORDER BY zone_name_eng";
+                }
+                else if (r == "all")
+                {
+                    if (b == "1")
+                    {
+                        // Region-wise Summary inside this zone
+                        _isSummary = true;
+                        columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                                  "'All' AS Branch_Name, b.region_name, zone_name_eng, region_SolId AS SolId";
+                        SetGroup("b.region_name", "region_SolId", "zone_name_eng");
+                        orderBy = " ORDER BY zone_name_eng, b.region_name";
+                    }
+                    else
+                    {
+                        // Branch-wise DETAIL inside this zone
+                        _isSummary = false;
+                        if (b != "all") wheres.Add($"b.sol_id = '{_selectedBranch}'");
+                        columns = DetailColumns();
+                        orderBy = DetailOrder();
+                    }
+                }
+                else
+                {
+                    // Specific Region inside the zone
+                    wheres.Add($"region_solid = '{_selectedRegion}'");
+                    if (b == "1")
+                    {
+                        // Region Summary
+                        _isSummary = true;
+                        columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                                  "'All' AS Branch_Name, b.region_name, zone_name_eng, region_SolId AS SolId";
+                        SetGroup("b.region_name", "region_SolId", "zone_name_eng");
+                        orderBy = " ORDER BY zone_name_eng, b.region_name";
+                    }
+                    else
+                    {
+                        // Detail
+                        _isSummary = false;
+                        if (b != "all") wheres.Add($"b.sol_id = '{_selectedBranch}'");
+                        columns = DetailColumns();
+                        orderBy = DetailOrder();
+                    }
+                }
+            }
+        }
+        // ---------------- PRIVILEGE: ZONE ----------------
+        else if (_userPrivilege == "ZONE")
+        {
+            wheres.Add($"zone_solid = '{_userZoneSolid}'");
+            if (r == "1")
+            {
+                _isSummary = true;
+                columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                          "'All' AS Branch_Name, 'All' AS region_name, zone_name_eng, Zone_SolId AS SolId";
+                SetGroup("zone_name_eng", "Zone_SolId");
+                orderBy = " ORDER BY zone_name_eng";
+            }
+            else if (r == "all")
+            {
+                if (b == "1")
+                {
+                    _isSummary = true;
+                    columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                              "'All' AS Branch_Name, b.region_name, zone_name_eng, region_SolId AS SolId";
+                    SetGroup("b.region_name", "region_SolId", "zone_name_eng");
+                    orderBy = " ORDER BY zone_name_eng, b.region_name";
+                }
+                else
+                {
+                    _isSummary = false;
+                    if (b != "all") wheres.Add($"b.sol_id = '{_selectedBranch}'");
+                    columns = DetailColumns();
+                    orderBy = DetailOrder();
+                }
+            }
+            else
+            {
+                // specific region
+                wheres.Add($"region_solid = '{_selectedRegion}'");
+                if (b == "1")
+                {
+                    _isSummary = true;
+                    columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                              "'All' AS Branch_Name, b.region_name, zone_name_eng, region_SolId AS SolId";
+                    SetGroup("b.region_name", "region_SolId", "zone_name_eng");
+                    orderBy = " ORDER BY zone_name_eng, b.region_name";
+                }
+                else
+                {
+                    _isSummary = false;
+                    if (b != "all") wheres.Add($"b.sol_id = '{_selectedBranch}'");
+                    columns = DetailColumns();
+                    orderBy = DetailOrder();
+                }
+            }
+        }
+        // ---------------- PRIVILEGE: REGION ----------------
+        else if (_userPrivilege == "REGION")
+        {
+            wheres.Add($"region_solid = '{_userRegionSolid}'");
+            if (b == "1")
+            {
+                // Region Summary
+                _isSummary = true;
+                columns = "COUNT(custid) AS no_acct, SUM(DueRent)/100000 AS DueRent, " +
+                          "'All' AS Branch_Name, b.region_name, zone_name_eng, region_SolId AS SolId";
+                SetGroup("b.region_name", "region_SolId", "zone_name_eng");
+                orderBy = " ORDER BY zone_name_eng, b.region_name";
+            }
+            else
+            {
+                // Detail (all branches or specific)
+                _isSummary = false;
+                if (b != "all") wheres.Add($"b.sol_id = '{_selectedBranch}'");
+                columns = DetailColumns();
+                orderBy = DetailOrder();
+            }
+        }
+        // ---------------- PRIVILEGE: BRANCH ----------------
+        else if (_userPrivilege == "BRANCH")
+        {
+            // Detail of user branch
+            _isSummary = false;
+            wheres.Add($"b.sol_id = '{_userBranchSolid}'");
+            columns = DetailColumns();
+            orderBy = DetailOrder();
+        }
+
+        // SELECT SQL
+        string sql = BuildSql(columns, WhereSql(), groupBy, orderBy, _isSummary);
+
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(sql);
+        var dateTask = GetAsOnDateAsync();
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+
+        // Choose columns
+        _activeConfig.Columns = _isSummary ? _summaryCols : _detailCols;
+
+        // As On label (LastUpdatedDate on LockerMaster for rows with dues)
+        string asOn = dateTask.Result;
+        if (_data.Count == 0)
+            _asOnDateLabel = "No Data Found!";
+        else
+            _asOnDateLabel = $"Data As On - {asOn} {(_isSummary ? "(Rs. in Lacs)" : "(Rs. in Actuals)")}";
+
+        _loading = false;
+        StateHasChanged();
+
+        // ---------- Local helpers ----------
+        string DetailColumns() =>
+            "ROW_NUMBER() OVER (ORDER BY zone_name_eng, b.region_name, b.BRANCH_NAME, custname) AS SNo," +
+            " zone_name_eng, b.region_name, b.BRANCH_NAME, b.sol_id AS branchsol, custid, custname, OperativeAc, LockerNo, LockerType, DueRent";
+
+        string DetailOrder() => " ORDER BY zone_name_eng, b.region_name, b.BRANCH_NAME, custname";
+
+        string BuildSql(string cols, string where, string group, string order, bool isSummary)
+        {
+            if (string.IsNullOrWhiteSpace(cols))
+                cols = isSummary ? "COUNT(1) AS no_acct" : "TOP 0 1 AS SNo"; // safety
+
+            return
+                "SELECT " + cols + " " +
+                "FROM lockermaster A " +
+                "JOIN Branch_Master B ON A.SolID = B.SOL_ID " +
+                (string.IsNullOrWhiteSpace(where) ? "" : where + " ") +
+                (string.IsNullOrWhiteSpace(group) ? "" : group) +
+                (string.IsNullOrWhiteSpace(order) ? "" : order);
+        }
+    }
+
+    private async Task<string> GetAsOnDateAsync()
+    {
+        const string sql = "SELECT CONVERT(varchar, MAX(LastUpdatedDate), 103) AS AsOn FROM LockerMaster WHERE (DueRent) > 0";
+        var rows = await ReportService.ExecuteRawQueryAsync(sql);
+        if (rows.Count > 0 && rows[0].TryGetValue("AsOn", out var v))
+            return v?.ToString() ?? "";
+        return "";
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "LockerOverdue");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "LockerOverdue.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

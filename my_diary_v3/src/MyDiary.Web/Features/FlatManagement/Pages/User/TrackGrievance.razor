@@ -1,0 +1,114 @@
+@page "/flatmgmt/my/track-grievance"
+@attribute [Authorize]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IUserFlatService FlatService
+@inject IUserGrievanceService GrievanceService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Track Grievance - Flat Management System</PageTitle>
+
+<div class="tg-page">
+    <PageHeader Title="Track Service Requests" Crumbs="_crumbs" PageKey="flatmgmt-my-track-grievance" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (!hasFlat)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">
+            @(gateError ?? "You are not allotted to any flat.")
+        </MudAlert>
+    }
+    else
+    {
+        <MudCard Class="tg-card mt-4" Elevation="2">
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@rows" Hover="true" Bordered="true" Dense="true" Class="tg-table"
+                          RowsPerPage="10">
+                    <HeaderContent>
+                        <MudTh>S.No.</MudTh>
+                        <MudTh>Reference No.</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Subject</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Created On</MudTh>
+                        <MudTh>Created By</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd DataLabel="S.No.">@(rows.IndexOf(row) + 1)</MudTd>
+                        <MudTd DataLabel="Reference No.">
+                            <MudButton Href="@($"flatmgmt/my/track-grievance-view?ref={row.RefNo}")"
+                                       Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Launch"
+                                       Class="pa-1">
+                                @row.RefNo
+                            </MudButton>
+                        </MudTd>
+                        <MudTd DataLabel="Type">@row.Category</MudTd>
+                        <MudTd DataLabel="Subject">@row.Subject</MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Color="@StatusColor(row.Status)" Size="Size.Small">@(row.Status ?? "-")</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Created On">@(row.CreatedOn?.ToString("dd-MMM-yyyy") ?? "-")</MudTd>
+                        <MudTd DataLabel="Created By">@row.CreatedBy</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No Service Requests found for this flat.</MudText>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new[] { 10, 25, 50 }" />
+                    </PagerContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Track Service Requests") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool isLoading = true;
+    private bool hasFlat;
+    private string? gateError;
+    private List<TrackGrievanceRow> rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var pfNo = string.Empty;
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            pfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+         var flat = await FlatService.GetAllocatedFlatAsync(pfNo);
+        hasFlat = flat.HasFlat;
+        gateError = flat.Error;
+
+        if (hasFlat)
+        {
+            rows = await GrievanceService.GetMyGrievancesAsync(pfNo);
+        }
+
+        isLoading = false;
+    }
+
+    private static Color StatusColor(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return Color.Default;
+        if (status.Contains("Completed", StringComparison.OrdinalIgnoreCase)) return Color.Success;
+        if (status.Contains("Progress", StringComparison.OrdinalIgnoreCase)) return Color.Warning;
+        if (status.Contains("Raised", StringComparison.OrdinalIgnoreCase) || status.Equals("Open", StringComparison.OrdinalIgnoreCase)) return Color.Info;
+        return Color.Default;
+    }
+}

@@ -1,0 +1,1112 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/ImpersonalAccounts"
+@using Microsoft.JSInterop
+@using System.Linq
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Models
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Impersonal Accounts — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        width: 100%;
+        table-layout: auto !important;
+        border-collapse: collapse;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .thead-dark {
+        background-color: #2a2f5b;
+        color: white;
+    }
+
+    .thead-dark th {
+        border-right: 1px solid #d0d0d0;
+        text-align: center;
+        font-weight: 700;
+        border-bottom: 1px solid #d0d0d0;
+        white-space: nowrap;
+        padding: 8px 6px;
+    }
+
+    /* Serial number column */
+    .col-sno {
+        width: 60px !important;
+        min-width: 50px !important;
+        text-align: center !important;
+    }
+
+    /* WIDE TEXT COLUMNS */
+    .col-zone {
+        width: 180px !important;
+        min-width: 160px !important;
+        max-width: 220px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-region {
+        width: 180px !important;
+        min-width: 160px !important;
+        max-width: 220px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-branch {
+        width: 220px !important;
+        min-width: 200px !important;
+        max-width: 280px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    /* SolID column */
+    .col-solid {
+        width: 100px !important;
+        min-width: 90px !important;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    /* Account columns */
+    .col-accountno {
+        width: 130px !important;
+        min-width: 120px !important;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    .col-accountname {
+        width: 200px !important;
+        min-width: 180px !important;
+        text-align: left;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .col-tranid {
+        width: 100px !important;
+        min-width: 90px !important;
+        text-align: left;
+    }
+
+    .col-date {
+        width: 100px !important;
+        min-width: 90px !important;
+        text-align: center !important;
+    }
+
+    .col-narration {
+        width: 250px !important;
+        min-width: 220px !important;
+        text-align: left;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    /* NUMBER COLUMNS */
+    .col-num {
+        width: 120px !important;
+        min-width: 110px !important;
+        text-align: right !important;
+        white-space: nowrap !important;
+        padding-right: 10px;
+    }
+
+    .td-left { text-align: left; }
+    .td-right { text-align: right; }
+    .td-center { text-align: center; }
+
+    .fixed-table td {
+        border-bottom: 1px solid #eee;
+        padding: 6px 6px;
+        vertical-align: middle;
+    }
+
+    .validation-error {
+        color: #c8102e;
+        font-size: 0.75rem;
+        font-style: italic;
+        font-weight: bold;
+        margin-top: 4px;
+    }
+
+    /* Pagination styles */
+    .pagination-wrapper {
+        padding: 16px 32px 24px 32px; /* add left/right padding to line up with table area */
+        border-top: 1px solid #e0e0e0;
+        margin-top: 8px;
+    }
+
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .pagination-info {
+        color: #666;
+        font-size: 0.875rem;
+    }
+
+    .rows-per-page-area {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    @@media (max-width: 992px) {
+        .col-num {
+            width: 100px !important;
+            min-width: 90px !important;
+        }
+    }
+</style>
+
+<!-- ================== IMPERSONAL ACCOUNTS REPORT ================== -->
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#fff;">
+
+
+
+            <!-- LOCATION FILTERS (ZONE/REGION/BRANCH) -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Zone" Value="_selectedZone" ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                        @if (_userPrivilege == "CO")
+                        {
+                            <MudSelectItem Value="@("00000")">CENTRAL OFFICE</MudSelectItem>
+                        }
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">@z["zone_name_eng"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Region" Value="_selectedRegion" ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedZone == "1" || (_selectedZone == "all" && _regions.Count == 0))">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">@r["region_name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Branch" Value="_selectedBranch" ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedRegion == "1" || (_selectedRegion == "all" && _branches.Count == 0))">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["SOL_ID"].ToString()">@b["Branch_Name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- MANDATORY FILTERS -->
+            <MudGrid Spacing="2" Class="px-4 pb-2 align-center">
+                <MudItem xs="12" sm="2">
+                    <MudText Typo="Typo.body2" Style="font-weight:bold;">Mandatory Filters <span style="color:#c8102e;">*</span></MudText>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Account Type" Value="_selectedAccType" ValueChanged="HandleAccTypeChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Required="true" RequiredError="Account Type is required">
+                        <MudSelectItem Value="@("SEL")">SEL</MudSelectItem>
+                        <MudSelectItem Value="@("SUN")">Sundry</MudSelectItem>
+                        <MudSelectItem Value="@("SUS")">Suspense</MudSelectItem>
+                        <MudSelectItem Value="@("POB")">POB</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Scheme Type" Value="_selectedSchemeType" ValueChanged="HandleSchemeTypeChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedAccType == "POB")"
+                               Required="true" RequiredError="Scheme Type is required">
+                        <MudSelectItem Value="@("SEL")">SEL</MudSelectItem>
+                        <MudSelectItem Value="@("OAB")">OAB</MudSelectItem>
+                        <MudSelectItem Value="@("OAP")">OAP</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="4">
+                    @if (_validationErrors.Any())
+                    {
+                        <MudText Class="validation-error">@string.Join(", ", _validationErrors)</MudText>
+                    }
+                </MudItem>
+            </MudGrid>
+
+            <!-- OPTIONAL FILTERS -->
+            <MudGrid Spacing="2" Class="px-4 pb-2 align-center">
+                <MudItem xs="12" sm="2">
+                    <MudText Typo="Typo.body2" Style="font-weight:bold;">Optional Filters</MudText>
+                </MudItem>
+
+                <MudItem xs="12" sm="2">
+                    <MudTextField @bind-Value="_accountNo" Label="Account No" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Dense="true" Immediate="true" MaxLength="15" />
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Ageing" Value="_selectedAge" ValueChanged="HandleAgeChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(_selectedSchemeType == "OAB" && _selectedAccType != "POB")">
+                        <MudSelectItem Value="@("SEL")">SEL</MudSelectItem>
+                        <MudSelectItem Value="@("0")">&lt; 15 days</MudSelectItem>
+                        <MudSelectItem Value="@("1")">16 - 30 days</MudSelectItem>
+                        <MudSelectItem Value="@("2")">31 - 90 days</MudSelectItem>
+                        <MudSelectItem Value="@("3")">91 - 180 days</MudSelectItem>
+                        <MudSelectItem Value="@("4")">&gt; 180 days</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Amount" Value="_selectedAmount" ValueChanged="HandleAmountChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem Value="@("SEL")">SEL</MudSelectItem>
+                        <MudSelectItem Value="@("0")">&lt; 1000</MudSelectItem>
+                        <MudSelectItem Value="@("1")">1001 - 5000</MudSelectItem>
+                        <MudSelectItem Value="@("2")">5001 - 10000</MudSelectItem>
+                        <MudSelectItem Value="@("3")">10001 - 50000</MudSelectItem>
+                        <MudSelectItem Value="@("4")">&gt; 50000</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+                <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               Style="background-color:#000066; color:#fff; margin-right:8px;"
+                               OnClick="HandleGo" Disabled="@(!IsValid())">
+                        GO
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Default" Size="Size.Small"
+                               Style="background-color:#666; color:#fff; margin-right:8px;"
+                               OnClick="HandleClear">
+                        Clear
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color:#000066; color:#fff;"
+                               OnClick="OnExport" Disabled="@(!_data.Any())">
+                        Export
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- AS ON DATE HEADER -->
+            <div class="px-4 pb-2 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color:#666;">
+                    @_asOnDateLabel
+                </MudText>
+            </div>
+
+            <!-- ================== TABLE ================== -->
+            <div class="mud-table-container px-4">
+                @if (_loading)
+                {
+                    <div class="text-center p-4">Loading…</div>
+                }
+                else if (_data.Count == 0)
+                {
+                    <div class="text-center p-4" style="color:crimson;">No Data Found!</div>
+                }
+                else
+                {
+                    <table class="mud-table fixed-table">
+                        <thead class="thead-dark">
+                            @if (_isPOBData)
+                            {
+                                <tr>
+                                    <th class="col-sno">S No.</th>
+                                    <th class="col-zone">Zone</th>
+                                    <th class="col-region">Region</th>
+                                    <th class="col-branch">Branch</th>
+                                    @if (_userPrivilege == "BRANCH")
+                                    {
+                                        <th class="col-solid">SolID</th>
+                                    }
+                                    <th class="col-accountno">Account No</th>
+                                    <th class="col-accountname">Account Name</th>
+                                    <th class="col-solid">From SOL</th>
+                                    <th class="col-solid">To SOL</th>
+                                    <th class="col-date">Tran Date</th>
+                                    <th class="col-narration">Tran Narration</th>
+                                    <th class="col-num">Tran Amount</th>
+                                    <th class="col-num">Outstanding</th>
+                                    <th class="col-num">Pending Days</th>
+                                </tr>
+                            }
+                            else
+                            {
+                                <tr>
+                                    <th class="col-sno">S No.</th>
+                                    <th class="col-zone">Zone</th>
+                                    <th class="col-region">Region</th>
+                                    <th class="col-branch">Branch</th>
+                                    @if (_userPrivilege == "BRANCH")
+                                    {
+                                        <th class="col-solid">SolID</th>
+                                    }
+                                    <th class="col-accountno">Account No</th>
+                                    <th class="col-accountname">Account Name</th>
+                                    <th class="col-tranid">Tran ID</th>
+                                    <th class="col-date">Tran Date</th>
+                                    <th class="col-date">Value Date</th>
+                                    <th class="col-narration">Tran Narration</th>
+                                    <th class="col-num">Tran Amount</th>
+                                    <th class="col-num">Outstanding</th>
+                                    <th class="col-num">Pending Days</th>
+                                </tr>
+                            }
+                        </thead>
+                        <tbody>
+                            @{
+                                var pagedData = _data.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
+                                int startSno = (_currentPage - 1) * _pageSize + 1;
+
+                                foreach (var row in pagedData)
+                                {
+                                    if (_isPOBData)
+                                    {
+                                        <tr>
+                                            <td class="td-center">@(startSno++)</td>
+                                            <td class="td-left">@GetValue(row, "zone_name_eng")</td>
+                                            <td class="td-left">@GetValue(row, "region_name")</td>
+                                            <td class="td-left">@GetValue(row, "BRANCH_NAME")</td>
+                                            @if (_userPrivilege == "BRANCH")
+                                            {
+                                                <td class="td-left">@GetValue(row, "branchsol")</td>
+                                            }
+                                            <td class="td-left">@GetValue(row, "ACT_NO")</td>
+                                            <td class="td-left">@GetValue(row, "ACT_NAME")</td>
+                                            <td class="td-left">@GetValue(row, "FROM_SOL")</td>
+                                            <td class="td-left">@GetValue(row, "TO_SOL")</td>
+                                            <td class="td-center">@FormatDate(row, "TRAN_DATE")</td>
+                                            <td class="td-left">@GetValue(row, "TRAN_PARTICULAR")</td>
+                                            <td class="td-right">@FormatAmount(row, "BALANCE")</td>
+                                            <td class="td-right">@FormatAmount(row, "TOT_OUTSTANDING")</td>
+                                            <td class="td-right">@FormatNumber(row, "OFFSET_PENDING_TOTALDAYS")</td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td class="td-center">@(startSno++)</td>
+                                            <td class="td-left">@GetValue(row, "zone_name_eng")</td>
+                                            <td class="td-left">@GetValue(row, "region_name")</td>
+                                            <td class="td-left">@GetValue(row, "BRANCH_NAME")</td>
+                                            @if (_userPrivilege == "BRANCH")
+                                            {
+                                                <td class="td-left">@GetValue(row, "branchsol")</td>
+                                            }
+                                            <td class="td-left">@GetValue(row, "accountno")</td>
+                                            <td class="td-left">@GetValue(row, "accountname")</td>
+                                            <td class="td-left">@GetValue(row, "tranid")</td>
+                                            <td class="td-center">@FormatDate(row, "trandate")</td>
+                                            <td class="td-center">@FormatDate(row, "valuedate")</td>
+                                            <td class="td-left">@GetValue(row, "trannarration")</td>
+                                            <td class="td-right">@FormatAmount(row, "tranamount")</td>
+                                            <td class="td-right">@FormatAmount(row, "outstanding")</td>
+                                            <td class="td-right">@FormatNumber(row, "AgeInDays")</td>
+                                        </tr>
+                                    }
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <!-- ================== PAGINATION (VISIBLE WHEN DATA EXISTS) ================== -->
+            @if (_data.Count > 0)
+            {
+                <div class="pagination-wrapper">
+                    <div class="pagination-container">
+                        <div class="pagination-info">
+                            @if (TotalPages > 1)
+                            {
+                                <text>
+                                    Showing @StartItem to @EndItem of @_data.Count entries
+                                </text>
+                            }
+                            else
+                            {
+                                <text>Showing all @_data.Count entries</text>
+                            }
+                        </div>
+
+                        <div class="rows-per-page-area">
+                            <MudText Typo="Typo.caption">Rows per page:</MudText>
+                            <MudSelect T="int" Dense="true" Style="width:80px"
+                                       Value="_pageSize" ValueChanged="OnPageSizeChanged">
+                                <MudSelectItem Value="10">10</MudSelectItem>
+                                <MudSelectItem Value="25">25</MudSelectItem>
+                                <MudSelectItem Value="50">50</MudSelectItem>
+                                <MudSelectItem Value="100">100</MudSelectItem>
+                            </MudSelect>
+                        </div>
+
+                        <MudPagination Dense="true"
+                                       Count="TotalPages"
+                                       Selected="_currentPage"
+                                       SelectedChanged="OnPageChanged" />
+                    </div>
+                </div>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // Pagination properties
+    private int _currentPage = 1;
+    private int _pageSize = 25;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_data.Count / (double)_pageSize));
+    private int StartItem => _data.Count == 0 ? 0 : ((_currentPage - 1) * _pageSize + 1);
+    private int EndItem => _data.Count == 0 ? 0 : Math.Min(_currentPage * _pageSize, _data.Count);
+
+    // Filters
+    private string _selectedZone { get; set; } = "1";
+    private string _selectedRegion { get; set; } = "1";
+    private string _selectedBranch { get; set; } = "1";
+
+    // Mandatory filters
+    private string _selectedAccType { get; set; } = "SEL";
+    private string _selectedSchemeType { get; set; } = "SEL";
+
+    // Optional filters
+    private string _accountNo { get; set; } = "";
+    private string _selectedAge { get; set; } = "SEL";
+    private string _selectedAmount { get; set; } = "SEL";
+
+    // Lookup data
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+
+    // Main data
+    private List<Dictionary<string, object>> _data = new();
+    private bool _isPOBData = false;
+
+    // UI state
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private List<string> _validationErrors = new();
+
+    // Privilege (replace with actual auth service)
+    private string _userPrivilege = "CO"; // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+
+    /* ============ Pagination handlers (MudPagination + rows-per-page) ============ */
+    private void OnPageChanged(int page)
+    {
+        if (_data.Count == 0) { _currentPage = 1; return; }
+        // clamp to [1..TotalPages]
+        if (page < 1) page = 1;
+        if (page > TotalPages) page = TotalPages;
+        if (_currentPage != page)
+        {
+            _currentPage = page;
+            StateHasChanged();
+        }
+    }
+
+    private void OnPageSizeChanged(int newSize)
+    {
+        if (newSize <= 0) return;
+        _pageSize = newSize;
+        _currentPage = 1;
+        StateHasChanged();
+    }
+    /* ============================================================================ */
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        await LoadZones();
+        _asOnDateLabel = "Select filters and click GO";
+    }
+
+    private async Task LoadZones()
+    {
+        _zones = await ReportService.GetLookupDataAsync("zone_master", "*", "status='A'", "zone_name_eng");
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        _selectedZone = value;
+        _selectedRegion = "1";
+        _selectedBranch = "1";
+
+        if (value != "1" && value != "all" && value != "00000")
+        {
+            _regions = await ReportService.GetLookupDataAsync("region_master", "*", $"zone_solid='{value}'", "region_name");
+
+            // Add CENTRAL OFFICE option if needed
+            if (value == "00000")
+            {
+                var coRegion = new Dictionary<string, object>
+                {
+                    { "region_solid", "00000" },
+                    { "region_name", "CENTRAL OFFICE" }
+                };
+                _regions.Insert(0, coRegion);
+            }
+        }
+        else
+        {
+            _regions.Clear();
+        }
+
+        _branches.Clear();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        _selectedRegion = value;
+        _selectedBranch = "1";
+
+        if (value != "1" && value != "all" && value != "00000")
+        {
+            _branches = await ReportService.GetLookupDataAsync("branch_master",
+                "CONCAT(UPPER(branch_name), '  (', branch_code, ')') As Branch_Name, SOL_ID",
+                $"region_solid='{value}'",
+                "BRANCH_NAME");
+        }
+        else
+        {
+            _branches.Clear();
+        }
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        _selectedBranch = value;
+        await Task.CompletedTask;
+    }
+
+    private void HandleAccTypeChanged(string value)
+    {
+        _selectedAccType = value;
+
+        if (value == "POB")
+        {
+            _selectedSchemeType = "OAP";
+        }
+
+        _selectedAge = "SEL";
+        _selectedAmount = "SEL";
+        _accountNo = "";
+        ClearValidation();
+    }
+
+    private void HandleSchemeTypeChanged(string value)
+    {
+        _selectedSchemeType = value;
+
+        if (value == "OAB" && _selectedAccType != "POB")
+        {
+            _selectedAge = "SEL";
+        }
+
+        _selectedAmount = "SEL";
+        _accountNo = "";
+        ClearValidation();
+    }
+
+    private void HandleAgeChanged(string value)
+    {
+        _selectedAge = value;
+    }
+
+    private void HandleAmountChanged(string value)
+    {
+        _selectedAmount = value;
+    }
+
+    private bool IsValid()
+    {
+        _validationErrors.Clear();
+
+        if (_selectedAccType == "SEL")
+            _validationErrors.Add("Account Type is required");
+
+        if (_selectedSchemeType == "SEL")
+            _validationErrors.Add("Scheme Type is required");
+
+        return !_validationErrors.Any();
+    }
+
+    private void ClearValidation()
+    {
+        _validationErrors.Clear();
+    }
+
+    private async Task HandleGo()
+    {
+        if (!IsValid())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        _loading = true;
+        _data.Clear();
+        _currentPage = 1;
+        StateHasChanged();
+
+        try
+        {
+            if (_selectedAccType.ToUpper() == "POB")
+            {
+                _isPOBData = true;
+                await LoadPOBData();
+            }
+            else
+            {
+                _isPOBData = false;
+                await LoadSundryData();
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[Impersonal] Error: " + ex.Message);
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+            _data = new List<Dictionary<string, object>>();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadSundryData()
+    {
+        string tableName = GetTableName();
+
+        // Determine which field to use for outstanding based on scheme type
+        string outstandingField = _selectedSchemeType == "OAP" ? "diff" : "Outstanding";
+
+        string selectList = $@"
+            zone_name_eng,
+            b.region_name,
+            b.BRANCH_NAME,
+            b.sol_id as branchsol,
+            a.AccountNo as accountno,
+            a.accountname,
+            a.tranid,
+            CONVERT(varchar, a.trandate, 103) as trandate,
+            CONVERT(varchar, a.valuedate, 103) as valuedate,
+            a.trannarration,
+            a.tranamount,
+            a.{outstandingField} as outstanding,
+            a.AgeInDays";
+
+        string join = $"FROM {tableName} A JOIN Branch_Master B ON A.SolID = B.SOL_ID";
+        string where = BuildWhereClause(false);
+        string orderBy = GetOrderByClause();
+
+        string query = $"SELECT {selectList} {join} WHERE {where} {orderBy}";
+
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(query);
+        var dateTask = GetAsOnDateAsync(tableName);
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+
+        // Get As On Date
+        string date = dateTask.Result;
+        _asOnDateLabel = $"Data As On - {date} (Rs. in {(IsSummaryMode() ? "Lacs" : "Actuals")})";
+    }
+
+    private async Task LoadPOBData()
+    {
+        string selectList = @"
+            zone_name_eng,
+            b.region_name,
+            b.BRANCH_NAME,
+            b.sol_id as branchsol,
+            a.ACT_NO,
+            a.ACT_NAME,
+            a.FROM_SOL,
+            a.TO_SOL,
+            CONVERT(varchar, a.TRAN_DATE, 103) as TRAN_DATE,
+            a.TRAN_PARTICULAR,
+            a.BALANCE,
+            a.TOT_OUTSTANDING,
+            a.OFFSET_PENDING_TOTALDAYS";
+
+        string join = "FROM POBData A JOIN Branch_Master B ON A.FROM_SOL = B.SOL_ID";
+        string where = BuildWhereClause(true);
+        string orderBy = GetOrderByClause();
+
+        string query = $"SELECT {selectList} {join} WHERE {where} {orderBy}";
+
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(query);
+        var dateTask = GetAsOnDateAsync("POBData");
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+
+        string date = dateTask.Result;
+        _asOnDateLabel = $"Data As On - {date} (Rs. in {(IsSummaryMode() ? "Lacs" : "Actuals")})";
+    }
+
+    private string GetTableName()
+    {
+        if (_selectedAccType.ToUpper() == "SUN")
+        {
+            return _selectedSchemeType.ToUpper() == "OAB" ? "Sundry_OAB_AgeWise" : "Sundry_OAP_AgeWise";
+        }
+        else if (_selectedAccType.ToUpper() == "SUS")
+        {
+            return _selectedSchemeType.ToUpper() == "OAB" ? "Suspense_OAB_AgeWise" : "Suspense_OAP_AgeWise";
+        }
+        return "";
+    }
+
+    private string BuildWhereClause(bool isPOB)
+    {
+        var conditions = new List<string>();
+
+        // Base condition
+        conditions.Add("B.region_solid <> '00000' AND B.region_solid <> ' '");
+
+        // Privilege-based conditions
+        if (_userPrivilege == "ZONE" && !string.IsNullOrEmpty(_userZoneSolid))
+        {
+            conditions.Add($"B.Zone_SolId = '{_userZoneSolid}'");
+        }
+        else if (_userPrivilege == "REGION" && !string.IsNullOrEmpty(_userRegionSolid))
+        {
+            conditions.Add($"B.region_SolId = '{_userRegionSolid}'");
+        }
+        else if (_userPrivilege == "BRANCH" && !string.IsNullOrEmpty(_userBranchSolid))
+        {
+            conditions.Add($"B.sol_id = '{_userBranchSolid}'");
+        }
+
+        // Zone filter
+        if (_selectedZone != "1" && _selectedZone != "all")
+        {
+            if (_selectedZone == "00000")
+            {
+                conditions.Add($"B.Zone_SolId = '00000'");
+            }
+            else
+            {
+                conditions.Add($"B.Zone_SolId = '{_selectedZone}'");
+            }
+        }
+
+        // Region filter
+        if (_selectedRegion != "1" && _selectedRegion != "all" && _selectedRegion != "00000")
+        {
+            conditions.Add($"B.region_SolId = '{_selectedRegion}'");
+        }
+
+        // Branch filter
+        if (_selectedBranch != "1" && _selectedBranch != "all")
+        {
+            conditions.Add($"B.sol_id = '{_selectedBranch}'");
+        }
+
+        // Account Number filter
+        if (!string.IsNullOrEmpty(_accountNo))
+        {
+            if (isPOB)
+                conditions.Add($"a.ACT_NO = '{_accountNo}'");
+            else
+                conditions.Add($"a.AccountNo = '{_accountNo}'");
+        }
+
+        // Age filter
+        if (_selectedAge != "SEL")
+        {
+            string ageField = isPOB ? "OFFSET_PENDING_TOTALDAYS" : "AgeInDays";
+
+            switch (_selectedAge)
+            {
+                case "0":
+                    conditions.Add($"{ageField} <= 15");
+                    break;
+                case "1":
+                    conditions.Add($"{ageField} BETWEEN 16 AND 30");
+                    break;
+                case "2":
+                    conditions.Add($"{ageField} BETWEEN 31 AND 90");
+                    break;
+                case "3":
+                    conditions.Add($"{ageField} BETWEEN 91 AND 180");
+                    break;
+                case "4":
+                    conditions.Add($"{ageField} >= 181");
+                    break;
+            }
+        }
+
+        // Amount filter
+        if (_selectedAmount != "SEL")
+        {
+            string amountField;
+
+            if (isPOB)
+            {
+                amountField = "TOT_OUTSTANDING";
+            }
+            else if ((_selectedAccType == "SUN" || _selectedAccType == "SUS") && _selectedSchemeType == "OAP")
+            {
+                amountField = "diff";
+            }
+            else
+            {
+                amountField = "Outstanding";
+            }
+
+            switch (_selectedAmount)
+            {
+                case "0":
+                    conditions.Add($"{amountField} <= 1000");
+                    break;
+                case "1":
+                    conditions.Add($"{amountField} BETWEEN 1001 AND 5000");
+                    break;
+                case "2":
+                    conditions.Add($"{amountField} BETWEEN 5001 AND 10000");
+                    break;
+                case "3":
+                    conditions.Add($"{amountField} BETWEEN 10001 AND 50000");
+                    break;
+                case "4":
+                    conditions.Add($"{amountField} >= 50001");
+                    break;
+            }
+        }
+
+        return string.Join(" AND ", conditions);
+    }
+
+    private string GetOrderByClause()
+    {
+        if (_selectedZone == "1" || (_selectedZone == "all" && _selectedRegion == "1"))
+        {
+            return "ORDER BY zone_name_eng";
+        }
+        else if (_selectedRegion == "1" || _selectedRegion == "all")
+        {
+            return "ORDER BY zone_name_eng, region_name";
+        }
+        else
+        {
+            return "ORDER BY zone_name_eng, region_name, BRANCH_NAME";
+        }
+    }
+
+    private bool IsSummaryMode()
+    {
+        return _selectedZone == "1" ||
+               (_selectedZone == "all" && _selectedRegion == "1") ||
+               (_selectedZone == "all" && _selectedRegion == "all" && _selectedBranch == "1");
+    }
+
+    private async Task<string> GetAsOnDateAsync(string tableName)
+    {
+        try
+        {
+            var dateQuery = $"SELECT CONVERT(varchar, MAX(LastUpdateDate), 103) as AsOnDate FROM {tableName} WHERE 1=1";
+            var result = await ReportService.ExecuteRawQueryAsync(dateQuery);
+
+            if (result.Any() && result[0].ContainsKey("AsOnDate") && result[0]["AsOnDate"] != null)
+            {
+                return result[0]["AsOnDate"]?.ToString() ?? AppTime.Now.ToShortDateString();
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[Impersonal] Unhandled error: " + ex.Message);
+            // Fallback to current date
+        }
+
+        return AppTime.Now.ToShortDateString();
+    }
+
+    private async Task HandleClear()
+    {
+        _selectedZone = "1";
+        _selectedRegion = "1";
+        _selectedBranch = "1";
+        _selectedAccType = "SEL";
+        _selectedSchemeType = "SEL";
+        _accountNo = "";
+        _selectedAge = "SEL";
+        _selectedAmount = "SEL";
+        _data.Clear();
+        _asOnDateLabel = "Select filters and click GO";
+        _validationErrors.Clear();
+        _currentPage = 1;
+
+        _regions.Clear();
+        _branches.Clear();
+
+        await LoadZones();
+        StateHasChanged();
+    }
+
+    private async Task OnExport()
+    {
+        try
+        {
+            // Add serial numbers to export data
+            var exportData = new List<Dictionary<string, object>>();
+            int sno = 1;
+
+            foreach (var row in _data)
+            {
+                var exportRow = new Dictionary<string, object>(row);
+                exportRow["SerialNo"] = sno.ToString();
+                exportData.Add(exportRow);
+                sno++;
+            }
+
+            var fileName = $"ImpersonalAccounts_{_selectedAccType}_{AppTime.Now:yyyyMMdd}.xlsx";
+            var bytes = ReportService.ExportToExcel(exportData, GetExportColumns(), fileName);
+
+            await JS.InvokeVoidAsync("BlazorDownloadFile", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+
+            Snackbar.Add("Export completed successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[Impersonal] Error: " + ex.Message);
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    // Export columns configuration
+    private List<ColumnConfig> GetExportColumns()
+    {
+        var cols = new List<ColumnConfig>
+        {
+            new ColumnConfig { Header = "S No.", PropertyName = "SerialNo" },
+            new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng" },
+            new ColumnConfig { Header = "Region", PropertyName = "region_name" },
+            new ColumnConfig { Header = "Branch", PropertyName = "BRANCH_NAME" }
+        };
+
+        if (_userPrivilege == "BRANCH")
+        {
+            cols.Add(new ColumnConfig { Header = "SolID", PropertyName = "branchsol" });
+        }
+
+        if (_isPOBData)
+        {
+            cols.Add(new ColumnConfig { Header = "Account No", PropertyName = "ACT_NO" });
+            cols.Add(new ColumnConfig { Header = "Account Name", PropertyName = "ACT_NAME" });
+            cols.Add(new ColumnConfig { Header = "From SOL", PropertyName = "FROM_SOL" });
+            cols.Add(new ColumnConfig { Header = "To SOL", PropertyName = "TO_SOL" });
+            cols.Add(new ColumnConfig { Header = "Tran Date", PropertyName = "TRAN_DATE", IsDate = true, Format = "dd/MM/yyyy" });
+            cols.Add(new ColumnConfig { Header = "Tran Narration", PropertyName = "TRAN_PARTICULAR" });
+            cols.Add(new ColumnConfig { Header = "Tran Amount", PropertyName = "BALANCE", IsNumeric = true, Format = "N2" });
+            cols.Add(new ColumnConfig { Header = "Outstanding", PropertyName = "TOT_OUTSTANDING", IsNumeric = true, Format = "N2" });
+            cols.Add(new ColumnConfig { Header = "Pending Days", PropertyName = "OFFSET_PENDING_TOTALDAYS", IsNumeric = true, Format = "N0" });
+        }
+        else
+        {
+            cols.Add(new ColumnConfig { Header = "Account No", PropertyName = "accountno" });
+            cols.Add(new ColumnConfig { Header = "Account Name", PropertyName = "accountname" });
+            cols.Add(new ColumnConfig { Header = "Tran ID", PropertyName = "tranid" });
+            cols.Add(new ColumnConfig { Header = "Tran Date", PropertyName = "trandate", IsDate = true, Format = "dd/MM/yyyy" });
+            cols.Add(new ColumnConfig { Header = "Value Date", PropertyName = "valuedate", IsDate = true, Format = "dd/MM/yyyy" });
+            cols.Add(new ColumnConfig { Header = "Tran Narration", PropertyName = "trannarration" });
+            cols.Add(new ColumnConfig { Header = "Tran Amount", PropertyName = "tranamount", IsNumeric = true, Format = "N2" });
+            cols.Add(new ColumnConfig { Header = "Outstanding", PropertyName = "outstanding", IsNumeric = true, Format = "N2" });
+            cols.Add(new ColumnConfig { Header = "Pending Days", PropertyName = "AgeInDays", IsNumeric = true, Format = "N0" });
+        }
+
+        return cols;
+    }
+
+    // Helper methods for formatting
+    private string GetValue(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var v) && v != null && v != DBNull.Value)
+            return v.ToString()!;
+        return "—";
+    }
+
+    private string FormatDate(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var v) || v == null || v == DBNull.Value)
+            return "—";
+
+        // If already formatted as string, return as is
+        return v.ToString()!;
+    }
+
+    private string FormatAmount(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var v) || v == null || v == DBNull.Value)
+            return "—";
+
+        if (decimal.TryParse(v.ToString(), out var d))
+            return d.ToString("N2");
+
+        return v.ToString()!;
+    }
+
+    private string FormatNumber(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var v) || v == null || v == DBNull.Value)
+            return "—";
+
+        if (decimal.TryParse(v.ToString(), out var d))
+            return d.ToString("N0");
+
+        return v.ToString()!;
+    }
+}

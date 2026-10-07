@@ -1,0 +1,234 @@
+/* ================================================================
+   FOCUS 360 — Standalone CSS
+   Copy into your project's site.css (or import as a separate file).
+   All classes are prefixed with "f360-" to avoid conflicts.
+   ================================================================ */
+
+/* ── Info label / value pairs (Branch Details section) ───────── */
+.f360-info-lbl { font-size: 11px; font-weight: 600; color: #59636e; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.f360-info-val { font-size: 13px; font-weight: 600; color: #1f2328; }
+
+/* ── Staff grade chips ────────────────────────────────────────── */
+.f360-grade-code  { font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; }
+.f360-grade-count { font-size: 20px; font-weight: 700; color: #1f2328; }
+
+.f360-staff-chip {
+    background: #fff; border: 1px solid #BBDEFB;
+    border-radius: 8px; padding: 6px 12px;
+    text-align: center; min-width: 52px;
+}
+.f360-staff-zero  { opacity: .45; }
+.f360-staff-total { background: #E3F2FD; border-color: #1565C0; }
+.f360-staff-peb   { background: #E8F5E9; border-color: #2E7D32; }
+.f360-staff-chip  .f360-grade-code  { font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; }
+.f360-staff-total .f360-grade-code  { color: #0D47A1; }
+.f360-staff-peb   .f360-grade-code  { color: #1B5E20; }
+.f360-staff-chip  .f360-grade-count { font-size: 18px; font-weight: 800; color: #1f2328; }
+.f360-staff-total .f360-grade-count { color: #0D47A1; }
+.f360-staff-peb   .f360-grade-count { color: #1B5E20; }
+
+/* ── Section header band ──────────────────────────────────────── */
+.f360-sec-hdr {
+    display: flex; align-items: center;
+    padding: 8px 14px; color: #fff;
+    font-size: 13px; font-weight: 700;
+    letter-spacing: .01em; min-height: 36px;
+}
+.f360-sec-sub { font-size: 11px; opacity: .75; font-weight: 400; }
+
+/* Sub-section header (inside section) */
+.f360-subsec-hdr { padding: 4px 10px; font-size: 11px; font-weight: 700; color: #fff; letter-spacing: .3px; }
+
+/* ── Performance pivot table ──────────────────────────────────── */
+.f360-perf-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.f360-perf-table thead tr    { background: #1E3A8A; color: #fff; }
+.f360-perf-table thead th    { padding: 8px 10px; text-align: right; font-weight: 600; font-size: 11.5px; white-space: nowrap; border-right: 1px solid rgba(255,255,255,.15); }
+.f360-perf-table thead th:first-child { text-align: left; }
+.f360-perf-table tbody tr    { border-bottom: 1px solid #eaecef; transition: background .1s; }
+.f360-perf-table tbody tr:hover { background: #f6f8fa; }
+.f360-perf-table tbody td    { padding: 7px 10px; text-align: right; color: #1f2328; font-size: 12px; }
+.f360-perf-table tbody td:first-child { text-align: left; background: #fafbfc; border-right: 1px solid #eaecef; min-width: 160px; }
+
+/* Variance colours */
+.f360-neg { color: #cf222e !important; font-weight: 600; }
+.f360-pos { color: #1a7f37 !important; }
+
+/* Category header row inside table */
+.f360-perf-table .f360-cat-row td { font-weight: 700; padding: 5px 10px; font-size: 12px; color: #fff; }
+
+/* ── Inner table (compact, used inside every section) ─────────── */
+.f360-inner-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.f360-inner-table thead tr th {
+    background: #ECEFF1; color: #37474F; font-weight: 700;
+    padding: 5px 8px; text-align: right; border-bottom: 2px solid #B0BEC5;
+    white-space: nowrap;
+}
+.f360-inner-table thead tr th:first-child { text-align: left; }
+.f360-inner-table tbody tr td  { padding: 4px 8px; text-align: right; border-bottom: 1px solid #ECEFF1; }
+.f360-inner-table tbody tr td.f360-lbl { text-align: left; font-weight: 600; color: #37474F; }
+.f360-inner-table tbody tr:last-child td { border-bottom: none; }
+
+/* Utility classes */
+.f360-full-table { width: 100%; }
+.f360-alt-row    { background: #F5F5F5; }
+
+/* ── Metric card (used for individual KPI cards where needed) ──── */
+.f360-metric-card {
+    display: flex; flex-direction: column;
+    min-width: 130px; max-width: 200px;
+    padding: 8px 12px; border-radius: 6px;
+    border: 1px solid rgba(0,0,0,.08);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.f360-metric-name   { font-size: 11px; color: #546E7A; font-weight: 600; line-height: 1.3; margin-bottom: 4px; }
+.f360-metric-value  { font-size: 16px; font-weight: 700; color: #1A237E; line-height: 1.2; }
+.f360-metric-target { font-size: 10px; color: #78909C; margin-top: 2px; }
+
+/* ── Page hero header ─────────────────────────────────────────── */
+.f360-page-hero {
+    background: linear-gradient(135deg, #1E3A8A 0%, #4A148C 100%);
+    border-radius: 10px; padding: 16px 22px;
+    color: #fff; box-shadow: 0 4px 14px rgba(30,58,138,.20);
+}
+.f360-hero-breadcrumbs {
+    display: flex; align-items: center; gap: 6px;
+    color: rgba(255,255,255,.90); font-size: 13px; margin-bottom: 6px;
+}
+.f360-hero-sep  { opacity: .60; }
+.f360-hero-link { color: rgba(255,255,255,.90) !important; text-decoration: none; }
+.f360-hero-link:hover { text-decoration: underline; }
+.f360-hero-title { font-size: 20px; font-weight: 700; color: #fff; margin: 0; letter-spacing: -.005em; }
+.f360-hero-sub   { font-size: 12px; color: rgba(255,255,255,.80); margin-top: 4px; }
+
+/* ── Filter row ───────────────────────────────────────────────── */
+.f360-filter-row {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+}
+.f360-filter-branch { min-width: 260px; flex: 1; }
+.f360-filter-fy     { min-width: 130px; }
+.f360-filter-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.f360-export-divider { width: 1px; height: 28px; background: #d0d7de; margin: 0 4px; }
+
+/* ── Sidebar nav highlight for Focus 360 ─────────────────────── */
+.rp-navlink-focus360 {
+    background: linear-gradient(90deg, rgba(30,58,138,.06), transparent) !important;
+    border-left: 2px solid #1E3A8A !important;
+    margin-left: 6px !important;
+}
+.rp-navlink-focus360.active,
+.rp-navlink-focus360:hover {
+    background: linear-gradient(90deg, rgba(30,58,138,.12), transparent) !important;
+}
+.rp-navlink-focus360 .mud-icon-root { color: #1E3A8A !important; }
+
+/* ── Operations Dashboard Panel ───────────────────────────────── */
+.f360-ops-panel {
+    width: 100%;
+    border: 1px solid #CFD8DC;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.f360-ops-subheader {
+    padding: 5px 10px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: .02em;
+}
+
+.f360-ops-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+}
+
+.f360-ops-table thead tr {
+    background: #ECEFF1;
+}
+
+.f360-ops-table thead th {
+    padding: 5px 8px;
+    text-align: right;
+    font-weight: 600;
+    font-size: 10.5px;
+    color: #37474F;
+    border-bottom: 2px solid #B0BEC5;
+    white-space: nowrap;
+}
+
+.f360-ops-table thead th:first-child {
+    text-align: left;
+}
+
+.f360-ops-table tbody tr {
+    border-bottom: 1px solid #ECEFF1;
+    transition: background .1s;
+}
+
+.f360-ops-table tbody tr:hover {
+    background: #f6f8fa;
+}
+
+.f360-ops-table tbody td {
+    padding: 4px 8px;
+    text-align: right;
+    font-size: 11px;
+    color: #1f2328;
+}
+
+.f360-ops-table tbody td.lbl {
+    text-align: left;
+    font-weight: 600;
+    color: #37474F;
+    white-space: nowrap;
+}
+
+.f360-ops-table tbody td.today-col {
+    /*background: #F1F8E9;*/
+    font-weight: 600;
+}
+
+.f360-ops-table .section-header-row td {
+    font-size: 11px;
+    padding: 3px 8px;
+}
+
+.f360-ops-table .var-row td {
+    font-size: 10.5px;
+    /*background: #FFF3CD;*/
+    padding: 3px 8px;
+}
+
+.f360-ops-table .loan-marker {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 10px;
+    line-height: 16px;
+    margin-right: 4px;
+}
+
+.f360-ops-table .loan-marker-l {
+    background: #558B2F;
+    color: #fff;
+}
+
+.f360-ops-table .loan-marker-d {
+    background: #03A9F4;
+    color: #fff;
+}
+
+/* ── Mobile overrides ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+    .f360-perf-table thead th,
+    .f360-perf-table tbody td { padding: 5px 7px; font-size: 11px; }
+    .f360-filter-row           { flex-direction: column; }
+    .f360-filter-branch, .f360-filter-fy { min-width: 100%; }
+    .f360-ops-table thead th,
+    .f360-ops-table tbody td { padding: 3px 5px; font-size: 10px; }
+}

@@ -1,0 +1,109 @@
+@page "/deposits/my"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IBackDatedDepositRepo DepositRepo
+@inject IBackDatedDepositWorkflowService WorkflowService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>My Proposals - Back-Dated Deposit Approvals</PageTitle>
+<PageHeader Title="My Proposals" Subtitle="Proposals you've submitted from your branch." Crumbs="_crumbs" PageKey="bdd-my" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="_proposals" Hover="true" Dense="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>Ref No</MudTh><MudTh>Type</MudTh><MudTh>Purpose</MudTh><MudTh>Customer</MudTh>
+            <MudTh>Status</MudTh><MudTh>Pending At</MudTh><MudTh>Submitted</MudTh><MudTh>Action</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.RefNo</MudTd>
+            <MudTd>@context.DepositType</MudTd>
+            <MudTd>@context.Purpose</MudTd>
+            <MudTd>@context.CustomerName</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.Status</MudChip></MudTd>
+            <MudTd>@context.PendingLevel</MudTd>
+            <MudTd>@context.CreatedAt.ToString("dd-MMM-yyyy")</MudTd>
+            <MudTd>
+                @if (context.Status is DepositProposalStatus.RoReturned or DepositProposalStatus.RoClarificationSought)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => OpenResubmit(context))">Resubmit</MudButton>
+                }
+                <MudIconButton Icon="@Icons.Material.Filled.History" Size="Size.Small" OnClick="@(() => Nav.NavigateTo($"deposits/audit-trail?ref={context.RefNo}"))" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@if (_resubmitTarget is not null)
+{
+    <MudDialog Visible="true" Options="new DialogOptions{MaxWidth=MaxWidth.Small, FullWidth=true}" VisibleChanged="@((bool v) => { if (!v) _resubmitTarget = null; })">
+        <TitleContent>Resubmit @_resubmitTarget.RefNo</TitleContent>
+        <DialogContent>
+            <MudTextField @bind-Value="_resubmitReason" Label="Updated Reason" Lines="4" Variant="Variant.Outlined" />
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _resubmitTarget = null)">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="DoResubmitAsync">Resubmit</MudButton>
+        </DialogActions>
+    </MudDialog>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("My Proposals") };
+    private bool _loading = true;
+    private IReadOnlyList<BackDatedDepositProposal> _proposals = Array.Empty<BackDatedDepositProposal>();
+    private BackDatedDepositProposal? _resubmitTarget;
+    private string _resubmitReason = "";
+    private string _empId = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var branchSolId = state.User.FindFirst("branch_solid")?.Value ?? "";
+        _empId = state.User.FindFirst("emplid")?.Value ?? "";
+        _proposals = await DepositRepo.ListByBranchAsync(branchSolId);
+        _loading = false;
+    }
+
+    private void OpenResubmit(BackDatedDepositProposal p)
+    {
+        _resubmitTarget = p;
+        _resubmitReason = p.Reason;
+    }
+
+    private async Task DoResubmitAsync()
+    {
+        if (_resubmitTarget is null) return;
+        try
+        {
+            var accounts = await DepositRepo.ListAccountsAsync(_resubmitTarget.Id);
+            await WorkflowService.ResubmitAsync(_resubmitTarget.Id, _resubmitTarget.RowVersion, _empId, accounts, _resubmitReason);
+            Snackbar.Add("Proposal resubmitted to RO.", Severity.Success);
+            _resubmitTarget = null;
+            _proposals = await DepositRepo.ListByBranchAsync(_proposals.FirstOrDefault()?.BranchSolId ?? "");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private static Color StatusColor(DepositProposalStatus s) => s switch
+    {
+        DepositProposalStatus.Sanctioned => Color.Success,
+        DepositProposalStatus.Rejected => Color.Error,
+        DepositProposalStatus.RoReturned or DepositProposalStatus.RoClarificationSought
+            or DepositProposalStatus.ZoReturned or DepositProposalStatus.ZoClarificationSought
+            or DepositProposalStatus.DmdReturned or DepositProposalStatus.DmdClarificationSought => Color.Warning,
+        _ => Color.Info
+    };
+}

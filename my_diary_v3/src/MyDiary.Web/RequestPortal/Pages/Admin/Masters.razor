@@ -1,0 +1,516 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/masters"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "SuperAdmin")]
+@using RequestPortal.Web.Pages.Admin.Dialogs
+@inject IMasterRepo MasterRepo
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject ICurrentUser CurrentUser
+@inject IAuditService AuditSvc
+
+<PageTitle>Request Portal Masters</PageTitle>
+
+<PageHeader PageKey="admin-masters" Title="Request Portal Masters" Crumbs="_crumbs" />
+
+<SuperAdminOnly>
+<MudPaper Elevation="1" Class="pa-2">
+    <MudTabs Outlined="true" Position="Position.Top" Rounded="true" KeepPanelsAlive="true" PanelClass="pa-3">
+
+        <!-- Request types -->
+        <MudTabPanel Text="Request types">
+            <div class="d-flex justify-end mb-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddRequestType">Add</MudButton>
+            </div>
+            <MudTable Items="@_requestTypes" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Active</MudTh>
+                    <MudTh>Availability</MudTh>
+                    <MudTh>Created At</MudTh><MudTh>Modified At</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Code</MudTd>
+                    <MudTd>@context.Name</MudTd>
+                    <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                    <MudTd DataLabel="Availability" Style="min-width:150px">
+                        <MudSelect T="string" Value="@context.EntryMode" Dense="true" Margin="Margin.Dense"
+                                   Variant="Variant.Outlined"
+                                   ValueChanged="@(v => SaveEntryMode(context, v))" aria-label="Entry mode">
+                            <MudSelectItem T="string" Value="@("BOTH")">API &amp; Manual</MudSelectItem>
+                            <MudSelectItem T="string" Value="@("MANUAL")">Manual only</MudSelectItem>
+                            <MudSelectItem T="string" Value="@("API")">API only</MudSelectItem>
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd><small style="color:#666">@(context.CreatedAt.HasValue ? AppTime.ToIndia(context.CreatedAt.Value).ToString("yyyy-MM-dd HH:mm") : "—")</small></MudTd>
+                    <MudTd><small style="color:#666">@(context.ModifiedAt.HasValue ? AppTime.ToIndia(context.ModifiedAt.Value).ToString("yyyy-MM-dd HH:mm") : "—")</small></MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditRequestType(context))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       OnClick="@(() => ToggleRequestTypeActive(context))" aria-label="Deactivate" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- Unit types -->
+        <MudTabPanel Text="Unit types">
+            <div class="d-flex justify-end mb-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddUnitType">Add</MudButton>
+            </div>
+            <MudTable Items="@_unitTypes" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Active</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Code</MudTd>
+                    <MudTd>@context.Name</MudTd>
+                    <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditUnitType(context))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       OnClick="@(() => ToggleUnitTypeActive(context))" aria-label="Deactivate" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- Verticals -->
+        <MudTabPanel Text="Verticals">
+            <div class="d-flex justify-end mb-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddVertical">Add</MudButton>
+            </div>
+            <MudTable Items="@_verticals" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Active</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Code</MudTd>
+                    <MudTd>@context.Name</MudTd>
+                    <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditVertical(context))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       OnClick="@(() => ToggleVerticalActive(context))" aria-label="Deactivate" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- Units -->
+        <MudTabPanel Text="Units">
+            <div class="d-flex justify-end mb-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddUnit">Add</MudButton>
+            </div>
+            <MudTable Items="@_units" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Unit type</MudTh>
+                    <MudTh>Parent</MudTh><MudTh>Active</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Code</MudTd>
+                    <MudTd>@context.Name</MudTd>
+                    <MudTd>@(_unitTypes.FirstOrDefault(x => x.Id == context.UnitTypeId)?.Name)</MudTd>
+                    <MudTd>@(context.ParentUnitId is null ? "—" : _units.FirstOrDefault(x => x.Id == context.ParentUnitId)?.Name)</MudTd>
+                    <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditUnit(context))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       OnClick="@(() => ToggleUnitActive(context))" aria-label="Deactivate" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- Departments -->
+        <MudTabPanel Text="Departments">
+            <div class="d-flex justify-end mb-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddDepartment">Add</MudButton>
+            </div>
+            <MudTable Items="@_departments" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Vertical</MudTh>
+                    <MudTh>Active</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Code</MudTd>
+                    <MudTd>@context.Name</MudTd>
+                    <MudTd>@(_verticals.FirstOrDefault(x => x.Id == context.VerticalId)?.Name)</MudTd>
+                    <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditDepartment(context))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       OnClick="@(() => ToggleDepartmentActive(context))" aria-label="Deactivate" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- Activities -->
+        <MudTabPanel Text="Activities">
+            <div class="d-flex justify-end mb-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddActivity">Add</MudButton>
+            </div>
+            <MudTable Items="@_activities" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Code</MudTh><MudTh>Name</MudTh><MudTh>Department</MudTh>
+                    <MudTh>Active</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Code</MudTd>
+                    <MudTd>@context.Name</MudTd>
+                    <MudTd>@(_departments.FirstOrDefault(x => x.Id == context.DepartmentId)?.Name)</MudTd>
+                    <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditActivity(context))" aria-label="Edit" />
+                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                       Size="Size.Small" Color="@(context.IsActive ? Color.Warning : Color.Success)"
+                                       OnClick="@(() => ToggleActivityActive(context))" aria-label="Deactivate" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudTabPanel>
+
+    </MudTabs>
+</MudPaper>
+</SuperAdminOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("Masters"),
+    };
+
+    private List<RequestType> _requestTypes = new();
+    private List<UnitType> _unitTypes = new();
+    private List<Vertical> _verticals = new();
+    private List<Unit> _units = new();
+    private List<Department> _departments = new();
+    private List<Activity> _activities = new();
+
+    protected override async Task OnInitializedAsync() => await ReloadAllAsync();
+
+    private async Task ReloadAllAsync()
+    {
+        var rtTask   = MasterRepo.ListRequestTypesAllAsync();
+        var utTask   = MasterRepo.ListUnitTypesAllAsync();
+        var vTask    = MasterRepo.ListVerticalsAllAsync();
+        var uTask    = MasterRepo.ListUnitsAllAsync(null);
+        var dTask    = MasterRepo.ListDepartmentsAllAsync(null);
+        var aTask    = MasterRepo.ListActivitiesAllAsync(null);
+
+        await Task.WhenAll(rtTask, utTask, vTask, uTask, dTask, aTask);
+
+        _requestTypes = rtTask.Result.ToList();
+        _unitTypes    = utTask.Result.ToList();
+        _verticals    = vTask.Result.ToList();
+        _units        = uTask.Result.ToList();
+        _departments  = dTask.Result.ToList();
+        _activities   = aTask.Result.ToList();
+    }
+
+    // ----- Request type --------------------------------------------------
+    private Task AddRequestType() => OpenSimpleAsync("Add request type", "", "", true,
+        async f =>
+        {
+            var now = DateTime.UtcNow;
+            var m = new RequestType { Code = f.Code, Name = f.Name, IsActive = f.IsActive,
+                CreatedByUserId = CurrentUser.UserId, CreatedAt = now };
+            var id = await MasterRepo.InsertRequestTypeAsync(m);
+            await AuditSvc.LogAsync(AuditEntityNames.RequestType, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { m.Code, m.Name, m.IsActive });
+            Snackbar.Add("Request type added.", Severity.Success);
+        });
+
+    private Task EditRequestType(RequestType m) => OpenSimpleAsync("Edit request type", m.Code, m.Name, m.IsActive,
+        async f =>
+        {
+            var old = new { m.Code, m.Name, m.IsActive };
+            m.Code = f.Code; m.Name = f.Name; m.IsActive = f.IsActive;
+            m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+            await MasterRepo.UpdateRequestTypeAsync(m);
+            await AuditSvc.LogAsync(AuditEntityNames.RequestType, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { m.Code, m.Name, m.IsActive });
+            Snackbar.Add("Request type updated.", Severity.Success);
+        });
+
+    private async Task SaveEntryMode(RequestType m, string mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode) || mode == m.EntryMode) return;
+        var old = m.EntryMode;
+        m.EntryMode = mode;
+        m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+        await MasterRepo.UpdateRequestTypeAsync(m);
+        await AuditSvc.LogAsync(AuditEntityNames.RequestType, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode,
+            new { EntryMode = old }, new { m.EntryMode });
+        Snackbar.Add($"'{m.Name}' availability set to {mode}.", Severity.Success);
+    }
+
+    private async Task ToggleRequestTypeActive(RequestType m)
+    {
+        var action = m.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await MasterRepo.SetRequestTypeActiveAsync(m.Id, !m.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.RequestType, m.Id, action, CurrentUser.EmpCode, new { m.IsActive }, new { IsActive = !m.IsActive });
+        await ReloadAllAsync();
+    }
+
+    // ----- Unit type -----------------------------------------------------
+    private Task AddUnitType() => OpenSimpleAsync("Add unit type", "", "", true,
+        async f =>
+        {
+            var now = DateTime.UtcNow;
+            var m = new UnitType { Code = f.Code, Name = f.Name, IsActive = f.IsActive,
+                CreatedByUserId = CurrentUser.UserId, CreatedAt = now };
+            var id = await MasterRepo.InsertUnitTypeAsync(m);
+            await AuditSvc.LogAsync(AuditEntityNames.UnitType, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { m.Code, m.Name, m.IsActive });
+            Snackbar.Add("Unit type added.", Severity.Success);
+        });
+
+    private Task EditUnitType(UnitType m) => OpenSimpleAsync("Edit unit type", m.Code, m.Name, m.IsActive,
+        async f =>
+        {
+            var old = new { m.Code, m.Name, m.IsActive };
+            m.Code = f.Code; m.Name = f.Name; m.IsActive = f.IsActive;
+            m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+            await MasterRepo.UpdateUnitTypeAsync(m);
+            await AuditSvc.LogAsync(AuditEntityNames.UnitType, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { m.Code, m.Name, m.IsActive });
+            Snackbar.Add("Unit type updated.", Severity.Success);
+        });
+
+    private async Task ToggleUnitTypeActive(UnitType m)
+    {
+        var action = m.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await MasterRepo.SetUnitTypeActiveAsync(m.Id, !m.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.UnitType, m.Id, action, CurrentUser.EmpCode, new { m.IsActive }, new { IsActive = !m.IsActive });
+        await ReloadAllAsync();
+    }
+
+    // ----- Vertical ------------------------------------------------------
+    private Task AddVertical() => OpenSimpleAsync("Add vertical", "", "", true,
+        async f =>
+        {
+            var now = DateTime.UtcNow;
+            var m = new Vertical { Code = f.Code, Name = f.Name, IsActive = f.IsActive,
+                CreatedByUserId = CurrentUser.UserId, CreatedAt = now };
+            var id = await MasterRepo.InsertVerticalAsync(m);
+            await AuditSvc.LogAsync(AuditEntityNames.Vertical, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { m.Code, m.Name, m.IsActive });
+            Snackbar.Add("Vertical added.", Severity.Success);
+        });
+
+    private Task EditVertical(Vertical m) => OpenSimpleAsync("Edit vertical", m.Code, m.Name, m.IsActive,
+        async f =>
+        {
+            var old = new { m.Code, m.Name, m.IsActive };
+            m.Code = f.Code; m.Name = f.Name; m.IsActive = f.IsActive;
+            m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+            await MasterRepo.UpdateVerticalAsync(m);
+            await AuditSvc.LogAsync(AuditEntityNames.Vertical, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { m.Code, m.Name, m.IsActive });
+            Snackbar.Add("Vertical updated.", Severity.Success);
+        });
+
+    private async Task ToggleVerticalActive(Vertical m)
+    {
+        var action = m.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await MasterRepo.SetVerticalActiveAsync(m.Id, !m.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.Vertical, m.Id, action, CurrentUser.EmpCode, new { m.IsActive }, new { IsActive = !m.IsActive });
+        await ReloadAllAsync();
+    }
+
+    // ----- Unit ----------------------------------------------------------
+    private async Task AddUnit()
+    {
+        var parameters = new DialogParameters
+        {
+            ["UnitTypes"] = _unitTypes,
+            ["Units"] = _units,
+            ["EditingId"] = 0L,
+            ["IsActive"] = true
+        };
+        var dlg = await Dialogs.ShowAsync<UnitDialog>("Add unit", parameters);
+        var result = await dlg.Result;
+        if (result.Canceled || result.Data is not UnitDialog.UnitFormResult f) return;
+        var now = DateTime.UtcNow;
+        var unit = new Unit
+        {
+            UnitTypeId = f.UnitTypeId, ParentUnitId = f.ParentUnitId,
+            Code = f.Code, Name = f.Name, IsActive = f.IsActive,
+            CreatedByUserId = CurrentUser.UserId, CreatedAt = now
+        };
+        var id = await MasterRepo.InsertUnitAsync(unit);
+        await AuditSvc.LogAsync(AuditEntityNames.Unit, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { unit.Code, unit.Name, unit.UnitTypeId, unit.ParentUnitId });
+        Snackbar.Add("Unit added.", Severity.Success);
+        await ReloadAllAsync();
+    }
+
+    private async Task EditUnit(Unit m)
+    {
+        var parameters = new DialogParameters
+        {
+            ["UnitTypes"] = _unitTypes,
+            ["Units"] = _units,
+            ["EditingId"] = m.Id,
+            ["UnitTypeId"] = (long?)m.UnitTypeId,
+            ["ParentUnitId"] = m.ParentUnitId,
+            ["Code"] = m.Code,
+            ["Name"] = m.Name,
+            ["IsActive"] = m.IsActive
+        };
+        var dlg = await Dialogs.ShowAsync<UnitDialog>("Edit unit", parameters);
+        var result = await dlg.Result;
+        if (result.Canceled || result.Data is not UnitDialog.UnitFormResult f) return;
+        var old = new { m.Code, m.Name, m.UnitTypeId, m.ParentUnitId, m.IsActive };
+        m.UnitTypeId = f.UnitTypeId; m.ParentUnitId = f.ParentUnitId;
+        m.Code = f.Code; m.Name = f.Name; m.IsActive = f.IsActive;
+        m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+        await MasterRepo.UpdateUnitAsync(m);
+        await AuditSvc.LogAsync(AuditEntityNames.Unit, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { m.Code, m.Name, m.UnitTypeId, m.ParentUnitId, m.IsActive });
+        Snackbar.Add("Unit updated.", Severity.Success);
+        await ReloadAllAsync();
+    }
+
+    private async Task ToggleUnitActive(Unit m)
+    {
+        var action = m.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await MasterRepo.SetUnitActiveAsync(m.Id, !m.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.Unit, m.Id, action, CurrentUser.EmpCode, new { m.IsActive }, new { IsActive = !m.IsActive });
+        await ReloadAllAsync();
+    }
+
+    // ----- Department ----------------------------------------------------
+    private async Task AddDepartment()
+    {
+        var parameters = new DialogParameters { ["Verticals"] = _verticals, ["IsActive"] = true };
+        var dlg = await Dialogs.ShowAsync<DepartmentDialog>("Add department", parameters);
+        var result = await dlg.Result;
+        if (result.Canceled || result.Data is not DepartmentDialog.DepartmentFormResult f) return;
+        var now = DateTime.UtcNow;
+        var dept = new Department
+        {
+            VerticalId = f.VerticalId, Code = f.Code, Name = f.Name, IsActive = f.IsActive,
+            CreatedByUserId = CurrentUser.UserId, CreatedAt = now
+        };
+        var id = await MasterRepo.InsertDepartmentAsync(dept);
+        await AuditSvc.LogAsync(AuditEntityNames.Department, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { dept.Code, dept.Name, dept.VerticalId });
+        Snackbar.Add("Department added.", Severity.Success);
+        await ReloadAllAsync();
+    }
+
+    private async Task EditDepartment(Department m)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Verticals"] = _verticals,
+            ["VerticalId"] = (long?)m.VerticalId,
+            ["Code"] = m.Code,
+            ["Name"] = m.Name,
+            ["IsActive"] = m.IsActive
+        };
+        var dlg = await Dialogs.ShowAsync<DepartmentDialog>("Edit department", parameters);
+        var result = await dlg.Result;
+        if (result.Canceled || result.Data is not DepartmentDialog.DepartmentFormResult f) return;
+        var old = new { m.Code, m.Name, m.VerticalId, m.IsActive };
+        m.VerticalId = f.VerticalId; m.Code = f.Code; m.Name = f.Name; m.IsActive = f.IsActive;
+        m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+        await MasterRepo.UpdateDepartmentAsync(m);
+        await AuditSvc.LogAsync(AuditEntityNames.Department, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { m.Code, m.Name, m.VerticalId, m.IsActive });
+        Snackbar.Add("Department updated.", Severity.Success);
+        await ReloadAllAsync();
+    }
+
+    private async Task ToggleDepartmentActive(Department m)
+    {
+        var action = m.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await MasterRepo.SetDepartmentActiveAsync(m.Id, !m.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.Department, m.Id, action, CurrentUser.EmpCode, new { m.IsActive }, new { IsActive = !m.IsActive });
+        await ReloadAllAsync();
+    }
+
+    // ----- Activity ------------------------------------------------------
+    private async Task AddActivity()
+    {
+        var parameters = new DialogParameters { ["Departments"] = _departments, ["IsActive"] = true };
+        var dlg = await Dialogs.ShowAsync<ActivityDialog>("Add activity", parameters);
+        var result = await dlg.Result;
+        if (result.Canceled || result.Data is not ActivityDialog.ActivityFormResult f) return;
+        var now = DateTime.UtcNow;
+        var act = new Activity
+        {
+            DepartmentId = f.DepartmentId, Code = f.Code, Name = f.Name, IsActive = f.IsActive,
+            CreatedByUserId = CurrentUser.UserId, CreatedAt = now
+        };
+        var id = await MasterRepo.InsertActivityAsync(act);
+        await AuditSvc.LogAsync(AuditEntityNames.Activity, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { act.Code, act.Name, act.DepartmentId });
+        Snackbar.Add("Activity added.", Severity.Success);
+        await ReloadAllAsync();
+    }
+
+    private async Task EditActivity(Activity m)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Departments"] = _departments,
+            ["DepartmentId"] = (long?)m.DepartmentId,
+            ["Code"] = m.Code,
+            ["Name"] = m.Name,
+            ["IsActive"] = m.IsActive
+        };
+        var dlg = await Dialogs.ShowAsync<ActivityDialog>("Edit activity", parameters);
+        var result = await dlg.Result;
+        if (result.Canceled || result.Data is not ActivityDialog.ActivityFormResult f) return;
+        var old = new { m.Code, m.Name, m.DepartmentId, m.IsActive };
+        m.DepartmentId = f.DepartmentId; m.Code = f.Code; m.Name = f.Name; m.IsActive = f.IsActive;
+        m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+        await MasterRepo.UpdateActivityAsync(m);
+        await AuditSvc.LogAsync(AuditEntityNames.Activity, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { m.Code, m.Name, m.DepartmentId, m.IsActive });
+        Snackbar.Add("Activity updated.", Severity.Success);
+        await ReloadAllAsync();
+    }
+
+    private async Task ToggleActivityActive(Activity m)
+    {
+        var action = m.IsActive ? AuditEntityNames.ActionDeactivate : AuditEntityNames.ActionActivate;
+        await MasterRepo.SetActivityActiveAsync(m.Id, !m.IsActive);
+        await AuditSvc.LogAsync(AuditEntityNames.Activity, m.Id, action, CurrentUser.EmpCode, new { m.IsActive }, new { IsActive = !m.IsActive });
+        await ReloadAllAsync();
+    }
+
+    // ----- Shared simple-master dialog opener ----------------------------
+    private async Task OpenSimpleAsync(string title, string code, string name, bool isActive, Func<SimpleMasterDialog.MasterFormResult, Task> onSave)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Code"] = code,
+            ["Name"] = name,
+            ["IsActive"] = isActive
+        };
+        var dlg = await Dialogs.ShowAsync<SimpleMasterDialog>(title, parameters);
+        var result = await dlg.Result;
+        if (result.Canceled || result.Data is not SimpleMasterDialog.MasterFormResult f) return;
+        try
+        {
+            await onSave(f);
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Masters: save failed — {ex.Message}");
+            AppLogger.LogError(ex, "Masters: save failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+}

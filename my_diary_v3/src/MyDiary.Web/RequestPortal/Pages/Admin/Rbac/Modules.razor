@@ -1,0 +1,172 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@page "/admin/rbac/modules"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IRbacRepo Repo
+@inject IRbacService Rbac
+@inject ICurrentUser Me
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Modules &amp; Sub-modules</PageTitle>
+
+<PageHeader PageKey="rbac-modules" Title="Modules & Sub-modules" Subtitle="Top-level modules group sub-modules; permissions are granted at the leaf"
+            Crumbs="_crumbs">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => OpenEdit(null, null))">Add Top-level Module</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudPaper Elevation="1" Class="pa-3">
+    @if (_roots.Count == 0)
+    {
+        <MudText>No modules yet.</MudText>
+    }
+    else
+    {
+        <MudExpansionPanels MultiExpansion="true">
+            @foreach (var root in _roots)
+            {
+                var current = root;
+                var children = _all.Where(c => c.ParentId == current.Id).OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToList();
+                <MudExpansionPanel IsInitiallyExpanded="true" Class="mb-1">
+                    <TitleContent>
+                        @RenderRow(current, isRoot: true)
+                    </TitleContent>
+                    <ChildContent>
+                        @if (children.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="ml-4">No sub-modules.</MudText>
+                        }
+                        else
+                        {
+                            <MudList T="AppModule" Dense="true">
+                                @foreach (var child in children)
+                                {
+                                    <MudListItem T="AppModule" Value="@child">
+                                        <ChildContent>@RenderRow(child, isRoot: false)</ChildContent>
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        }
+                    </ChildContent>
+                </MudExpansionPanel>
+            }
+        </MudExpansionPanels>
+    }
+</MudPaper>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Administration"),
+        new("Modules & Sub-modules"),
+    };
+
+    private List<AppModule> _all = new();
+    private List<AppModule> _roots = new();
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _all = (await Repo.ListModulesAsync()).ToList();
+        _roots = _all.Where(m => m.ParentId is null).OrderBy(m => m.SortOrder).ThenBy(m => m.Name).ToList();
+    }
+
+    private RenderFragment RenderRow(AppModule m, bool isRoot) => __builder =>
+    {
+        <div class="d-flex align-center" style="width:100%;">
+            <MudIcon Icon="@(string.IsNullOrEmpty(m.Icon) ? Icons.Material.Filled.Folder : ResolveIcon(m.Icon))" Size="Size.Small" Class="mr-2" />
+            <MudText Typo="@(isRoot ? Typo.subtitle1 : Typo.body1)">@m.Name</MudText>
+            <MudChip T="string" Size="Size.Small" Color="@KindColor(m.Kind)" Class="ml-2">@m.Kind</MudChip>
+            <small style="color:#888;margin-left:8px;">@m.Code</small>
+            @if (!m.IsActive)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">inactive</MudChip>
+            }
+            <MudSpacer />
+            @if (isRoot)
+            {
+                <MudTooltip Text="Add sub-module">
+                    <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
+                                   OnClick="@(() => OpenEdit(null, m))" />
+                </MudTooltip>
+            }
+            <MudTooltip Text="Edit">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => OpenEdit(m, null))" aria-label="Edit" />
+            </MudTooltip>
+            <MudTooltip Text="Soft-delete (deactivate)">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => Delete(m))" aria-label="Delete" />
+            </MudTooltip>
+        </div>
+    };
+
+    private async Task OpenEdit(AppModule? existing, AppModule? parent)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Editing"] = existing,
+            ["Parent"]  = parent,
+            ["Roots"]   = _roots
+        };
+        var dlg = await Dialogs.ShowAsync<ModuleDialog>(existing is null ? "Add Module" : "Edit Module", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var res = await dlg.Result;
+        if (res?.Canceled == false && res.Data is AppModule edited)
+        {
+            try
+            {
+                var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+                var user = authState.User;
+
+                var emplId = user.FindFirst("emplid")?.Value;
+
+                await Rbac.UpsertModuleAsync(emplId ?? "", edited);
+                Snackbar.Add(existing is null ? "Module created" : "Module updated", Severity.Success);
+                await ReloadAsync();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Snackbar.Add("Application Admin or SuperAdmin required", Severity.Error);
+            }
+        }
+    }
+
+    private async Task Delete(AppModule m)
+    {
+        var ok = await Dialogs.ShowMessageBox("Deactivate module",
+            $"Soft-delete module \"{m.Name}\" ({m.Code})? Permissions referencing it will be ignored until reactivated.",
+            yesText: "Deactivate", cancelText: "Cancel");
+        if (ok != true) return;
+        try
+        {
+            await Rbac.DeleteModuleAsync(Me.EmpCode ?? "", m.Id);
+            Snackbar.Add("Module deactivated", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Snackbar.Add("Application Admin or SuperAdmin required", Severity.Error);
+        }
+    }
+
+    private static Color KindColor(ModuleKind k) => k switch
+    {
+        ModuleKind.Transactional => Color.Primary,
+        ModuleKind.Inquiry       => Color.Info,
+        ModuleKind.Report        => Color.Secondary,
+        ModuleKind.MIS           => Color.Warning,
+        ModuleKind.Dashboard     => Color.Success,
+        _                        => Color.Default
+    };
+
+    private static string ResolveIcon(string name)
+    {
+        var f = typeof(Icons.Material.Filled).GetField(name);
+        return f?.GetValue(null) as string ?? Icons.Material.Filled.Folder;
+    }
+}

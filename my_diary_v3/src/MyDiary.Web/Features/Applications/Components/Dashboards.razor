@@ -1,0 +1,709 @@
+﻿@page "/Dashboards1"
+@page "/Dashboards1/{menu}"
+@using ApexCharts
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Features.Dashboards.Models
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MyDiary.Web.Features.Dashboards.Services
+@inject MyDiary.Web.Features.Dashboards.Services.IDashboardsService DashboardsServices
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject Extensions.NavState NavState
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+@using Microsoft.JSInterop
+@inject Microsoft.JSInterop.IJSRuntime JS
+@using System.Collections.Generic
+
+<style>
+    .card-height {
+        display: flex;
+        height: 75px;
+    }
+
+    .dash-subnav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 8px;
+        background: #ffffff;
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+    }
+
+    .tab-btn {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.08);
+        color: #1f2937;
+        padding: 8px 18px;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.25s ease;
+        text-transform: none !important;
+    }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+            color: #fff;
+            box-shadow: 0 10px 26px rgba(30,58,138,0.45);
+            border: none;
+        }
+
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 24px;
+    }
+
+    @@media (max-width: 1200px) {
+        .cards-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
+
+    @@media (max-width: 900px) {
+        .cards-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @@media (max-width: 600px) {
+        .cards-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .app-card {
+        /* card visuals */
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        padding: 20px 22px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        transition: all 0.25s ease;
+        /* equal height behavior */
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+        .app-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.15);
+        }
+
+    /* Separate the card into body (growing) and footer (fixed) */
+    .app-card__body {
+        flex: 1 1 auto; /* expand to fill available space */
+        min-height: 0; /* prevent overflow issues on small screens */
+    }
+
+    .app-card__footer {
+        margin-top: 12px;
+    }
+
+    /* Optional: clamp long titles to 2 lines to keep heights uniform */
+
+    .app-info-text {
+        font-size: 0.95rem;
+        color: #374151;
+        margin-bottom: 2px;
+        line-height: 1.4;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* IMPORTANT for flex children with text: allow shrinking/wrapping */
+    .text-container {
+        min-width: 0;
+    }
+
+    /* Title: allow wrapping, clamp to 2 lines with ellipsis */
+    .card-title {
+        font-weight: 700;
+        color: #111827;
+        /* multi-line clamp */
+        display: -webkit-box;
+        -webkit-line-clamp: 2; /* show up to 2 lines */
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        white-space: normal !important; /* override .app-info-text nowrap if both classes exist */
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+
+    /* Icon badge visual consistency */
+    .icon-badge {
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+    }
+
+    /* Divider */
+    .app-divider {
+        height: 1px;
+        background-color: #d1d5db;
+        margin: 10px 0;
+    }
+
+    /* GO button styling (reuse your gradient) */
+    .tab-btn.active {
+        background: var(--primary-gradient);
+        color: #fff;
+        box-shadow: 0 10px 26px rgba(30,58,138,0.45);
+        border: none;
+    }
+
+    .go-btn {
+        min-width: 90px;
+        letter-spacing: 1px;
+    }
+
+        .go-btn ::deep .mud-button-label {
+            font-weight: 800;
+        }
+    /* Place inside your of this component or a shared stylesheet */
+    .search-bar ::deep .mud-input-outlined-border {
+        border-radius: 12px !important;
+    }
+
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="12">
+
+        <div id="business-page-root" class="mb-4">
+
+
+            <MudPaper Elevation="0" Style="background-color: #ffffff;">
+                @* --- LEVEL 2: Sub-Navigation --- *@
+                @*  <div class="d-flex align-center justify-space-between mb-6 border-bottom">
+                <MudTabs Elevation="0" MinimumWidth="50px" ActivePanelIndexChanged="OnSubTabChanged" Class="sub-nav-tabs" SliderColor="MudBlazor.Color.Transparent">
+                @foreach (var sub in _subCategories)
+                {
+                <MudTabPanel Text="@sub" />
+                }
+                </MudTabs>
+                <div class="minimal-toggle-container">
+                <MudToggleGroup T="string" SelectionMode="SelectionMode.SingleSelection" @bind-Value="_currentView" Color="MudBlazor.Color.Dark" CheckMark="false" Class="custom-toggle">
+                <MudToggleItem Value="@("Terminal")" Text="Terminal" />
+                <MudToggleItem Value="@("Avg")" Text="Avg" />
+                </MudToggleGroup>
+                </div>
+                </div> *@
+                <MudCard Class="overflow-hidden h-100" Elevation="2" Style="border-top-left-radius: 10px; border-top-right-radius: 10px; border-bottom-left-radius: 0; border-bottom-right-radius: 0;">
+                    <MudCardHeader Class="d-flex align-center justify-center text-white"
+                                   Style="height:50px; font-weight:800; letter-spacing:.3px;
+                          background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                        @DisplayName
+                    </MudCardHeader>
+                </MudCard>
+                @* --- 2x2 Balanced Grid --- *@
+                <div class="dash-subnav">
+                    @foreach (var m in SubMenus)
+                    {
+                        var isActive = string.Equals(menu, m, StringComparison.OrdinalIgnoreCase)
+                        || (string.IsNullOrEmpty(menu) && m == "Alerts"); // when redirected
+                        <button class="@(isActive ? "tab-btn active" : "tab-btn")"
+                                @onclick="() => NavigateSubMenu(m)">
+                            @ToDisplay(m)
+                        </button>
+                    }
+                </div>
+                <MudGrid Class="mb-2 p-2">
+                    <!-- Left: View mode toggle -->
+                    <MudItem xs="12" md="6" class="d-flex align-end">
+                        <MudToggleGroup T="string"
+                                        @bind-Value="viewMode"
+                                        Delimiter="false"
+                                        Color="MudBlazor.Color.Info"
+                                        Rounded="true"
+                                        CheckIcon="@Icons.Material.Filled.ViewModule">
+                            <MudToggleItem T="string" Value='@("List")' Icon="@Icons.Material.Filled.List" />
+                            <MudToggleItem T="string" Value='@("Grid")' Icon="@Icons.Material.Filled.GridView" />
+                        </MudToggleGroup>
+                    </MudItem>
+
+                    <!-- Right: Search (Applications-like) -->
+                    <MudItem xs="12" md="6" class="d-flex justify-end align-end">
+                        <MudTextField @bind-Value="_searchText"
+                                      Immediate="true"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Adornment="Adornment.Start"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Placeholder="Search dashboards"
+                                      Class="search-bar" />
+                        @if (!string.IsNullOrWhiteSpace(_searchText))
+                        {
+                            <MudButton Variant="Variant.Text"
+                                       StartIcon="@Icons.Material.Filled.Clear"
+                                       Color="MudBlazor.Color.Default"
+                                       Class="ml-2"
+                                       OnClick="@(() => _searchText = string.Empty)">
+                                Clear
+                            </MudButton>
+                        }
+                    </MudItem>
+
+                    <!-- Optional: result counter -->
+                    <MudItem xs="12" class="d-flex justify-end">
+                        <MudText Typo="Typo.caption">
+                            Showing <b>@FilteredRecords.Count()</b> of <b>@(Records?.Count ?? 0)</b>
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
+
+
+
+                <MudGrid Spacing="1" Class="p-3 mb-5 pl-9">
+
+                    @if (viewMode == "Grid")
+                    {
+                        <MudGrid GutterSize="24px" Class="px-3 pb-4">
+                            @foreach (var record in FilteredRecords)
+                            {
+                                <!-- Make each grid item a flex column so the card can stretch -->
+                                <MudItem xs="12" sm="6" md="4" lg="4" xl="3" Class="d-flex">
+                                    <div class="app-card w-100" @onclick="() => RedirectTo(record)" role="button" tabindex="0">
+                                        <!-- BODY (grows) -->
+                                        <div class="app-card__body">
+                                            <div class="d-flex align-start gap-4">
+                                                <div class="icon-badge">
+                                                    <MudIcon Icon="@record.icons" Color="MudBlazor.Color.Success" Style="font-size: 2rem;" />
+                                                </div>
+
+                                                <!-- Add min-width:0 here so text can shrink/ellipsis inside flex -->
+                                                <div class="flex-grow-1 text-container">
+                                                    <div class="app-info-text card-title">@record.Name</div>
+                                                </div>
+                                            </div>
+                                            <div class="app-divider"></div>
+
+                                            <!-- Inline details previously on hover -->
+                                            <div class="d-flex flex-column gap-1">
+                                                <div class="app-info-text"><b>Owner Vertical:</b> @Show(record.OwnerVertical)</div>
+                                                <div class="app-info-text"><b>Source:</b> @Show(record.Source)</div>
+                                                <div class="app-info-text"><b>Frequency of Report updation:</b> @Show(record.FrequencyOfReportUpdation)</div>
+                                            </div>
+                                        </div>
+
+                                        <!-- FOOTER (fixed at bottom) -->
+                                        <div class="app-card__footer d-flex justify-end">
+                                            <MudButton Variant="Variant.Text"
+                                                       Class="tab-btn active go-btn"
+                                                       EndIcon="@Icons.Material.Filled.ArrowRightAlt"
+                                                       OnClick="() => RedirectTo(record)">
+                                                GO
+                                            </MudButton>
+                                        </div>
+                                    </div>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                    else
+                    {
+
+                        <MudTable T="RecordRow" Items="@IndexedRecords" Dense="true" Hover="true" Striped="true" Bordered="true">
+                            <HeaderContent>
+                                <MudTh Style="background-color:#2a2f5b; color:white; text-align:right;">S.No</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">
+                                    <MudTableSortLabel SortBy="new Func<RecordRow, object>(x => x.Item.Name)">Name</MudTableSortLabel>
+                                </MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Owner Vertical</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Source</MudTh>
+                                <MudTh Style="background-color:#2a2f5b; color:white;">Frequency</MudTh>
+                            </HeaderContent>
+
+                            <RowTemplate>
+                                <!-- S.No -->
+                                <MudTd Style="text-align:right;">@context.Index</MudTd>
+
+                                <!-- Name (clickable) -->
+                                <MudTd>
+                                    <a @onclick="() => RedirectTo(context.Item)"
+                                       style="color:#0b4ea2; cursor:pointer; text-decoration:none;">
+                                        @context.Item.Name
+                                    </a>
+                                </MudTd>
+
+                                <!-- Owner Vertical -->
+                                <MudTd>@Show(context.Item.OwnerVertical)</MudTd>
+
+                                <!-- Source -->
+                                <MudTd>@Show(context.Item.Source)</MudTd>
+
+                                <!-- Frequency -->
+                                <MudTd>@Show(context.Item.FrequencyOfReportUpdation)</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+
+
+                        @* <MudTable T="string">
+                    <RowTemplate>
+                    @foreach (var subChild in Records)
+                    {
+                    @* <MudListItem Text="@subChild.Name" Icon="@Icons.Material.Filled.Label" />
+                    <MudTd Style="text-align:right;">@subChild.Name</MudTd>
+                    <MudTd Style="text-align:right;">@subChild.DateOfData</MudTd>
+                    <MudTd Style="text-align:right;">@subChild.Location</MudTd>
+                    <MudTd Style="text-align:right;">@subChild.Owner</MudTd>
+                    }
+                    </RowTemplate>
+                    </MudTable> *@
+                    }
+
+
+                    @* Total Business, Total Advances, Business, Advances, Deposits, Total Deposits *@
+
+                    @* 3. Total Advances Growth : Line Chart *@
+
+
+
+
+                    @* @foreach (var subChild in @menus)
+                    {
+                    <div class="col-sm-6 col-md-4 col-lg-3 pa-2">
+
+                    <div class="vertical-card card-primary rounded-lg shadow-sm">
+                    <div class="card-body p-3">
+                    <div class="d-flex align-items-center">
+
+                    <div class="icon-wrapper me-3">
+                    <MudIcon Icon="@MudBlazor.Icons.Material.Outlined.MenuOpen"
+                    Color="MudBlazor.Color.Inherit"
+                    Size="MudBlazor.Size.Medium" />
+
+                    </div>
+                    <div class="content-wrapper">
+                    <p class="vertical-title mb-0">
+                    @subChild
+                    </p>
+                    </div>
+                    </div>
+                    </div>
+
+                    </div>
+                    <div class="vertical-card rounded-lg shadow-sm">
+                    <div class="card-body p-3">
+                    Lorem ipsum
+                    </div>
+                    </div>
+                    </div>
+                    } *@
+                </MudGrid>
+            </MudPaper>
+
+        </div>
+    </MudItem>
+
+</MudGrid>
+
+
+@code {
+
+    private string viewMode = "Grid";
+    private string _userPrivilege = "CO", _userSolid = "00000";
+    private static string Show(string? v) => string.IsNullOrWhiteSpace(v) ? "—" : v;
+    [Parameter] public string? menu { get; set; }
+
+    // Friendly display name mapping
+
+    public class RecordRow
+    {
+        public int Index { get; set; }            // 1-based row number
+        public RecordData Item { get; set; } = default!;
+    }
+    private IEnumerable<RecordRow> IndexedRecords
+    => FilteredRecords.Select((x, i) => new RecordRow
+        {
+            Index = i + 1,   // 1-based numbering
+            Item = x
+        });
+    private void NavigateSubMenu(string m)
+        => Nav.NavigateTo($"Dashboards1/{m}", forceLoad: false);
+
+    private static string ToDisplay(string m) => m switch
+    {
+        "AppDashboard" => "Assurance Corner",
+        "DefaultAccounts" => "Defaulting Accounts",
+        "SUDCorner" => "SUD Corner",
+        _ => m // Alerts, Reports, Leads, Utilities, Clearing, Complaints
+    };
+
+
+    private string DisplayName => (menu ?? "Alerts") switch
+    {
+        "All" => "All Dashboards",                        // <-- NEW
+        "AppDashboard" => "Application Dashboard",
+        "Alerts" => "Alerts",
+        "Clearing" => "Clearing",
+        "Complaints" => "Complaints",
+        "DefaultAccounts" => "Defaulting Accounts",
+        "Leads" => "Leads",
+        "Reports" => "Reports",
+        "SUDCorner" => "SUD Corner",
+        "Utilities" => "Utilities",
+        _ => "Assurance Corner"
+    };
+
+
+
+
+    private readonly string[] SubMenus = new[]
+        {
+        "All",             // <-- NEW
+        "Alerts",
+        "Clearing",
+        "Complaints",
+        "AppDashboard",      // "Assurance Corner"
+        "DefaultAccounts",
+        "Leads",
+        "Reports",
+        "SUDCorner",
+        "Utilities"
+    };
+
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(menu))
+        {
+            Nav.NavigateTo("Dashboards1/Alerts", replace: true);
+            return;
+        }
+
+        try
+        {
+            isLoading = true;
+            loadError = null;
+            _searchText = string.Empty; // 🔄 reset on menu change (optional)
+            await LoadUserClaims();
+            Records = await DashboardsServices.GetRecordDataAsync(menu);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Applications Dashboards: failed to load dashboards data");
+            loadError = UserFacingError.Generic;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+    private async Task LoadUserClaims()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+            if (_userPrivilege == "ZONE") _userSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+            else if (_userPrivilege == "REGION") _userSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+            else if (_userPrivilege == "BRANCH") _userSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        }
+    }
+    void Go(string name)
+    {
+        NavState.ClickedName = name;
+        Nav.NavigateTo("dashboard_new_1");
+    }
+
+    private void OnViewModeChanged(string newView)
+    {
+        viewMode = newView;
+    }
+
+    public class Item { public string Title { get; set; } }
+
+    private List<RecordData> Records { get; set; } = new();
+
+    private bool isLoading = true;
+    private string? loadError;
+
+    async void RedirectTo(RecordData record)
+    {
+        if (record is null || string.IsNullOrWhiteSpace(record.Name))
+        {
+            // Fallback if record or name is not available
+            Nav.NavigateTo("dashboard_new_1");
+            return;
+        }
+
+        if (record.Name.Contains("Auto AOF", StringComparison.OrdinalIgnoreCase))
+        {
+            // Open target URL in a new tab (no extra JS file needed)
+            await JS.InvokeVoidAsync("open", "https://mydiary.unionbankofindia.co.in/AutoAOF/", "_blank");
+            return;
+
+        }
+        if (record.Name.Contains("Pre-Filled Service Request Form", StringComparison.OrdinalIgnoreCase))
+        {
+            // Open target URL in a new tab (no extra JS file needed)
+            await JS.InvokeVoidAsync("open", "https://mydiary.unionbankofindia.co.in/Pre-Filled-Form/#/service-form/", "_blank");
+            return;
+
+        }
+        string targetRoute = record.Name switch
+        {
+            // Utilities
+            var name when name.Contains("Advocates Master", StringComparison.OrdinalIgnoreCase) => "reports/AdvocatesMaster",
+            var name when name.Contains("Branch Library", StringComparison.OrdinalIgnoreCase) => "reports/branchLibrary",
+            var name when name.Contains("Branch Important Contacts", StringComparison.OrdinalIgnoreCase) => "reports/branchImportantContacts",
+            var name when name.Contains("Builders Master", StringComparison.OrdinalIgnoreCase) => "reports/buildersMaster",
+            var name when name.Contains("Chequebook Tracking", StringComparison.OrdinalIgnoreCase) => "reports/ChequebookTracking",
+            var name when name.Contains("Dealers Master", StringComparison.OrdinalIgnoreCase) => "reports/dealers-master",
+            var name when name.Contains("Debit Card Tracking", StringComparison.OrdinalIgnoreCase) => "reports/debit-card-tracking",
+            var name when name.Contains("DSA Master", StringComparison.OrdinalIgnoreCase) => "reports/DSAMaster",
+            var name when name.Contains("Staff Strength", StringComparison.OrdinalIgnoreCase) => "reports/staff-strength",
+
+            // Dashboards
+            var name when name.Contains("Accounts Open/Closed", StringComparison.OrdinalIgnoreCase) => "reports/accounts-open-closed-selector",
+            var name when name.Contains("Attrition Risk Report", StringComparison.OrdinalIgnoreCase) => "reports/AttritionRiskReport",
+            var name when name.Contains("Cash Transactions", StringComparison.OrdinalIgnoreCase) => "reports/cash-transactions",
+            var name when name.Contains("DDE Transaction Report", StringComparison.OrdinalIgnoreCase) => "reports/DDETransactionReport",
+            var name when name.Contains("Bharat QR Issuance Report", StringComparison.OrdinalIgnoreCase) => "reports/BharatQRIssuance",
+            var name when name.Contains("Debit Card Issuance", StringComparison.OrdinalIgnoreCase) => "reports/debit-card-issuance",
+            var name when name.Contains("Digital Transactions Channel Wise Report", StringComparison.OrdinalIgnoreCase) => "reports/digital-txn-channelwise",
+            var name when name.Contains("Doorstep Banking", StringComparison.OrdinalIgnoreCase) => "reports/dsb-transactions",
+            var name when name.Contains("Financial Results", StringComparison.OrdinalIgnoreCase) => "reports/financialresults",
+            var name when name.Contains("FootFall Analysis", StringComparison.OrdinalIgnoreCase) => "reports/FootfallAnalysis",
+            var name when name.Contains("IB Registration Report", StringComparison.OrdinalIgnoreCase) => "reports/IBRegistration",
+            var name when name.Contains("Impersonal Accounts", StringComparison.OrdinalIgnoreCase) => "reports/ImpersonalAccounts",
+            var name when name.Contains("JOSH 2.0 Dashboard", StringComparison.OrdinalIgnoreCase) => "reports/josh-dashboard",
+            var name when name.Contains("Maturing Deposits List", StringComparison.OrdinalIgnoreCase) => "reports/MaturityDeposits",
+            var name when name.Contains("Overdue Deposits", StringComparison.OrdinalIgnoreCase) => "reports/OverdueDeposits",
+            var name when name.Contains("Retail Corporate Annual TurnOver", StringComparison.OrdinalIgnoreCase) => "reports/retailCorporateAnnualTurnover",
+            var name when name.Contains("Third Party Products Performance", StringComparison.OrdinalIgnoreCase) => "reports/TPPDPerformance",
+            var name when name.Contains("Third Party Products Commission", StringComparison.OrdinalIgnoreCase) => "reports/TPPDIncome",
+            var name when name.Contains("Top Borrowers", StringComparison.OrdinalIgnoreCase) => "reports/topBorrowers",
+            var name when name.Contains("Top Depositors", StringComparison.OrdinalIgnoreCase) => "reports/top-depositors-selector",
+            var name when name.Contains("Top NPAs", StringComparison.OrdinalIgnoreCase) => "reports/topNPAs",
+            var name when name.Contains("Transaction Report", StringComparison.OrdinalIgnoreCase) => "reports/Transactions",
+            var name when name.Contains("VYOM Registration Report", StringComparison.OrdinalIgnoreCase) => "reports/UnionEaseRegistration",
+            var name when name.Contains("DeathClaim Pendency Report", StringComparison.OrdinalIgnoreCase) => "reports/deathclaim_pendency",
+            var name when name.Contains("Cheque Book Issue But Not Acknowledge", StringComparison.OrdinalIgnoreCase) => "reports/cheque-issued",
+
+            // Alerts
+            var name when name.Contains("Beneficiary Ownership Data", StringComparison.OrdinalIgnoreCase) => "reports/beneficial-ownership",
+            var name when name.Contains("Cash Holding", StringComparison.OrdinalIgnoreCase) => "reports/cashholding",
+            var name when name.Contains("CKYC Pendency List", StringComparison.OrdinalIgnoreCase) => "reports/ckyc-pendency",
+            var name when name.Contains("DMS Scanning Pendency", StringComparison.OrdinalIgnoreCase) => "reports/dms-pendency",
+            var name when name.Contains("Dormant Inactive Acc with more than 1 Lakh Balance", StringComparison.OrdinalIgnoreCase) => "reports/dormant-inactive-gt-1lakh",
+            var name when name.Contains("High Risk Customers", StringComparison.OrdinalIgnoreCase) => "reports/high-risk-customers",
+            var name when name.Contains("NEDU TV Status", StringComparison.OrdinalIgnoreCase) => "reports/nedumonitoring",
+            var name when name.Contains("Pending POB Data", StringComparison.OrdinalIgnoreCase) => "reports/pendingpob",
+            var name when name.Contains("Rekyc Pending Data", StringComparison.OrdinalIgnoreCase) => "reports/rekyc-pendency",
+            var name when name.Contains("Related Party CIF Not available", StringComparison.OrdinalIgnoreCase) => "reports/related-party-cif-not-available",
+            var name when name.Contains("Sundry Data - OAB", StringComparison.OrdinalIgnoreCase) => "reports/SundryOAB",
+            var name when name.Contains("Sundry Data - OAP", StringComparison.OrdinalIgnoreCase) => "reports/SundryOAP",
+            var name when name.Contains("Sundry Data 90 Days - OAP", StringComparison.OrdinalIgnoreCase) => "reports/SundryOAP90",
+            var name when name.Contains("Sundry Performance Dashboard", StringComparison.OrdinalIgnoreCase) => "reports/SundryDashboard",
+            var name when name.Contains("Service Branch - Sundry Data - OAB", StringComparison.OrdinalIgnoreCase) => "reports/ServiceSundryOAB",
+            var name when name.Contains("Service Branch - Sundry Data - OAP", StringComparison.OrdinalIgnoreCase) => "reports/ServiceSundryOAP",
+            var name when name.Contains("Suspense Data - OAB", StringComparison.OrdinalIgnoreCase) => "reports/SuspenseOAB",
+            var name when name.Contains("Suspense Data - OAP", StringComparison.OrdinalIgnoreCase) => "reports/SuspenseOAP",
+            var name when name.Contains("Suspense Data 90 Days - OAP", StringComparison.OrdinalIgnoreCase) => "reports/SuspenseOAP90",
+            var name when name.Contains("Suspense Performance Dashboard", StringComparison.OrdinalIgnoreCase) => "reports/SuspenseDashboard",
+            var name when name.Contains("Service Branch - Suspense Data - OAB", StringComparison.OrdinalIgnoreCase) => "reports/ServiceSuspenseOAB",
+            var name when name.Contains("Service Branch - Suspense Data - OAP", StringComparison.OrdinalIgnoreCase) => "reports/ServiceSuspenseOAP",
+            var name when name.Contains("UCIC Aadhaar Data", StringComparison.OrdinalIgnoreCase) => "reports/ucicAadhaarData",
+            var name when name.Contains("UCIC Pan Data", StringComparison.OrdinalIgnoreCase) => "reports/ucicPanData",
+            var name when name.Contains("View OTMS Alerts", StringComparison.OrdinalIgnoreCase) => "reports/otms-alerts",
+
+            // Clearing
+            var name when name.Contains("Inward Clearing", StringComparison.OrdinalIgnoreCase) => "reports/cts-inward-selector",
+            var name when name.Contains("Outward Clearing", StringComparison.OrdinalIgnoreCase) => "reports/ctsOutwardBranchDetails",
+
+            // Defaulting Accounts
+            var name when name.Contains("DEA Fund remitted to RBI", StringComparison.OrdinalIgnoreCase) => "reports/ListDEAFRBIRemitted",
+            var name when name.Contains("Dormant Accounts", StringComparison.OrdinalIgnoreCase) => "reports/DormantAccounts",
+            var name when name.Contains("Inactive Accounts", StringComparison.OrdinalIgnoreCase) => "reports/InActiveAccounts",
+            var name when name.Contains("Lien Marked Accounts", StringComparison.OrdinalIgnoreCase) => "reports/LienMarkedAcc",
+            var name when name.Contains("Nomination Not Registered Accounts", StringComparison.OrdinalIgnoreCase) => "reports/NoNominationAcc",
+            var name when name.Contains("Probable DEA Fund Accounts", StringComparison.OrdinalIgnoreCase) => "reports/ListDeafRBIManagement",
+
+            // SUD Corner
+            var name when name.Contains("Claims and Grievances", StringComparison.OrdinalIgnoreCase) => "reports/sudClaimsGrievances",
+            var name when name.Contains("Overall Portfolio", StringComparison.OrdinalIgnoreCase) => "reports/SUDOverallPortfolio",
+            var name when name.Contains("Renewal Base", StringComparison.OrdinalIgnoreCase) => "reports/SUDRenewalBase",
+            var name when name.Contains("Specified", StringComparison.OrdinalIgnoreCase) => "reports/sud_spdetails",
+            var name when name.Contains("SUD Life Performance", StringComparison.OrdinalIgnoreCase) => "reports/SUD_PerformanceYTD",
+
+            // Complaints
+            var name when name.Contains("Cyber Fraud Search Report", StringComparison.OrdinalIgnoreCase) => "reports/CyberFraudSearch",
+            var name when name.Contains("ZOHO CRM Pending Complaints", StringComparison.OrdinalIgnoreCase) => "reports/ZohoCrmComplaints",
+
+            // Leads Data
+            var name when name.Contains("ULP Leads", StringComparison.OrdinalIgnoreCase) => "reports/ulpLeads",
+            var name when name.Contains("USK Leads", StringComparison.OrdinalIgnoreCase) => "reports/uskLeads",
+            var name when name.Contains("Leads for UnionDigiDocx", StringComparison.OrdinalIgnoreCase) => "reports/unionDigiDocxLeads",
+            var name when name.Contains("SARAL Leads", StringComparison.OrdinalIgnoreCase) => "reports/saralLeads",
+
+            // Reports
+            var name when name.Contains("Mandatory ATR Report", StringComparison.OrdinalIgnoreCase) => "reports/atrreport",
+            var name when name.Contains("ATM Visit Report", StringComparison.OrdinalIgnoreCase) => "reports/atm-visit-report",
+            var name when name.Contains("Mandatory ATR Report - Daily Dashboard", StringComparison.OrdinalIgnoreCase) => "reports/atrstatus",
+            var name when name.Contains("Mandatory Report ATR MIS", StringComparison.OrdinalIgnoreCase) => "reports/ATRMISReport",
+            var name when name.Contains("ATM Working Daily Dashboard", StringComparison.OrdinalIgnoreCase) => "reports/ATMWorkingDailyDashboard",
+            var name when name.Contains("ATM Working Dashboard", StringComparison.OrdinalIgnoreCase) => "reports/ATMWorkingDashboard",
+            var name when name.Contains("Dashboard SB RBI Observations", StringComparison.OrdinalIgnoreCase) => "reports/RBISBObservations",
+            var name when name.Contains("Dashboard CA RBI Observations", StringComparison.OrdinalIgnoreCase) => "reports/SBCARbiObservations",
+            var name when name.Contains("Dashboard CA RBI Observations Cust ID Wise", StringComparison.OrdinalIgnoreCase) => "reports/RBICAObservationDashboardNew",
+            var name when name.Contains("Dashboard SB RBI Observations Cust ID Wise(Active)", StringComparison.OrdinalIgnoreCase) => "reports/RBISBCAObservationsDashBoard_Active",
+            var name when name.Contains("Dashboard SB RBI Observations Cust ID Wise(Inactive)", StringComparison.OrdinalIgnoreCase) => "reports/RBISBCAObservationsDashBoard_InActive",
+            // Default (fallback)
+            _ => "dashboard_new_1"
+        };
+
+        // Append the Title as a query parameter (e.g., /reports/sundry?title=Sundry Data - OAP)
+        var uri = Nav.GetUriWithQueryParameters(targetRoute, new Dictionary<string, object?>
+        {
+            { "title", record.Name }
+        });
+
+        Nav.NavigateTo(uri);
+    }
+    // 🔍 Search text (Applications-like behavior)
+    private string _searchText = string.Empty;
+
+    // ✅ Filtered view similar to Applications page
+    private IEnumerable<RecordData> FilteredRecords
+    {
+        get
+        {
+            if (Records is null || Records.Count == 0)
+                return Enumerable.Empty<RecordData>();
+
+            var query = Records.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                var s = _searchText.Trim();
+
+                query = query.Where(x =>
+    (!string.IsNullOrWhiteSpace(x.Name) && x.Name.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+    (!string.IsNullOrWhiteSpace(x.OwnerVertical) && x.OwnerVertical.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+    (!string.IsNullOrWhiteSpace(x.Source) && x.Source.Contains(s, StringComparison.OrdinalIgnoreCase)) ||
+    (!string.IsNullOrWhiteSpace(x.FrequencyOfReportUpdation) && x.FrequencyOfReportUpdation.Contains(s, StringComparison.OrdinalIgnoreCase))
+    );
+            }
+
+            // Keep a stable order
+            return query.OrderBy(x => x.Name);
+        }
+    }
+}

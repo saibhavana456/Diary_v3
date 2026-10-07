@@ -1,0 +1,28 @@
+@* ─────────────────────────────────────────────────────────────────────────
+   FeedbackHomeCard — "Feedback" card dropped into each home page above its
+   Staff Details card. Navigates to the full Feedback submission page
+   (/feedback/new), same as the Request Portal's "Raise a Request" flow —
+   no popup.
+   ───────────────────────────────────────────────────────────────────────── *@
+@using MudBlazor
+@inject NavigationManager Nav
+
+<article class="fbk-card">
+    <header class="fbk-card-head"><MudIcon Icon="@Icons.Material.Filled.Feedback" Size="MudBlazor.Size.Small" />Feedback</header>
+    <div class="fbk-card-body">
+        <MudText Typo="Typo.body2" Class="mb-2">Faced an issue or have a suggestion for My Diary? Let us know.</MudText>
+        <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small"
+                   FullWidth="true" Class="rounded-pill" StartIcon="@Icons.Material.Filled.RateReview"
+                   OnClick="@(() => Nav.NavigateTo("feedback/new"))">Give Feedback</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                   FullWidth="true" Class="rounded-pill mt-2" StartIcon="@Icons.Material.Filled.ListAlt"
+                   OnClick="@(() => Nav.NavigateTo("my-feedback"))">Check my Feedbacks</MudButton>
+    </div>
+</article>
+
+<style>
+    .fbk-card { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; margin-bottom:16px; }
+    .fbk-card-head { display:flex; align-items:center; gap:8px; padding:10px 14px; font-weight:700; font-size:.9rem; color:#1b4a98; border-bottom:1px solid #eef0f4; }
+    .fbk-card-body { padding:12px 14px 14px; }
+    .mud-theme-dark .fbk-card, .cc-dark .fbk-card { background:#1c1f24; }
+</style>

@@ -1,0 +1,385 @@
+@page "/emi-calculator"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Components.Layout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout PublicLayout
+<PageTitle>EMI Calculator</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-5 mb-8">
+
+    <!-- Page Header -->
+    <MudPaper Elevation="3" Class="pa-4 mb-5"
+              Style="background: linear-gradient(135deg, #b71c1c 0%, #c62828 55%, #d32f2f 100%);
+                     color:white; border-radius:14px;
+                     box-shadow: 0 4px 20px rgba(183,28,28,0.35) !important;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudIcon Icon="@Icons.Material.Filled.Calculate"
+                     Style="font-size:2.8rem; color:#ffcdd2;" />
+            <div>
+                <MudText Typo="Typo.h4" Style="font-weight:700; color:white; letter-spacing:0.5px;">
+                    EMI Calculator
+                </MudText>
+                <MudText Typo="Typo.body2" Style="color:#ffcdd2; margin-top:2px;">
+                    Equated Monthly Instalment — Union Bank of India
+                </MudText>
+            </div>
+        </MudStack>
+    </MudPaper>
+
+    <!-- Breadcrumb -->
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 pa-0" />
+
+    <!-- Input Card -->
+    <MudPaper Elevation="2" Class="pa-5 mb-4" Style="border-radius:14px;">
+        <MudText Typo="Typo.subtitle1" Class="mb-4"
+                 Style="font-weight:700; color:#1a237e; display:flex; align-items:center; gap:8px;">
+            <MudIcon Icon="@Icons.Material.Filled.Input" Style="color:#1a237e;" />
+            Loan Details
+        </MudText>
+
+        <MudGrid Spacing="3">
+
+            <!-- Loan Amount -->
+            <MudItem xs="12">
+                <MudNumericField @bind-Value="_loanAmount"
+                                 Label="Loan Amount (₹)"
+                                 Variant="Variant.Outlined"
+                                 Adornment="Adornment.Start"
+                                 AdornmentText="₹"
+                                 AdornmentColor="Color.Primary"
+                                 Min="1000" Max="50000000"
+                                 HideSpinButtons="true"
+                                 Format="N0"
+                                 FullWidth="true"
+                                 Immediate="true"
+                                 @oninput="ClearResults"
+                                 HelperText="Enter amount between ₹1,000 and ₹5,00,00,000"
+                                 Error="@_loanAmountError"
+                                 ErrorText="@_loanAmountMsg" />
+            </MudItem>
+
+            <!-- Loan Amount Slider -->
+            <MudItem xs="12" Class="mt-n2 mb-n1">
+                <MudSlider @bind-Value="_loanAmount" Min="1000" Max="5000000" Step="1000"
+                           Color="Color.Primary" Class="px-2"
+                           @oninput="ClearResults" />
+                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.caption" Style="color:#888;">₹1,000</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#888;">₹50,00,000</MudText>
+                </MudStack>
+            </MudItem>
+
+            <!-- Interest Rate -->
+            <MudItem xs="12">
+                <MudNumericField @bind-Value="_interestRate"
+                                 Label="Interest Rate (% p.a.)"
+                                 Variant="Variant.Outlined"
+                                 Adornment="Adornment.End"
+                                 AdornmentText="%"
+                                 AdornmentColor="Color.Secondary"
+                                 Min="1.00m" Max="99.99m"
+                                 HideSpinButtons="true"
+                                 Format="N2"
+                                 FullWidth="true"
+                                 Immediate="true"
+                                 @oninput="ClearResults"
+                                 HelperText="Enter rate between 1.00% and 99.99%"
+                                 Error="@_rateError"
+                                 ErrorText="@_rateMsg" />
+            </MudItem>
+
+            <!-- Rate Slider -->
+            <MudItem xs="12" Class="mt-n2 mb-n1">
+                <MudSlider @bind-Value="_interestRate" Min="1.00m" Max="30.00m" Step="0.25m"
+                           Color="Color.Secondary" Class="px-2"
+                           @oninput="ClearResults" />
+                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.caption" Style="color:#888;">1%</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#888;">30%</MudText>
+                </MudStack>
+            </MudItem>
+
+            <!-- Period in Months -->
+            <MudItem xs="12">
+                <MudNumericField @bind-Value="_periodMonths"
+                                 Label="Loan Period (Months)"
+                                 Variant="Variant.Outlined"
+                                 Adornment="Adornment.End"
+                                 AdornmentText="mo"
+                                 AdornmentColor="Color.Tertiary"
+                                 Min="6" Max="360"
+                                 HideSpinButtons="true"
+                                 FullWidth="true"
+                                 Immediate="true"
+                                 @oninput="ClearResults"
+                                 HelperText="Enter period between 6 and 360 months"
+                                 Error="@_monthsError"
+                                 ErrorText="@_monthsMsg" />
+            </MudItem>
+
+            <!-- Period Slider -->
+            <MudItem xs="12" Class="mt-n2 mb-n1">
+                <MudSlider @bind-Value="_periodMonths" Min="6" Max="360" Step="6"
+                           Color="Color.Tertiary" Class="px-2"
+                           @oninput="ClearResults" />
+                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.caption" Style="color:#888;">6 mo</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#888;">360 mo (30 yr)</MudText>
+                </MudStack>
+            </MudItem>
+
+            <!-- Calculate Button -->
+            <MudItem xs="12" Class="mt-2">
+                <MudButton FullWidth="true"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Large"
+                           StartIcon="@Icons.Material.Filled.Calculate"
+                           OnClick="Calculate"
+                           Style="border-radius:10px; font-size:1rem; font-weight:700;
+                                  padding:14px; letter-spacing:0.5px;">
+                    Calculate EMI
+                </MudButton>
+            </MudItem>
+
+        </MudGrid>
+    </MudPaper>
+
+    <!-- Results Card -->
+    @if (_calculated)
+    {
+        <MudPaper Elevation="3" Class="pa-5 mb-4"
+                  Style="border-radius:14px; border: 2px solid #1a237e;">
+
+            <MudText Typo="Typo.subtitle1" Class="mb-4"
+                     Style="font-weight:700; color:#1a237e; display:flex; align-items:center; gap:8px;">
+                <MudIcon Icon="@Icons.Material.Filled.Assessment" Style="color:#1a237e;" />
+                Results
+            </MudText>
+
+            <!-- 3 Result Tiles -->
+            <MudGrid Spacing="3">
+                <MudItem xs="12" sm="4">
+                    <MudPaper Elevation="1" Class="pa-3 text-center"
+                              Style="border-radius:12px; background:#1a237e; color:white;">
+                        <MudIcon Icon="@Icons.Material.Filled.CurrencyRupee"
+                                 Style="font-size:2rem; color:#90caf9;" Class="mb-1" />
+                        <MudText Typo="Typo.caption" Style="color:#bbdefb; display:block;">
+                            Monthly EMI
+                        </MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:800; color:white; margin-top:4px;">
+                            ₹@_emi.ToString("N2")
+                        </MudText>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" sm="4">
+                    <MudPaper Elevation="1" Class="pa-3 text-center"
+                              Style="border-radius:12px; background:#0277bd; color:white;">
+                        <MudIcon Icon="@Icons.Material.Filled.Percent"
+                                 Style="font-size:2rem; color:#b3e5fc;" Class="mb-1" />
+                        <MudText Typo="Typo.caption" Style="color:#e1f5fe; display:block;">
+                            Total Interest Payable
+                        </MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:800; color:white; margin-top:4px;">
+                            ₹@_totalInterest.ToString("N2")
+                        </MudText>
+                    </MudPaper>
+                </MudItem>
+
+                <MudItem xs="12" sm="4">
+                    <MudPaper Elevation="1" Class="pa-3 text-center"
+                              Style="border-radius:12px; background:#2e7d32; color:white;">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance"
+                                 Style="font-size:2rem; color:#a5d6a7;" Class="mb-1" />
+                        <MudText Typo="Typo.caption" Style="color:#c8e6c9; display:block;">
+                            Avg. Monthly Interest
+                        </MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:800; color:white; margin-top:4px;">
+                            ₹@_monthlyInterest.ToString("N2")
+                        </MudText>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Summary Bar -->
+            <MudPaper Elevation="0" Class="pa-3 mt-4"
+                      Style="border-radius:10px; background:#f5f5f5;">
+                <MudGrid>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.body2" Style="color:#555;">Principal Amount</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:700; color:#1a237e;">
+                            ₹@_loanAmount.ToString("N0")
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.body2" Style="color:#555;">Total Amount Payable</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:700; color:#b71c1c;">
+                            ₹@((_loanAmount + _totalInterest).ToString("N2"))
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.body2" Style="color:#555;">Loan Tenure</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:700; color:#333;">
+                            @_periodMonths months (@Math.Round(_periodMonths / 12.0, 1) yrs)
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudText Typo="Typo.body2" Style="color:#555;">Interest Rate</MudText>
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:700; color:#333;">
+                            @_interestRate.ToString("N2")% p.a.
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            <!-- Doughnut-style visual breakdown bar -->
+            <MudText Typo="Typo.caption" Class="mt-3 mb-1" Style="color:#555; font-weight:600;">
+                Principal vs Interest Breakdown
+            </MudText>
+            @{
+                var total        = _loanAmount + _totalInterest;
+                var principalPct = total > 0 ? (int)Math.Round(_loanAmount / total * 100) : 0;
+                var interestPct  = 100 - principalPct;
+            }
+            <div style="display:flex; height:16px; border-radius:8px; overflow:hidden; width:100%;">
+                <div style="width:@(principalPct)%; background:#1a237e; transition:width 0.6s ease;"
+                     title="Principal @principalPct%"></div>
+                <div style="width:@(interestPct)%; background:#b71c1c; transition:width 0.6s ease;"
+                     title="Interest @interestPct%"></div>
+            </div>
+            <MudStack Row="true" Spacing="3" Class="mt-2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <div style="width:12px; height:12px; border-radius:3px; background:#1a237e;"></div>
+                    <MudText Typo="Typo.caption" Style="color:#555;">Principal (@principalPct%)</MudText>
+                </MudStack>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <div style="width:12px; height:12px; border-radius:3px; background:#b71c1c;"></div>
+                    <MudText Typo="Typo.caption" Style="color:#555;">Interest (@interestPct%)</MudText>
+                </MudStack>
+            </MudStack>
+
+            <!-- Reset -->
+            <MudButton FullWidth="true" Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="Reset" Class="mt-4"
+                       Style="border-radius:10px; font-weight:600;">
+                Reset Calculator
+            </MudButton>
+        </MudPaper>
+    }
+
+    <!-- Disclaimer -->
+    <MudAlert Severity="Severity.Normal" Class="mt-2" Style="border-radius:10px; font-size:0.8rem;">
+        <strong>Disclaimer:</strong> This calculator provides an indicative EMI figure for reference only.
+        Actual EMI may vary based on bank terms, processing fees, and rounding. Please contact your branch for exact figures.
+    </MudAlert>
+
+</MudContainer>
+
+@code {
+    // ---- Inputs ----
+    private double _loanAmount   = 100000;
+    private decimal _interestRate = 8.50m;
+    private int _periodMonths    = 60;
+
+    // ---- Validation flags ----
+    private bool _loanAmountError;
+    private bool _rateError;
+    private bool _monthsError;
+    private string _loanAmountMsg = "";
+    private string _rateMsg       = "";
+    private string _monthsMsg     = "";
+
+    // ---- Results ----
+    private bool   _calculated;
+    private double _emi;
+    private double _totalInterest;
+    private double _monthlyInterest;
+
+    private List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Home", href: "", icon: Icons.Material.Filled.Home),
+        new BreadcrumbItem("EMI Calculator", href: null, disabled: true),
+    };
+
+    private void ClearResults()
+    {
+        _calculated = false;
+        _loanAmountError = false;
+        _rateError       = false;
+        _monthsError     = false;
+    }
+
+    private bool Validate()
+    {
+        var ok = true;
+
+        // Loan Amount
+        if (_loanAmount < 1000 || _loanAmount > 50000000)
+        {
+            _loanAmountError = true;
+            _loanAmountMsg   = "Amount must be between ₹1,000 and ₹5,00,00,000.";
+            ok = false;
+        }
+        else { _loanAmountError = false; _loanAmountMsg = ""; }
+
+        // Rate
+        if (_interestRate < 1.00m || _interestRate > 99.99m)
+        {
+            _rateError = true;
+            _rateMsg   = "Rate must be between 1.00% and 99.99%.";
+            ok = false;
+        }
+        else
+        {
+            // Max 2 decimal places
+            var rateStr = _interestRate.ToString("G");
+            var dotIdx  = rateStr.IndexOf('.');
+            if (dotIdx >= 0 && rateStr.Length - dotIdx - 1 > 2)
+            {
+                _rateError = true;
+                _rateMsg   = "Interest rate cannot have more than 2 decimal places.";
+                ok = false;
+            }
+            else { _rateError = false; _rateMsg = ""; }
+        }
+
+        // Period
+        if (_periodMonths < 6 || _periodMonths > 360)
+        {
+            _monthsError = true;
+            _monthsMsg   = "Period must be between 6 and 360 months.";
+            ok = false;
+        }
+        else { _monthsError = false; _monthsMsg = ""; }
+
+        return ok;
+    }
+
+    private void Calculate()
+    {
+        _calculated = false;
+        if (!Validate()) return;
+
+        double rate   = (double)_interestRate / (12 * 100);
+        double pow    = Math.Pow(1 + rate, _periodMonths);
+        double emi    = (_loanAmount * rate * pow) / (pow - 1);
+
+        _emi             = Math.Round(emi, 2);
+        _totalInterest   = Math.Round((_emi * _periodMonths) - _loanAmount, 2);
+        _monthlyInterest = Math.Round(_totalInterest / _periodMonths, 2);
+
+        _calculated = true;
+    }
+
+    private void Reset()
+    {
+        _loanAmount    = 100000;
+        _interestRate  = 8.50m;
+        _periodMonths  = 60;
+        _calculated    = false;
+        _loanAmountError = _rateError = _monthsError = false;
+    }
+}

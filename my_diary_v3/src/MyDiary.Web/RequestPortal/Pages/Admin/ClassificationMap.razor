@@ -1,0 +1,137 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/classification-map"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@inject IMasterRepo Masters
+@inject IClassificationMapRepo Classification
+@inject ISnackbar Snackbar
+
+<PageTitle>Classification Mapping</PageTitle>
+
+<PageHeader PageKey="classification-map" Title="Classification Mapping" Crumbs="_crumbs" />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to manage classification mappings.</MudAlert>
+    </NotAuthorized>
+    <Authorized>
+
+    <MudText Typo="Typo.body2" Class="mb-4 text-muted">
+        Defines the interlinked cascade: <b>Request Type → Unit Type → Unit → Vertical → Department → Activity</b>.
+        (Unit Type → Unit, Vertical → Department and Department → Activity are managed under Request Types &amp; Units masters.)
+    </MudText>
+
+    <MudGrid>
+        @* ── Request Type → Unit Types ─────────────────────────── *@
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Request Type → Unit Types</MudText>
+                <MudSelect T="long?" Label="Request Type" Value="_rtId" ValueChanged="OnRequestTypeChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                    @foreach (var r in _requestTypes) { <MudSelectItem T="long?" Value="@((long?)r.Id)">@r.Name</MudSelectItem> }
+                </MudSelect>
+                @if (_rtId is not null)
+                {
+                    <MudText Typo="Typo.caption" Class="text-muted">Tick the unit types valid for this request type:</MudText>
+                    @foreach (var ut in _allUnitTypes)
+                    {
+                        <div>
+                            <MudCheckBox T="bool" Value="@_selUnitTypes.Contains(ut.Id)"
+                                         ValueChanged="@(v => Toggle(_selUnitTypes, ut.Id, v))" Dense="true">@ut.Name</MudCheckBox>
+                        </div>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" Class="mt-2"
+                               StartIcon="@Icons.Material.Filled.Save" OnClick="SaveRequestTypeMap">Save</MudButton>
+                }
+            </MudPaper>
+        </MudItem>
+
+        @* ── Unit → Verticals ──────────────────────────────────── *@
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Unit → Verticals</MudText>
+                <MudSelect T="long?" Label="Unit" Value="_unitId" ValueChanged="OnUnitChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                    @foreach (var u in _allUnits) { <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.Name</MudSelectItem> }
+                </MudSelect>
+                @if (_unitId is not null)
+                {
+                    <MudText Typo="Typo.caption" Class="text-muted">Tick the verticals this unit serves:</MudText>
+                    @foreach (var v in _allVerticals)
+                    {
+                        <div>
+                            <MudCheckBox T="bool" Value="@_selVerticals.Contains(v.Id)"
+                                         ValueChanged="@(val => Toggle(_selVerticals, v.Id, val))" Dense="true">@v.Name</MudCheckBox>
+                        </div>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" Class="mt-2"
+                               StartIcon="@Icons.Material.Filled.Save" OnClick="SaveUnitMap">Save</MudButton>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Admin Portal"), new("Classification Mapping") };
+
+    private IReadOnlyList<RequestType> _requestTypes = new List<RequestType>();
+    private IReadOnlyList<UnitType>    _allUnitTypes = new List<UnitType>();
+    private IReadOnlyList<Unit>        _allUnits     = new List<Unit>();
+    private IReadOnlyList<Vertical>    _allVerticals = new List<Vertical>();
+
+    private long? _rtId, _unitId;
+    private readonly HashSet<long> _selUnitTypes = new();
+    private readonly HashSet<long> _selVerticals = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rtTask = Masters.ListRequestTypesAllAsync();
+            var utTask = Masters.ListUnitTypesAllAsync();
+            var uTask  = Masters.ListUnitsAllAsync(null);
+            var vTask  = Masters.ListVerticalsAllAsync();
+
+            await Task.WhenAll(rtTask, utTask, uTask, vTask);
+
+            _requestTypes = rtTask.Result;
+            _allUnitTypes = utTask.Result;
+            _allUnits     = uTask.Result;
+            _allVerticals = vTask.Result;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "ClassificationMap: failed to load master data");
+        }
+    }
+
+    private static void Toggle(HashSet<long> set, long id, bool on)
+    { if (on) set.Add(id); else set.Remove(id); }
+
+    private async Task OnRequestTypeChanged(long? v)
+    {
+        _rtId = v; _selUnitTypes.Clear();
+        if (v is not null)
+            foreach (var id in await Classification.GetMappedUnitTypeIdsAsync(v.Value)) _selUnitTypes.Add(id);
+    }
+    private async Task SaveRequestTypeMap()
+    {
+        try { await Classification.SetRequestTypeUnitTypesAsync(_rtId!.Value, _selUnitTypes); Snackbar.Add("Saved.", Severity.Success); }
+        catch (Exception ex) { AppLogger.LogError(ex, "ClassificationMap: failed to save request type mapping"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+
+    private async Task OnUnitChanged(long? v)
+    {
+        _unitId = v; _selVerticals.Clear();
+        if (v is not null)
+            foreach (var id in await Classification.GetMappedVerticalIdsAsync(v.Value)) _selVerticals.Add(id);
+    }
+    private async Task SaveUnitMap()
+    {
+        try { await Classification.SetUnitVerticalsAsync(_unitId!.Value, _selVerticals); Snackbar.Add("Saved.", Severity.Success); }
+        catch (Exception ex) { AppLogger.LogError(ex, "ClassificationMap: failed to save unit-vertical mapping"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+    }
+}

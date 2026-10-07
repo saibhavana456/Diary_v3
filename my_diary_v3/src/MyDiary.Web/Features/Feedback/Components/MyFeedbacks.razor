@@ -1,0 +1,124 @@
+@page "/my-feedback"
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IFeedbackRepo FeedbackRepo
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject NavigationManager Nav
+
+<PageTitle>My Feedbacks</PageTitle>
+<PageHeader PageKey="my-feedback" Title="My Feedbacks" Subtitle="Feedback tickets you've submitted." Crumbs="_crumbs" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="6">
+            <MudSelect T="FeedbackStatus?" Label="Status" @bind-Value="_status" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (FeedbackStatus s in Enum.GetValues<FeedbackStatus>()) { <MudSelectItem T="FeedbackStatus?" Value="@((FeedbackStatus?)s)">@s</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudSelect T="FeedbackCategory?" Label="Category" @bind-Value="_category" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (FeedbackCategory c in Enum.GetValues<FeedbackCategory>()) { <MudSelectItem T="FeedbackCategory?" Value="@((FeedbackCategory?)c)">@CategoryLabel(c)</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" Class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="ReloadAsync">Apply</MudButton>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.RateReview" OnClick="@(() => Nav.NavigateTo("feedback/new"))">Submit Feedback</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_tickets.Count == 0)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">You haven't submitted any feedback yet — use the Feedback card on the Home page.</MudAlert>
+}
+else
+{
+    <MudGrid>
+        @foreach (var t in _tickets)
+        {
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Style="cursor:pointer" Elevation="1" @onclick="@(() => Nav.NavigateTo($"my-feedback/{t.Id}"))">
+                    <div class="d-flex justify-space-between align-start mb-1">
+                        <MudText Typo="Typo.subtitle1" Class="fw-bold">@t.TicketNo</MudText>
+                        <MudChip T="string" Size="Size.Small" Color="@StatusColor(t.Status)">@t.Status</MudChip>
+                    </div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">@CategoryLabel(t.Category) &middot; @t.CreatedAt.ToString("dd-MMM-yyyy")</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-2">@t.Description</MudText>
+                    @if (t.Severity is not null)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="@SeverityColor(t.Severity.Value)" Class="mb-2">Severity: @t.Severity</MudChip>
+                    }
+                    @if (t.Rating is not null)
+                    {
+                        <MudRating SelectedValue="t.Rating.Value" ReadOnly="true" Class="mb-1" />
+                    }
+                    @if (t.Updates.Count > 0)
+                    {
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.caption" Class="fw-bold d-block mb-1">Latest update</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@t.Updates[^1].UpdatedAt.ToString("dd-MMM-yyyy") — @t.Updates[^1].UpdateText</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("MIS", "MIS"), new("My Feedbacks") };
+
+    private bool _loading = true;
+    private FeedbackStatus? _status;
+    private FeedbackCategory? _category;
+    private List<FeedbackTicket> _tickets = new();
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        var empCode = CurrentUser.EmpCode ?? "";
+        var data = await FeedbackRepo.ListMyTicketsAsync(empCode, _status, _category);
+        var tickets = data.ToList();
+
+        // Load full detail (with update log) per ticket for the "latest update" preview.
+        var withDetail = new List<FeedbackTicket>();
+        foreach (var t in tickets)
+        {
+            withDetail.Add(await FeedbackRepo.GetTicketAsync(t.Id) ?? t);
+        }
+        _tickets = withDetail;
+        _loading = false;
+    }
+
+    private static string CategoryLabel(FeedbackCategory c) => c switch
+    {
+        FeedbackCategory.FunctionalDefects => "Functional Defects",
+        FeedbackCategory.PerformanceIssues => "Performance Issues",
+        FeedbackCategory.UiUxImprovements => "UI/UX Improvements",
+        FeedbackCategory.NewFeatureRequests => "New Feature Requests",
+        FeedbackCategory.DataIssues => "Data Issues",
+        _ => c.ToString()
+    };
+
+    private static Color SeverityColor(FeedbackSeverity s) => s switch
+    {
+        FeedbackSeverity.Critical => Color.Error,
+        FeedbackSeverity.High => Color.Warning,
+        FeedbackSeverity.Medium => Color.Info,
+        _ => Color.Default
+    };
+
+    private static Color StatusColor(FeedbackStatus s) => s switch
+    {
+        FeedbackStatus.Closed => Color.Success,
+        FeedbackStatus.InProgress => Color.Warning,
+        _ => Color.Default
+    };
+}

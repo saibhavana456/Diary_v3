@@ -1,0 +1,186 @@
+﻿@page "/reports/debit-card-tracking"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Features.Reports.Models
+@using MyDiary.Web.Features.Reports.Services
+@inject IDebitCardTrackingService TrackingService
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Debit Card Tracking — My Diary</PageTitle>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <div id="report-page-root" class="mb-4">
+            <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+
+                @* --- LEVEL 2: Search & Filters --- *@
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <MudItem xs="12" sm="5" md="4">
+                        <MudTextField @bind-Value="_searchAccountNumber"
+                                      Label="Enter account number for tracking details:"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      MaxLength="15"
+                                      Clearable="true"
+                                      OnKeyUp="HandleKeyUp" />
+                    </MudItem>
+                    <MudItem xs="12" sm="3" md="2">
+                        <MudButton Variant="Variant.Filled"
+                                   OnClick="SearchData"
+                                   Style="background-color: #000066; color: white;"
+                                   Disabled="@_isLoading">
+                            @if (_isLoading)
+                            {
+                                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                                <span class="ms-2">Searching</span>
+                            }
+                            else
+                            {
+                                <span>Search</span>
+                            }
+                        </MudButton>
+                    </MudItem>
+
+                    <MudSpacer />
+
+                    <MudItem xs="12" sm="4" md="4" Class="d-flex justify-end align-center">
+                        @if (_asOnDate.HasValue)
+                        {
+                            <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                                Last updated on - @_asOnDate.Value.ToString("dd/MM/yyyy HH:mm:ss")
+                            </MudText>
+                        }
+                    </MudItem>
+                </MudGrid>
+
+                @* Validation Error Message Area *@
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="px-4 pb-2">
+                        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" Class="rounded">
+                            @_errorMessage
+                        </MudAlert>
+                    </div>
+                }
+
+                @* --- LEVEL 3: Table Section --- *@
+                <MudItem xs="12" Class="pa-4 pt-0">
+                    <MudTable Items="@_records" Dense="true" Striped="true" Bordered="true" Hover="true"
+                              Loading="@_isLoading" LoadingProgressColor="Color.Info"
+                              Style="font-size:12px;" Elevation="2">
+                        <HeaderContent>
+                            <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No.</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Card Number</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">ENC Name</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Account No.</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">REF/SOLE ID</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Contact No.</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">BAR Code</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Courier Name</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Dispatch Date</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd Style="text-align: center;">@context.SeqNo</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.CardNumber) ? "No Data Available" : context.CardNumber)</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.ENCName) ? "No Data Available" : context.ENCName)</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.AccountNumber) ? "No Data Available" : context.AccountNumber)</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.RefOrSoleId) ? "No Data Available" : context.RefOrSoleId)</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.ContactNo) ? "No Data Available" : context.ContactNo)</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.BarCode) ? "No Data Available" : context.BarCode)</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.CourierName) ? "No Data Available" : context.CourierName)</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.DispatchDate) ? "No Data Available" : context.DispatchDate)</MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <td colspan="9" style="text-align:center; padding: 40px;">
+                                <MudText Typo="Typo.subtitle1" Color="Color.Default">
+                                    @(_hasSearched ? "No Data Available" : "Enter an account number and click search to view tracking details.")
+                                </MudText>
+                            </td>
+                        </NoRecordsContent>
+                        <PagerContent>
+                            <MudTablePager PageSizeOptions="new int[] { 10, 25, 50 }" />
+                        </PagerContent>
+                    </MudTable>
+                </MudItem>
+
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _searchAccountNumber = "";
+    private string _errorMessage = "";
+    private bool _isLoading = false;
+    private bool _hasSearched = false;
+    private DateTime? _asOnDate;
+    private List<DebitCardTrackingModel> _records = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // On initial load, call the service with null to retrieve the "AsOnDate"
+        // without fetching any grid data, mimicking the legacy Page_Load behavior.
+        await FetchDataAsync(null);
+    }
+
+    private async Task SearchData()
+    {
+        _errorMessage = "";
+
+        // Exact validation logic from legacy ViewDebitCardTrackingRecords.aspx.cs
+        if (string.IsNullOrWhiteSpace(_searchAccountNumber))
+        {
+            _errorMessage = "Please enter a valid account number!!";
+            _records.Clear();
+            return;
+        }
+
+        _hasSearched = true;
+        await FetchDataAsync(_searchAccountNumber.Trim());
+    }
+
+    // Modern touch: Allows the user to just press "Enter" on their keyboard to search
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchData();
+        }
+    }
+
+    private async Task FetchDataAsync(string accountNo)
+    {
+        _isLoading = true;
+        StateHasChanged(); // Trigger UI to show loading spinner
+
+        try
+        {
+            var result = await TrackingService.GetTrackingDataAsync(accountNo);
+
+            // The stored procedure always calculates the date
+            if (result.AsOnDate.HasValue)
+            {
+                _asOnDate = result.AsOnDate;
+            }
+
+            // Only populate grid if an account number was provided
+            if (accountNo != null)
+            {
+                _records = result.Records ?? new List<DebitCardTrackingModel>();
+            }
+        }
+        catch (Exception)
+        {
+            _errorMessage = "An error occurred while communicating with the database.";
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

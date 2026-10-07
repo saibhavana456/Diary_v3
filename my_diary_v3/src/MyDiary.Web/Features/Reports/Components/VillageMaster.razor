@@ -1,0 +1,149 @@
+﻿@page "/reports/VillageMaster"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Village Master — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+            <!-- Filters + Export -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 11px;"
+                               OnClick="OnExportInternal">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Data Table -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50"
+                          UserAttributes="@(new Dictionary<string, object>{ ["aria-label"] = "Village Master Table." })">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@(_data.IndexOf(context) + 1)</MudTd>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_cols.Count + 1)" style="text-align:center; padding: 40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // ---- UI / State ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private string _title => string.IsNullOrWhiteSpace(Title) ? "Village Master" : Title!;
+    private bool _loading = true;
+
+    private List<Dictionary<string, object>> _data = new();
+
+    // ---- Columns (match SELECT aliases) ----
+    private readonly List<ColumnConfig> _cols = new()
+    {
+        new ColumnConfig { Header = "STATE CODE",                       PropertyName = "STATE_CODE",       Width = "16%" },
+        new ColumnConfig { Header = "SUB-DISTRICT CODE",                     PropertyName = "SUB_DIST_CODE",     Width = "20%" },
+        new ColumnConfig { Header = "VILLAGE CODE",                     PropertyName = "VILLAGE_CODE",     Width = "24%" },
+        new ColumnConfig { Header = "VILLAGE NAME",                     PropertyName = "VILLAGE_NAME",      Width = "10%" },
+        new ColumnConfig { Header = "DISTRICT CODE",            PropertyName = "DIST_CODE",   Width = "15%"}
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string finalQuery =
+            "SELECT " +
+            "STATE_CODE,SUB_DIST_CODE,VILLAGE_CODE,VILLAGE_NAME,DIST_CODE " +
+            "FROM VILLAGE_MASTER";
+
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnExportInternal()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _cols, "Village_Master");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "Village_Master.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+        return val.ToString();
+    }
+}

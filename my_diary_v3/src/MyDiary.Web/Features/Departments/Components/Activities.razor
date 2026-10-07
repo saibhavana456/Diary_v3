@@ -1,0 +1,197 @@
+﻿@page "/activities"
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@using MudBlazor
+@using MyDiary.Web.Features.Departments.Models
+@using MyDiary.Web.Features.Departments.Services
+@using MyDiary.Web.Services
+@layout MyDiary.Web.Components.Layout.LandingLayout
+@inject IActivityService ActivityService
+@inject IDepartmentService DeptService
+@inject NavigationManager Nav
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        --card-min-width: 320px;
+        --card-height: 200px;
+    }
+
+    /* Background Container matching Departments */
+    .main-content-container {
+        padding: 25px;
+        background: rgba(255,255,255,0.95);
+        min-height: 85vh;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+    }
+
+    .dept-hero {
+        background: var(--primary-gradient);
+        color: white;
+        padding: 2.5rem 2rem;
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+    }
+
+    .breadcrumb-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    /* Styling to ensure MudLink inherits white color in the hero section */
+    .breadcrumb-link {
+        color: white !important;
+        text-decoration: none;
+    }
+
+        .breadcrumb-link:hover {
+            text-decoration: underline !important;
+        }
+
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+        gap: 1.5rem;
+        padding: 0 0 2rem;
+    }
+
+    .activity-card {
+        background: white !important;
+        border-radius: 16px !important;
+        padding: 1.5rem !important;
+        border: 2px solid #e2e8f0 !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: var(--card-height) !important;
+        width: 100% !important;
+        text-transform: none !important;
+        cursor: pointer !important;
+    }
+
+        .activity-card:hover {
+            transform: translateY(-6px) !important;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1) !important;
+            border-color: #1E3A8A !important;
+        }
+
+        .activity-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--primary-gradient);
+        }
+
+    .activity-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #2d3748;
+        line-height: 1.3;
+        text-align: center;
+        margin: auto;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #64748b;
+    }
+</style>
+
+<div class="main-content-container">
+    @if (currentDept != null)
+    {
+        <section class="dept-hero">
+            <nav class="breadcrumb-nav">
+                @* Use OnClick for SPA navigation instead of Href *@
+                <MudLink OnClick='() => Nav.NavigateTo("")'
+                         Underline="Underline.None"
+                         Class="breadcrumb-link d-flex align-center"
+                         Style="cursor: pointer;">
+                    <MudIcon Icon="@Icons.Material.Filled.Home" Size="Size.Small" Class="mr-1" />
+                    Home
+                </MudLink>
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Style="opacity: 0.5;" />
+
+                <MudLink OnClick='() => Nav.NavigateTo("departments")' Underline="Underline.None" Class="breadcrumb-link d-flex align-center" Style="cursor: pointer;"> Departments
+                </MudLink>
+
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Style="opacity: 0.5;" />
+
+                @* Current page remains as text *@
+                <MudText Typo="Typo.body2" Class="breadcrumb-link" Style="opacity: 0.9; cursor: default;">
+                    @currentDept.DepartmentName
+                </MudText>
+            </nav>
+            <h1 class="dept-title">@currentDept.DepartmentName</h1>
+        </section>
+
+        @if (activities == null || !activities.Any())
+        {
+            <div class="empty-state">
+                <MudIcon Icon="@Icons.Material.Filled.Inbox" Style="font-size: 4rem; color: #cbd5e1;" />
+                <h4>No Activities Found</h4>
+                <p>This department doesn't have any activities yet.</p>
+            </div>
+        }
+        else
+        {
+            <div class="cards-grid">
+                @foreach (var act in activities)
+                {
+                    var name = act.ActivityName?.Trim();
+
+                    if (!string.Equals(name, "Escalation Matrix", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(name, "Contact Details", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <MudButton Class="activity-card"
+                                   OnClick="() => NavigateToDocuments(act.ActivityID)"
+                                   Ripple="false">
+                            <h3 class="activity-title">@act.ActivityName</h3>
+                        </MudButton>
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public int DeptID { get; set; }
+
+    private Department? currentDept;
+    private List<Activity> activities = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (DeptID > 0)
+        {
+            var allDepts = await DeptService.GetActiveDepartmentsAsync();
+            currentDept = allDepts.FirstOrDefault(d => d.DepartmentID == DeptID);
+            activities = await ActivityService.GetActivitiesByDeptIdAsync(DeptID);
+        }
+        else
+        {
+            Nav.NavigateTo("departments");
+        }
+    }
+
+    private void NavigateToDocuments(int activityId)
+    {
+        // Navigate using the route parameter structure defined in your Documents component
+        Nav.NavigateTo($"documents/{activityId}");
+    }
+}

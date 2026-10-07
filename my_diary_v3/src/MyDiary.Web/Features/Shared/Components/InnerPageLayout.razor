@@ -1,0 +1,163 @@
+@* ─────────────────────────────────────────────────────────────────────────────
+   InnerPageLayout — shared wrapper for all migrated inner pages.
+
+   Usage:
+       <InnerPageLayout Title="Revisions" BreadcrumbLabel="Applications">
+           <!-- your page content here -->
+       </InnerPageLayout>
+
+   Parameters:
+     Title            — displayed in the hero banner and used as the page heading
+     BreadcrumbLabel  — the parent crumb shown before the title (e.g. "Applications")
+     BreadcrumbRoute  — route to navigate to when the parent crumb is clicked (default: "applications")
+────────────────────────────────────────────────────────────────────────────── *@
+
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Web
+@inject NavigationManager Nav
+
+<style>
+    /* ── Shared background — matches About / Network / Downloads / Departments ── */
+    .inner-page-container {
+        padding: 25px;
+        min-height: 85vh;
+        background-image: url("images/Login_right_bg.jpeg");
+        background-size: cover;
+        background-position: center;
+    }
+
+    /* ── Gradient hero banner ── */
+    .inner-page-hero {
+        background: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+        color: white;
+        padding: 2.5rem 2rem;
+        margin-bottom: 2rem;
+        border-radius: 16px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .inner-page-hero::after {
+        content: "";
+        position: absolute;
+        top: -40px;
+        right: -40px;
+        width: 200px;
+        height: 200px;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 50%;
+        pointer-events: none;
+    }
+
+    /* ── Breadcrumb ── */
+    .inner-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .inner-breadcrumb-link {
+        color: white !important;
+        text-decoration: none;
+        cursor: pointer;
+        opacity: 0.9;
+        transition: opacity 0.15s;
+    }
+
+        .inner-breadcrumb-link:hover {
+            opacity: 1;
+            text-decoration: underline !important;
+        }
+
+    .inner-page-title {
+        font-size: 2rem;
+        font-weight: 800;
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+
+    /* ── White content card ── */
+    .inner-page-card {
+        background: white;
+        border-radius: 20px;
+        padding: 36px 40px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.07);
+    }
+
+    @@media (max-width: 600px) {
+        .inner-page-card {
+            padding: 24px 20px;
+        }
+    }
+</style>
+
+<div class="inner-page-container">
+
+    @* ── Hero banner with breadcrumb ── *@
+    <div class="inner-page-hero">
+        <nav class="inner-breadcrumb" aria-label="Breadcrumb">
+            <span class="inner-breadcrumb-link d-flex align-center"
+                  role="link"
+                  tabindex="0"
+                  @onclick="GoHome"
+                  @onkeydown="OnHomeKeyDown">
+                <MudIcon Icon="@Icons.Material.Filled.Home" Size="MudBlazor.Size.Small" Class="mr-1" />
+                Home
+            </span>
+
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" Style="opacity:0.5;" />
+
+            @if (!string.IsNullOrWhiteSpace(BreadcrumbLabel))
+            {
+                <span class="inner-breadcrumb-link"
+                      role="link"
+                      tabindex="0"
+                      @onclick="GoBreadcrumb"
+                      @onkeydown="OnBreadcrumbKeyDown">
+                    @BreadcrumbLabel
+                </span>
+
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" Style="opacity:0.5;" />
+            }
+
+            <span style="opacity:0.9; font-weight:600; cursor:default;" aria-current="page">@Title</span>
+        </nav>
+
+        <h1 class="inner-page-title">@Title</h1>
+    </div>
+
+    @* ── Page content ── *@
+    <div class="inner-page-card">
+        @ChildContent
+    </div>
+
+</div>
+
+@code {
+    /// <summary>Page title shown in the hero and as the last breadcrumb crumb.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    /// <summary>Label for the parent breadcrumb item (e.g. "Applications").</summary>
+    [Parameter] public string BreadcrumbLabel { get; set; } = "";
+
+    /// <summary>Route navigated to when the parent breadcrumb is clicked. Defaults to "applications".</summary>
+    [Parameter] public string BreadcrumbRoute { get; set; } = "applications";
+
+    /// <summary>The page-specific content rendered inside the white card.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private void GoHome() => Nav.NavigateTo("");
+    private void GoBreadcrumb() => Nav.NavigateTo(BreadcrumbRoute);
+
+    private void OnHomeKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key == " ") GoHome();
+    }
+
+    private void OnBreadcrumbKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key == " ") GoBreadcrumb();
+    }
+}

@@ -1,0 +1,91 @@
+@page "/dbv"
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Authorization
+@using MyDiary.Web.Features.DigitalBusinessVertical.Services
+@inject NavigationManager Nav
+@inject IDbvService Svc
+@inject IAuthorizationService Authz
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<PageTitle>Digital Business Vertical - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader PageKey="dbv" Title="Digital Business Vertical"
+                Subtitle="Campaign awareness and important correspondence from DBV - so branches can guide customers on the communications they receive."
+                Crumbs="_crumbs" />
+
+    <div class="dbv-hub-grid">
+        <div class="dbv-hub-card" @onclick="@(() => Nav.NavigateTo("dbv/campaigns"))">
+            <MudIcon Icon="@Icons.Material.Filled.Campaign" Class="dbv-hub-card-icon" />
+            <div class="dbv-hub-card-title">Campaigns</div>
+            <div class="dbv-hub-card-desc">Product-wise campaigns run through SMS, WhatsApp, Email and other digital channels - dates, modes, message templates and creatives.</div>
+        </div>
+
+        <div class="dbv-hub-card" @onclick="@(() => Nav.NavigateTo("dbv/correspondence"))">
+            <MudIcon Icon="@Icons.Material.Filled.MarkEmailRead" Class="dbv-hub-card-icon" />
+            <div class="dbv-hub-card-title">Important Correspondence</div>
+            <div class="dbv-hub-card-desc">Notices and updates from the Digital Business Vertical for branch awareness.</div>
+        </div>
+
+        @if (_isSuper)
+        {
+            <div class="dbv-hub-card dbv-hub-admin" @onclick="OpenAdmins">
+                <MudIcon Icon="@Icons.Material.Filled.ManageAccounts" Class="dbv-hub-card-icon" />
+                <div class="dbv-hub-card-title">DBV Department Users</div>
+                <div class="dbv-hub-card-desc">Choose who in the department can add, modify, delete, archive and export campaigns and correspondence.</div>
+            </div>
+        }
+    </div>
+
+    <MudDialog @bind-Visible="_adminOpen" Options="_dlg">
+        <TitleContent>DBV Department Users</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2" Class="mb-2">App Admins always have access. Add employee codes of DBV department users:</MudText>
+            <div class="d-flex gap-2 mb-2">
+                <MudTextField @bind-Value="_newAdmin" Label="Employee code" Variant="Variant.Outlined" Dense="true" MaxLength="20" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddAdminAsync">Add</MudButton>
+            </div>
+            <MudTable Items="@_admins" Dense="true" Bordered="true">
+                <HeaderContent><MudTh>Employee</MudTh><MudTh>Added by</MudTh><MudTh></MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.EmpCode</MudTd><MudTd>@context.AddedBy</MudTd>
+                    <MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveAdminAsync(context.EmpCode))" /></MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>No department users added.</MudText></NoRecordsContent>
+            </MudTable>
+        </DialogContent>
+        <DialogActions><MudButton OnClick="@(() => _adminOpen = false)">Close</MudButton></DialogActions>
+    </MudDialog>
+</AuthenticatedOnly>
+
+<style>
+    .dbv-hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .dbv-hub-card { cursor: pointer; border-radius: 12px; padding: 24px; background: #fff; border: 1px solid rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s; }
+    .dbv-hub-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .dbv-hub-admin { border-left: 3px solid var(--rp-navy, #1E3A8A); }
+    .mud-theme-dark .dbv-hub-card, .cc-dark .dbv-hub-card { background: #1c1f24; border-color: #2a2e35; }
+    .dbv-hub-card-icon { font-size: 2.2rem; color: var(--mud-palette-primary); margin-bottom: 10px; }
+    .dbv-hub-card-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 6px; }
+    .dbv-hub-card-desc { font-size: .85rem; opacity: .75; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Departments", "departmentsnew"), new("Digital Business Vertical") };
+
+    private readonly DialogOptions _dlg = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+    private bool _isSuper, _adminOpen;
+    private string _actor = "", _newAdmin = "";
+    private List<(string EmpCode, string AddedBy, DateTime AddedAt)> _admins = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _actor = state.User.FindFirst("emplid")?.Value ?? "";
+        _isSuper = (await Authz.AuthorizeAsync(state.User, "AppAdmin")).Succeeded;
+    }
+
+    private async Task OpenAdmins() { _admins = await Svc.ListAdminsAsync(); _adminOpen = true; }
+    private async Task AddAdminAsync() { if (string.IsNullOrWhiteSpace(_newAdmin)) return; await Svc.AddAdminAsync(_newAdmin, _actor); _newAdmin = ""; _admins = await Svc.ListAdminsAsync(); }
+    private async Task RemoveAdminAsync(string emp) { await Svc.RemoveAdminAsync(emp); _admins = await Svc.ListAdminsAsync(); }
+}

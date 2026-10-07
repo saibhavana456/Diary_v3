@@ -1,0 +1,240 @@
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@inject IAdminMasterService AdminService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@(EntityType == "Department" ? Icons.Material.Filled.Business : Icons.Material.Filled.AccountTree)" Class="mr-2 mb-1" />
+            @Title
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (EntityType == "Department")
+            {
+                <MudSelect T="string" Label="Office Type" Value="_tempDept.OFFICE_TYPE" ValueChanged="OnOfficeTypeChanged"
+                           Required="true" RequiredError="Office Type is required" Variant="Variant.Outlined" Class="mb-4"
+                           AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+                    <MudSelectItem Value="@("CENTRAL")">Central Office</MudSelectItem>
+                    <MudSelectItem Value="@("ZONE")">Zonal Office</MudSelectItem>
+                    <MudSelectItem Value="@("REGION")">Regional Office</MudSelectItem>
+                    <MudSelectItem Value="@("BRANCH")">Branch</MudSelectItem>
+                </MudSelect>
+
+                @if (ShowZone)
+                {
+                    <MudSelect T="string" Label="Zone" Value="_tempDept.ZONE_CODE" ValueChanged="OnZoneChanged"
+                               Required="true" RequiredError="Zone is required" Variant="Variant.Outlined" Class="mb-4"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z.ZONE_CODE">@z.ZONE_NAME_ENG (@z.ZONE_CODE)</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+
+                @if (ShowRegion)
+                {
+                    <MudSelect T="string" Label="Region" Value="_tempDept.REGION_CODE" ValueChanged="OnRegionChanged"
+                               Required="true" RequiredError="Region is required" Disabled="@(string.IsNullOrEmpty(_tempDept.ZONE_CODE))"
+                               Variant="Variant.Outlined" Class="mb-4" AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r.REGION_CODE">@r.REGION_NAME (@r.REGION_CODE)</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+
+                @if (ShowBranch)
+                {
+                    <MudSelect T="string" Label="Branch" Value="_tempDept.BRANCH_CODE" ValueChanged="OnBranchChanged"
+                               Required="true" RequiredError="Branch is required" Disabled="@(string.IsNullOrEmpty(_tempDept.REGION_CODE))"
+                               Variant="Variant.Outlined" Class="mb-4" AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b.BRANCH_CODE">@b.BRANCH_NAME (@b.BRANCH_CODE)</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+
+                <MudTextField T="string" Label="Code (SOL ID)" @bind-Value="_tempDept.DEPT_CODE"
+                               Variant="Variant.Outlined" Class="mb-4"
+                              HelperText="Filled automatically from the office/location selected above." />
+                <MudTextField T="string" Label="Department Name" @bind-Value="_tempDept.DEPT_NAME" Required="true"
+                              RequiredError="Department name is required" Variant="Variant.Outlined" Class="mb-4" />
+                <MudTextField T="string" Label="Description" @bind-Value="_tempDept.DESCRIPTION" Lines="2" Variant="Variant.Outlined" Class="mb-4" />
+                <MudSelect T="string" Label="Status" @bind-Value="_tempDept.STATUS" Variant="Variant.Outlined">
+                    <MudSelectItem Value="@("Active")">Active</MudSelectItem>
+                    <MudSelectItem Value="@("Inactive")">Inactive</MudSelectItem>
+                </MudSelect>
+            }
+            else
+            {
+                <MudSelect T="long?" Label="Department" @bind-Value="_tempSection.DEPT_ID" Required="true"
+                           RequiredError="Department is required" Variant="Variant.Outlined" Class="mb-4"
+                           AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+                    @foreach (var d in _departments)
+                    {
+                        <MudSelectItem Value="@((long?)d.DEPT_ID)" Disabled="@(d.STATUS != "Active")">
+                            @d.DEPT_NAME@(d.STATUS != "Active" ? " (Inactive)" : "")
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTextField T="string" Label="Section Name" @bind-Value="_tempSection.NAME" Required="true"
+                              RequiredError="Section name is required" Variant="Variant.Outlined" Class="mb-4" />
+                <MudTextField T="string" Label="Section Code" @bind-Value="_tempSection.SECTION_CODE" Variant="Variant.Outlined" Class="mb-4" />
+                <MudTextField T="string" Label="Description" @bind-Value="_tempSection.DESCRIPTION" Lines="2" Variant="Variant.Outlined" Class="mb-4" />
+                
+                <MudSelect T="string" Label="Status" @bind-Value="_tempSection.STATUS" Variant="Variant.Outlined">
+                    <MudSelectItem Value="@("Active")">Active</MudSelectItem>
+                    <MudSelectItem Value="@("Inactive")">Inactive</MudSelectItem>
+                </MudSelect>
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string EntityType { get; set; } = "";
+    [Parameter] public object? EntityData { get; set; }
+    [Parameter] public bool IsNew { get; set; } = true;
+
+    private string Title => $"{(IsNew ? "Add" : "Edit")} {EntityType}";
+    private MudForm _form = default!;
+    private Department _tempDept = new() { STATUS = "Active", HAS_REVENUE = "N" };
+    private Section _tempSection = new() { STATUS = "Active", APPLIES_TO = "CAPITAL" };
+    private List<Department> _departments = new();
+
+    // Location cascade
+    private List<ZoneMaster> _zones = new();
+    private List<RegionMaster> _regions = new();
+    private List<BranchMaster> _branches = new();
+    private bool ShowZone => _tempDept.OFFICE_TYPE is "ZONE" or "REGION" or "BRANCH";
+    private bool ShowRegion => _tempDept.OFFICE_TYPE is "REGION" or "BRANCH";
+    private bool ShowBranch => _tempDept.OFFICE_TYPE is "BRANCH";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _departments = await AdminService.GetDepartmentsAsync(true);
+
+        if (!IsNew && EntityData != null)
+        {
+            if (EntityType == "Department" && EntityData is Department d)
+            {
+                _tempDept = new Department
+                {
+                    DEPT_ID = d.DEPT_ID,
+                    DEPT_NAME = d.DEPT_NAME,
+                    DEPT_HEAD = d.DEPT_HEAD,
+                    DEPT_CODE = d.DEPT_CODE,
+                    DESCRIPTION = d.DESCRIPTION,
+                    STATUS = d.STATUS ?? "Active",
+                    SORT_ORDER = d.SORT_ORDER,
+                    HAS_REVENUE = d.HAS_REVENUE ?? "N",
+                    ICON_CLASS = d.ICON_CLASS,
+                    OFFICE_TYPE = d.OFFICE_TYPE,
+                    ZONE_CODE = d.ZONE_CODE,
+                    REGION_CODE = d.REGION_CODE,
+                    BRANCH_CODE = d.BRANCH_CODE,
+                    CREATED_AT = d.CREATED_AT,
+                    UPDATED_AT = d.UPDATED_AT
+                };
+
+                // Rebuild the cascade lists for editing
+                if (ShowZone)
+                {
+                    _zones = await AdminService.GetZonesAsync();
+                    if (!string.IsNullOrEmpty(_tempDept.ZONE_CODE) && _tempDept.ZONE_CODE != "000000")
+                        _regions = await AdminService.GetRegionsByZoneAsync(_tempDept.ZONE_CODE);
+                    if (!string.IsNullOrEmpty(_tempDept.REGION_CODE) && _tempDept.REGION_CODE != "000000")
+                        _branches = await AdminService.GetBranchesByRegionAsync(_tempDept.REGION_CODE);
+                }
+            }
+            else if (EntityType == "Section" && EntityData is Section s)
+            {
+                _tempSection = new Section
+                {
+                    SECTION_ID = s.SECTION_ID,
+                    NAME = s.NAME,
+                    SECTION_CODE = s.SECTION_CODE,
+                    DESCRIPTION = s.DESCRIPTION,
+                    DEPT_ID = s.DEPT_ID,
+                    APPLIES_TO = s.APPLIES_TO ?? "CAPITAL",
+                    TEAM_LEAD = s.TEAM_LEAD,
+                    AGM = s.AGM,
+                    DGM = s.DGM,
+                    GM = s.GM,
+                    CGM = s.CGM,
+                    CTO = s.CTO,
+                    STATUS = s.STATUS ?? "Active",
+                    SORT_ORDER = s.SORT_ORDER,
+                    ICON_CLASS = s.ICON_CLASS,
+                    CREATED_AT = s.CREATED_AT,
+                    UPDATED_AT = s.UPDATED_AT
+                };
+            }
+        }
+    }
+
+    private async Task OnOfficeTypeChanged(string val)
+    {
+        _tempDept.OFFICE_TYPE = val;
+        _tempDept.ZONE_CODE = null; _tempDept.REGION_CODE = null; _tempDept.BRANCH_CODE = null;
+        _regions.Clear(); _branches.Clear();
+
+        if (val == "CENTRAL")
+        {
+            _tempDept.ZONE_CODE = "000000";
+            _tempDept.REGION_CODE = "000000";
+            _tempDept.BRANCH_CODE = "000000";
+            _tempDept.DEPT_CODE = "000000";
+        }
+        else
+        {
+            _tempDept.DEPT_CODE = null;
+            if (_zones.Count == 0) _zones = await AdminService.GetZonesAsync();
+        }
+    }
+
+    private async Task OnZoneChanged(string zoneCode)
+    {
+        _tempDept.ZONE_CODE = zoneCode;
+        _tempDept.REGION_CODE = null; _tempDept.BRANCH_CODE = null;
+        _branches.Clear();
+        _regions = await AdminService.GetRegionsByZoneAsync(zoneCode);
+        if (_tempDept.OFFICE_TYPE == "ZONE") _tempDept.DEPT_CODE = zoneCode;
+    }
+
+    private async Task OnRegionChanged(string regionCode)
+    {
+        _tempDept.REGION_CODE = regionCode;
+        _tempDept.BRANCH_CODE = null;
+        _branches = await AdminService.GetBranchesByRegionAsync(regionCode);
+        if (_tempDept.OFFICE_TYPE == "REGION") _tempDept.DEPT_CODE = regionCode;
+    }
+
+    private void OnBranchChanged(string branchCode)
+    {
+        _tempDept.BRANCH_CODE = branchCode;
+        var b = _branches.FirstOrDefault(x => x.BRANCH_CODE == branchCode);
+        _tempDept.DEPT_CODE = b?.BRANCH_UCD1;   // SOL ID
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await _form.Validate();
+        if (_form.IsValid)
+        {
+            if (EntityType == "Department") MudDialog.Close(DialogResult.Ok(_tempDept));
+            else MudDialog.Close(DialogResult.Ok(_tempSection));
+        }
+    }
+}

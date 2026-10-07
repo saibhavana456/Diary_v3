@@ -1,0 +1,24 @@
+@namespace RequestPortal.Web.Shared
+@* ───────────────────────────────────────────────────────────────────────
+   AppAdminOnly — page-level guard for pages requiring the AppAdmin policy,
+   enforced via AuthorizeView (like SuperAdminOnly/AuthenticatedOnly) rather
+   than a route-level "@attribute [Authorize(Policy = "AppAdmin")]" — see
+   AuthenticatedOnly.razor for why: the Developer Bypass login path never
+   issues a real ASP.NET Core auth cookie, only a circuit-local
+   AuthenticationStateProvider update, so a route-level [Authorize] 302s to
+   /login on every fresh navigation even for an already "logged in" user.
+   ─────────────────────────────────────────────────────────────────────── *@
+<AuthorizeView Policy="AppAdmin">
+    <Authorized>
+        @ChildContent
+    </Authorized>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="ma-4">
+            App Admin access is required to view this page.
+        </MudAlert>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

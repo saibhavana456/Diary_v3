@@ -1,0 +1,159 @@
+@page "/bcp-drill/mapping"
+@using System.Security.Claims
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Branch Mapping - BCP / DR Drill - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="Branch mapping"
+                Subtitle="Branches and offices linked to their Regional Office and Zonal Office, with the two nearby branches each is mapped to for business continuity."
+                Crumbs="_crumbs" PageKey="bcp-drill-mapping" />
+
+    <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-3">
+        <MudSelect T="string" Label="Region (RO)" Value="@_region" ValueChanged="OnRegionAsync" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:320px">
+            <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+            @foreach (var r in _regions) { <MudSelectItem T="string" Value="@r.Code">@r.Name</MudSelectItem> }
+        </MudSelect>
+        <div class="d-flex gap-2">
+            @if (_scope?.CanManageMapping == true)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="NewBranch">Add branch / office</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CloudDownload" OnClick="LoadMasterAsync">Load missing from org master</MudButton>
+            }
+            <MudButton Variant="Variant.Text" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Back</MudButton>
+        </div>
+    </div>
+
+    @if (_scope?.CanManageMapping != true)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">Read-only. The mapping is maintained by an App Admin; the two linked branches are updated whenever a Regional Office records its Annexure-II certificate.</MudAlert>
+    }
+
+    @if (_edit is not null)
+    {
+        <MudPaper Elevation="2" Class="pa-4 mb-3">
+            <MudText Typo="Typo.h6" Class="mb-2">@(_isNew ? "Add branch / office" : "Edit " + _edit.BranchName)</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6" md="2"><MudTextField T="string" @bind-Value="_edit.SolId" Label="SOL ID" ReadOnly="@(!_isNew)" MaxLength="20" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="2"><MudTextField T="string" @bind-Value="_edit.BranchCode" Label="Branch code" MaxLength="20" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="4"><MudTextField T="string" @bind-Value="_edit.BranchName" Label="Branch / office name" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="2"><MudTextField T="string" @bind-Value="_edit.Category" Label="Category" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="2"><MudSwitch T="bool" @bind-Value="_edit.IsActive" Color="Color.Primary" Label="Active" /></MudItem>
+                <MudItem xs="12" sm="6" md="2"><MudTextField T="string" @bind-Value="_edit.RegionCode" Label="RO code" MaxLength="20" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="4"><MudTextField T="string" @bind-Value="_edit.RegionName" Label="RO name" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="2"><MudTextField T="string" @bind-Value="_edit.ZoneCode" Label="ZO code" MaxLength="20" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="4"><MudTextField T="string" @bind-Value="_edit.ZoneName" Label="ZO name" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="_edit.Link1SolId" Label="Linked branch 1 (SOL ID)" MaxLength="20" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="_edit.Link2SolId" Label="Linked branch 2 (SOL ID)" MaxLength="20" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            </MudGrid>
+            <div class="d-flex gap-2 mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="@(() => _edit = null)">Cancel</MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (_loading) { <MudProgressCircular Indeterminate="true" /> }
+    else if (_rows.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No branches are mapped in your scope@(_scope?.CanManageMapping == true ? ". Use 'Load missing from org master' or add branches manually." : ".")</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_rows" Dense="true" Hover="true" Bordered="true" Striped="true" T="BcpBranch" RowsPerPage="25" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>SOL ID</MudTh><MudTh>Branch / office</MudTh><MudTh>RO</MudTh><MudTh>ZO</MudTh><MudTh>Category</MudTh><MudTh>Linked branch 1</MudTh><MudTh>Linked branch 2</MudTh><MudTh>Active</MudTh><MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.SolId</MudTd><MudTd>@context.BranchName</MudTd>
+                <MudTd>@(context.RegionName ?? context.RegionCode)</MudTd><MudTd>@(context.ZoneName ?? context.ZoneCode)</MudTd>
+                <MudTd>@context.Category</MudTd>
+                <MudTd>@Name(context.Link1SolId)</MudTd><MudTd>@Name(context.Link2SolId)</MudTd>
+                <MudTd>@(context.IsActive ? "Yes" : "No")</MudTd>
+                <MudTd>@if (_scope?.CanManageMapping == true) { <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditBranch(context))" /> }</MudTd>
+            </RowTemplate>
+            <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" /></PagerContent>
+        </MudTable>
+    }
+</AuthenticatedOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("BCP / DR Drill Compliance", "bcp-drill"), new("Branch mapping") };
+
+    private ClaimsPrincipal _user = new();
+    private BcpScope? _scope;
+    private bool _loading = true, _isNew;
+    private string _region = "ALL";
+    private List<BcpBranch> _rows = new();
+    private List<OrgOption> _regions = new();
+    private BcpBranch? _edit;
+    private Dictionary<string, string> _names = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _scope = Svc.GetScope(_user);
+        _regions = await Svc.GetRegionsAsync(_user, null);
+        await LoadAsync();
+    }
+
+    private async Task OnRegionAsync(string? v) { _region = v ?? "ALL"; await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _rows = await Svc.ListBranchMapAsync(_user, _region, includeInactive: true);
+            _names = _rows.ToDictionary(r => r.SolId, r => r.BranchName, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        _loading = false;
+    }
+
+    private string Name(string? sol) => sol is null ? "-" : _names.TryGetValue(sol, out var n) ? $"{n} ({sol})" : sol;
+
+    private void NewBranch() { _edit = new BcpBranch(); _isNew = true; }
+    private void EditBranch(BcpBranch b)
+    {
+        _edit = new BcpBranch
+        {
+            SolId = b.SolId, BranchCode = b.BranchCode, BranchName = b.BranchName, RegionCode = b.RegionCode, RegionName = b.RegionName,
+            ZoneCode = b.ZoneCode, ZoneName = b.ZoneName, Category = b.Category, Link1SolId = b.Link1SolId, Link2SolId = b.Link2SolId, IsActive = b.IsActive
+        };
+        _isNew = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_edit is null) return;
+        try
+        {
+            await Svc.SaveBranchAsync(_user, _edit);
+            Snackbar.Add("Mapping saved.", Severity.Success);
+            _edit = null;
+            _regions = await Svc.GetRegionsAsync(_user, null);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task LoadMasterAsync()
+    {
+        try
+        {
+            var n = await Svc.LoadBranchesFromMasterAsync(_user);
+            Snackbar.Add($"{n} branch(es) loaded from the org master.", n > 0 ? Severity.Success : Severity.Info);
+            _regions = await Svc.GetRegionsAsync(_user, null);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

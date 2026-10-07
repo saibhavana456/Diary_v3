@@ -1,0 +1,408 @@
+@* MyDiary.Web.Features.DitDiary/Components/Pages/BudgetUtilization/CapitalEntryDialog.razor
+   Opened by the + button on Budget Utilization (Capital view).
+   Flow (Savita/manager 16-17-07): FY + Month selected INSIDE the form,
+   Section -> Project cascading, previous month read-only, current actuals
+   + next-month estimates, BRD block rule on over-budget. *@
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MudBlazor
+@inherits MudComponentBase
+@inject MyDiary.Web.Features.DitDiary.Interfaces.IBudgetEntryService EntryService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject MyDiary.Web.Features.DitDiary.Services.DitUserSession Session
+
+<MudDialog>
+    <DialogContent>
+        <div style="max-height: 72vh; overflow-y: auto;">
+            <MudGrid Spacing="2">
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="int" Label="Financial Year" Value="@_fyId" ValueChanged="OnFyChanged"
+                               Variant="Variant.Outlined" Dense="true" Disabled="@(PresetProjectId.HasValue)">
+                        @foreach (var fy in _fys)
+                        {
+                            <MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="string" Label="Month" Value="@_month" ValueChanged="OnMonthChanged"
+                               Variant="Variant.Outlined" Dense="true" Disabled="@(PresetProjectId.HasValue)">
+                        @foreach (var m in FyMonths)
+                        {
+                            <MudSelectItem T="string" Value="@m">@m</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Section" Value="@_sectionName" ValueChanged="OnSectionChanged"
+                               Variant="Variant.Outlined" Dense="true" Disabled="@(PresetProjectId.HasValue)">
+                        @foreach (var s in _sections)
+                        {
+                            <MudSelectItem T="string" Value="@s.NAME">@s.NAME</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="int?" Label="Project" Value="@_projectId" ValueChanged="OnProjectChanged"
+                               Variant="Variant.Outlined" Dense="true" Disabled="@(PresetProjectId.HasValue)">
+                        @foreach (var p in _projects)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)p.ProjectId)">@p.ProjectName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                @if (_projectId == null)
+                {
+                    <MudItem xs="12"><MudAlert Severity="Severity.Info" Dense="true">Select Section and Project to continue.</MudAlert></MudItem>
+                }
+                else if (_alloc == null)
+                {
+                    <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">No capital allocation found for this project in FY @_fyLabel. Allocation is entered by the budget owner.</MudAlert></MudItem>
+                }
+                else if (_isFuture)
+                {
+                    <MudItem xs="12"><MudAlert Severity="Severity.Info" Dense="true"><b>@_month</b> is a future month - entry opens after the month ends.</MudAlert></MudItem>
+                }
+                else if (_alreadySubmitted && _current != null)
+                {
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption">Spillover Allotted</MudText>
+                        <MudText Typo="Typo.subtitle2"><b>₹ @_alloc.SpilloverAllotted.ToString("N2") Cr</b></MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption">Fresh Allotted</MudText>
+                        <MudText Typo="Typo.subtitle2"><b>₹ @_alloc.FreshAllotted.ToString("N2") Cr</b></MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption">Total Allotted</MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary"><b>₹ @_alloc.TotalAllotted.ToString("N2") Cr</b></MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption">Utilized till @_prevMonthDisplay</MudText>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Success"><b>₹ @_cumulative.ToString("N2") Cr</b></MudText>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudPaper Class="pa-3 mb-2" Elevation="1" Style="background-color:#e3f2fd;">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2"><b>Previous month (@_prevMonthDisplay)</b></MudText>
+                            @if (_prev == null)
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No submission found for @_prevMonthDisplay.</MudText>
+                            }
+                            else
+                            {
+                                <MudSimpleTable Dense="true" Striped="true">
+                                    <tbody>
+                                        <tr><td>Spillover Utilized</td><td><b>₹ @_prev.ActualSpillover.ToString("N2") Cr</b></td></tr>
+                                        <tr><td>Fresh Utilized</td><td><b>₹ @_prev.ActualFresh.ToString("N2") Cr</b></td></tr>
+                                        <tr><td>Total Utilized</td><td><b>₹ @((_prev.ActualSpillover + _prev.ActualFresh).ToString("N2")) Cr</b></td></tr>
+                                        <tr><td>Estimated Spillover (@_month)</td><td><b>₹ @_prev.EstSpilloverNext.ToString("N2") Cr</b></td></tr>
+                                        <tr><td>Estimated Fresh (@_month)</td><td><b>₹ @_prev.EstFreshNext.ToString("N2") Cr</b></td></tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            }
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Success" Dense="true" Class="mb-2">Capital budget for <b>@_month</b> is already submitted.</MudAlert>
+
+                        <MudPaper Class="pa-3" Elevation="1">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2"><b>Submitted values (@_month)</b></MudText>
+                            <MudSimpleTable Dense="true" Striped="true">
+                                <tbody>
+                                    <tr><td>Actual Spillover Utilized</td><td><b>₹ @_current.ActualSpillover.ToString("N2") Cr</b></td></tr>
+                                    <tr><td>Actual Fresh Utilized</td><td><b>₹ @_current.ActualFresh.ToString("N2") Cr</b></td></tr>
+                                    <tr><td>Actual Total</td><td><b>₹ @((_current.ActualSpillover + _current.ActualFresh).ToString("N2")) Cr</b></td></tr>
+                                    <tr><td>Estimated Spillover (@_nextMonth)</td><td><b>₹ @_current.EstSpilloverNext.ToString("N2") Cr</b></td></tr>
+                                    <tr><td>Estimated Fresh (@_nextMonth)</td><td><b>₹ @_current.EstFreshNext.ToString("N2") Cr</b></td></tr>
+                                    <tr><td>Justification</td><td><b>@(string.IsNullOrWhiteSpace(_current.Justification) ? "-" : _current.Justification)</b></td></tr>
+                                    <tr><td>Submitted By</td><td><b>@(string.IsNullOrWhiteSpace(_current.SubmittedBy) ? "-" : _current.SubmittedBy)</b></td></tr>
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudPaper>
+                    </MudItem>
+                }
+                else
+                {
+                    <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Spillover Allotted</MudText><MudText Typo="Typo.subtitle2"><b>₹ @_alloc.SpilloverAllotted.ToString("N2") Cr</b></MudText></MudItem>
+                    <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Fresh Allotted</MudText><MudText Typo="Typo.subtitle2"><b>₹ @_alloc.FreshAllotted.ToString("N2") Cr</b></MudText></MudItem>
+                    <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Total Allotted</MudText><MudText Typo="Typo.subtitle2" Color="Color.Primary"><b>₹ @_alloc.TotalAllotted.ToString("N2") Cr</b></MudText></MudItem>
+                    <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Utilized till @_prevMonthDisplay</MudText><MudText Typo="Typo.subtitle2" Color="Color.Success"><b>₹ @_cumulative.ToString("N2") Cr</b></MudText></MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudPaper Class="pa-3" Elevation="1" Style="background-color:#e3f2fd;">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2"><b>Previous Month (@_prevMonthDisplay)</b></MudText>
+                            @if (_prev == null)
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No submission found for @_prevMonthDisplay.</MudText>
+                            }
+                            else
+                            {
+                                <MudSimpleTable Dense="true" Striped="true">
+                                    <tbody>
+                                        <tr><td>Spillover Utilized</td><td><b>₹ @_prev.ActualSpillover.ToString("N2") Cr</b></td></tr>
+                                        <tr><td>Fresh Utilized</td><td><b>₹ @_prev.ActualFresh.ToString("N2") Cr</b></td></tr>
+                                        <tr><td>Total Utilized</td><td><b>₹ @((_prev.ActualSpillover + _prev.ActualFresh).ToString("N2")) Cr</b></td></tr>
+                                        <tr><td>Estimated Spillover (@_month)</td><td><b>₹ @_prev.EstSpilloverNext.ToString("N2") Cr</b></td></tr>
+                                        <tr><td>Estimated Fresh (@_month)</td><td><b>₹ @_prev.EstFreshNext.ToString("N2") Cr</b></td></tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            }
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudPaper Class="pa-3" Elevation="1" Style="background-color:#fdecea;">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2"><b>Current Month (@_month)</b></MudText>
+                            <MudNumericField T="decimal" @bind-Value="_actSpill" Label="Actual Spillover Utilization (Rs. Cr)"
+                                             Min="0" Format="F2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudNumericField T="decimal" @bind-Value="_actFresh" Label="Actual Fresh Utilization (Rs. Cr)"
+                                             Min="0" Format="F2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudTextField Value="@((_actSpill + _actFresh).ToString("N2"))" Label="Actual Total (auto)"
+                                          ReadOnly="true" Variant="Variant.Filled" Margin="Margin.Dense" Class="mb-2" />
+                            <MudNumericField T="decimal" @bind-Value="_estSpill" Label="@($"Estimated Spillover for {_nextMonth} (Rs. Cr)")"
+                                             Min="0" Format="F2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudNumericField T="decimal" @bind-Value="_estFresh" Label="@($"Estimated Fresh for {_nextMonth} (Rs. Cr)")"
+                                             Min="0" Format="F2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudTextField Value="@((_estSpill + _estFresh).ToString("N2"))" Label="Estimated Total (auto)"
+                                          ReadOnly="true" Variant="Variant.Filled" Margin="Margin.Dense" />
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudTextField T="string" Value="@_justification"
+                                      ValueChanged="@((string v) => { _justification = v; _justError = false; })"
+                                      Immediate="true"
+                                      Label="Justification (PO details, Invoice details, etc.) *"
+                                      Lines="2" Variant="Variant.Outlined"
+                                      Error="@_justError"
+                                      ErrorText="Justification is required before submitting."
+                                      HelperText="Mandatory — mention the PO / invoice reference, or state that there was no expenditure this month." />
+                    </MudItem>
+                }
+            </MudGrid>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        @if (!_alreadySubmitted && !_isFuture)
+        {
+            <MudButton OnClick="Cancel">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Send"
+                       Disabled="@(_projectId == null || _alloc == null || _busy)"
+                       OnClick="Submit">Submit</MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Cancel">Close</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private List<FinancialYear> _fys = new();
+    private List<Section> _sections = new();
+    private List<ProjectsMaster> _projects = new();
+
+    private int _fyId;
+    private string _fyLabel = "";
+    private string _month = "";
+    private string _sectionName = "";
+    private int? _projectId;
+
+    private BudgetAllocation? _alloc;
+    private CapitalUtilization? _prev;
+    private decimal _cumulative, _actSpill, _actFresh, _estSpill, _estFresh;
+    private string _justification = "";
+    private bool _alreadySubmitted, _busy;
+    private bool _justError;
+    private string _prevMonth = "", _prevMonthDisplay = "", _nextMonth = "";
+
+    [Parameter] public int? PresetProjectId { get; set; }
+    [Parameter] public string? PresetSectionName { get; set; }
+    [Parameter] public string? PresentMonth { get; set; }
+
+    private CapitalUtilization? _current;
+
+    private static readonly string[] FyMonths = { "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER", "JANUARY", "FEBRUARY", "MARCH" };
+
+    private bool _isFuture;
+    private static string Defaultmonth() => DateTime.Now.AddMonths(-1).ToString("MMMM").ToUpperInvariant();
+    private static bool IsFutureMonth(string m) => Array.IndexOf(FyMonths, m) > Array.IndexOf(FyMonths, DateTime.Now.ToString("MMMM").ToUpperInvariant());
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Session.LoadAsync();
+            _fys = await EntryService.GetFinancialYearsAsync();
+            var cur = await EntryService.GetCurrentFyAsync();
+            _fyId = cur?.FyId ?? _fys.LastOrDefault()?.FyId ?? 0;
+            _fyLabel = cur?.FyLabel ?? "";
+
+            _month = PresentMonth ?? Defaultmonth();
+
+            _sections = await EntryService.GetSectionsAsync("CAPITAL");
+            if (PresetProjectId.HasValue)
+            {
+                _sectionName = PresetSectionName ?? _sections.FirstOrDefault()?.NAME ?? "";
+                _projects = await EntryService.GetProjectsForSectionAsync(_sectionName);
+                _projectId = PresetProjectId;
+            }
+            else
+            {
+                _sectionName = _sections.FirstOrDefault()?.NAME ?? "";
+                _projects = await EntryService.GetProjectsForSectionAsync(_sectionName);
+                _projectId = _projects.FirstOrDefault()?.ProjectId;
+            }
+            await LoadContext();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.InnerException?.Message ?? ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task OnFyChanged(int v)
+    {
+        _fyId = v;
+        _fyLabel = _fys.FirstOrDefault(f => f.FyId == v)?.FyLabel ?? "";
+        await LoadContext();
+    }
+
+    private async Task OnMonthChanged(string v) { _month = v; await LoadContext(); }
+
+    private async Task OnSectionChanged(string v)
+    {
+        _sectionName = v;
+        _projects = await EntryService.GetProjectsForSectionAsync(v);
+        _projectId = _projects.FirstOrDefault()?.ProjectId;
+        await LoadContext();
+    }
+
+    private async Task OnProjectChanged(int? v) { _projectId = v; await LoadContext(); }
+
+    private async Task LoadContext()
+    {
+        try
+        {
+            _alloc = null; _prev = null; _alreadySubmitted = false; _cumulative = 0; _current = null;
+
+            // Clear anything typed for the previous project / month so figures
+            // can never be carried onto a different project by mistake.
+            _actSpill = 0; _actFresh = 0; _estSpill = 0; _estFresh = 0;
+            _justification = ""; _justError = false;
+
+            int idx = Array.IndexOf(FyMonths, _month);
+            _prevMonth = idx > 0 ? FyMonths[idx - 1] : "";
+            _nextMonth = idx >= 0 && idx < 11 ? FyMonths[idx + 1] : "";
+            _prevMonthDisplay = string.IsNullOrEmpty(_prevMonth) ? "FY start" : _prevMonth;
+            _isFuture = IsFutureMonth(_month);
+
+            if (_projectId == null || _fyId == 0) return;
+
+            _alloc = await EntryService.GetCapitalAllocationAsync(_projectId.Value, _fyId);
+            if (_alloc == null) return;
+
+            _cumulative = await EntryService.GetCapitalCumulativeAsync(_projectId.Value, _fyId);
+            _prev = string.IsNullOrEmpty(_prevMonth) ? null
+                : await EntryService.GetCapitalEntryAsync(_projectId.Value, _fyId, _prevMonth);
+            _current = await EntryService.GetCapitalEntryAsync(_projectId.Value, _fyId, _month);
+            _alreadySubmitted = _current != null;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.InnerException?.Message ?? ex.Message, Severity.Error);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task<bool> ConfirmSubmit()
+    {
+        var proj = _projects.FirstOrDefault(p => p.ProjectId == _projectId);
+
+        var parameters = new DialogParameters
+            {
+                ["ProjectName"] = string.IsNullOrWhiteSpace(proj?.ProjectName) ? "-" : proj!.ProjectName!,
+                ["SectionName"] = string.IsNullOrWhiteSpace(_sectionName) ? "-" : _sectionName,
+                ["Month"] = _month,
+                ["NextMonth"] = _nextMonth,
+                ["FyLabel"] = _fyLabel,
+                ["ActualSpillover"] = _actSpill,
+                ["ActualFresh"] = _actFresh,
+                ["EstSpilloverNext"] = _estSpill,
+                ["EstFreshNext"] = _estFresh,
+                ["Allotted"] = _alloc?.TotalAllotted ?? 0m,
+                ["UtilisedSoFar"] = _cumulative,
+                ["Justification"] = _justification ?? ""
+            };
+
+        var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                CloseButton = true,
+                BackdropClick = false
+            };
+
+        var dlg = await DialogService.ShowAsync<CapitalSubmitConfirmDialog>("", parameters, options);
+        var result = await dlg.Result;
+        return result is not null && !result.Canceled;
+    }
+
+    private async Task Submit()
+    {
+        if (_projectId == null || _alloc == null) return;
+
+        if (string.IsNullOrWhiteSpace(_justification))
+        {
+            _justError = true;
+            Snackbar.Add("Justification is required before submitting.", Severity.Warning);
+            StateHasChanged();
+            return;
+        }
+
+        if (!await ConfirmSubmit()) return;
+
+        _busy = true;
+        try
+        {
+            var error = await EntryService.SubmitCapitalAsync(new CapitalUtilization
+                {
+                    ProjectId = _projectId.Value,
+                    FyId = _fyId,
+                    MonthName = _month,
+                    ActualSpillover = _actSpill,
+                    ActualFresh = _actFresh,
+                    EstSpilloverNext = _estSpill,
+                    EstFreshNext = _estFresh,
+                    Justification = _justification,
+                    SubmittedBy = Session.User?.PfNumber ?? "UNKNOWN",
+                    SubmissionDate = DateTime.Now
+                }, _fyLabel, _sectionName, _alloc);
+
+            if (error != null)
+            {
+                // BRD rule: BLOCK — stay in the dialog so the user corrects the amount
+                Snackbar.Add(error, Severity.Error);
+                return;
+            }
+
+            Snackbar.Add($"Capital budget for {_month} submitted successfully.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not submit: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

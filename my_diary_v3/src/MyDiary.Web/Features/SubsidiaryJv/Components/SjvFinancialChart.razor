@@ -1,0 +1,77 @@
+@using System.Globalization
+@using MyDiary.Web.Features.SubsidiaryJv.Models
+
+@* Financial Trend: Total Income + Net Profit as bars, Net Worth as a line — plain SVG, no chart library.
+   Any figure may be negative (a loss): the axis then runs below zero and bars grow down from the zero line. *@
+@if (Data.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="pa-4">No financial data yet.</MudText>
+}
+else
+{
+    var all = Data.SelectMany(d => new[] { d.TotalIncome, d.NetProfit, d.NetWorth }).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+    var dMin = Math.Min(0m, all.Count == 0 ? 0m : all.Min());
+    var dMax = Math.Max(0m, all.Count == 0 ? 0m : all.Max());
+    if (dMax == dMin) dMax = dMin + 1m;
+    var step = Nice((dMax - dMin) / 4m);
+    var lo = Math.Floor(dMin / step) * step;
+    var hi = Math.Ceiling(dMax / step) * step;
+    if (hi <= lo) hi = lo + step;
+    var lines = (int)Math.Round((hi - lo) / step);
+    const double W = 600, H = 250, L = 46, R = 12, T = 12, B = 32;
+    double pw = W - L - R, ph = H - T - B;
+    double Y(decimal v) => T + ph - (double)((v - lo) / (hi - lo)) * ph;
+    double y0 = Y(0);
+    double gw = pw / Data.Count;
+    string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+    <div class="sjv-chart-legend">
+        <span><i style="background:#dc2626"></i>Total Income</span>
+        <span><i style="background:#1e3a8a"></i>Net Profit</span>
+        <span><i class="line"></i>Net Worth</span>
+    </div>
+    <svg viewBox="0 0 @W @H" width="100%" style="max-height:280px" role="img" aria-label="Financial trend">
+        @for (int g = 0; g <= lines; g++)
+        {
+            var val = lo + step * g; var y = Y(val);
+            <line x1="@L" x2="@(W - R)" y1="@N(y)" y2="@N(y)" stroke="@(val == 0 ? "#9ca3af" : "#e5e7eb")" stroke-width="@(val == 0 ? 1.2 : 1)" />
+            @((MarkupString)$"<text x=\"{L - 6}\" y=\"{N(y + 3)}\" text-anchor=\"end\" font-size=\"10\" fill=\"#6b7280\">{val:N0}</text>")
+        }
+        @for (int i = 0; i < Data.Count; i++)
+        {
+            var d = Data[i]; double x0 = L + gw * i; double bw = Math.Min(20, gw / 4);
+            double cx = x0 + gw / 2;
+            if (d.TotalIncome.HasValue) { var y = Y(d.TotalIncome.Value); <rect x="@N(cx - bw - 1)" y="@N(Math.Min(y, y0))" width="@N(bw)" height="@N(Math.Abs(y0 - y))" fill="#dc2626"><title>Total Income @d.TotalIncome.Value.ToString("N0") Cr</title></rect> }
+            if (d.NetProfit.HasValue) { var y = Y(d.NetProfit.Value); <rect x="@N(cx + 1)" y="@N(Math.Min(y, y0))" width="@N(bw)" height="@N(Math.Abs(y0 - y))" fill="@(d.NetProfit.Value < 0 ? "#b45309" : "#1e3a8a")"><title>@(d.NetProfit.Value < 0 ? "Net Loss" : "Net Profit") @d.NetProfit.Value.ToString("N0") Cr</title></rect> }
+            @((MarkupString)$"<text x=\"{N(cx)}\" y=\"{H - 12}\" text-anchor=\"middle\" font-size=\"10\" fill=\"#374151\">{d.FinYear}</text>")
+        }
+        @{
+            var pts = new List<string>();
+            for (int i = 0; i < Data.Count; i++)
+                if (Data[i].NetWorth.HasValue) pts.Add(FormattableString.Invariant($"{L + gw * i + gw / 2:0.#},{Y(Data[i].NetWorth!.Value):0.#}"));
+        }
+        @if (pts.Count > 1) { <polyline points="@string.Join(" ", pts)" fill="none" stroke="#2563eb" stroke-width="2" /> }
+        @for (int i = 0; i < Data.Count; i++)
+        {
+            if (Data[i].NetWorth.HasValue) { <circle cx="@N(L + gw * i + gw / 2)" cy="@N(Y(Data[i].NetWorth!.Value))" r="3.5" fill="#fff" stroke="#2563eb" stroke-width="2"><title>Net Worth @Data[i].NetWorth!.Value.ToString("N0") Cr</title></circle> }
+        }
+    </svg>
+}
+
+<style>
+    .sjv-chart-legend { display: flex; gap: 16px; font-size: .75rem; margin-bottom: 4px; }
+    .sjv-chart-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; }
+    .sjv-chart-legend i.line { height: 2px; width: 14px; background: #2563eb; vertical-align: middle; }
+</style>
+
+@code {
+    [Parameter] public List<SjvFinancial> Data { get; set; } = new();
+
+    private static decimal Nice(decimal v)
+    {
+        if (v <= 0) return 1;
+        var pow = (decimal)Math.Pow(10, Math.Floor(Math.Log10((double)v)));
+        var n = v / pow;
+        var r = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5m ? 2.5m : n <= 5 ? 5 : 10;
+        return r * pow;
+    }
+}

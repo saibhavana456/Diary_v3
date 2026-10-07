@@ -1,0 +1,70 @@
+@using Microsoft.AspNetCore.Components
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+
+<MudDialog Style="max-width: 95vw;" aria-labelledby="compliance-dialog-title">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="MudBlazor.Color.Primary" aria-hidden="true" />
+            <MudText id="compliance-dialog-title" Typo="Typo.h6" Style="font-weight: 700; color: #1b4a98;">
+                @Authority — @StatusKey
+            </MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (IsLoading)
+        {
+            <div class="d-flex justify-center pa-6" aria-busy="true" aria-label="Loading compliance details">
+                <MudProgressCircular Color="MudBlazor.Color.Primary" Indeterminate="true" />
+                <MudText Class="ml-3">Loading details...</MudText>
+            </div>
+        }
+        else if (!Details.Any())
+        {
+            <MudAlert Severity="Severity.Info">No detail records found.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@Details" Dense="true" Bordered="true" Striped="true"
+                      Hover="true" Elevation="0" RowsPerPage="10" T="ComplianceStatusDetail"
+                      Style="font-size:12px;">
+                <HeaderContent>
+                    <MudTh Style="background:#2a2f5b; color:white;">S.No</MudTh>
+                    <MudTh Style="background:#2a2f5b; color:white;">Ref No</MudTh>
+                    <MudTh Style="background:#2a2f5b; color:white;">Subject</MudTh>
+                    <MudTh Style="background:#2a2f5b; color:white;">Dept</MudTh>
+                    <MudTh Style="background:#2a2f5b; color:white;">Received</MudTh>
+                    <MudTh Style="background:#2a2f5b; color:white;">Due Date</MudTh>
+                    <MudTh Style="background:#2a2f5b; color:white;">Timeliness</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.SNo</MudTd>
+                    <MudTd>@context.LetterRefNo</MudTd>
+                    <MudTd>@context.Subject</MudTd>
+                    <MudTd>@context.DeptName</MudTd>
+                    <MudTd>@context.ReceivedDate</MudTd>
+                    <MudTd>@context.DueDate</MudTd>
+                    <MudTd>@context.Timeliness</MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new int[] { 5, 10, 25 }" />
+                </PagerContent>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="MudBlazor.Color.Primary" Variant="Variant.Filled" Class="rounded-pill px-5">
+            Close
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public string Authority { get; set; } = "";
+    [Parameter] public string StatusKey { get; set; } = "";
+    [Parameter] public List<ComplianceStatusDetail> Details { get; set; } = new();
+    [Parameter] public bool IsLoading { get; set; } = false;
+
+    private void Close() => MudDialog.Close();
+}

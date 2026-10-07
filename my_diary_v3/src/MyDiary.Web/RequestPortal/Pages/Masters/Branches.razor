@@ -1,0 +1,152 @@
+@namespace RequestPortal.Web.Pages.Masters
+@page "/masters/branches"
+@inject IServiceProvider SP
+
+<PageTitle>Branch / Sol ID Master</PageTitle>
+<PageHeader PageKey="masters-branches" Title="Branch / Sol ID Master"
+            Subtitle="Manage the Sol ID hierarchy: CO Verticals, Zonal Offices, Regional Offices, and Branches."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Request Portal"), new("People & Access"), new("Branch / Sol ID Master") })" />
+
+<SuperAdminOnly>
+@* ── Type summary cards ──────────────────────────────────────────────────── *@
+<MudGrid Class="mb-4">
+    @foreach (var t in new[] { SolIdType.CoVertical, SolIdType.ZonalOffice, SolIdType.RegionalOffice, SolIdType.Branch })
+    {
+        var count = _rows.Count(r => r.Type == t);
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="@($"border-top:4px solid {SolTypeHex(t)}")">
+                <MudText Typo="Typo.h4" Style="font-weight:700">@count</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@DemoStore.SolIdTypeLabel(t)</MudText>
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@* ── Sol ID table ─────────────────────────────────────────────────────────── *@
+<MudPaper Elevation="1">
+    <MudTable T="SolRow" Items="@_rows" Dense="true" Hover="true" Striped="true" Class="rp-data-table"
+              Filter="@(r => Filter(r, _search))">
+        <ToolBarContent>
+            <MudText Typo="Typo.subtitle1" Class="mr-4"><b>@_rows.Count</b> Sol IDs</MudText>
+            <MudSpacer />
+            <MudSelect T="string" @bind-Value="_typeFilter" Label="Filter by type"
+                       Variant="Variant.Outlined" Dense="true" Clearable="true" Style="max-width:200px;margin-right:12px">
+                @foreach (var t in Enum.GetValues<SolIdType>())
+                {
+                    <MudSelectItem T="string" Value="@t.ToString()">@DemoStore.SolIdTypeLabel(t)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_search" Placeholder="Search code / name…"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Clearable="true" Immediate="true" Style="max-width:240px" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Code</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Parent Sol ID</MudTh>
+            <MudTh>Level</MudTh>
+            <MudTh>Employee Count</MudTh>
+            <MudTh>Status</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><span style="font-family:monospace;font-weight:600;font-size:12px">@context.Code</span></MudTd>
+            <MudTd>
+                <div style="@IndentStyle(context.Depth)">
+                    @if (context.Depth > 0)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.SubdirectoryArrowRight" Size="Size.Small" Color="Color.Secondary" Class="mr-1" />
+                    }
+                    @context.Name
+                </div>
+            </MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Color="@SolTypeColor(context.Type)" Variant="Variant.Outlined">
+                    @DemoStore.SolIdTypeLabel(context.Type)
+                </MudChip>
+            </MudTd>
+            <MudTd><MudText Typo="Typo.caption" Color="Color.Secondary">@(context.ParentName ?? "—")</MudText></MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Default">L@(LevelNo(context.Type))</MudChip></MudTd>
+            <MudTd>
+                <div class="d-flex align-center gap-2">
+                    <MudText Typo="Typo.body2" Style="font-weight:600">@context.EmpCount</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">employees</MudText>
+                </div>
+            </MudTd>
+            <MudTd>
+                @if (context.IsActive)
+                { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Active</MudChip> }
+                else
+                { <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Inactive</MudChip> }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+</SuperAdminOnly>
+
+@code {
+    private List<SolRow> _rows      = new();
+    private string       _search    = "";
+    private string       _typeFilter = "";
+
+    protected override void OnInitialized()
+    {
+        var demo = SP.GetService<DemoStore>();
+        if (demo is null) return;
+
+        var nameMap   = demo.SolIds.ToDictionary(s => s.Id, s => s.Code + " — " + s.Name);
+        var empCounts = demo.EmployeeMasters.GroupBy(e => e.SolId).ToDictionary(g => g.Key, g => g.Count());
+
+        int Depth(SolIdRecord s, int d = 0) =>
+            s.ParentSolId.HasValue ? Depth(demo.SolIds.FirstOrDefault(x => x.Id == s.ParentSolId.Value) ?? s, d + 1) : d;
+
+        _rows = demo.SolIds
+            .OrderBy(s => (int)s.Type * -1)   // CO first
+            .ThenBy(s => s.Code)
+            .Select(s => new SolRow(
+                s.Code, s.Name, s.Type,
+                s.ParentSolId.HasValue ? nameMap.GetValueOrDefault(s.ParentSolId.Value) : null,
+                s.IsActive,
+                empCounts.GetValueOrDefault(s.Id, 0),
+                Depth(s)))
+            .ToList();
+    }
+
+    private bool Filter(SolRow r, string s) =>
+        (string.IsNullOrWhiteSpace(_typeFilter) || r.Type.ToString() == _typeFilter) &&
+        (string.IsNullOrWhiteSpace(s) ||
+         r.Code.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+         r.Name.Contains(s, StringComparison.OrdinalIgnoreCase));
+
+    private static string IndentStyle(int d) =>
+        d > 0 ? $"padding-left:{d * 14}px;display:flex;align-items:center" : "";
+
+    private static int LevelNo(SolIdType t) => t switch
+    {
+        SolIdType.Branch         => 1,
+        SolIdType.RegionalOffice => 2,
+        SolIdType.ZonalOffice    => 3,
+        SolIdType.CoVertical     => 4,
+        _                        => 0
+    };
+
+    private static Color SolTypeColor(SolIdType t) => t switch
+    {
+        SolIdType.CoVertical     => Color.Error,
+        SolIdType.ZonalOffice    => Color.Warning,
+        SolIdType.RegionalOffice => Color.Info,
+        _                        => Color.Success
+    };
+
+    private static string SolTypeHex(SolIdType t) => t switch
+    {
+        SolIdType.CoVertical     => "#EF4444",
+        SolIdType.ZonalOffice    => "#f59e0b",
+        SolIdType.RegionalOffice => "#0ea5e9",
+        _                        => "#22c55e"
+    };
+
+    private sealed record SolRow(string Code, string Name, SolIdType Type, string? ParentName,
+        bool IsActive, int EmpCount, int Depth);
+}

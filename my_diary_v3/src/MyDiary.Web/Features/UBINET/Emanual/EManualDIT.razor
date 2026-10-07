@@ -1,0 +1,86 @@
+@page "/emanual/dit"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@inject NavigationManager Nav
+@layout MyDiary.Web.Components.Layout.MainLayout
+<PageTitle>DIT – E-Manual</PageTitle>
+
+<PageHeader Title="DIT – Department of Information Technology"
+            Subtitle="E-Manual Contents — Union Bank of India"
+            PageKey="emanual-dit"
+            Crumbs="_crumbs" />
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+
+    <MudGrid Spacing="3">
+        @foreach (var item in _items)
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudCard Elevation="2" Class="emanual-file-card"
+                         Style="border-radius:12px; cursor:pointer; overflow:hidden; height:100%;"
+                         @onclick="@(() => Nav.NavigateTo(item.Route))">
+                    <div style="height:4px; background:#4527a0;"></div>
+                    <div style="height:140px; background:linear-gradient(145deg,#ede7f6,#d1c4e9);
+                                display:flex; align-items:center; justify-content:center;">
+                        <MudIcon Icon="@item.Icon" Style="font-size:4rem; color:#4527a0; opacity:0.85;" />
+                    </div>
+                    <MudCardContent Class="pa-3">
+                        <MudText Typo="Typo.subtitle2"
+                                 Style="font-weight:700; color:#1a237e; font-size:0.9rem; line-height:1.4;">
+                            @item.Label
+                        </MudText>
+                        @if (!string.IsNullOrEmpty(item.SubLabel))
+                        {
+                            <MudText Typo="Typo.caption" Style="color:#666;">@item.SubLabel</MudText>
+                        }
+                    </MudCardContent>
+                    <MudCardActions Class="pa-2 pt-0">
+                        <MudButton FullWidth="true" Variant="Variant.Filled"
+                                   Style="background:#4527a0; color:white; font-size:0.78rem;
+                                          border-radius:8px; font-weight:600;"
+                                   StartIcon="@Icons.Material.Filled.OpenInNew"
+                                   Size="Size.Small"
+                                   OnClick="@(() => Nav.NavigateTo(item.Route))">
+                            Open
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+
+</MudContainer>
+
+<style>
+    .emanual-file-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .emanual-file-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.14) !important;
+    }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("E-manual Content", "emanual"),
+        new("DIT"),
+    };
+
+    private record DitItem(string Label, string SubLabel, string Route, string Icon);
+
+    // Both sub-pages are dynamic folder scanners → routed to EManualDept.razor
+    // wwwroot/eManual/dit_digibanking  and  wwwroot/eManual/Finacle
+    private List<DitItem> _items = new()
+    {
+        new("Digital Banking e-Manual", "Digital payments, internet & mobile banking",
+            "emanual/dept/dit_digibanking",
+            Icons.Material.Filled.PhoneAndroid),
+
+        new("Finacle", "Core Banking System Manual",
+            "emanual/dept/Finacle",
+            Icons.Material.Filled.Storage),
+    };
+}

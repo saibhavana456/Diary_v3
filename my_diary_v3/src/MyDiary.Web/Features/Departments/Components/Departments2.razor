@@ -1,0 +1,202 @@
+﻿@page "/departments2"
+@using MyDiary.Web.Features.Departments.Models
+@using MyDiary.Web.Features.Departments.Services
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject IMenuService DeptService
+@using MudBlazor
+@using MyDiary.Web.Features.Menus.Services
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="12">
+        
+        <div id="business-page-root" class="mb-4">
+@* <div id="dept-page-root" class="container-fluid pt-4 ps-4">
+     <div class="card card-round mb-4 shadow-sm">
+        <div class="card-header" style="background-color:#c80404;">
+            <h4 class="text-white fw-bold mb-0">Departments</h4>
+        </div>
+    </div>  *@
+
+    <MudCard Class="overflow-hidden h-100" Elevation="2" Style="border-radius:12px;">
+    <MudCardHeader Class="d-flex align-center justify-center text-white"
+                               Style="height:50px; font-weight:800; letter-spacing:.3px;
+                                  background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+                    Dashboards
+                </MudCardHeader>
+
+    @if (DepartmentList == null)
+    {
+        <div class="d-flex justify-content-center p-5">
+            <div class="spinner-border text-danger" role="status"></div>
+        </div>
+    }
+    else
+    {
+        <div class="accordion">
+            @foreach (var catGroup in DepartmentList.GroupBy(d => d.CATEGORY))
+            {
+                var categoryName = catGroup.Key;
+                bool isExpanded = ExpandedCategories.Contains(categoryName);
+
+                <div class="accordion-item border-0 mb-3">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button @(isExpanded ? "" : "collapsed") shadow-sm rounded"
+                                type="button"
+                                @onclick="() => ToggleCategory(categoryName)">
+                            @categoryName
+                        </button>
+                    </h2>
+                    
+                    <div class="accordion-collapse collapse @(isExpanded ? "show" : "")">
+                        <div class="accordion-body px-1">
+                            @{ int subCounter = 1; }
+                            @foreach (var subGroup in catGroup.GroupBy(s => s.SUB_CATEGORY))
+                            {
+                                var subName = subGroup.Key;
+                                bool isSubExpanded = ExpandedSubCategories.Contains(subName);
+                                var currentSubColor = GetSubButtonColorClass(subCounter++);
+
+                                <div class="accordion nested-accordion mb-3 shadow-sm">
+                                    <div class="accordion-item border-0">
+                                        <h3 class="accordion-header">
+                                            <button class="accordion-button @currentSubColor @(isSubExpanded ? "" : "collapsed") rounded"
+                                                    type="button"
+                                                    @onclick="() => ToggleSubCategory(subName)">
+                                                @subName
+                                            </button>
+                                        </h3>
+                                        <div class="accordion-collapse collapse @(isSubExpanded ? "show" : "")">
+                                            <div class="accordion-body">
+                                                <div class="row g-3">
+                                                    @foreach (var item in subGroup)
+                                                    {
+                                                        <div class="col-sm-6 col-md-4 col-lg-3">
+                                                            @* Updated Vertical Card with Rounded Corners *@
+                                                            <div class="vertical-card card-primary rounded-lg shadow-sm">
+                                                                <div class="card-body p-3">
+                                                                    <div class="d-flex align-items-center">
+                                                                        @* MudBlazor Icon before text *@
+                                                                        <div class="icon-wrapper me-3">
+                                                                            <MudIcon Icon="@MudBlazor.Icons.Material.Filled.ManageAccounts" 
+                                                                                     Color="MudBlazor.Color.Inherit" 
+                                                                                     Size="MudBlazor.Size.Medium" />
+                                                                        </div>
+                                                                        <div class="content-wrapper">
+                                                                            <p class="vertical-title mb-0">
+                                                                                @item.VERTICAL
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    </MudCard>
+</div>
+</MudItem>
+</MudGrid>
+
+<style>
+    /* 1. Accordion Styling - Bypassing Isolation */
+    #dept-page-root .accordion-button { font-weight: 600; border: 1px solid #eee; }
+    
+    #dept-page-root .accordion-button:not(.collapsed) {
+        background-color: #1a027e !important;
+        color: white !important;
+    }
+    
+    #dept-page-root .accordion-SubbuttonOne:not(.collapsed) { background-color: #ad6969 !important; }
+    #dept-page-root .accordion-SubbuttonTwo:not(.collapsed) { background-color: #ba855e !important; }
+    #dept-page-root .accordion-SubbuttonThree:not(.collapsed) { background-color: #65a397 !important; }
+    #dept-page-root .accordion-SubbuttonFour:not(.collapsed) { background-color: #676096 !important; }
+    #dept-page-root .accordion-SubbuttonFive:not(.collapsed) { background-color: #9a626d !important; }
+
+    #dept-page-root .accordion-button::after { filter: brightness(0) invert(1) !important; }
+
+    /* 2. Vertical Card Design Improvements */
+    .vertical-card {
+        background: linear-gradient(-45deg, #1572e8, #0b5ed7) !important;
+        color: white;
+        border: none;
+        transition: transform 0.2s ease-in-out;
+        border-radius: 12px !important; /* Rounded corners */
+        min-height: 70px;
+        display: flex;
+        align-items: center;
+    }
+
+    .vertical-card:hover {
+        transform: translateY(-3px);
+    }
+
+    .icon-wrapper {
+        background: rgba(255, 255, 255, 0.2);
+        padding: 8px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .vertical-title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        line-height: 1.2;
+    }
+</style>
+
+@code {
+    private List<Department_New>? DepartmentList;
+    private HashSet<string> ExpandedCategories = new();
+    private HashSet<string> ExpandedSubCategories = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        DepartmentList = await DeptService.GetDepartmentsAsync();
+        // Default: All items collapsed
+    }
+
+    private void ToggleCategory(string category)
+    {
+        if (ExpandedCategories.Contains(category))
+            ExpandedCategories.Remove(category);
+        else
+            ExpandedCategories.Add(category);
+        
+        StateHasChanged(); // Essential for InteractiveServer updates
+    }
+
+    private void ToggleSubCategory(string sub)
+    {
+        if (ExpandedSubCategories.Contains(sub))
+            ExpandedSubCategories.Remove(sub);
+        else
+            ExpandedSubCategories.Add(sub);
+
+        StateHasChanged(); // Essential for InteractiveServer updates
+    }
+
+    private string GetSubButtonColorClass(int index) => (index % 5) switch
+    {
+        1 => "accordion-SubbuttonOne",
+        2 => "accordion-SubbuttonTwo",
+        3 => "accordion-SubbuttonThree",
+        4 => "accordion-SubbuttonFour",
+        0 => "accordion-SubbuttonFive",
+        _ => "accordion-SubbuttonOne"
+    };
+}

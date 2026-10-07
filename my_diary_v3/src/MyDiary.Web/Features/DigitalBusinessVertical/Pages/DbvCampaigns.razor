@@ -1,0 +1,507 @@
+@page "/dbv/campaigns"
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.DigitalBusinessVertical.Models
+@using MyDiary.Web.Features.DigitalBusinessVertical.Services
+@inject IDbvService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>DBV Campaigns - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader PageKey="dbv-campaigns" Title="Campaigns / Activities"
+                Subtitle="Digital Business Vertical campaign communications - for branch awareness when customers ask about a campaign."
+                Crumbs="_crumbs" />
+
+    <MudPaper Class="pa-4 mb-3" Elevation="1">
+        <MudGrid Class="align-center" Spacing="2">
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField T="string" Label="Search by Product Name" @bind-Value="_f.Product" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                              DebounceInterval="350" OnDebounceIntervalElapsed="@((_) => ReloadAsync())" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+            </MudItem>
+            <MudItem xs="6" sm="3" md="2">
+                <MudDatePicker Label="Campaign date - from"
+                               Date="_from"
+                               DateChanged="OnFromDateChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               DateFormat="dd MMM yyyy"
+                               Clearable="true" />
+
+               
+            </MudItem>
+            <MudItem xs="6" sm="3" md="2">
+                <MudDatePicker Label="Campaign date - to"
+                               Date="_to"
+                               DateChanged="OnToDateChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               DateFormat="dd MMM yyyy"
+                               Clearable="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudToggleGroup T="string" Value="_f.Status" ValueChanged="OnStatusChanged" Color="Color.Primary" Size="Size.Small" CheckMark="true">
+                    <MudToggleItem Value="@("ALL")" Text="All" />
+                    <MudToggleItem Value="@("ONGOING")" Text="Live" />
+                    <MudToggleItem Value="@("COMPLETED")" Text="Completed" />
+                </MudToggleGroup>
+            </MudItem>
+            <MudItem xs="12" md="2" Class="d-flex justify-end"><MudButton Variant="Variant.Outlined" OnClick="ClearFilters">Clear</MudButton></MudItem>
+        </MudGrid>
+        @if (_isAdmin)
+
+        {
+            <MudDivider Class="my-3" />
+            <div class="d-flex flex-wrap align-center gap-2">
+                <MudSwitch T="bool" Value="_archivedOnly" ValueChanged="OnArchivedChanged" Label="Archived campaigns (department only)" Color="Color.Warning" />
+                <MudSpacer />
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="OpenExport">Export</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Description" OnClick="DownloadTemplate">Template</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile" OnClick="OpenUpload">Upload Excel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNew">New Campaign</MudButton>
+            </div>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudTable Items="@_campaigns" Hover="true" Dense="true" Striped="true" Loading="@_loading" RowsPerPage="15">
+            <HeaderContent>
+                <MudTh>Campaign Name</MudTh><MudTh>Product Name</MudTh><MudTh>Description</MudTh><MudTh>Modes</MudTh><MudTh>Start</MudTh><MudTh>End</MudTh>
+                @if (_isAdmin)
+                {
+                    <MudTh></MudTh>
+                }
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Campaign Name">
+                    <MudLink OnClick="@(() => ShowDetail(context))">@context.CampaignName</MudLink>
+                    @if (context.IsArchived) { <MudChip T="string" Size="Size.Small" Class="ml-2">Archived</MudChip> }
+                </MudTd>
+                <MudTd DataLabel="Product Name">@context.ProductName</MudTd>
+                <MudTd DataLabel="Description">@context.Description</MudTd>
+                <MudTd DataLabel="Modes">@context.ModesText</MudTd>
+                <MudTd DataLabel="Start">@context.StartDate.ToString("dd-MMM-yyyy")</MudTd>
+                <MudTd DataLabel="End">
+                    @if (context.IsOngoing) { <MudChip T="string" Size="Size.Small" Color="Color.Success">Ongoing</MudChip> }
+                    else { @context.EndDate?.ToString("dd-MMM-yyyy") }
+                </MudTd>
+                @if (_isAdmin)
+
+                {
+                    <MudTd Style="text-align:right; white-space:nowrap;">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEdit(context))" title="Edit" />
+                        <MudIconButton Icon="@(context.IsArchived ? Icons.Material.Filled.Unarchive : Icons.Material.Filled.Archive)" Size="Size.Small" OnClick="@(() => ToggleArchiveAsync(context))" title="@(context.IsArchived ? "Unarchive" : "Archive")" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteAsync(context))" title="Delete" />
+                    </MudTd>
+                }
+            </RowTemplate>
+            <NoRecordsContent><MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No campaigns found.</MudAlert></NoRecordsContent>
+            <PagerContent><MudTablePager PageSizeOptions="new[] { 15, 30, 60 }" /></PagerContent>
+        </MudTable>
+    </MudPaper>
+
+    @* ── Detail (everyone) ── *@
+    <MudDialog @bind-Visible="_detailOpen" Options="_dlgWide">
+        <TitleContent><MudText Typo="Typo.h6">@_detail?.CampaignName</MudText></TitleContent>
+        <DialogContent>
+            @if (_detail is not null)
+            {
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6"><b>Product:</b> @_detail.ProductName</MudItem>
+                    <MudItem xs="12" sm="6"><b>Target segment:</b> @DbvLookups.SegmentLabel(_detail.TargetSegment)</MudItem>
+                    <MudItem xs="12" sm="6"><b>Start date:</b> @_detail.StartDate.ToString("dd-MMM-yyyy")</MudItem>
+                    <MudItem xs="12" sm="6"><b>End date:</b> @(_detail.IsOngoing ? "Ongoing" : _detail.EndDate?.ToString("dd-MMM-yyyy"))</MudItem>
+                    @if (!string.IsNullOrWhiteSpace(_detail.Description)) { <MudItem xs="12"><b>Description:</b> @_detail.Description</MudItem> }
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Communications (@_detail.Comms.Count)</MudText>
+                @if (_detail.Comms.Count == 0) { <MudText Typo="Typo.body2">No communication rows recorded.</MudText> }
+                @foreach (var m in _detail.Comms)
+                {
+                    <MudPaper Class="pa-3 mb-2" Elevation="0" Outlined="true">
+                        <div class="d-flex flex-wrap gap-3 mb-1">
+                            <span><b>@m.Date.ToString("dd-MMM-yyyy")</b></span>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@DbvLookups.ModeLabel(m.Mode)</MudChip>
+                            @if (!string.IsNullOrWhiteSpace(m.TemplateNo)) { <span>Template: <b>@m.TemplateNo</b></span> }
+                            <span class="dbv-muted">@DbvLookups.FinancialYear(m.Date) &middot; @DbvLookups.Quarter(m.Date) &middot; @DbvLookups.MonthName(m.Date)</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(m.Message))
+                        {
+                            <div class="dbv-msg">@m.Message</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(m.CreativeFilePath))
+                        {
+                            @if (IsImage(m.CreativeFileName)) { <img src="@(m.CreativeFilePath)" alt="Creative" style="max-width:100%; max-height:320px; border-radius:8px; margin-top:6px;" /> }
+                            else { <MudLink Href="@(m.CreativeFilePath)" Target="_blank"><MudIcon Icon="@Icons.Material.Filled.AttachFile" Size="Size.Small" />@m.CreativeFileName</MudLink> }
+                        }
+                    </MudPaper>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_detail.Remarks)) { <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Remarks</MudText><MudText Typo="Typo.body2">@_detail.Remarks</MudText> }
+                @if (!string.IsNullOrWhiteSpace(_detail.OutcomeSummary)) { <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Campaign outcome / achievements</MudText><div class="dbv-msg">@_detail.OutcomeSummary</div> }
+            }
+        </DialogContent>
+        <DialogActions><MudButton OnClick="@(() => _detailOpen = false)">Close</MudButton></DialogActions>
+    </MudDialog>
+
+    @* ── Add / Edit (department) ── *@
+    <MudDialog @bind-Visible="_editOpen" Options="_dlgWide">
+        <TitleContent><MudText Typo="Typo.h6">@(_edit.Id == 0 ? "New Campaign" : "Edit Campaign")</MudText></TitleContent>
+        <DialogContent>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6"><MudTextField T="string" Label="Campaign Name" @bind-Value="_edit.CampaignName" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" MaxLength="200" /></MudItem>
+                <MudItem xs="12" sm="6"><MudTextField T="string" Label="Product Name" @bind-Value="_edit.ProductName" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" MaxLength="150" /></MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="string" Label="Target segment" @bind-Value="_edit.TargetSegment" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var s in DbvCampaign.Segments) { <MudSelectItem T="string" Value="@s">@DbvLookups.SegmentLabel(s)</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="4"><MudDatePicker Label="Start Date" @bind-Date="_editStart" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd MMM yyyy" /></MudItem>
+                <MudItem xs="6" sm="4"><MudDatePicker Label="@(_edit.IsOngoing ? "End Date (optional)" : "End Date")" @bind-Date="_editEnd" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd MMM yyyy" Clearable="true" /></MudItem>
+                <MudItem xs="12"><MudCheckBox T="bool" @bind-Value="_edit.IsOngoing" Label="Ongoing campaign - end date is not mandatory" Color="Color.Success" /></MudItem>
+                <MudItem xs="12"><MudTextField T="string" Label="Description of the campaign" @bind-Value="_edit.Description" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" MaxLength="2000" /></MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">Communications - add a row for each mode / template / execution date / creative</MudText>
+            @foreach (var m in _edit.Comms)
+            {
+                <MudPaper Class="pa-3 mb-2" Outlined="true" Elevation="0">
+                    <MudGrid Spacing="2" Class="align-center">
+                        <MudItem xs="6" sm="3"><MudDatePicker Label="Date of communication" Date="m.Date" DateChanged="@((DateTime? d) => m.Date = d ?? DateTime.Today)" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd MMM yyyy" /></MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudSelect T="string" Label="Mode" @bind-Value="m.Mode" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (var (mcode, label) in DbvLookups.Modes) { <MudSelectItem T="string" Value="@mcode">@label</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="10" sm="5"><MudTextField T="string" Label="Template ID / No." @bind-Value="m.TemplateNo" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" /></MudItem>
+                        <MudItem xs="2" sm="1"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => RemoveComm(m))" /></MudItem>
+                        <MudItem xs="12"><MudTextField T="string" Label="Message content (communication message sent)" @bind-Value="m.Message" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="3" /></MudItem>
+                        <MudItem xs="12">
+                            <MudFileUpload T="IBrowserFile" FilesChanged="@((IBrowserFile f) => OnCreativePicked(m, f))" Accept=".png,.jpg,.jpeg,.gif,.pdf">
+                                <ActivatorContent>
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CloudUpload">@(_pending.ContainsKey(m) || !string.IsNullOrEmpty(m.CreativeFileName) ? "Replace creative" : "Attach creative")</MudButton>
+                                </ActivatorContent>
+                            </MudFileUpload>
+                            @if (_pending.TryGetValue(m, out var pf)) { <span class="ml-2">@pf.Name</span> }
+                            else if (!string.IsNullOrEmpty(m.CreativeFileName)) { <span class="ml-2">Current: @m.CreativeFileName</span> }
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            }
+            <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Add" OnClick="AddComm">Add communication row</MudButton>
+
+            <MudGrid Spacing="2" Class="mt-2">
+                <MudItem xs="12"><MudTextField T="string" Label="Remarks / other relevant campaign details" @bind-Value="_edit.Remarks" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" MaxLength="2000" /></MudItem>
+                <MudItem xs="12"><MudTextField T="string" Label="Campaign outcome / achievements" @bind-Value="_edit.OutcomeSummary" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="3" /></MudItem>
+                @if (_edit.Id == 0)
+                {
+                    <MudItem xs="12"><MudCheckBox T="bool" @bind-Value="_notify" Label="Send an in-app push notification to all users" Color="Color.Primary" /></MudItem>
+                }
+            </MudGrid>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _editOpen = false)">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="@_saving">Save</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    @* ── Export with saved criteria (department) ── *@
+    <MudDialog @bind-Visible="_exportOpen" Options="_dlgWide">
+        <TitleContent>Export campaigns (MIS format)</TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2" Class="mb-2">One row per communication in the DBV MIS format. Choose the criteria, or apply a saved one.</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" Label="Scope" @bind-Value="_scope" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="string" Value="@("ACTIVE")">Active campaigns</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("ARCHIVED")">Archived campaigns</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("ALL")">Active + archived</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6"><MudTextField T="string" Label="Product / campaign contains" @bind-Value="_x.Product" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" sm="3"><MudDatePicker Label="From" @bind-Date="_xFrom" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd MMM yyyy" Clearable="true" /></MudItem>
+                <MudItem xs="6" sm="3"><MudDatePicker Label="To" @bind-Date="_xTo" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd MMM yyyy" Clearable="true" /></MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" Label="Status" @bind-Value="_x.Status" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="string" Value="@("ALL")">All</MudSelectItem><MudSelectItem T="string" Value="@("ONGOING")">Ongoing</MudSelectItem><MudSelectItem T="string" Value="@("COMPLETED")">Completed</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="string" Label="Mode" @bind-Value="_x.Mode" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var (mcode, label) in DbvLookups.Modes) { <MudSelectItem T="string" Value="@mcode">@label</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudSelect T="string" Label="Financial year" @bind-Value="_x.FinancialYear" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var y in FyOptions) { <MudSelectItem T="string" Value="@y">@y</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudSelect T="string" Label="Quarter" @bind-Value="_x.Quarter" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var q in new[] { "Q1", "Q2", "Q3", "Q4" }) { <MudSelectItem T="string" Value="@q">@q</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Saved criteria</MudText>
+            <div class="d-flex flex-wrap gap-2 align-center mb-2">
+                @foreach (var sc in _saved)
+                {
+                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" OnClick="@(() => ApplySaved(sc))" OnClose="@(() => DeleteSaved(sc))">@sc.Name</MudChip>
+                }
+                @if (_saved.Count == 0) { <MudText Typo="Typo.caption">None saved yet.</MudText> }
+            </div>
+            <div class="d-flex gap-2">
+                <MudTextField T="string" Label="Save the criteria above as..." @bind-Value="_criteriaName" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                <MudButton Variant="Variant.Outlined" OnClick="SaveCriteriaAsync">Save</MudButton>
+            </div>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _exportOpen = false)">Close</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="ExportAsync">Export to Excel</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+    @* ── Excel upload (department) ── *@
+    <MudDialog @bind-Visible="_uploadOpen" Options="_dlgWide">
+        <TitleContent>Upload campaign communications (MIS format)</TitleContent>
+        <DialogContent>
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-2">Use the <b>Template</b> button for the format (sheet 2 explains every column). Rows with the same Campaign Name + Product become one campaign; nothing is saved until you confirm.</MudAlert>
+            <MudFileUpload T="IBrowserFile" FilesChanged="OnUploadPicked" Accept=".xlsx">
+                <ActivatorContent><MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.UploadFile">Choose Excel file</MudButton></ActivatorContent>
+            </MudFileUpload>
+            @if (_up is not null)
+            {
+                <div class="mt-3">
+                    @if (_up.Applied) { <MudAlert Severity="Severity.Success" Variant="Variant.Filled">Saved: @_up.NewCampaigns new campaign(s), @_up.CommsAdded communication row(s) added, @_up.Skipped skipped.</MudAlert> }
+                    else if (_up.IsValid) { <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">Validation passed - @_up.Rows row(s): @_up.Campaigns campaign(s) (@_up.NewCampaigns new), @_up.CommsAdded communication(s) to add, @_up.Skipped duplicate(s) skipped. Nothing saved yet.</MudAlert> }
+                    else { <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_up.Errors.Count error(s) - fix the file and upload again.</MudAlert> }
+                    @if (_up.Errors.Count > 0) { <ul class="dbv-err">@foreach (var e in _up.Errors.Take(100)) { <li>@e</li> }</ul> }
+                    @if (_up.Warnings.Count > 0) { <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="my-2"><ul class="mb-0">@foreach (var w in _up.Warnings.Take(50)) { <li>@w</li> }</ul></MudAlert> }
+                </div>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _uploadOpen = false)">Close</MudButton>
+            @if (_up is { IsValid: true, Applied: false })
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check" OnClick="ApplyUploadAsync" Disabled="_saving">Confirm and save</MudButton>
+            }
+        </DialogActions>
+    </MudDialog>
+</AuthenticatedOnly>
+
+<style>
+    .dbv-msg { background: var(--mud-palette-background-grey); padding: 10px; border-radius: 8px; white-space: pre-wrap; font-size: .9rem; }
+    .dbv-muted { opacity: .65; font-size: .8rem; }
+    .dbv-err { color: #b91c1c; font-size: .85rem; }
+</style>
+
+@code {
+
+
+
+    private String department = "";
+
+    private String pfNo = "";
+
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Departments", "departmentsnew"), new("Digital Business Vertical", "activitiesnew?DeptID=59"), new("Campaigns / Activities") };
+
+
+
+    private readonly DialogOptions _dlgWide = new() { MaxWidth = MaxWidth.Large, FullWidth = true, CloseOnEscapeKey = true };
+    private const long MaxFileBytes = 10 * 1024 * 1024;
+    private static readonly List<string> FyOptions = Enumerable.Range(2022, DateTime.Today.Year - 2022 + 2).Reverse().Select(y => $"{y}-{(y + 1) % 100:00}").ToList();
+
+    private bool _loading = true, _isAdmin, _saving, _archivedOnly;
+    private string _actor = "";
+    private DbvFilter _f = new();
+    private DateTime? _from, _to;
+    private List<DbvCampaign> _campaigns = new();
+
+    private bool _detailOpen; private DbvCampaign? _detail;
+
+    private bool _editOpen, _notify = true; private DbvCampaign _edit = new(); private DateTime? _editStart, _editEnd;
+    private readonly Dictionary<DbvComm, IBrowserFile> _pending = new();
+
+    private bool _exportOpen; private DbvFilter _x = new(); private DateTime? _xFrom, _xTo; private string _scope = "ARCHIVED", _criteriaName = "";
+    private List<DbvSavedCriteria> _saved = new();
+
+    private bool _uploadOpen; private DbvUploadResult? _up; private byte[]? _upBytes;
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        pfNo = authState.User.FindFirst("emplid")?.Value ?? "";
+
+        department = authState.User.FindFirst("department_desc")?.Value?.ToUpper() ?? "";
+
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _actor = state.User.FindFirst("emplid")?.Value ?? "";
+        _isAdmin = await Svc.IsAdminAsync(state.User);
+        await ReloadAsync();
+    }
+
+    private async Task OnFromDateChanged(DateTime? value)
+
+    {
+
+        _from = value;
+
+        await ReloadAsync();
+
+    }
+
+
+
+    private async Task OnToDateChanged(DateTime? value)
+
+    {
+
+        _to = value;
+
+        await ReloadAsync();
+
+    }
+
+
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _f.From = _from; _f.To = _to; _f.ArchivedOnly = _isAdmin && _archivedOnly; _f.IncludeArchived = false;
+        _campaigns = await Svc.ListCampaignsAsync(_f);
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnStatusChanged(string s) { _f.Status = s ?? "ALL"; await ReloadAsync(); }
+    private async Task OnArchivedChanged(bool v) { _archivedOnly = v; await ReloadAsync(); }
+    private async Task ClearFilters() { _f = new DbvFilter(); _from = _to = null; await ReloadAsync(); }
+    private void ShowDetail(DbvCampaign c) { _detail = c; _detailOpen = true; }
+    private static bool IsImage(string? n) => n is not null && (n.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".gif", StringComparison.OrdinalIgnoreCase));
+
+    // ---- add / edit ----
+    private void OpenNew()
+    {
+        _edit = new DbvCampaign { StartDate = DateTime.Today, Comms = new List<DbvComm> { new DbvComm() } };
+        _editStart = DateTime.Today; _editEnd = null; _notify = true; _pending.Clear(); _editOpen = true;
+    }
+
+    private void OpenEdit(DbvCampaign c)
+    {
+        _edit = new DbvCampaign
+        {
+            Id = c.Id, CampaignName = c.CampaignName, ProductName = c.ProductName, TargetSegment = c.TargetSegment, Description = c.Description, StartDate = c.StartDate,
+            EndDate = c.EndDate, IsOngoing = c.IsOngoing, Remarks = c.Remarks, OutcomeSummary = c.OutcomeSummary, IsArchived = c.IsArchived,
+            Comms = c.Comms.Select(m => new DbvComm { Id = m.Id, Date = m.Date, Mode = m.Mode, TemplateNo = m.TemplateNo, Message = m.Message, CreativeFileName = m.CreativeFileName, CreativeFilePath = m.CreativeFilePath }).ToList()
+        };
+        _editStart = c.StartDate; _editEnd = c.EndDate; _pending.Clear(); _editOpen = true;
+    }
+
+    private void AddComm() => _edit.Comms.Add(new DbvComm { Date = _editStart ?? DateTime.Today });
+    private void RemoveComm(DbvComm m) { _edit.Comms.Remove(m); _pending.Remove(m); }
+
+    private void OnCreativePicked(DbvComm m, IBrowserFile f)
+    {
+        if (f.Size > MaxFileBytes) { Snackbar.Add("File exceeds the 10 MB limit.", Severity.Warning); return; }
+        _pending[m] = f;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            if (_editStart is null) { Snackbar.Add("Start date is required.", Severity.Warning); return; }
+            _edit.StartDate = _editStart.Value; _edit.EndDate = _edit.IsOngoing ? _editEnd : _editEnd;
+            foreach (var (m, file) in _pending.ToList())
+            {
+                if (!_edit.Comms.Contains(m)) continue;
+                await using var s = file.OpenReadStream(MaxFileBytes);
+                var (path, name) = await Svc.SaveFileAsync("campaigns", s, file.Name);
+                m.CreativeFilePath = path; m.CreativeFileName = name;
+            }
+            var isNew = _edit.Id == 0;
+            await Svc.SaveCampaignAsync(_edit, _actor, _notify);
+            Snackbar.Add(isNew ? "Campaign created." + (_notify ? " Push notification queued." : "") : "Campaign updated.", Severity.Success);
+            _editOpen = false; await ReloadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task ToggleArchiveAsync(DbvCampaign c)
+    {
+        await Svc.SetCampaignArchivedAsync(c.Id, !c.IsArchived, _actor);
+        Snackbar.Add(c.IsArchived ? "Campaign unarchived." : "Campaign archived - now visible to the department only.", Severity.Success);
+        await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(DbvCampaign c)
+    {
+        var ok = await JS.InvokeAsync<bool>("confirm", $"Delete campaign '{c.CampaignName}' permanently? Use Archive to keep it.");
+        if (!ok) return;
+        await Svc.DeleteCampaignAsync(c.Id); Snackbar.Add("Campaign deleted.", Severity.Success); await ReloadAsync();
+    }
+
+    // ---- export + saved criteria ----
+    private async Task OpenExport()
+    {
+        _x = new DbvFilter { Product = _f.Product, Status = _f.Status }; _xFrom = _from; _xTo = _to; _scope = _archivedOnly ? "ARCHIVED" : "ACTIVE";
+        _saved = await Svc.ListSavedCriteriaAsync(_actor); _exportOpen = true;
+    }
+
+    private DbvFilter BuildExportFilter()
+    {
+        var f = new DbvFilter { Product = _x.Product, From = _xFrom, To = _xTo, Status = _x.Status, Mode = _x.Mode, FinancialYear = _x.FinancialYear, Quarter = _x.Quarter };
+        f.ArchivedOnly = _scope == "ARCHIVED"; f.IncludeArchived = _scope == "ALL"; return f;
+    }
+
+    private void ApplySaved(DbvSavedCriteria sc)
+    {
+        var f = Svc.ParseCriteria(sc.Json); if (f is null) { Snackbar.Add("Saved criteria could not be read.", Severity.Warning); return; }
+        _x = f; _xFrom = f.From; _xTo = f.To; _scope = f.ArchivedOnly ? "ARCHIVED" : f.IncludeArchived ? "ALL" : "ACTIVE"; _criteriaName = sc.Name;
+    }
+
+    private async Task SaveCriteriaAsync()
+    {
+        try { await Svc.SaveCriteriaAsync(_actor, _criteriaName, BuildExportFilter()); _saved = await Svc.ListSavedCriteriaAsync(_actor); Snackbar.Add("Criteria saved.", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+
+    private async Task DeleteSaved(DbvSavedCriteria sc) { await Svc.DeleteCriteriaAsync(_actor, sc.Id); _saved = await Svc.ListSavedCriteriaAsync(_actor); }
+
+    private async Task ExportAsync()
+    {
+        var bytes = await Svc.ExportAsync(BuildExportFilter());
+        await Download(bytes, $"DBV_Campaigns_{(_scope == "ARCHIVED" ? "Archived_" : "")}{DateTime.Now:yyyyMMdd_HHmm}.xlsx");
+    }
+
+    private async Task DownloadTemplate() => await Download(Svc.GenerateTemplate(), "DBV_Campaign_Template.xlsx");
+    private async Task Download(byte[] b, string n) => await JS.InvokeVoidAsync("appDownloadFile", n, Convert.ToBase64String(b), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+    // ---- upload ----
+    private void OpenUpload() { _up = null; _upBytes = null; _uploadOpen = true; }
+
+    private async Task OnUploadPicked(IBrowserFile f)
+    {
+        await using var s = f.OpenReadStream(10 * 1024 * 1024);
+        using var ms = new MemoryStream(); await s.CopyToAsync(ms); _upBytes = ms.ToArray();
+        using var v = new MemoryStream(_upBytes);
+        _up = await Svc.ProcessUploadAsync(v, _actor, apply: false);
+    }
+
+    private async Task ApplyUploadAsync()
+    {
+        if (_upBytes is null) return;
+        _saving = true;
+        try { using var v = new MemoryStream(_upBytes); _up = await Svc.ProcessUploadAsync(v, _actor, apply: true); if (_up.Applied) await ReloadAsync(); }
+        finally { _saving = false; }
+    }
+}

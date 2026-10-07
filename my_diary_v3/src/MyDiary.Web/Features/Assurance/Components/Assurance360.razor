@@ -1,0 +1,265 @@
+@page "/assurance-360"
+@using MudBlazor
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IMomRepo MomRepo
+@inject IMasterRepo Masters
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Assurance 360°</PageTitle>
+
+<PageHeader Title="Assurance 360°" Subtitle="Compliance, HR and governance minutes-of-meeting hub" Crumbs="_crumbs" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <div class="a360-verticals mb-4">
+        <div class="a360-pill @(_selectedVerticalId is null ? "active" : "")" @onclick="@(() => SelectVertical(null))">All</div>
+        @foreach (var v in _verticals)
+        {
+            <div class="a360-pill @(_selectedVerticalId == v.Id ? "active" : "")" @onclick="@(() => SelectVertical(v.Id))">@v.Name</div>
+        }
+    </div>
+
+    <div class="a360-grid">
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("assurance-snapshot"))">
+            <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Class="a360-card-icon" />
+            <div class="a360-card-title">Assurance Snapshot</div>
+            <div class="a360-card-desc">Branch-wise financial, operational &amp; compliance assurance parameters.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("ro-visit-report"))">
+            <MudIcon Icon="@Icons.Material.Filled.TravelExplore" Class="a360-card-icon" />
+            <div class="a360-card-title">ZAH: RO Visit Report</div>
+            <div class="a360-card-desc">Zonal Assurance Head's Regional Office visit report.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("ro-visit-dashboard"))">
+            <MudIcon Icon="@Icons.Material.Filled.Dashboard" Class="a360-card-icon" />
+            <div class="a360-card-title">ZAH: RO Visit Tracking</div>
+            <div class="a360-card-desc">Zone/Region-wise visit status — saved vs submitted.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("branch-visit-report"))">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="a360-card-icon" />
+            <div class="a360-card-title">RAH: Branch Visit Report</div>
+            <div class="a360-card-desc">Zonal/Regional Assurance Head's Branch visit report.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("branch-visit-dashboard"))">
+            <MudIcon Icon="@Icons.Material.Filled.SpaceDashboard" Class="a360-card-icon" />
+            <div class="a360-card-title">RAH: Branch Visit Tracking</div>
+            <div class="a360-card-desc">Zone/Region/Branch-wise visit status — saved vs submitted.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("executive-branch-visit"))">
+            <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="a360-card-icon" />
+            <div class="a360-card-title">Executive Branch Visit Form</div>
+            <div class="a360-card-desc">Full-page 6-section branch visit form.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("executive-branch-visit-dashboard"))">
+            <MudIcon Icon="@Icons.Material.Filled.Insights" Class="a360-card-icon" />
+            <div class="a360-card-title">Executive Branch Visit Dashboard</div>
+            <div class="a360-card-desc">Draft vs submitted visits, by branch/region, with charts.</div>
+        </div>
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("pbl/hub"))">
+            <MudIcon Icon="@Icons.Material.Filled.MarkEmailRead" Class="a360-card-icon" />
+            <div class="a360-card-title">Positive Branch List</div>
+            <div class="a360-card-desc">Daily zone-wise Positive/Negative branch automailer, with a manual send option and a sent-communications dashboard.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("svc/hub"))">
+            <MudIcon Icon="@Icons.Material.Filled.Groups2" Class="a360-card-icon" />
+            <div class="a360-card-title">Staff and Vendor Connect</div>
+            <div class="a360-card-desc">Group Data for External Members and Internal Staff — outsourced vendor records and internal staff directory.</div>
+        </div>
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("sjv"))">
+            <MudIcon Icon="@Icons.Material.Filled.AccountTree" Class="a360-card-icon" />
+            <div class="a360-card-title">Subsidiaries and JV Corner</div>
+            <div class="a360-card-desc">Landing page and entity dashboards of the Bank's Subsidiaries, Joint Ventures and associates — profile, board, financials and updates.</div>
+        </div>
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("dbv"))">
+            <MudIcon Icon="@Icons.Material.Filled.Campaign" Class="a360-card-icon" />
+            <div class="a360-card-title">Digital Business Vertical</div>
+            <div class="a360-card-desc">Campaign communications and important correspondence from DBV.</div>
+        </div>
+        @if (_isSuperAdmin || _scaleCode == 1 || _scaleCode == 2 || _scaleCode == 17)
+        {
+            <div class="a360-card" @onclick="@(() => Nav.NavigateTo("strike-corner"))">
+                <MudIcon Icon="@Icons.Material.Filled.Gavel" Class="a360-card-icon" />
+                <div class="a360-card-title">Strike Corner</div>
+                <div class="a360-card-desc">Strike Monitoring Committee minutes, FAQs/SOPs and strike data.</div>
+            </div>
+        }
+
+        <div class="a360-card" @onclick="@(() => Nav.NavigateTo("branch-foundation"))">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="a360-card-icon" />
+            <div class="a360-card-title">Branch Foundation Hub</div>
+            <div class="a360-card-desc">Track branch establishment milestones, upcoming anniversaries, and centenary events for Regional Office planning.</div>
+        </div>
+
+        @foreach (var t in _filteredTypes)
+        {
+            @if (t.TypeName == "ZLAC/RLAC Assurance Committee Minutes" && _userPrivilege != "BRANCH")
+            {
+                <div class="a360-card" @onclick="@(() => Nav.NavigateTo($"mom/{t.TypeCode}"))">
+                    <MudIcon Icon="@IconFor(t.IconName)" Class="a360-card-icon" />
+                    <div class="a360-card-title">@t.TypeName</div>
+                    <div class="a360-card-desc">@t.Description</div>
+                </div>
+            }
+            else if (t.TypeName != "ZLAC/RLAC Assurance Committee Minutes" && t.TypeName != "Strike Monitoring Committee")
+            {
+                <div class="a360-card" @onclick="@(() => Nav.NavigateTo($"mom/{t.TypeCode}"))">
+                    <MudIcon Icon="@IconFor(t.IconName)" Class="a360-card-icon" />
+                    <div class="a360-card-title">@t.TypeName</div>
+                    <div class="a360-card-desc">@t.Description</div>
+                </div>
+            }
+            else
+            {
+
+            }
+
+        }
+
+        @if (_filteredTypes.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No MoM types configured for this vertical yet.</MudAlert>
+        }
+    </div>
+}
+
+<style>
+    .a360-verticals {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .a360-pill {
+        cursor: pointer;
+        padding: 6px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(0,0,0,.12);
+        background: #fff;
+        font-size: .85rem;
+        font-weight: 500;
+        transition: all .15s;
+    }
+
+        .a360-pill:hover {
+            border-color: var(--mud-palette-primary);
+        }
+
+        .a360-pill.active {
+            background: var(--mud-palette-primary);
+            color: #fff;
+            border-color: var(--mud-palette-primary);
+        }
+
+    .mud-theme-dark .a360-pill, .cc-dark .a360-pill {
+        background: #1c1f24;
+        border-color: #2a2e35;
+        color: #eee;
+    }
+
+    .a360-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 16px;
+    }
+
+    .a360-card {
+        cursor: pointer;
+        border-radius: 12px;
+        padding: 20px;
+        background: #fff;
+        border: 1px solid rgba(0,0,0,.08);
+        transition: transform .15s, box-shadow .15s;
+    }
+
+        .a360-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0,0,0,.15);
+        }
+
+    .mud-theme-dark .a360-card, .cc-dark .a360-card {
+        background: #1c1f24;
+        border-color: #2a2e35;
+    }
+
+    .a360-card-link {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+    }
+
+    .a360-card-icon {
+        font-size: 2rem;
+        color: var(--mud-palette-primary);
+        margin-bottom: 8px;
+    }
+
+    .a360-card-title {
+        font-weight: 600;
+        font-size: 1rem;
+        margin-bottom: 4px;
+    }
+
+    .a360-card-desc {
+        font-size: .82rem;
+        opacity: .75;
+    }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°") };
+
+    private bool _loading = true;
+    private bool _isSuperAdmin = false;
+    private List<Vertical> _verticals = new();
+    private List<MomType> _types = new();
+    private long? _selectedVerticalId;
+    private string _userPrivilege = "CO";
+    private List<MomType> _filteredTypes =>
+        _selectedVerticalId is null ? _types : _types.Where(t => t.VerticalId == _selectedVerticalId).ToList();
+    private int _scaleCode;
+    protected override async Task OnInitializedAsync()
+    {
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _isSuperAdmin = authState.User.HasClaim("rp_super_admin", "true");
+        _userPrivilege = authState.User
+            .FindFirst("privilege")?.Value?
+            .ToUpper() ?? "CO";
+        int.TryParse(authState.User.FindFirst("employee_scale_code")?.Value, out _scaleCode);
+        var allTypes = (await MomRepo.ListTypesAsync(null)).Where(t => t.IsActive).OrderBy(t => t.SortOrder).ToList();
+        _types = allTypes;
+
+        var allVerticals = (await Masters.ListVerticalsAllAsync()).ToList();
+        var activeVerticalIds = allTypes.Select(t => t.VerticalId).Distinct().ToHashSet();
+        _verticals = allVerticals.Where(v => activeVerticalIds.Contains(v.Id)).OrderBy(v => v.Name).ToList();
+
+        _loading = false;
+    }
+
+    private void SelectVertical(long? id) => _selectedVerticalId = id;
+
+    private static string IconFor(string iconName) => iconName switch
+    {
+        "Groups" => Icons.Material.Filled.Groups,
+        "Assignment" => Icons.Material.Filled.Assignment,
+        "Gavel" => Icons.Material.Filled.Gavel,
+        "AccountBalance" => Icons.Material.Filled.AccountBalance,
+        _ => Icons.Material.Filled.Description
+    };
+}

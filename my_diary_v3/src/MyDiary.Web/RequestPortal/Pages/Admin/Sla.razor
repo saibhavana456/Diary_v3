@@ -1,0 +1,143 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/sla"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@using RequestPortal.Web.Pages.Admin.Dialogs
+@inject IMasterRepo MasterRepo
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject ICurrentUser CurrentUser
+@inject IAuditService AuditSvc
+
+<PageTitle>SLA Config</PageTitle>
+
+<PageHeader PageKey="admin-sla" Title="SLA Configuration" Crumbs="_crumbs"
+            Subtitle="Working-day SLA per (Request type, Level). Falls back to 2 working days if no row matches." />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudPaper Elevation="1" Class="pa-3">
+    <div class="d-flex justify-end mb-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddRow">Add</MudButton>
+    </div>
+
+    <MudTable Items="@_rows" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+        <HeaderContent>
+            <MudTh>Request type</MudTh>
+            <MudTh>Level</MudTh>
+            <MudTh>Working days</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@(_requestTypes.FirstOrDefault(x => x.Id == context.RequestTypeId)?.Name ?? "?")</MudTd>
+            <MudTd>L@(context.LevelNo)</MudTd>
+            <MudTd>@context.WorkingDays</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => EditRow(context))" aria-label="Edit" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => DeleteRow(context))" aria-label="Delete" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin"),
+        new("SLA Configuration"),
+    };
+
+    private List<SlaConfig> _rows = new();
+    private List<RequestType> _requestTypes = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rtTask = MasterRepo.ListRequestTypesAllAsync();
+            var reloadTask = ReloadAsync();
+            await Task.WhenAll(rtTask, reloadTask);
+            _requestTypes = rtTask.Result.ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "SLA Admin: failed to load SLA configuration");
+        }
+    }
+
+    private async Task ReloadAsync()
+        => _rows = (await MasterRepo.ListSlaConfigAsync()).ToList();
+
+    private async Task AddRow()
+    {
+        var dlg = await Dialogs.ShowAsync<SlaDialog>("Add SLA row", new DialogParameters
+        {
+            ["RequestTypes"] = _requestTypes,
+            ["LevelNo"] = 1,
+            ["WorkingDays"] = 2
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not SlaDialog.SlaFormResult f) return;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var m = new SlaConfig
+            {
+                RequestTypeId = f.RequestTypeId, LevelNo = f.LevelNo, WorkingDays = f.WorkingDays,
+                CreatedByUserId = CurrentUser.UserId, CreatedAt = now
+            };
+            var id = await MasterRepo.InsertSlaConfigAsync(m);
+            await AuditSvc.LogAsync(AuditEntityNames.SlaConfig, id, AuditEntityNames.ActionCreate, CurrentUser.EmpCode, null, new { m.RequestTypeId, m.LevelNo, m.WorkingDays });
+            Snackbar.Add("SLA row added.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"SLA Admin: save failed — {ex.Message}");
+            AppLogger.LogError(ex, "SLA Admin: save failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task EditRow(SlaConfig m)
+    {
+        var dlg = await Dialogs.ShowAsync<SlaDialog>("Edit SLA row", new DialogParameters
+        {
+            ["RequestTypes"] = _requestTypes,
+            ["RequestTypeId"] = (long?)m.RequestTypeId,
+            ["LevelNo"] = m.LevelNo,
+            ["WorkingDays"] = m.WorkingDays
+        });
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not SlaDialog.SlaFormResult f) return;
+        var old = new { m.RequestTypeId, m.LevelNo, m.WorkingDays };
+        m.RequestTypeId = f.RequestTypeId; m.LevelNo = f.LevelNo; m.WorkingDays = f.WorkingDays;
+        m.ModifiedByUserId = CurrentUser.UserId; m.ModifiedAt = DateTime.UtcNow;
+        await MasterRepo.UpdateSlaConfigAsync(m);
+        await AuditSvc.LogAsync(AuditEntityNames.SlaConfig, m.Id, AuditEntityNames.ActionUpdate, CurrentUser.EmpCode, old, new { m.RequestTypeId, m.LevelNo, m.WorkingDays });
+        Snackbar.Add("SLA row updated.", Severity.Success);
+        await ReloadAsync();
+    }
+
+    private async Task DeleteRow(SlaConfig m)
+    {
+        var ok = await Dialogs.ShowMessageBox("Delete SLA row",
+            "Remove this SLA configuration row? The default of 2 working days will apply.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        await MasterRepo.DeleteSlaConfigAsync(m.Id);
+        await AuditSvc.LogAsync(AuditEntityNames.SlaConfig, m.Id, AuditEntityNames.ActionDelete, CurrentUser.EmpCode, new { m.RequestTypeId, m.LevelNo, m.WorkingDays }, null);
+        Snackbar.Add("SLA row deleted.", Severity.Info);
+        await ReloadAsync();
+    }
+}

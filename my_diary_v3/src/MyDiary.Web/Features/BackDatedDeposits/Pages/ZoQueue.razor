@@ -1,0 +1,223 @@
+@page "/deposits/zo-queue"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IBackDatedDepositRepo DepositRepo
+@inject IBackDatedDepositWorkflowService WorkflowService
+@inject IAttachmentStore AttachmentStore
+@inject ISnackbar Snackbar
+
+<PageTitle>Pending at ZO - Back-Dated Deposit Approvals</PageTitle>
+<PageHeader Title="Pending at ZO" Subtitle="Recommend (sanctions Retail Back-Dated Renewals directly; every other type routes on to DMD CO), seek clarification, return, or reject." Crumbs="_crumbs" PageKey="bdd-zo" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_items.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No proposals pending at ZO.</MudAlert>
+}
+else
+{
+    <MudTable Items="_items" Hover="true" Dense="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>Ref No</MudTh><MudTh>Branch</MudTh><MudTh>Type</MudTh><MudTh>Purpose</MudTh>
+            <MudTh>Customer</MudTh><MudTh>Submitted</MudTh><MudTh>Action</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.RefNo</MudTd>
+            <MudTd>@context.BranchName</MudTd>
+            <MudTd>@context.DepositType</MudTd>
+            <MudTd>@context.Purpose</MudTd>
+            <MudTd>@context.CustomerName</MudTd>
+            <MudTd>@context.CreatedAt.ToString("dd-MMM-yyyy")</MudTd>
+            <MudTd>
+                <MudButton Size="Size.Small" Color="Color.Success" Variant="Variant.Filled" OnClick="@(() => OpenAction(context, "Recommend"))">
+                    @(IsRetailRenewal(context) ? "Sanction" : "Recommend to DMD")
+                </MudButton>
+                @if (IsRetailRenewal(context))
+                {
+                    <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Filled" OnClick="@(() => OpenAction(context, "Reject"))">Reject</MudButton>
+                }
+                <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" OnClick="@(() => OpenAction(context, "Clarify"))">Seek Clarification</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined" OnClick="@(() => OpenAction(context, "Return"))">Return</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@if (_active is not null)
+{
+    <MudOverlay Visible="true" DarkBackground="true">
+
+        <MudPaper Style="width:600px;"
+                  Class="pa-6 mx-auto mt-12">
+
+            <MudText Typo="Typo.h6" Class="mb-4">
+                @_actionMode - @_active.RefNo
+            </MudText>
+
+            @if (_isSubmitting)
+            {
+                <div class="d-flex flex-column align-center pa-6">
+
+                    <MudProgressCircular Indeterminate="true"
+                                         Color="Color.Primary"
+                                         Size="Size.Large" />
+
+                    <MudText Class="mt-4">
+                        Processing...
+                    </MudText>
+
+                </div>
+            }
+            else
+            {
+                <MudTextField @bind-Value="_remarks"
+                              Label="Remarks"
+                              Lines="3"
+                              Variant="Variant.Outlined"
+                              Class="mb-3" />
+
+                @if (_actionMode == "Recommend")
+                {
+                    <MudTextField @bind-Value="_spocName"
+                                  Label="SPOC Name"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudTextField @bind-Value="_spocEmail"
+                                  Label="SPOC Email"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudTextField @bind-Value="_spocMobile"
+                                  Label="SPOC Mobile"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudTextField @bind-Value="_spocIp"
+                                  Label="SPOC IP"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-2" />
+
+                    <MudFileUpload T="IBrowserFile"
+                                   FilesChanged="@(f => _file = f)">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined">
+                                @(_file?.Name ?? "Upload Supporting Document")
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                }
+
+                <div class="d-flex justify-end mt-4">
+
+                    <MudButton Class="me-2"
+                               Disabled="_isSubmitting"
+                               OnClick="CloseDialog">
+                        Cancel
+                    </MudButton>
+
+                    <MudButton Color="Color.Primary"
+                               Variant="Variant.Filled"
+                               Disabled="_isSubmitting"
+                               OnClick="ConfirmAsync">
+                        Confirm
+                    </MudButton>
+
+                </div>
+            }
+
+        </MudPaper>
+
+    </MudOverlay>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("Pending at ZO") };
+    private bool _loading = true;
+    private List<BackDatedDepositProposal> _items = new();
+    private BackDatedDepositProposal? _active;
+    private string _actionMode = "";
+    private string _remarks = "", _spocName = "", _spocEmail = "", _spocMobile = "", _spocIp = "", _empId = "", _role = "ZoUser";
+    private IBrowserFile? _file;
+    private bool _isSubmitting = false;
+
+    private static bool IsRetailRenewal(BackDatedDepositProposal p) =>
+        p.DepositType == DepositType.Retail && p.Purpose == DepositPurpose.BackDatedRenewal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        _empId = user.FindFirst("emplid")?.Value ?? "";
+        _role = user.FindFirst("rp_role")?.Value ?? "ZoUser";
+        var zoSolId = user.FindFirst("zone_solid")?.Value ?? "";
+        _items = (await DepositRepo.ListPendingAtZoAsync(zoSolId)).ToList();
+        _loading = false;
+    }
+
+    private void OpenAction(BackDatedDepositProposal p, string mode)
+    {
+        _active = p; _actionMode = mode; _remarks = ""; _file = null;
+        _spocName = ""; _spocEmail = ""; _spocMobile = ""; _spocIp = "";
+    }
+
+    private void CloseDialog()
+    {
+        _active = null;
+        _isSubmitting = false;
+
+        _remarks = "";
+        _file = null;
+
+        _spocName = "";
+        _spocEmail = "";
+        _spocMobile = "";
+        _spocIp = "";
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_active is null) return;
+        try
+        {
+            switch (_actionMode)
+            {
+                case "Recommend":
+                    await WorkflowService.ZoRecommendAsync(_active.Id, _active.RowVersion, _empId, _role,
+                        _remarks, _spocName, _spocEmail, _spocMobile, _spocIp, _file is not null);
+                    if (_file is not null)
+                    {
+                        await using var stream = _file.OpenReadStream(10 * 1024 * 1024);
+                        var key = await AttachmentStore.SaveAsync(stream, _file.Name);
+                        await DepositRepo.InsertDocumentAsync(new BackDatedDepositDocument
+                        { ProposalId = _active.Id, Level = "Zo", FileName = _file.Name, StorageKey = key, UploadedByEmp = _empId });
+                    }
+                    break;
+                case "Reject":
+                    await WorkflowService.ZoRejectAsync(_active.Id, _active.RowVersion, _empId, _role, _remarks);
+                    break;
+                case "Clarify":
+                    await WorkflowService.ZoSeekClarificationAsync(_active.Id, _active.RowVersion, _empId, _role, _remarks);
+                    break;
+                case "Return":
+                    await WorkflowService.ZoReturnAsync(_active.Id, _active.RowVersion, _empId, _role, _remarks);
+                    break;
+            }
+            Snackbar.Add("Action recorded.", Severity.Success);
+            _items.Remove(_active);
+            _active = null;
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

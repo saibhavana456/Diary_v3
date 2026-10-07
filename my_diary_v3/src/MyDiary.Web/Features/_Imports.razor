@@ -1,0 +1,33 @@
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@using MyDiary.Web
+@using MyDiary.Web.Core.Extensions
+@using MudBlazor
+
+@* My Diary is now a single merged app — Features/*.razor pages routinely need the
+   Request Portal's shared UI (PageHeader/PageInfoIcon) and Core services
+   (ICurrentUser, IMasterRepo, IReportRepo, RoleCode, etc.). These MUST use the
+   global:: prefix: any file under Features/** compiles into a namespace nested
+   under MyDiary.Web, and MyDiary.Web.RequestPortal.* is also a real (unrelated)
+   namespace from the ported Request Portal admin pages — a bare "@using
+   RequestPortal.X" here resolves to that nested namespace first and silently binds
+   to the wrong (or a non-existent) type, which is what caused the CS0234/CS1503/
+   CS1061 errors seen when individual files forgot the prefix. Centralising the
+   import here means new Features/*.razor files get it automatically.
+   NOTE: deliberately NOT importing global::RequestPortal.Core.Models here — its
+   Department/Activity types collide (CS0104) with
+   MyDiary.Web.Features.Departments.Models.Department/Activity, which several
+   Features/Departments|DownloadsNew pages already use unqualified. Files that need
+   Request Portal's model types (Vertical, ReportDef, etc.) must keep an explicit
+   "@using global::RequestPortal.Core.Models" of their own. *@
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::MyDiary.Web.Shared
+@using global::MyDiary.Core.Services

@@ -1,0 +1,117 @@
+@namespace RequestPortal.Web.Pages.Masters
+@page "/masters/roles"
+@using RequestPortal.Web.Demo
+@inject IServiceProvider SP
+@inject ModuleContext Module
+
+<PageTitle>Roles</PageTitle>
+<PageHeader PageKey="masters-roles" Title="Roles" Subtitle="Role definitions and permission levels."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Masters"), new("Roles") })" />
+
+<SuperAdminOnly>
+<MudGrid>
+    @foreach (var row in _rows)
+    {
+        <MudItem xs="12" sm="6" md="4">
+            <MudPaper Elevation="1" Class="pa-4" Style="height:100%">
+                <div class="d-flex align-center gap-3 mb-3">
+                    <MudIcon Icon="@row.Icon" Color="@row.Color" Size="Size.Large" />
+                    <div>
+                        <MudText Typo="Typo.h6" Style="font-weight:700;line-height:1.2">@row.Name</MudText>
+                        <MudChip T="string" Size="Size.Small" Color="@row.Color" Variant="Variant.Outlined">@row.Code</MudChip>
+                    </div>
+                    <MudSpacer />
+                    <div class="text-right">
+                        <MudText Typo="Typo.h4" Style="font-weight:700">@row.UserCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">users</MudText>
+                    </div>
+                </div>
+                <MudDivider Class="mb-2" />
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">@row.Description</MudText>
+                @if (row.Users.Any())
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Assigned to:</MudText>
+                    <div class="d-flex flex-wrap gap-1">
+                        @foreach (var u in row.Users.Take(5))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@u</MudChip>
+                        }
+                        @if (row.Users.Count > 5)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">+@(row.Users.Count - 5) more</MudChip>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+</SuperAdminOnly>
+
+@code {
+    private List<RoleRow> _rows = new();
+
+    protected override void OnInitialized()
+    {
+        Module.SwitchTo(PortalModule.AccessManagement);
+        var demo = SP.GetService<DemoStore>();
+        if (demo is null) return;
+
+        var now = DateTime.UtcNow;
+        _rows = demo.Roles.OrderBy(r => r.Id).Select(role =>
+        {
+            var userCodes = demo.UserRoles
+                .Where(ur => ur.RoleId == role.Id && (ur.ValidTo is null || ur.ValidTo > now))
+                .Select(ur => ur.EmpCode).ToHashSet();
+            var users = demo.Users.Where(u => userCodes.Contains(u.EmpCode)).Select(u => u.Name ?? u.AdSamAccountName ?? "").ToList();
+            return new RoleRow(role.Code.ToString(), DemoStore.RoleLabel(role.Code), RoleDesc(role.Code), RoleIcon(role.Code), RoleColor(role.Code), users);
+        }).ToList();
+    }
+
+    private static string RoleDesc(RoleCode r) => r switch
+    {
+        RoleCode.BranchUser  => "Branch officer: raises requests, tracks own tickets, provides clarifications.",
+        RoleCode.BranchHead  => "Branch head: L1 handler — accept, clarify, resolve or escalate.",
+        RoleCode.RoUser      => "RO officer: handles requests routed to Regional Office.",
+        RoleCode.RoHead      => "RO head: L2 handler — broader scope, can escalate to ZO.",
+        RoleCode.ZoUser      => "ZO officer: handles requests routed to Zonal Office.",
+        RoleCode.ZoHead      => "ZO head: L3 handler — cross-team issues, MIS access.",
+        RoleCode.CoUser      => "CO officer: vertical handler, full operational access.",
+        RoleCode.CoHead      => "CO head: senior vertical handler, can authorize actions.",
+        RoleCode.CoVertAdmin => "CO vertical admin: admin over a specific vertical.",
+        RoleCode.VertL1      => "Vertical L1 handler: first-line handling in a vertical.",
+        RoleCode.VertL2      => "Vertical L2 handler: second-line handling in a vertical.",
+        RoleCode.VertL3      => "Vertical L3 handler: third-line handling in a vertical.",
+        RoleCode.VertL4      => "Vertical L4 handler: senior handler in a vertical.",
+        RoleCode.VertL5      => "Vertical L5 oversight: view-only across vertical requests.",
+        RoleCode.AppAdmin    => "Application admin: full access to masters, operations and setup.",
+        RoleCode.SuperAdmin  => "Super admin: unrestricted system access.",
+        _                    => ""
+    };
+
+    private static string RoleIcon(RoleCode r) => r switch
+    {
+        RoleCode.SuperAdmin or RoleCode.AppAdmin => Icons.Material.Filled.AdminPanelSettings,
+        RoleCode.VertL5                          => Icons.Material.Filled.Visibility,
+        RoleCode.VertL4                          => Icons.Material.Filled.Stars,
+        RoleCode.VertL3                          => Icons.Material.Filled.SupervisedUserCircle,
+        RoleCode.VertL2                          => Icons.Material.Filled.SupportAgent,
+        RoleCode.VertL1                          => Icons.Material.Filled.HeadsetMic,
+        RoleCode.BranchUser                      => Icons.Material.Filled.Person,
+        _                                        => Icons.Material.Filled.Circle
+    };
+
+    private static Color RoleColor(RoleCode r) => r switch
+    {
+        RoleCode.AppAdmin or RoleCode.SuperAdmin => Color.Error,
+        RoleCode.VertL5                          => Color.Info,
+        RoleCode.VertL4 or RoleCode.VertL3      => Color.Warning,
+        RoleCode.VertL2 or RoleCode.VertL1      => Color.Success,
+        _                                        => Color.Default,
+    };
+
+    private sealed record RoleRow(string Code, string Name, string Description, string Icon, Color Color, List<string> Users)
+    {
+        public int UserCount => Users.Count;
+    }
+}

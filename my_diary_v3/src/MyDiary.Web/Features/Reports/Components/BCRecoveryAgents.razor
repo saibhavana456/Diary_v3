@@ -1,0 +1,915 @@
+﻿@page "/reports/BCRecoveryAgents"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Components.Forms;
+@using OfficeOpenXml;
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+            <!-- ✅ Filters -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+
+                <!-- Zone -->
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Zone"
+                               Value="SelectedZone"
+                               ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var z in _zones)
+                        {
+                            @if (SelectedReportType == "DRA")
+                            {
+                                <MudSelectItem Value="@z["ZoneValue"]?.ToString()">
+                                    @z["Zone"]?.ToString()
+                                </MudSelectItem>
+                            }
+                            else
+                            {
+                                <MudSelectItem Value="@z["ZoneValue"]?.ToString()">
+                                    @z["Zone"]?.ToString()
+                                </MudSelectItem>
+                            }
+                        
+                        }
+
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Region -->
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var r in _regions)
+                        {
+                            @if (SelectedReportType == "DRA")
+{
+    <MudSelectItem Value="@r["RegionValue"]?.ToString()">
+        @r["Region"]?.ToString()
+    </MudSelectItem>
+}
+else
+{
+                                <MudSelectItem Value="@r["RegionValue"]?.ToString()">
+    @r["Region"]?.ToString()
+</MudSelectItem>
+}
+
+                        }
+
+                    </MudSelect>
+                </MudItem>
+
+                @if (SelectedReportType == "DRA")
+                {
+                     <MudItem xs="12" sm="2">
+                    <MudSelect T="string"
+                               Label="Branch"
+                               Value="SelectedBranch"
+                               ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["BranchCode"]?.ToString()">
+                                @b["BranchName"]?.ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                    </MudItem>
+                }
+                <!-- Type -->
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string" Label="Type of Report"
+                               Value="SelectedReportType"
+                               ValueChanged="HandleReportTypeChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("DRA")">DRA Certified</MudSelectItem>
+                        <MudSelectItem Value="@("RA")">Empanelled RA</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="4">
+
+                    <div class="d-flex justify-end align-center">
+
+                        @if (SelectedReportType == "RA" && _canManageRA)
+                        {
+                            <MudButton Variant="Variant.Filled"
+                                       Style="background-color:green;color:white;font-size:11px;margin-right:10px;"
+                                       OnClick="ShowAdd">
+                                Add New
+                            </MudButton>
+
+                            <InputFile OnChange="HandleFileSelected"
+                                       accept=".xlsx"
+                                       style="width:180px;margin-right:10px;" />
+
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Success"
+                                       Style="margin-right:10px;"
+                                       OnClick="UploadExcel">
+                                Upload
+                            </MudButton>
+                        }
+
+                        <MudButton Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   Style="background-color:#000066;color:white;font-size:11px;"
+                                   OnClick="Export">
+                            Export To Excel
+                        </MudButton>
+
+                    </div>
+
+                </MudItem>
+
+            </MudGrid>
+
+            @if (_showAdd && SelectedReportType == "RA")
+            {
+                <MudPaper Class="pa-4 mx-4 mb-4">
+
+                    <MudGrid Spacing="2">
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Region Solid"
+                                          Value="_regionSolid"
+                                          ValueChanged="@(async(string value) => await OnRegionSolidChanged(value))"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Name of RA"
+                                          @bind-Value="_nameOfRA"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Key Person"
+                                          @bind-Value="_keyPerson"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+                        <MudItem></MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Region Name"
+                                          @bind-Value="_regionName"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3">
+                            <MudTextField Label="Zone Name"
+                                          @bind-Value="_zoneName"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Dense="true" />
+                        </MudItem>
+
+                        
+
+                        <MudItem xs="12">
+
+                            <MudButton Color="Color.Success"
+                                       Variant="Variant.Filled"
+                                       OnClick="SaveRA">
+
+                                @(_isEdit ? "Update" : "Save")
+
+                            </MudButton>
+
+                            <MudButton Color="Color.Error"
+                                       Variant="Variant.Filled"
+                                       Class="ml-2"
+                                       OnClick="CancelAdd">
+                                Cancel
+                            </MudButton>
+
+                        </MudItem>
+
+                    </MudGrid>
+
+                </MudPaper>
+            }
+
+            <!-- ✅ TABLE -->
+            <MudItem xs="12" Class="pa-4">
+                @{
+                    var cols = GetColumns();
+                }
+
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+
+                    <HeaderContent>
+                        <MudTh Style="background:#2a2f5b;color:white;text-align:center;width:60px;">
+                            S.No
+                        </MudTh>
+
+                        @foreach (var col in cols)
+                        {
+                            <MudTh Style="background:#2a2f5b;color:white;text-align:center;">
+                                @col.Header
+                            </MudTh>
+                        }
+
+                        @if (SelectedReportType == "RA" && _canManageRA)
+                        {
+                            <MudTh Style="background:#2a2f5b;color:white;text-align:center;">
+                                Action
+                            </MudTh>
+                        }
+                    </HeaderContent>
+
+                    <RowTemplate>
+                        <MudTd Style="text-align:center;">
+                            @(_data.IndexOf(context) + 1)
+                        </MudTd>
+
+                        @foreach (var col in cols)
+                        {
+                            <MudTd Style="text-align:left;">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+
+                        @if (SelectedReportType == "RA" && _canManageRA)
+                        {
+                            <MudTd Style="text-align:center;">
+
+                                <MudButton Variant="Variant.Filled"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           Style="margin-right:5px;"
+                                           OnClick="@(() => EditRow(context))">
+                                    Edit
+                                </MudButton>
+
+                                <MudButton Variant="Variant.Filled"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => DeleteRow(context))">
+                                    Delete
+                                </MudButton>
+
+                            </MudTd>
+                        }
+                    </RowTemplate>
+
+                    <NoRecordsContent>
+                        <td colspan="@((GetColumns().Count)+1)" style="text-align:center;padding:40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">
+                                No Data Found!
+                            </MudText>
+                        </td>
+                    </NoRecordsContent>
+
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10,25,50,100}" />
+                    </PagerContent>
+
+                </MudTable>
+            </MudItem>
+
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+
+    private bool _loading = true;
+    private InputFile? _fileInput;
+    private string SelectedZone { get; set; } = "All";
+    private string SelectedRegion { get; set; } = "All";
+    private string SelectedReportType { get; set; } = "DRA";
+
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _data = new();
+
+    private bool _showAdd = false;
+    private bool _isEdit = false;
+    private IBrowserFile? _selectedFile;
+    private int _editId;
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+    }
+    private bool _canManageRA = false;
+
+    private string _regionSolid = "";
+    private string _nameOfRA = "";
+    private string _keyPerson = "";
+    private string _zoneName = "";
+    private string _regionName = "";
+
+    private string SelectedBranch { get; set; } = "All";
+
+    private List<Dictionary<string, object>> _branches = new();
+
+    private async Task UploadExcel()
+    {
+        try
+        {
+            if (_selectedFile == null)
+            {
+                await JS.InvokeVoidAsync(
+                    "alert",
+                    "Please select an Excel file first.");
+
+                return;
+            }
+
+            var file = _selectedFile;
+
+            using var stream = file.OpenReadStream(1024 * 1024 * 20);
+
+            using var ms = new MemoryStream();
+
+            await stream.CopyToAsync(ms);
+
+            ms.Position = 0;
+
+            using var package = new ExcelPackage(ms);
+
+            var ws = package.Workbook.Worksheets[0];
+
+            if (ws == null)
+                return;
+
+            int rows = ws.Dimension.Rows;
+
+            string h1 = ws.Cells[1, 1].Text.Trim();
+            string h2 = ws.Cells[1, 2].Text.Trim();
+            string h3 = ws.Cells[1, 3].Text.Trim();
+
+            if (h1 != "region_solid"
+                || h2 != "Name_of_RA"
+                || h3 != "KeyPerson_Name_Contact")
+            {
+                await JS.InvokeVoidAsync(
+                    "alert",
+                    "Invalid Excel format. Required columns: region_solid, Name_of_RA, KeyPerson_Name_Contact");
+
+                return;
+            }
+
+            for (int row = 2; row <= rows; row++)
+            {
+                string regionSolid = ws.Cells[row, 1].Text.Trim();
+                string nameOfRA = ws.Cells[row, 2].Text.Trim();
+                string keyPerson = ws.Cells[row, 3].Text.Trim();
+
+                if (string.IsNullOrWhiteSpace(regionSolid)
+                    && string.IsNullOrWhiteSpace(nameOfRA)
+                    && string.IsNullOrWhiteSpace(keyPerson))
+                    continue;
+
+                var region = regionSolid.Replace("'", "''");
+                var raName = nameOfRA.Replace("'", "''");
+                var keyPersonName = keyPerson.Replace("'", "''");
+
+                string query = $@"
+INSERT INTO BC_RecoveryAgents
+(
+    region_solid,
+    Name_of_RA,
+    KeyPerson_Name_Contact
+)
+VALUES
+(
+    '{region}',
+    '{raName}',
+    '{keyPersonName}'
+)";
+
+                await ReportService.ExecuteRawQueryAsync(query);
+            }
+
+            await LoadData();
+
+            _selectedFile = null;
+
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Excel uploaded successfully.");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "BCRecoveryAgents: Excel upload failed");
+            await JS.InvokeVoidAsync(
+                "alert",
+                UserFacingError.Generic);
+        }
+    }
+
+
+    private async Task OnRegionSolidChanged(string value)
+    {
+        _regionSolid = value;
+
+        string query = $@"
+    SELECT TOP 1
+        region_name,
+        zone_name_eng
+    FROM Branch_Master
+    WHERE region_solid = '{value}'";
+
+        var result = await ReportService.ExecuteRawQueryAsync(query);
+
+        if (result.Count > 0)
+        {
+            _regionName = result[0]["region_name"]?.ToString() ?? "";
+            _zoneName = result[0]["zone_name_eng"]?.ToString() ?? "";
+        }
+        else
+        {
+            _regionName = "";
+            _zoneName = "";
+        }
+    }
+
+
+    private void ShowAdd()
+    {
+        _isEdit = false;
+
+        _regionSolid = "";
+        _regionName = "";
+        _zoneName = "";
+
+        _nameOfRA = "";
+        _keyPerson = "";
+
+        _showAdd = true;
+    }
+
+    private async void EditRow(Dictionary<string, object> row)
+    {
+        try
+        {
+            _isEdit = true;
+
+            _editId = Convert.ToInt32(row["Id"]);
+
+            _regionSolid = row["region_solid"]?.ToString() ?? "";
+            await OnRegionSolidChanged(_regionSolid);
+            _nameOfRA = row["Name_of_RA"]?.ToString() ?? "";
+            _keyPerson = row["KeyPerson_Name_Contact"]?.ToString() ?? "";
+
+            _showAdd = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "BCRecoveryAgents: EditRow failed");
+        }
+    }
+
+    private async Task DeleteRow(Dictionary<string, object> row)
+    {
+        try
+        {
+            bool confirm = await JS.InvokeAsync<bool>(
+                "confirm",
+                "Are you sure you want to delete this record?");
+
+            if (!confirm)
+                return;
+
+            int id = Convert.ToInt32(row["Id"]);
+
+            string query = $@"
+DELETE FROM BC_RecoveryAgents
+WHERE Id = {id}";
+
+            await ReportService.ExecuteRawQueryAsync(query);
+
+            await LoadData();
+
+            await JS.InvokeVoidAsync(
+                "alert",
+                "Record deleted successfully.");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "BCRecoveryAgents: delete failed");
+            await JS.InvokeVoidAsync(
+                "alert",
+                UserFacingError.Generic);
+        }
+    }
+
+    private async Task SaveRA()
+    {
+        string query;
+
+        if (_isEdit)
+        {
+            query = $@"
+UPDATE BC_RecoveryAgents
+SET
+    region_solid = '{_regionSolid}',
+    Name_of_RA = '{_nameOfRA}',
+    KeyPerson_Name_Contact = '{_keyPerson}'
+WHERE Id = {_editId}";
+        }
+        else
+        {
+            query = $@"
+INSERT INTO BC_RecoveryAgents
+(
+    region_solid,
+    Name_of_RA,
+    KeyPerson_Name_Contact
+)
+VALUES
+(
+    '{_regionSolid}',
+    '{_nameOfRA}',
+    '{_keyPerson}'
+)";
+        }
+
+        await ReportService.ExecuteRawQueryAsync(query);
+
+        _regionSolid = "";
+        _regionName = "";
+        _zoneName = "";
+        _nameOfRA = "";
+        _keyPerson = "";
+
+        _showAdd = false;
+        _isEdit = false;
+
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private void CancelAdd()
+    {
+        _showAdd = false;
+        _isEdit = false;
+    }
+
+    // ✅ Columns
+    private List<ColumnConfig> GetColumns()
+    {
+        return SelectedReportType == "DRA"
+        ? new()
+    {
+    new ColumnConfig { Header="Vendor Name", PropertyName="VENDORNAME"},
+    new ColumnConfig { Header="Full Name", PropertyName="FULL_NAME"},
+    new ColumnConfig { Header="Agent Code", PropertyName="AGENTCODE"},
+    new ColumnConfig { Header="DRA Cert No", PropertyName="DRA_CERT_NO"},
+    new ColumnConfig { Header="DRA Cert Date", PropertyName="DRA_CERT_DATE"},
+    new ColumnConfig { Header="Branch Name", PropertyName="BRANCHNAME"},
+    new ColumnConfig { Header="Branch Code", PropertyName="BRANCHCODE"},
+    new ColumnConfig { Header="Region", PropertyName="REGION"},
+    new ColumnConfig { Header="FGMO", PropertyName="FGMO"},
+    new ColumnConfig { Header="Contact Number", PropertyName="BC_MOBILE_NO"}
+    }
+        : new()
+            {
+            new ColumnConfig { Header="Zone", PropertyName="Zone"},
+            new ColumnConfig { Header="Region", PropertyName="Region"},
+            new ColumnConfig { Header="Name of RA", PropertyName="Name_of_RA"},
+            new ColumnConfig { Header="Key Person", PropertyName="KeyPerson_Name_Contact"}
+            };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState =
+            await AuthStateProvider.GetAuthenticationStateAsync();
+
+        var department = authState.User
+            .FindFirst("department_desc")?.Value?
+            .ToUpper() ?? "";
+
+        _canManageRA = department.Contains("SAMV");
+
+        await LoadDropdowns();
+        await LoadData();
+    }
+
+    // ✅ Load dropdowns FROM TABLE
+    private async Task LoadDropdowns()
+    {
+        if (SelectedReportType == "DRA")
+        {
+            _zones = await ReportService.ExecuteRawQueryAsync(@"
+SELECT DISTINCT
+    bm.zone_name_eng AS Zone,
+    bm.zone_solid AS ZoneValue
+FROM Branch_Master bm
+
+WHERE zone_name_eng IS NOT NULL
+  AND zone_name_eng <> ''
+
+ORDER BY Zone");
+
+
+
+            string regionFilter =
+                SelectedZone == "All"
+                ? "1=1"
+                : $"bm.zone_solid='{SelectedZone}'";
+
+            _regions = await ReportService.ExecuteRawQueryAsync($@"
+SELECT DISTINCT
+    bm.region_name AS Region,
+    bm.region_solid AS RegionValue
+FROM Branch_Master bm
+WHERE {regionFilter}
+AND region_name IS NOT NULL
+  AND region_name <> ''
+
+ORDER BY Region");
+
+            string branchFilter = "1=1";
+
+            if (SelectedZone != "All")
+                branchFilter += $" AND bm.zone_solid='{SelectedZone}'";
+
+            if (SelectedRegion != "All")
+                branchFilter += $" AND bm.region_solid='{SelectedRegion}'";
+
+            _branches = await ReportService.ExecuteRawQueryAsync($@"
+SELECT DISTINCT
+    bm.SOL_ID AS BranchCode,
+    bm.BRANCH_NAME AS BranchName
+FROM Branch_Master bm
+WHERE {branchFilter}
+  AND bm.BRANCH_NAME IS NOT NULL
+  AND bm.BRANCH_NAME <> ''
+ORDER BY bm.BRANCH_NAME");
+        }
+        else
+        {
+            _zones = await ReportService.ExecuteRawQueryAsync(@"
+SELECT DISTINCT
+    zone_name_eng AS Zone,
+    zone_solid AS ZoneValue
+FROM Branch_Master
+
+WHERE zone_name_eng IS NOT NULL
+  AND zone_name_eng <> ''
+
+ORDER BY zone_name_eng");
+
+            string regionWhere =
+                SelectedZone == "All"
+                ? "1=1"
+                : $"zone_solid='{SelectedZone}'";
+
+            _regions = await ReportService.ExecuteRawQueryAsync($@"
+SELECT DISTINCT
+    region_name AS Region,
+    region_solid AS RegionValue
+FROM Branch_Master
+WHERE {regionWhere}
+
+AND region_name IS NOT NULL
+  AND region_name <> ''
+
+ORDER BY region_name");
+        }
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        SelectedBranch = value;
+        await LoadData();
+    }
+
+
+    private async Task HandleZoneChanged(string value)
+    {
+        SelectedZone = value;
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        await LoadDropdowns();
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        SelectedRegion = value;
+        SelectedBranch = "All";
+
+        await LoadDropdowns();
+        await LoadData();
+    }
+
+    private async Task HandleReportTypeChanged(string value)
+    {
+        SelectedReportType = value;
+
+        SelectedZone = "All";
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+        _branches = new();
+
+        _zones = new();
+        _regions = new();
+        _data = new();
+
+        StateHasChanged();
+
+        await LoadDropdowns();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+
+        if (SelectedReportType == "DRA")
+        {
+            string where = "A.DRAFLAG = 1";
+
+            if (SelectedZone != "All")
+                where += $" AND bm.zone_solid='{SelectedZone}'";
+
+            if (SelectedRegion != "All")
+                where += $" AND bm.region_solid='{SelectedRegion}'";
+
+            if (SelectedBranch != "All")
+                where += $" AND bm.SOL_ID='{SelectedBranch}'";
+
+            string query = $@"
+    SELECT
+        A.VENDORNAME,
+        A.FULL_NAME,
+        A.AGENTCODE,
+        A.DRA_CERT_NO,
+        A.DRA_CERT_DATE,
+        A.BRANCHNAME,
+        A.BRANCHCODE,
+        A.REGION,
+        A.FGMO,
+        A.BC_MOBILE_NO
+    FROM BC_MASTER A
+    INNER JOIN Branch_Master bm
+        ON A.SOL_ID = bm.SOL_ID
+    WHERE {where}
+    ORDER BY A.VENDORNAME";
+
+            _data = await ReportService.ExecuteRawQueryAsync(query);
+        }
+        else
+        {
+            string query = @"
+SELECT DISTINCT
+    ra.Id,
+    ra.S_No,
+    bm.zone_name_eng AS Zone,
+    bm.region_name AS Region,
+    ra.Name_of_RA,
+    ra.KeyPerson_Name_Contact,
+    ra.region_solid
+FROM BC_RecoveryAgents ra
+LEFT JOIN
+(
+    SELECT DISTINCT
+        region_solid,
+        region_name,
+        zone_name_eng,
+        zone_solid
+    FROM Branch_Master
+) bm
+ON ra.region_solid = bm.region_solid
+WHERE 1=1";
+
+            if (SelectedZone != "All")
+            {
+                query += $@"
+AND bm.zone_solid = '{SelectedZone}'";
+            }
+
+            if (SelectedRegion != "All")
+            {
+                query += $@"
+AND bm.region_solid = '{SelectedRegion}'";
+            }
+
+            _data = await ReportService.ExecuteRawQueryAsync(query);
+        }
+
+        _loading = false;
+    }
+
+    private async Task Export()
+    {
+        var cols = GetColumns();
+
+        // Create export data with S.No column
+        var exportData = _data
+            .Select((row, index) =>
+            {
+                var newRow = new Dictionary<string, object>();
+                newRow["SNo"] = index + 1;   // Serial Number
+
+                foreach (var item in row)
+                    newRow[item.Key] = item.Value;
+
+                return newRow;
+            })
+            .ToList();
+
+        // Add S.No column at first position
+        var exportCols = new List<ColumnConfig>
+    {
+        new ColumnConfig
+        {
+            Header = "S.No",
+            PropertyName = "SNo"
+        }
+    };
+
+        exportCols.AddRange(cols);
+
+        var bytes = ReportService.ExportToExcel(
+            exportData,
+            exportCols,
+            "BC_RecoveryAgents");
+
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "BC_RecoveryAgents.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.ContainsKey(col.PropertyName) || row[col.PropertyName] == null)
+            return "-";
+
+        return row[col.PropertyName].ToString();
+    }
+}

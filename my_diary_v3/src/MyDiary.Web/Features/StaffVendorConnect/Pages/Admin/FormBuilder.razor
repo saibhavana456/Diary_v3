@@ -1,0 +1,319 @@
+@page "/svc/admin/form-builder"
+@using global::RequestPortal.Web.Shared
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.StaffVendorConnect.Services
+@using MyDiary.Web.Features.StaffVendorConnect.Models.DTO
+@inject IStaffVendorConnectService SvcService
+@inject IAuthorizationService AuthzService
+@inject ISnackbar Snackbar
+
+<PageTitle>Form Builder - Staff and Vendor Connect</PageTitle>
+
+@if (_accessChecked && !_hasAccess)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="ma-4">
+        App Admin or Category Admin access is required to view this page.
+    </MudAlert>
+}
+else if (_accessChecked)
+{
+
+<PageHeader Title="Form Builder" Subtitle="Define entry/update form fields per vendor category — the field-mapping table that drives every dynamic form." Crumbs="_crumbs" PageKey="svc-form-builder" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="long?" @bind-Value="_verticalId" Label="Vertical" Variant="Variant.Outlined" @bind-Value:after="OnVerticalChangedAsync">
+                <MudSelectItem T="long?" Value="null">All</MudSelectItem>
+                @foreach (var v in _verticals)
+                {
+                    <MudSelectItem T="long?" Value="@((long?)v.Id)">@v.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="string" @bind-Value="_categoryCode" Label="Category" Variant="Variant.Outlined" @bind-Value:after="LoadFieldsAsync">
+                @foreach (var c in _categories)
+                {
+                    <MudSelectItem T="string" Value="@c.CategoryCode">@c.CategoryName</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="12" md="4" Class="d-flex align-center justify-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddDialog" Disabled="@string.IsNullOrEmpty(_categoryCode)">
+                Add Field
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @if (string.IsNullOrEmpty(_categoryCode))
+    {
+        <MudAlert Severity="Severity.Info">No category available to edit for this vertical.</MudAlert>
+    }
+    else
+    {
+    <MudTable Items="@_fields" Hover="true" Dense="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>Order</MudTh>
+            <MudTh>Key</MudTh>
+            <MudTh>Label</MudTh>
+            <MudTh>Section</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Mandatory</MudTh>
+            <MudTh>Read-only</MudTh>
+            <MudTh>Unique</MudTh>
+            <MudTh>PII</MudTh>
+            <MudTh>Active</MudTh>
+            <MudTh>Created</MudTh>
+            <MudTh>Updated</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.DisplayOrder</MudTd>
+            <MudTd>@context.FieldKey</MudTd>
+            <MudTd>@context.FieldLabel</MudTd>
+            <MudTd>@context.SectionName</MudTd>
+            <MudTd>@context.FieldType</MudTd>
+            <MudTd>@(context.IsMandatory ? "Yes" : "")</MudTd>
+            <MudTd>@(context.IsReadonly ? "Yes" : "")</MudTd>
+            <MudTd>@(context.IsUnique ? "Yes" : "")</MudTd>
+            <MudTd>@(context.IsPii ? "Yes" : "")</MudTd>
+            <MudTd>
+                <MudSwitch T="bool" Value="@context.IsActive" ValueChanged="@((bool v) => ToggleActiveAsync(context, v))" Color="Color.Success" Disabled="@(!_canManageCurrentCategory)" />
+            </MudTd>
+            <MudTd>
+                <MudText Typo="Typo.caption">@context.CreatedBy</MudText>
+                <MudText Typo="Typo.caption" Class="d-block mud-text-secondary">@context.CreatedAt?.ToString("dd-MMM-yyyy HH:mm")</MudText>
+            </MudTd>
+            <MudTd>
+                <MudText Typo="Typo.caption">@context.UpdatedBy</MudText>
+                <MudText Typo="Typo.caption" Class="d-block mud-text-secondary">@context.UpdatedAt?.ToString("dd-MMM-yyyy HH:mm")</MudText>
+            </MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEditDialog(context))" Disabled="@(!_canManageCurrentCategory)" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    }
+}
+
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
+    <TitleContent>@(_editing!.FieldId > 0 ? "Edit Field" : "Add Field")</TitleContent>
+    <DialogContent>
+        @if (_editing is not null)
+        {
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_editing.FieldKey" Label="Field Key (machine name)" Variant="Variant.Outlined" Disabled="@(_editing.FieldId > 0)" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_editing.FieldLabel" Label="Field Label" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_editing.SectionName" Label="Section" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" @bind-Value="_editing.FieldType" Label="Field Type" Variant="Variant.Outlined">
+                        <MudSelectItem T="string" Value="@("TEXT")">Text</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("TEXTAREA")">Text Area</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("NUMERIC")">Numeric</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("DATE")">Date</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("DROPDOWN")">Dropdown</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                @if (_editing.FieldType == "DROPDOWN")
+                {
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_dropdownOptionsCsv" Label="Dropdown Options (comma-separated)" Variant="Variant.Outlined" Lines="2" />
+                    </MudItem>
+                }
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_editing.ValidationRegex" Label="Validation Regex (which characters are allowed)" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_editing.ValidationHint" Label="Validation Hint (shown on error)" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudNumericField @bind-Value="_editing.MaxLength" Label="Max Length" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudNumericField @bind-Value="_editing.DisplayOrder" Label="Display Order" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudCheckBox T="bool" @bind-Value="_editing.IsMandatory" Label="Mandatory" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudCheckBox T="bool" @bind-Value="_editing.IsReadonly" Label="Read-only (auto-populated)" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudCheckBox T="bool" @bind-Value="_editing.IsUnique" Label="Unique (no two active records may share this value)" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudCheckBox T="bool" @bind-Value="_editing.IsPii" Label="PII (masked for non-admins/viewers who can't manage this category)" />
+                </MudItem>
+                @if (_editing.FieldId > 0)
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            Created by @_editing.CreatedBy on @_editing.CreatedAt?.ToString("dd-MMM-yyyy HH:mm")
+                            @if (_editing.UpdatedBy is not null)
+                            {
+                                <text> — last updated by @_editing.UpdatedBy on @_editing.UpdatedAt?.ToString("dd-MMM-yyyy HH:mm")</text>
+                            }
+                        </MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _dialogOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveFieldAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Staff and Vendor Connect", "svc/hub"), new("Form Builder") };
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _accessChecked;
+    private bool _hasAccess;
+    private bool _isAppAdmin;
+    private ClaimsPrincipal? _user;
+
+    private bool _loading = true;
+    private List<SvcVertical> _verticals = new();
+    private long? _verticalId;
+    private List<SvcCategory> _categories = new();
+    private List<SvcFieldDefinition> _fields = new();
+    private string _categoryCode = "";
+    private string _pfNo = "";
+    private bool _canManageCurrentCategory;
+
+    private bool _dialogOpen;
+    private SvcFieldDefinition? _editing;
+    private string _dropdownOptionsCsv = "";
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            _user = state.User;
+            _pfNo = state.User.FindFirst("emplid")?.Value ?? "";
+            _isAppAdmin = (await AuthzService.AuthorizeAsync(state.User, "AppAdmin")).Succeeded;
+            _hasAccess = _isAppAdmin || await SvcService.IsSvcCategoryAdminAsync(state.User);
+        }
+        _accessChecked = true;
+        if (!_hasAccess) { _loading = false; return; }
+
+        _verticals = await SvcService.GetActiveVerticalsAsync();
+        await LoadCategoriesAsync();
+        _categoryCode = _categories.FirstOrDefault()?.CategoryCode ?? "";
+        await LoadFieldsAsync();
+        _loading = false;
+    }
+
+    private async Task OnVerticalChangedAsync()
+    {
+        await LoadCategoriesAsync();
+        _categoryCode = _categories.FirstOrDefault()?.CategoryCode ?? "";
+        await LoadFieldsAsync();
+    }
+
+    /// <summary>Categories reachable for the selected vertical (unmapped-or-mapped rule, via
+    /// GetCategoriesForVerticalAsync), further narrowed for a non-App-Admin category admin to only
+    /// the categories CanManageCategoryAsync allows them to edit ("allow the categories that are
+    /// mapped to the particular vertical only to allow them to audit").</summary>
+    private async Task LoadCategoriesAsync()
+    {
+        var all = await SvcService.GetCategoriesForVerticalAsync(null!, _verticalId);
+        if (_isAppAdmin || _user is null) { _categories = all; return; }
+
+        var allowed = new List<SvcCategory>();
+        foreach (var c in all)
+            if (await SvcService.CanManageCategoryAsync(_user, c.CategoryCode)) allowed.Add(c);
+        _categories = allowed;
+    }
+
+    private async Task LoadFieldsAsync()
+    {
+        if (string.IsNullOrEmpty(_categoryCode)) { _fields = new(); return; }
+        _fields = await SvcService.GetFieldDefinitionsAsync(_categoryCode, activeOnly: false);
+        _canManageCurrentCategory = _isAppAdmin || (_user is not null && await SvcService.CanManageCategoryAsync(_user, _categoryCode));
+        StateHasChanged();
+    }
+
+    private void OpenAddDialog()
+    {
+        _editing = new SvcFieldDefinition { CategoryCode = _categoryCode, IsActive = true, FieldType = "TEXT", DisplayOrder = (_fields.Count + 1) * 10 };
+        _dropdownOptionsCsv = "";
+        _dialogOpen = true;
+    }
+
+    private void OpenEditDialog(SvcFieldDefinition field)
+    {
+        _editing = new SvcFieldDefinition
+        {
+            FieldId = field.FieldId, CategoryCode = field.CategoryCode, FieldKey = field.FieldKey, FieldLabel = field.FieldLabel,
+            SectionName = field.SectionName, FieldType = field.FieldType, ValidationRegex = field.ValidationRegex,
+            ValidationHint = field.ValidationHint, MaxLength = field.MaxLength, IsMandatory = field.IsMandatory,
+            IsReadonly = field.IsReadonly, IsUnique = field.IsUnique, IsPii = field.IsPii, DropdownSource = field.DropdownSource, DropdownOptions = new(field.DropdownOptions),
+            DisplayOrder = field.DisplayOrder, IsActive = field.IsActive,
+            CreatedBy = field.CreatedBy, CreatedAt = field.CreatedAt, UpdatedBy = field.UpdatedBy, UpdatedAt = field.UpdatedAt
+        };
+        _dropdownOptionsCsv = string.Join(", ", field.DropdownOptions);
+        _dialogOpen = true;
+    }
+
+    private async Task SaveFieldAsync()
+    {
+        if (_editing is null) return;
+        if (string.IsNullOrWhiteSpace(_editing.FieldKey) || string.IsNullOrWhiteSpace(_editing.FieldLabel))
+        {
+            Snackbar.Add("Field Key and Label are required.", Severity.Warning);
+            return;
+        }
+
+        // Server-side re-check — a non-privileged user could otherwise call this directly even if
+        // the UI filtered the category out of their dropdown.
+        if (!_isAppAdmin && (_user is null || !await SvcService.CanManageCategoryAsync(_user, _editing.CategoryCode)))
+        {
+            Snackbar.Add("You are not authorized to edit this category's form.", Severity.Error);
+            return;
+        }
+
+        if (_editing.FieldType == "DROPDOWN")
+        {
+            _editing.DropdownSource = "STATIC";
+            _editing.DropdownOptions = _dropdownOptionsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        }
+
+        await SvcService.UpsertFieldDefinitionAsync(_editing, _pfNo);
+        Snackbar.Add("Field saved.", Severity.Success);
+        _dialogOpen = false;
+        await LoadFieldsAsync();
+    }
+
+    private async Task ToggleActiveAsync(SvcFieldDefinition field, bool active)
+    {
+        if (!_isAppAdmin && (_user is null || !await SvcService.CanManageCategoryAsync(_user, field.CategoryCode)))
+        {
+            Snackbar.Add("You are not authorized to edit this category's form.", Severity.Error);
+            return;
+        }
+        await SvcService.SetFieldActiveAsync(field.FieldId, active, _pfNo);
+        await LoadFieldsAsync();
+    }
+}

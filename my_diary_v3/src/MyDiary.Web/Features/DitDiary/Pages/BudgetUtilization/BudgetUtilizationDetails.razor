@@ -1,0 +1,422 @@
+@page "/dit/budget/details"
+@using MudBlazor
+@using MyDiary.Web.Features.DitDiary.Models.DTO
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@using MyDiary.Web.Features.DitDiary.Services
+@using MyDiary.Web.Features.DitDiary.Pages.BudgetUtilization
+@inject IBudgetEntryService EntryService
+@inject IAdminMasterService AdminService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject DitUserSession Session
+
+<style>
+    .budget-card {
+        cursor: pointer;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        transition: all .2s;
+    }
+
+        .budget-card.selected {
+            border: 2px solid var(--mud-palette-primary);
+            background: #fcfcff;
+        }
+</style>
+
+<MudContainer MaxWidth="@MaxWidth.False" Class="mt-2">
+
+    <MudPaper Class="pa-4 mb-3" Elevation="3">
+        <MudText Typo="@Typo.h5" Color="@Color.Primary"><b>Budget Utilization Tracking</b></MudText>
+        @if (_scopeNote is not null)
+        {
+            <MudText Typo="@Typo.body2" Class="mud-text-secondary">@_scopeNote</MudText>
+        }
+    </MudPaper>
+
+    @if (_loadError is not null)
+    {
+        <MudAlert Severity="@Severity.Error" Class="mb-3">Load error: @_loadError</MudAlert>
+    }
+
+    @if (_noAccess)
+    {
+        <MudAlert Severity="@Severity.Warning">
+            You are not mapped to any section. Please contact the administrator to be added as a team leader or team member.
+        </MudAlert>
+    }
+    else
+    {
+        @* ---------- CAPITAL / REVENUE SELECTOR ---------- *@
+        <MudGrid Spacing="3" Class="mb-3">
+            <MudItem xs="12" md="6">
+                <MudPaper Class="@CardClass("Capital")" Elevation="2" @onclick="@(() => SetView("Capital"))">
+                    <MudStack Row="true" AlignItems="@AlignItems.Center" Justify="@Justify.SpaceBetween" Class="pa-4">
+                        <div>
+                            <MudText Typo="@Typo.caption">CAPITAL EXPENDITURE</MudText>
+                            <MudText Typo="@Typo.h4" Color="@Color.Info"><b>@_capitalFyTotal.ToString("N2")</b><small> Cr.</small></MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="@Size.Large" Color="@Color.Info" />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="@CardClass("Revenue")" Elevation="2" @onclick="@(() => SetView("Revenue"))">
+                    <MudStack Row="true" AlignItems="@AlignItems.Center" Justify="@Justify.SpaceBetween" Class="pa-4">
+                        <div>
+                            <MudText Typo="@Typo.caption">REVENUE EXPENDITURE</MudText>
+                            <MudText Typo="@Typo.h4" Color="@Color.Error"><b>@_revenueFyTotal.ToString("N2")</b><small> Cr.</small></MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="@Size.Large" Color="@Color.Error" />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* ---------- FILTERS ---------- *@
+        <MudPaper Class="pa-4 mb-3" Elevation="3">
+            <MudGrid AlignItems="@AlignItems.Center" Spacing="2">
+
+                <MudItem xs="12" sm="3" @key="1">
+                    <MudSelect T="int" Label="Financial Year" Value="@_fyId" ValueChanged="@OnFyChanged" Variant="@Variant.Outlined" Dense="true">
+                        @foreach (var fy in _fys)
+                        {
+                            <MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3" @key="2">
+                    <MudSelect T="string" Label="Month" Value="@_month" ValueChanged="@OnMonthChanged" Variant="@Variant.Outlined" Dense="true">
+                        @foreach (var m in Months)
+                        {
+                            <MudSelectItem T="string" Value="@m" Disabled="@IsFuturemonth(m)">@m</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="2" @key="3">
+                    <MudSelect T="long?" Label="Department" Value="@_deptId" ValueChanged="@OnDeptChanged"
+                               Variant="@Variant.Outlined" Dense="true" Disabled="@_lockDept">
+                        @if (!_lockDept)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)null)">All Departments</MudSelectItem>
+                        }
+                        @foreach (var d in _depts)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)d.DEPT_ID)">@d.DEPT_NAME</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+
+                <MudItem xs="12" sm="2" @key="4">
+                    <MudSelect T="string" Label="Section" Value="@_section" ValueChanged="@OnSectionChanged"
+                               Variant="@Variant.Outlined" Dense="true" Disabled="@_lockSection">
+                        @if (!_lockSection)
+                        {
+                            <MudSelectItem T="string" Value="@("All")">All Sections</MudSelectItem>
+                        }
+                        @foreach (var s in _sectionNames)
+                        {
+                            <MudSelectItem T="string" Value="@s">@s</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="2" @key="5">
+                    <MudSelect T="string" Label="Status" Value="@_status" ValueChanged="@OnStatusChanged" Variant="@Variant.Outlined" Dense="true">
+                        <MudSelectItem T="string" Value="@("All")">All</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Submitted")">Submitted</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Not Submitted")">Not Submitted</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+            </MudGrid>
+        </MudPaper>
+
+        @* ---------- TABLE ---------- *@
+        <MudTable Items="@_visibleRows" Hover="true" Striped="true" Dense="true">
+            <HeaderContent>
+                <MudTh>S.No</MudTh>
+                <MudTh>Section</MudTh>
+                <MudTh>Project Name</MudTh>
+                <MudTh>Total Allotted</MudTh>
+                <MudTh>Utilized (@_month)</MudTh>
+                <MudTh Style="width:160px;">Util %</MudTh>
+                <MudTh>Submitted By</MudTh>
+                <MudTh Style="width:200px;">Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@(_visibleRows.IndexOf(context) + 1)</MudTd>
+                <MudTd>@context.SectionName</MudTd>
+                <MudTd>@context.ProjectName</MudTd>
+                <MudTd>@context.TotalAllotted.ToString("N2")</MudTd>
+                <MudTd><b>@context.Utilized.ToString("N2")</b></MudTd>
+                <MudTd>
+                    @{
+                        var pct = context.TotalAllotted <= 0 ? 0d : (double)(context.Utilized / context.TotalAllotted * 100);
+                    }
+                    <MudProgressLinear Color="@Color.Primary" Value="@pct" Class="my-1" />
+                    <b>@pct.ToString("F1")%</b>
+                </MudTd>
+                <MudTd>
+                    @if (context.HasEntry)
+                    {
+                        <MudChip T="string" Size="@Size.Small" Color="@Color.Success">
+                            @(string.IsNullOrWhiteSpace(context.SubmittedBy) ? "Submitted" : context.SubmittedBy)
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <span style="color:#9e9e9e;">—</span>
+                    }
+                </MudTd>
+                <MudTd>
+                    @if (IsFuturemonth(_month))
+                    {
+                        <MudButton Size="@Size.Small" Variant="@Variant.Text" Color="@Color.Default" Disabled="true"
+                                   StartIcon="@Icons.Material.Filled.Lock">Not open yet</MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Size="@Size.Small"
+                                   Variant="@(context.HasEntry ? Variant.Outlined : Variant.Filled)"
+                                   Color="@(_view == "Capital" ? Color.Primary : Color.Error)"
+                                   StartIcon="@(context.HasEntry ? Icons.Material.Filled.Visibility : Icons.Material.Filled.AddCircle)"
+                                   OnClick="@(() => OpenEntry(context))">
+                            @(context.HasEntry ? "View" : (_view == "Capital" ? "Enter Capital Budget" : "Enter Revenue Budget"))
+                        </MudButton>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (!_visibleRows.Any())
+        {
+            <MudAlert Severity="@Severity.Info" Class="mt-3">
+                No projects with a @(_view == "Capital" ? "capital" : "revenue") budget for this filter.
+            </MudAlert>
+        }
+    }
+</MudContainer>
+
+@code {
+    private string _view = "Capital";
+    private List<FinancialYear> _fys = new();
+    private int _fyId;
+    private List<Department> _depts = new();
+    private long? _deptId;
+    private List<string> _sectionNames = new();
+    private string _section = "All";
+    private string _month = DefaultMonth();
+    private List<BudgetRow> _rows = new();
+    private List<BudgetRow> _visibleRows = new();
+    private string _status = "All";
+    private decimal _capitalFyTotal;
+    private decimal _revenueFyTotal;
+
+    private bool _loaded, _noAccess, _lockDept, _lockSection;
+    private string? _scopeNote;
+    private string? _loadError;
+
+    private static readonly string[] Months =
+        { "APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER","JANUARY","FEBRUARY","MARCH" };
+
+    private static string DefaultMonth() => DateTime.Now.AddMonths(-1).ToString("MMMM").ToUpperInvariant();
+
+    private static bool IsFuturemonth(string m) =>
+        Array.IndexOf(Months, m) > Array.IndexOf(Months, DateTime.Now.ToString("MMMM").ToUpperInvariant());
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _loaded) return;
+        _loaded = true;
+        try
+        {
+            await Session.LoadAsync();
+            await Session.EnsureScopeAsync(AdminService);
+            await LoadAll();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.InnerException?.Message ?? ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadAll()
+    {
+        var u = Session.User;
+        if (u is not null && !u.IsAdmin && !u.HasScope) { _noAccess = true; return; }
+
+        _fys = await EntryService.GetFinancialYearsAsync();
+        var cur = await EntryService.GetCurrentFyAsync();
+        _fyId = cur?.FyId ?? _fys.LastOrDefault()?.FyId ?? 0;
+
+        _depts = await EntryService.GetDepartmentsAsync();
+        if (u is not null && !u.IsAdmin)
+        {
+            _depts = _depts.Where(d => u.DeptIds.Contains(d.DEPT_ID)).ToList();
+            _lockDept = u.DeptIds.Count == 1;
+            if (_lockDept) _deptId = u.DeptIds[0];
+
+            _scopeNote = _lockDept
+                ? $"Showing data for your department and {(u.SectionIds.Count == 1 ? "section" : $"{u.SectionIds.Count} sections")}."
+                : $"Showing data for your {u.DeptIds.Count} departments.";
+        }
+
+        await LoadSections();
+        await LoadRows();
+        await LoadTotals();
+    }
+
+    private async Task LoadSections()
+    {
+        var u = Session.User;
+
+        var list = await EntryService.GetCapitalSectionsByDeptAsync(_deptId);
+
+        // var list = _view == "Capital"
+        //     ? await EntryService.GetCapitalSectionsByDeptAsync(_deptId)
+        //     : await EntryService.GetSectionsAsync("REVENUE");
+
+        if (u is not null && !u.IsAdmin)
+            list = list.Where(s => u.SectionIds.Contains(s.SECTION_ID)).ToList();
+
+        _sectionNames = list.Select(s => s.NAME).ToList();
+
+        _lockSection = u is not null && !u.IsAdmin && _sectionNames.Count == 1;
+        _section = _lockSection ? _sectionNames[0] : "All";
+    }
+
+    private async Task LoadRows()
+    {
+        _rows = _view == "Capital"
+     ? await EntryService.GetCapitalRowsAsync(_fyId, _deptId, _section, _month)
+     : await EntryService.GetRevenueRowsAsync(_fyId, _deptId, _section, _month);
+
+        var u = Session.User;
+        if (u is not null && !u.IsAdmin)
+            _rows = _rows.Where(r => u.SectionIds.Contains(r.SectionId)).ToList();
+
+        ApplyStatus();
+        StateHasChanged();
+    }
+
+    private void ApplyStatus() =>
+        _visibleRows = _status switch
+        {
+            "Submitted" => _rows.Where(r => r.HasEntry).ToList(),
+            "Not Submitted" => _rows.Where(r => !r.HasEntry).ToList(),
+            _ => _rows.ToList()
+        };
+
+    private void OnStatusChanged(string v) { _status = v; ApplyStatus(); StateHasChanged(); }
+
+    private async Task LoadTotals()
+    {
+        var u = Session.User;
+        var scope = (u is not null && !u.IsAdmin) ? u.SectionIds : null;
+
+        var cap = await EntryService.GetDashboardAsync("Capital", _fyId, null, "All", _month, scope);
+        var rev = await EntryService.GetDashboardAsync("Revenue", _fyId, null, "All", _month, scope);
+
+        _capitalFyTotal = cap.UtilizedTill;
+        _revenueFyTotal = rev.UtilizedTill;
+        // _capitalFyTotal = await EntryService.GetCapitalFyUtilizedAsync(_fyId);
+        // _revenueFyTotal = await EntryService.GetRevenueFyUtilizedAsync(_fyId);
+
+    }
+
+    private async Task SetView(string v) { _view = v; await LoadSections(); await LoadRows(); }
+    private async Task OnFyChanged(int v) { _fyId = v; await LoadRows(); await LoadTotals(); }
+    private async Task OnDeptChanged(long? v) { _deptId = v; await LoadSections(); await LoadRows(); }
+    private async Task OnSectionChanged(string v) { _section = v; await LoadRows(); }
+    private async Task OnMonthChanged(string v) { _month = v; await LoadRows(); await LoadTotals(); }
+
+    private string CardClass(string v) => _view == v ? "budget-card selected pa-1" : "budget-card pa-1";
+
+    private async Task ShowNoticeAsync(string title, string message, string detail, string kind = "warning")
+    {
+        var pars = new DialogParameters
+            {
+                ["Title"] = title,
+                ["Message"] = message,
+                ["Detail"] = detail,
+                ["Kind"] = kind,
+                ["OkText"] = "OK"
+            };
+
+        var opts = new DialogOptions
+            {
+                MaxWidth = MaxWidth.ExtraSmall,
+                FullWidth = true,
+                CloseButton = true,
+                BackdropClick = false
+            };
+
+        var dlg = await DialogService.ShowAsync<NoticeDialog>("", pars, opts);
+        await dlg.Result;
+    }
+
+    private async Task OpenEntry(BudgetRow row)
+    {
+        if (row.ProjectId is null || row.ProjectId <= 0)
+        {
+            Snackbar.Add("This row has no project attached.", Severity.Warning);
+            return;
+        }
+
+        // Previous-month rule: the month before this one must already be submitted.
+        // Exceptions - APRIL (nothing before it) and any month before the project started.
+        if (!row.HasEntry)
+        {
+            int idx = Array.IndexOf(Months, _month);
+            if (idx > 0)
+            {
+                int startIdx = await EntryService.GetProjectStartMonthIndexAsync(row.ProjectId.Value);
+                if (idx - 1 >= startIdx)
+                {
+                    var prev = Months[idx - 1];
+                    bool done = await EntryService.IsMonthSubmittedAsync(_view, row.ProjectId.Value, _fyId, prev);
+                    if (!done)
+                    {
+                        await ShowNoticeAsync(
+                            "Previous month not submitted",
+                            $"{prev} utilisation has not been submitted for {row.ProjectName}.",
+                            $"Please submit {prev} first, then {_month} can be entered.");
+                        return;
+                    }
+                }
+            }
+        }
+
+        var opts = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+        IDialogReference dlg;
+
+        if (_view == "Capital")
+        {
+            var pars = new DialogParameters
+            {
+                { "PresetProjectId", row.ProjectId },
+                { "PresetSectionName", row.SectionName },
+                { "PresentMonth", _month }
+            };
+            dlg = DialogService.Show<CapitalEntryDialog>("Capital Budget", pars, opts);
+        }
+        else
+        {
+            var pars = new DialogParameters
+            {
+                { "PresetProjectId", row.ProjectId },
+                { "PresentMonth", _month }
+            };
+            dlg = DialogService.Show<RevenueEntryDialog>("Revenue Budget", pars, opts);
+        }
+
+        var res = await dlg.Result;
+        if (res is { Canceled: false }) { await LoadRows(); await LoadTotals(); }
+    }
+}

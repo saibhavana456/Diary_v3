@@ -1,0 +1,56 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@* Picks one user from a pre-filtered list and an optional note. *@
+
+<MudDialog>
+    <DialogContent>
+        <MudAutocomplete T="AppUser" Label="User to grant AppAdmin"
+                         SearchFunc="Search"
+                         ToStringFunc="@(u => u is null ? "" : $"{u.Name} ({u.AdSamAccountName})")"
+                         @bind-Value="_selected"
+                         Required="true"
+                         CoerceText="false" />
+        <MudTextField @bind-Value="_note" Label="Note (optional)" Class="mt-3" />
+        @if (Candidates.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-3">No eligible users — every active user is already a SuperAdmin or AppAdmin.</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit" Disabled="@(_selected is null)">Grant</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dlg { get; set; } = null!;
+    [Parameter] public List<AppUser> Candidates { get; set; } = new();
+
+    private AppUser? _selected;
+    private string? _note;
+
+
+
+    private Task<IEnumerable<AppUser>> Search(string? value, CancellationToken cancellationToken)
+
+    {
+        var v = (value ?? "").Trim();
+        IEnumerable<AppUser> q = Candidates;
+        if (v.Length > 0)
+        {
+            q = q.Where(u =>
+                (u.Name ?? "").Contains(v, StringComparison.OrdinalIgnoreCase) ||
+                (u.AdSamAccountName ?? "").Contains(v, StringComparison.OrdinalIgnoreCase) ||
+                (u.EmpCode ?? "").Contains(v, StringComparison.OrdinalIgnoreCase));
+        }
+        return Task.FromResult(q.Take(50));
+    }
+
+    private void Cancel() => Dlg.Cancel();
+    private void Submit()
+    {
+        if (_selected is null) return;
+        Dlg.Close(DialogResult.Ok(new Result(_selected.EmpCode ?? "", _note)));
+    }
+
+    public sealed record Result(string EmpCode, string? Note);
+}

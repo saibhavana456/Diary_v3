@@ -1,0 +1,601 @@
+﻿@page "/ATMIndent"
+@using System.Net.Http.Json
+@using System.Text.Json
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject HttpClient Http
+@inject NavigationManager Nav
+@using System.Text.Json.Serialization;
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using Microsoft.AspNetCore.Components.Web
+@using MyDiary.Web.Features.Procurement.Models.VIEWS
+@using Procurement.Interfaces
+@using Procurement.Models.TABLES
+@using static Procurement.Components.ATMIndentEditPage
+@using static Procurement.Models.DTO.MiscClasses
+
+@using Microsoft.AspNetCore.Components.Authorization
+@inject ProtectedSessionStorage SessionStore
+@inject IATMIndentService _ATMIndentService
+@inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage ProtectedSessionStorage
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+
+<PageTitle>Indent Requests</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-1">Indent Management</h2>
+            <p class="text-muted small mb-0">Track procurement requests and approval workflows</p>
+        </div>
+
+        @if (isMaker)
+        {
+            <button class="btn btn-primary px-4 shadow-sm d-flex align-items-center gap-2" @onclick="OpenAdd">
+                <i class="bi bi-plus-circle-fill"></i>
+                <span>Create New Indent</span>
+            </button>
+        }
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-3">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-end-0 text-muted">
+                            <i class="bi bi-filter-left fs-5"></i>
+                        </span>
+                        <input class="form-control border-start-0 ps-0"
+                        placeholder="Filter by Request ID or Justification..."
+                        @bind="filterText" @bind:event="oninput" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-@statusKind alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
+            <i class="bi @(statusKind == "success" ? "bi-check-circle-fill" : "bi-exclamation-triangle-fill") me-2"></i>
+            @statusMessage
+            <button type="button" class="btn-close" @onclick="() => statusMessage = string.Empty"></button>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light border-bottom">
+                    <tr>
+                        <th class="ps-4 py-3 text-muted small uppercase">S.No</th>
+                        <th class="py-3 text-muted small uppercase">Request Details</th>
+                        <th class="py-3 text-muted small uppercase">Justification</th>
+                        <th class="py-3 text-muted small uppercase">Current Status</th>
+                        <th class="py-3 text-muted small uppercase">Active Approver</th>
+                        <th class="text-end pe-4 py-3 text-muted small uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (isLoading)
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center py-5">
+                                <div class="spinner-grow text-primary spinner-grow-sm me-2"></div>
+                                <span class="text-muted">Loading indents...</span>
+                            </td>
+                        </tr>
+                    }
+                    else if (!PagedItems.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center py-5 text-muted">
+                                <i class="bi bi-search fs-2 d-block mb-2"></i>
+                                No matching requests found.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int index = (currentPage - 1) * pageSize + 1;
+                        @foreach (var it in PagedItems)
+                        {
+                            <tr>
+                                <td class="ps-4 text-muted font-monospace">@index</td>
+                                <td>
+                                    <div class="fw-bold text-primary">@it.RequestCode</div>
+                                    <div class="text-muted extra-small">Created: @it.RaisedOn?.ToString("dd MMM yyyy")</div>
+                                </td>
+                                <td>
+                                    <div class="text-truncate" style="max-width: 250px;" title="@it.Justification">
+                                        @it.Justification
+                                    </div>
+                                </td>
+                                <td>
+                                    @GetStatusBadge(it)
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-sm-text me-2">@GetApproverInitial(it)</div>
+                                        <div>
+                                            <div class="fw-bold small">@GetActiveApproverName(it)</div>
+                                            <div class="text-muted extra-small">@GetLatestRemarks(it)</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <div class="btn-group shadow-sm">
+                                        <button class="btn btn-success btn-sm px-3" @onclick="() => OpenEdit(it.RequestCode!)">
+                                            <i class="bi bi-check-square-fill"></i> @(isMaker ? "View" : "Action")
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            index++;
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer bg-white py-3 border-top">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+                <span class="text-muted small">
+                    Showing <b>@((currentPage - 1) * pageSize + 1)</b> to <b>@Math.Min(currentPage * pageSize, filtered.Count)</b> of @filtered.Count indents
+                </span>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => MovePage(-1)"><i class="bi bi-chevron-left"></i></button>
+                        </li>
+                        @for (int i = 1; i <= TotalPages; i++)
+                        {
+                            var p = i;
+                            <li class="page-item @(currentPage == p ? "active" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(p)">@p</button>
+                            </li>
+                        }
+                        <li class="page-item @(currentPage == TotalPages ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => MovePage(1)"><i class="bi bi-chevron-right"></i></button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (showDeleteModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-body text-center p-4">
+                    <i class="bi bi-trash3 text-danger display-4 mb-3"></i>
+                    <h5 class="fw-bold">Delete Indent?</h5>
+                    <p class="text-muted small">Are you sure you want to remove request <b>@deleteTarget?.RequestCode</b>?</p>
+                    <div class="d-grid gap-2 mt-4">
+                        <button class="btn btn-danger" @onclick="DeleteAsync">Delete Now</button>
+                        <button class="btn btn-light" @onclick="CloseDeleteModal">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ATMRequestMaster> items = new();
+    private string? loadError;
+    private bool isLoading;
+    private string? filterText;
+    private UserMasterView? item;
+    private bool isMaker;
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+
+    private const string BRANCH_SUB = "Branch Submitted";
+    private const string BRANCH_APP = "Branch Recommended";
+    private const string BRANCH_REJ = "Branch Rejected";
+    private const string BRANCH_RET = "Branch Returned";
+    private const string RO_MAKER_APP = "Region Maker Recommended";
+    private const string RO_MAKER_REJ = "Region Maker Rejected";
+    private const string RO_MAKER_RET = "Region Maker Returned";
+    private const string RO_APP_APP = "Region Approved";
+    private const string RO_APP_REJ = "Region Rejected";
+    private const string RO_APP_RET = "Region Returned";
+    private const string ZO_MAKER_APP = "ZO Maker Recommended";
+    private const string ZO_MAKER_REJ = "ZO Maker Rejected";
+    private const string ZO_MAKER_RET = "ZO Maker Returned";
+    private const string ZO_APP_APP = "ZO Approved";
+    private const string ZO_APP_REJ = "ZO Rejected";
+    private const string ZO_APP_RET = "ZO Returned";
+    // private const string CO_MAKER_APP = "CO Maker Recommended";
+    // private const string CO_MAKER_REJ = "CO Maker Rejected";
+    // private const string CO_MAKER_RET = "CO Maker Returned";
+    // private const string CO_APP_APP = "CO Approved";
+    // private const string CO_APP_REJ = "CO Rejected";
+    // private const string CO_APP_RET = "CO Returned";
+    private string userRole = "";
+
+    private const decimal RO_AUTHORITY_LIMIT = 100000;
+    // private List<ATMRequestMaster> filtered => items
+    //     .Where(x => string.IsNullOrWhiteSpace(filterText) ||
+    //            (x.RequestCode ?? "").Contains(filterText, StringComparison.OrdinalIgnoreCase) ||
+    //            (x.Justification ?? "").Contains(filterText, StringComparison.OrdinalIgnoreCase))
+    //     .ToList();
+
+    private IEnumerable<ATMRequestMaster> PagedItems => filtered
+        .Skip((currentPage - 1) * pageSize)
+        .Take(pageSize);
+
+    private int TotalPages => (int)Math.Ceiling((double)filtered.Count / pageSize);
+
+    private bool showDeleteModal;
+    private ATMRequestMaster? deleteTarget;
+    private string statusMessage = "";
+    private string statusKind = "info";
+
+    //protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    // protected override async Task OnAfterRenderAsync(bool firstRender)
+    // {
+    //     if (firstRender)
+    //     {
+    //         var sessionResult = await ProtectedSessionStorage.GetAsync<string>("ROLE");
+    //         isMaker = sessionResult.Success && sessionResult.Value == "MAKER";
+
+    //         await LoadAsync();
+
+    //         StateHasChanged();
+    //     }
+    // }
+    // protected override async Task OnAfterRenderAsync(bool firstRender)
+    // {
+    //     if (firstRender)
+    //     {
+
+
+    //         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+    //         var user = authState.User;
+
+    //         // ✅ Get EMPLID
+    //         //string empId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+    //         string empId = "766997";
+
+    //         item = await _ATMIndentService.GetUserDetailsViewByUserId(empId!);
+    //         if (item != null)
+    //         {
+    //             await PersistUserToSessionAsync(item, empId);
+    //         }
+    //         var sessionResult = await ProtectedSessionStorage.GetAsync<string>("ROLE");
+    //         if (sessionResult.Success)
+    //         {
+    //             userRole = sessionResult.Value ?? "";
+    //             isMaker = userRole == "MAKER";
+    //         }
+
+    //         // userRole = "MAKER";
+    //         // isMaker = true;
+
+    //         await LoadAsync(userRole);
+    //         StateHasChanged();
+    //     }
+    // }
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        // ✅ Get EMPLID
+        string empId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+        // string empId = "766997";
+
+        item = await _ATMIndentService.GetUserDetailsViewByUserId(empId);
+
+        if (item != null)
+        {
+            await PersistUserToSessionAsync(item, empId);
+        }
+
+        var sessionResult = await ProtectedSessionStorage.GetAsync<string>("ROLE");
+        if (sessionResult.Success)
+        {
+            userRole = sessionResult.Value ?? "";
+            isMaker = userRole == "MAKER";
+        }
+
+        await LoadAsync(userRole);
+        isLoading = false;
+    }
+
+    private async Task LoadAsync(string userRole)
+    {
+        
+        loadError = null;
+        string code = null;
+        try
+        {
+            if(!string.IsNullOrWhiteSpace(userRole))
+            {
+
+                if (userRole.Contains("ROMAKER") || userRole.Contains("ROAPPROVER"))
+                {
+                    var jobRes = await ProtectedSessionStorage.GetAsync<string>("REGION_CODE");
+                    code = jobRes.Success ? jobRes.Value : null;
+                }
+                else if (userRole.Contains("ZOMAKER") || userRole.Contains("ZOAPPROVER"))
+                {
+                    var jobRes = await ProtectedSessionStorage.GetAsync<string>("ZONE_CODE");
+                    code = jobRes.Success ? jobRes.Value : null;
+                }
+                // else if (userRole.Contains("COMAKER") || userRole.Contains("COAPPROVER"))
+                // {
+                //     code = "100000";
+                // }
+                else if (userRole.Contains("MAKER") || userRole.Contains("CHECKER"))
+                {
+                    var jobRes = await ProtectedSessionStorage.GetAsync<string>("LOCATION");
+                    code = jobRes.Success ? jobRes.Value : null;
+                }
+                if (!string.IsNullOrWhiteSpace(code))
+                {
+                    var data = await _ATMIndentService.GetAllATMIndentData(code, userRole);
+                    items = data ?? new();
+                }
+
+            }
+            else
+            {
+
+                items = new();
+            }
+
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "ATMIndentMainPage: failed to load data");
+            loadError = UserFacingError.Generic;
+        }
+    }
+
+
+    private void MovePage(int step) => currentPage = Math.Clamp(currentPage + step, 1, TotalPages);
+    private void GoToPage(int p) => currentPage = p;
+    private string GetItemStatusString(ATMRequestMaster it)
+    {
+
+        if (!string.IsNullOrWhiteSpace(it.CoRecommendation))
+            return it.CoRecommendation == "Reject" ? ZO_APP_REJ : it.CoRecommendation == "Return to Requestor" ? ZO_APP_RET : ZO_APP_APP;
+
+        if (!string.IsNullOrWhiteSpace(it.CoCheckerRecommendation))
+            return it.CoCheckerRecommendation == "Reject" ? ZO_MAKER_REJ : it.CoCheckerRecommendation == "Return to Requestor" ? ZO_MAKER_RET : ZO_MAKER_APP;
+
+        if (!string.IsNullOrWhiteSpace(it.RegionApproverRecommendation))
+            return it.RegionApproverRecommendation == "Reject" ? RO_APP_REJ : it.RegionApproverRecommendation == "Return to Requestor" ? RO_APP_RET : RO_APP_APP;
+
+        if (!string.IsNullOrWhiteSpace(it.RegionRecommendation))
+            return it.RegionRecommendation == "Reject" ? RO_MAKER_REJ : it.RegionRecommendation == "Return to Requestor" ? RO_MAKER_RET : RO_MAKER_APP;
+
+        if (!string.IsNullOrWhiteSpace(it.BranchRecommendation))
+            return it.BranchRecommendation == "Reject" ? BRANCH_REJ : it.BranchRecommendation == "Return to Requestor" ? BRANCH_RET : BRANCH_APP;
+
+        return BRANCH_SUB;
+    }
+    private List<ATMRequestMaster> filtered => items
+    .Where(it =>
+    {
+        // 1. Get current status and cost check
+        string status = GetItemStatusString(it);
+        bool isHighValue = it.TotalProcurementCost >= RO_AUTHORITY_LIMIT;
+        if (!isHighValue)
+        {
+            isHighValue = false;
+        }
+
+        // 2. Role Based Filtering with Value Logic
+        bool isVisible = userRole switch
+        {
+            "MAKER" => true, // Sees everything
+
+            "CHECKER" => status == BRANCH_SUB || status.Contains("Branch"),
+
+            "ROMAKER" => status == BRANCH_APP || status.Contains("Region Maker"),
+
+            "ROAPPROVER" => !isHighValue && (status == RO_MAKER_APP || status.Contains("Region Approved") || status.Contains("Region Rejected") || status.Contains("Region Returned")),
+
+            "ZOMAKER" => (isHighValue && status == RO_MAKER_APP) || status.Contains("ZO Maker"),
+
+            "ZOAPPROVER" => status == ZO_MAKER_APP || status.Contains("ZO Approved") || status.Contains("ZO Rejected") || status.Contains("ZO Returned"),
+
+            // "COMAKER" => (isHighValue && status == RO_MAKER_APP) || status.Contains("CO Maker"),
+
+            // "COAPPROVER" => status == ZO_MAKER_APP || status.Contains("CO Approved") || status.Contains("CO Rejected") || status.Contains("CO Returned"),
+
+            _ => false
+        };
+        
+        
+
+        if (!isVisible)
+        { 
+            return false;
+        }
+
+        // 3. Search Text Filtering
+        return string.IsNullOrWhiteSpace(filterText) ||
+               (it.RequestCode ?? "").Contains(filterText, StringComparison.OrdinalIgnoreCase) ||
+               (it.Justification ?? "").Contains(filterText, StringComparison.OrdinalIgnoreCase);
+    })
+    .ToList();
+    private RenderFragment GetStatusBadge(ATMRequestMaster it)
+    {
+        // var (text, cls) = (!string.IsNullOrWhiteSpace(it.CoRecommendation)) ? ("CO Approved", "bg-soft-success text-success") :
+        //                    (!string.IsNullOrWhiteSpace(it.CoCheckerRecommendation) || !string.IsNullOrWhiteSpace(it.CoCheckerRemarks)) ? ("CO Maker Approved", "bg-soft-success text-success") :
+        //                   //(!string.IsNullOrWhiteSpace(it.ZoneRecommendation)) ? ("Zonal Approved", "bg-soft-info text-info") :
+        //                   (!string.IsNullOrWhiteSpace(it.RegionApproverRecommendation)) ? ("Region Approved", "bg-soft-primary text-primary") :
+        //                   (!string.IsNullOrWhiteSpace(it.RegionRecommendation)) ? ("Region Maker Approved", "bg-soft-primary text-primary") :
+        //                   (!string.IsNullOrWhiteSpace(it.BranchRecommendation)) ? ("Branch Approved", "bg-soft-warning text-warning") :
+        //                   ("Draft", "bg-soft-secondary text-secondary");
+        if (it.IsPaymentCompleted ?? false)
+        {
+            if (!string.IsNullOrWhiteSpace(it.Feedback))
+            {
+                return __builder =>
+                {
+                    <span class="badge rounded-pill bg-soft-success text-success border border-success">
+                        <i class="bi bi-check-all me-1"></i> Closed
+                    </span>
+                };
+            }
+
+            // If Payment is done but Feedback is empty
+            return __builder =>
+            {
+                <span class="badge rounded-pill bg-success text-white animate-pulse">
+                    <i class="bi bi-chat-left-dots me-1"></i> Enter Feedback
+                </span>
+            };
+        }
+
+        var (text, cls) =
+// Central Office (CO) Final Decision
+(!string.IsNullOrWhiteSpace(it.CoRecommendation))
+    ? (it.CoRecommendation == "Reject" ? ("ZO Rejected", "bg-soft-danger text-danger") :
+it.CoRecommendation == "Return to Requestor" ? ("ZO Returned", "bg-soft-warning text-warning") :
+    ("ZO Approved", "bg-soft-success text-success")) :
+
+// Central Office (CO) Maker
+(!string.IsNullOrWhiteSpace(it.CoCheckerRecommendation))
+    ? (it.CoCheckerRecommendation == "Reject" ? ("ZO Maker Rejected", "bg-soft-danger text-danger") :
+    it.CoCheckerRecommendation == "Return to Requestor" ? ("ZO Maker Returned", "bg-soft-warning text-warning") :
+    ("ZO Maker Recommended", "bg-soft-success text-success")) :
+
+// Regional Office (RO) Final Decision
+(!string.IsNullOrWhiteSpace(it.RegionApproverRecommendation))
+    ? (it.RegionApproverRecommendation == "Reject" ? ("Region Rejected", "bg-soft-danger text-danger") :
+it.RegionApproverRecommendation == "Return to Requestor" ? ("Region Returned", "bg-soft-warning text-warning") :
+    ("Region Approved", "bg-soft-primary text-primary")) :
+
+// Regional Office (RO) Maker
+(!string.IsNullOrWhiteSpace(it.RegionRecommendation))
+    ? (it.RegionRecommendation == "Reject" ? ("Region Maker Rejected", "bg-soft-danger text-danger") :
+    it.RegionRecommendation == "Return to Requestor" ? ("Region Maker Returned", "bg-soft-warning text-warning") :
+    ("Region Maker Recommended", "bg-soft-primary text-primary")) :
+
+// Branch Checker
+(!string.IsNullOrWhiteSpace(it.BranchRecommendation))
+    ? (it.BranchRecommendation == "Reject" ? ("Branch Rejected", "bg-soft-danger text-danger") :
+it.BranchRecommendation == "Return to Requestor" ? ("Branch Returned", "bg-soft-warning text-warning") :
+    ("Branch Recommended", "bg-soft-info text-info")) :
+
+
+    ("Branch Submitted", "bg-soft-secondary text-secondary");
+
+        return __builder =>
+        {
+            <span class="badge rounded-pill @cls">@text</span>
+        };
+    }
+
+    private string GetActiveApproverName(ATMRequestMaster it) =>
+        !string.IsNullOrWhiteSpace(it.CoApproverName) ? it.CoApproverName :
+        !string.IsNullOrWhiteSpace(it.CoCheckerName) ? it.CoCheckerName :
+        // !string.IsNullOrWhiteSpace(it.ZoneApproverName) ? it.ZoneApproverName :
+        !string.IsNullOrWhiteSpace(it.RegionApproverName) ? it.RegionApproverName :
+        !string.IsNullOrWhiteSpace(it.RegionCheckerName) ? it.RegionCheckerName :
+        !string.IsNullOrWhiteSpace(it.CheckerApproverName) ? it.CheckerApproverName : "N/A";
+
+    private string GetApproverInitial(ATMRequestMaster it)
+    {
+        var name = GetActiveApproverName(it);
+        return name == "N/A" ? "?" : name[0].ToString().ToUpper();
+    }
+
+    private string GetLatestRemarks(ATMRequestMaster it) =>
+     !string.IsNullOrWhiteSpace(it.CoCheckerRemarks) ? it.CoCheckerRemarks :
+        !string.IsNullOrWhiteSpace(it.CoRemarks) ? it.CoRemarks :
+    !string.IsNullOrWhiteSpace(it.RegionApproverRemarks) ? it.RegionApproverRemarks :
+        !string.IsNullOrWhiteSpace(it.RegionRemarks) ? it.RegionRemarks :
+        !string.IsNullOrWhiteSpace(it.BranchRemarks) ? it.BranchRemarks : "No remarks";
+
+    private void OpenAdd() => Nav.NavigateTo("ATMIndent/new");
+    private void OpenEdit(string id) => Nav.NavigateTo($"ATMIndent/{Uri.EscapeDataString(id)}");
+    private void OpenDelete(ATMRequestMaster it) { deleteTarget = it; showDeleteModal = true; }
+    private void CloseDeleteModal() => showDeleteModal = false;
+
+    private async Task DeleteAsync()
+    {
+        if (deleteTarget is null) return;
+        try
+        {
+            var pfResult = await SessionStore.GetAsync<string>("UserId");
+            var deletedBy = pfResult.Success ? pfResult.Value : null;
+
+            if (string.IsNullOrWhiteSpace(deleteTarget.RequestCode) || string.IsNullOrWhiteSpace(deletedBy)) return;
+
+            var dto = new DeleteRequestDto { RequestCode = deleteTarget.RequestCode, DeletedBy = deletedBy };
+            var resultMessage = await _ATMIndentService.DeleteATMIndentMaster(dto);
+
+            if (resultMessage.Contains("Successfully", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowStatus(resultMessage, "success");
+                showDeleteModal = false;
+                var sessionResult = await ProtectedSessionStorage.GetAsync<string>("ROLE");
+                if (sessionResult.Success)
+                {
+                    userRole = sessionResult.Value ?? "";
+                }
+                await LoadAsync(userRole);
+            }
+            else ShowStatus(resultMessage, "danger");
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "ATMIndentMainPage: submit failed"); ShowStatus(UserFacingError.Generic, "danger"); }
+
+    }
+
+    private async Task PersistUserToSessionAsync(UserMasterView user, string? userId)
+    {
+
+        try
+        {
+            await SessionStore.SetAsync("UserId", userId);
+            await SessionStore.SetAsync("NAME", user.NAME);
+            await SessionStore.SetAsync("JOB_CODE", user.JOB_CODE);
+            await SessionStore.SetAsync("JOB_DESC", user.JOB_DESC);
+            await SessionStore.SetAsync("LOCATION", user.LOCATION);
+            await SessionStore.SetAsync("LOCATION_DESC", user.LOCATION_DESC);
+            await SessionStore.SetAsync("REGION_CODE", user.REGION_CODE);
+            await SessionStore.SetAsync("REGION_NAME", user.REGION_NAME);
+            await SessionStore.SetAsync("FINACLE_ID", user.FINACLE_ID);
+            await SessionStore.SetAsync("ZONE_CODE", user.ZONE_CODE);
+            await SessionStore.SetAsync("ZONE_NAME", user.ZONE_NAME);
+            await SessionStore.SetAsync("DEPT_ID", user.DEPT_ID);
+            await SessionStore.SetAsync("DEPT_DESC", user.DEPT_DESC);
+            await SessionStore.SetAsync("CONTACT_NO", user.CONTACT_NO);
+            await SessionStore.SetAsync("EMAIL_ID", user.EMAIL_ID);
+            await SessionStore.SetAsync("OFFICE_TYPE", user.OFFICE_TYPE);
+            await SessionStore.SetAsync("ROLE", user.ROLE);
+            await SessionStore.SetAsync("ACCESS_LEVEL", user.ACCESS_LEVEL);
+            await SessionStore.SetAsync("BRANCH_NAME", user.BRANCH_NAME);
+            await SessionStore.SetAsync("REMARKS", user.REMARKS);
+            await SessionStore.SetAsync("REPORTING_OFFICER_PF_NO", user.REPORTING_OFFICER_PF_NO);
+            await SessionStore.SetAsync("REPORTING_OFFICER_NAME", user.REPORTING_OFFICER_NAME);
+
+            var eff = user.EFFECTIVE_DATE?.ToString("O");
+            await SessionStore.SetAsync("EFFECTIVE_DATE", eff);
+
+        }
+        catch
+        {
+            // Ignore session write failures
+        }
+    }
+
+    private void ShowStatus(string message, string kind) { statusMessage = message; statusKind = kind; }
+}

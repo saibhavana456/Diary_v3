@@ -1,0 +1,276 @@
+﻿@page "/menus"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Features.Menus.Models
+@using MyDiary.Web.Features.Menus.Services
+@inject IMenuService MenuService
+@rendermode RenderMode.InteractiveServer
+
+<div class="menus-page-wrapper">
+    <div class="container-fluid" style="padding: 20px;">
+        @* Search Section with Sticky positioning and logic from Dashboard.aspx *@
+        <div class="row mb-4">
+            <div class="col-md-12 d-flex justify-content-end">
+                <div class="dashboard-search">
+                    <span class="search-icon">
+                        <MudIcon Icon="@Icons.Material.Filled.Search" Size="Size.Small" />
+                    </span>
+                    <input type="text"
+                           id="dashboardSearch"
+                           placeholder="Search portals, reports, utilities..."
+                           @oninput="HandleSearch"
+                           autocomplete="off" />
+                </div>
+            </div>
+        </div>
+
+        @* Accordion Grid mirroring the structure from Dashboard.aspx *@
+        <div class="row" id="dashboardAccordion">
+            @foreach (var parent in FilteredParents)
+            {
+                var isExpanded = _activeParentCode == parent.MenuCode;
+
+                <div class="col-md-3 col-sm-6 dashboard-card" style="margin-bottom: 24px;">
+                    <div class="card">
+                        @* Card Header with Blue-to-Red Linear Gradient *@
+                        <div class="card-header card-header-toggle"
+                             @onclick="() => ToggleParent(parent.MenuCode)"
+                             style="cursor:pointer; user-select:none;">
+                            @* Parent Icon: Width/Height 18 *@
+                            <img src="images/parent.svg" style="width:18px; height:18px; filter: brightness(0) invert(1);" />
+                            <strong style="pointer-events:none;">@parent.MenuName</strong>
+                        </div>
+
+                        @* Card Body with 135deg White-to-Blue Gradient *@
+                        @if (isExpanded)
+                        {
+                            <div class="card-body animate-fade-in">
+                                <ul class="list-unstyled">
+                                    @foreach (var child in GetChildren(parent.MenuCode))
+                                    {
+                                        @if (child.MenuType == "SUBPARENT")
+                                        {
+                                            <li>
+                                                @* Subparent Toggle Logic *@
+                                                <a href="javascript:void(0)"
+                                                   class="subparent-link"
+                                                   @onclick="() => ToggleSubParent(child.MenuCode)"
+                                                   @onclick:stopPropagation="true">
+                                                     @* Subparent Icon: Width 114 *@
+                                                     <img src="images/subparent.svg" style="width:14px; height:14px;" />
+                                                     <strong>@child.MenuName</strong>
+                                                </a>
+
+                                                @if (IsSubExpanded(child.MenuCode))
+                                                {
+                                                    <div class="collapse-content pl-3 show">
+                                                        <ul class="list-unstyled">
+                                                            @foreach (var subChild in GetChildren(child.MenuCode))
+                                                            {
+                                                                <li>
+                                                                    <a href="@subChild.MenuUrl" target="_blank">
+                                                                        @* Child Icon: Width/Height 12 *@
+                                                                        <img src="images/child.svg" style="width:12px; height:12px; opacity:0.7;" />
+                                                                        @subChild.MenuName
+                                                                    </a>
+                                                                </li>
+                                                            }
+                                                        </ul>
+                                                    </div>
+                                                }
+                                            </li>
+                                        }
+                                        else
+                                        {
+                                            <li>
+                                                <a href="@child.MenuUrl" target="_blank">
+                                                    @* Child Icon: Width/Height 12 *@
+                                                    <img src="images/child.svg" style="width:12px; height:12px; opacity:0.7;" />
+                                                    @child.MenuName
+                                                </a>
+                                            </li>
+                                        }
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    /* PAGE WRAPPER BACKGROUND */
+    .menus-page-wrapper {
+        background-color: rgba(186, 189, 0, 0.12);
+        min-height: 100vh;
+        width: 100%;
+    }
+
+    /* STYLES FROM DASHBOARD.ASPX */
+    .dashboard-search {
+        position: sticky;
+        width: 340px;
+        top: 90px;
+        z-index: 60;
+    }
+
+    .dashboard-search input {
+        width: 100%;
+        padding: 11px 14px 11px 40px;
+        border-radius: 28px;
+        border: 1px solid #e0e0e0;
+        font-size: 14px;
+        outline: none;
+        background: #ffffff;
+        transition: all 0.3s ease;
+    }
+
+    .dashboard-search .search-icon {
+        position: absolute;
+        top: 50%;
+        left: 16px;
+        transform: translateY(-50%);
+        color: #0C83CE;
+        z-index: 5;
+    }
+
+    .dashboard-card .card {
+        border-radius: 18px;
+        border: none;
+        background: linear-gradient(135deg, #ffffff 0%, #f6f9ff 70%);
+        transition: all 0.35s ease;
+        height: auto;
+    }
+
+    .dashboard-card .card:hover {
+        transform: translateY(-7px);
+        box-shadow: 0 18px 32px rgba(0,0,0,0.14);
+    }
+
+    .dashboard-card .card-header {
+        border-radius: 18px 18px 0 0;
+        background: linear-gradient(90deg, #0C83CE, #D32F2F);
+        color: #fff;
+        font-size: 15px;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .dashboard-card .card-header:hover strong {
+        text-decoration: underline;
+    }
+
+    .dashboard-card .card-body {
+        padding: 16px 18px;
+    }
+
+    .dashboard-card ul li a, .subparent-link {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 6px;
+        border-radius: 6px;
+        color: #333;
+        transition: background 0.2s ease, color 0.2s ease;
+        text-decoration: none;
+        font-size: 14px;
+    }
+
+    .dashboard-card ul li a:hover {
+        background: #eef4ff;
+        color: #0C83CE;
+    }
+
+    .subparent-link {
+        font-weight: bold;
+        color: #0C83CE !important;
+    }
+
+    .pl-3 {
+        padding-left: 1.5rem;
+    }
+
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease;
+    }
+
+    @@keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(-5px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+</style>
+
+@code {
+    private List<MenuModel> _allMenus = new();
+    private string _searchString = "";
+    private string? _activeParentCode;
+    private HashSet<string> _expandedSubParents = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allMenus = await MenuService.GetMenusAsync();
+    }
+
+    private void ToggleParent(string code)
+    {
+        _activeParentCode = (_activeParentCode == code) ? null : code;
+        _expandedSubParents.Clear();
+        StateHasChanged();
+    }
+
+    private void ToggleSubParent(string code)
+    {
+        if (_expandedSubParents.Contains(code))
+            _expandedSubParents.Remove(code);
+        else
+            _expandedSubParents.Add(code);
+
+        StateHasChanged();
+    }
+
+    private bool IsSubExpanded(string code) => _expandedSubParents.Contains(code);
+
+    private void HandleSearch(ChangeEventArgs e)
+    {
+        _searchString = e.Value?.ToString() ?? "";
+        _activeParentCode = null;
+        StateHasChanged();
+    }
+
+    @* Recursive Search Logic: Checks Parents, Sub-parents, and Children *@
+    private IEnumerable<MenuModel> FilteredParents => _allMenus
+        .Where(m => m.MenuType == "PARENT" &&
+              (string.IsNullOrWhiteSpace(_searchString) ||
+               m.MenuName.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ||
+               AnyChildMatches(m.MenuCode)));
+
+    private bool AnyChildMatches(string parentCode)
+    {
+        var children = GetChildren(parentCode);
+        foreach (var child in children)
+        {
+            // Direct check for current child
+            if (child.MenuName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Recursive check for nested items if this is a sub-parent
+            if (child.MenuType == "SUBPARENT" && AnyChildMatches(child.MenuCode))
+                return true;
+        }
+        return false;
+    }
+
+    private List<MenuModel> GetChildren(string parentCode) =>
+        _allMenus.Where(m => m.ParentMenuCode == parentCode).ToList();
+}

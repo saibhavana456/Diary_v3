@@ -1,0 +1,163 @@
+@page "/reports/bc-master"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    private readonly List<ColumnConfig> _columns = new() {
+        new ColumnConfig { Header = "FGMO",              PropertyName = "FGMO",              Width = "8%" },
+        new ColumnConfig { Header = "Region",            PropertyName = "REGION",            Width = "8%" },
+        new ColumnConfig { Header = "Branch Name",       PropertyName = "BRANCHNAME",        Width = "10%" },
+        new ColumnConfig { Header = "Branch Code",       PropertyName = "BRANCHCODE",        Width = "7%" },
+        new ColumnConfig { Header = "State",             PropertyName = "STATE",             Width = "7%" },
+        new ColumnConfig { Header = "District",          PropertyName = "DISTRICT",          Width = "8%" },
+        new ColumnConfig { Header = "Sub District",      PropertyName = "SUBDISTRICT",       Width = "8%" },
+        new ColumnConfig { Header = "Full Name",         PropertyName = "FULL_NAME",         Width = "10%" },
+        new ColumnConfig { Header = "Vendor Name",       PropertyName = "VENDORNAME",        Width = "10%" },
+        new ColumnConfig { Header = "Agent Type",        PropertyName = "AGENT_TYPE",        Width = "8%" },
+        new ColumnConfig { Header = "Status",            PropertyName = "STATUS_DESC",       Width = "10%" },
+        new ColumnConfig { Header = "Location Type",     PropertyName = "LOCATION_TYPE",     Width = "8%" },
+        new ColumnConfig { Header = "BCC Code",          PropertyName = "BCCCODE",           Width = "7%" },
+        new ColumnConfig { Header = "Agent Code",        PropertyName = "AGENTCODE",         Width = "8%" },
+        new ColumnConfig { Header = "Pincode",           PropertyName = "PINCODE",           Width = "6%" },
+        new ColumnConfig { Header = "BC Address",        PropertyName = "BC_ADDRESS",        Width = "12%" },
+        new ColumnConfig { Header = "BC Mobile No",      PropertyName = "BC_MOBILE_NO",      Width = "8%" },
+        new ColumnConfig { Header = "Gender",            PropertyName = "BC_GENDER",         Width = "6%" },
+        new ColumnConfig { Header = "Village Name",      PropertyName = "VILLAGENAME",       Width = "8%" },
+        new ColumnConfig { Header = "Village Code",      PropertyName = "VILLAGECODE",       Width = "7%" },
+        new ColumnConfig { Header = "DOB",               PropertyName = "DOB",               IsDate = true, Width = "8%" },
+        new ColumnConfig { Header = "Email",             PropertyName = "EMAIL",             Width = "10%" },
+        new ColumnConfig { Header = "Settlement A/C",    PropertyName = "BC_SETTLEMENT_ACC_NO",    Width = "10%" },
+        new ColumnConfig { Header = "Remuneration A/C",  PropertyName = "BC_REMUNERATION_ACC_NO",  Width = "10%" },
+        new ColumnConfig { Header = "Location Approved", PropertyName = "LOCATION_APPROVED_BY_BANK", Width = "8%" },
+        new ColumnConfig { Header = "SHG Member",        PropertyName = "ISSHGMEMBER",       Width = "6%" },
+        new ColumnConfig { Header = "IIBF Certified",    PropertyName = "IIBFCERTIFIED",     Width = "7%" },
+        new ColumnConfig { Header = "IIBF Cert No",      PropertyName = "IIBFCERTNO",        Width = "8%" },
+        new ColumnConfig { Header = "Basic IIBF Cert",   PropertyName = "BASIC_IIBF_CERT_NO", Width = "8%" },
+        new ColumnConfig { Header = "Adv IIBF Cert",     PropertyName = "ADV_IIBF_CERT_NO",  Width = "8%" },
+        new ColumnConfig { Header = "Latitude",          PropertyName = "LATITUDE",          Width = "7%" },
+        new ColumnConfig { Header = "Longitude",         PropertyName = "LONGITUDE",         Width = "7%" },
+        new ColumnConfig { Header = "Onboarding Date",   PropertyName = "ONBOARDING_DATE",   IsDate = true, Width = "8%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeConfig.Title = Title ?? "BC Master Data";
+        _activeConfig.Columns = _columns;
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            string where = "1=1";
+
+            if (_selectedZone != "1" && _selectedZone != "all")
+                where += $" AND bm.zone_solid = '{_selectedZone}'";
+            else if (_selectedZone == "1")
+            {
+                // No zone filter — show all
+            }
+
+            if (_selectedRegion != "1" && _selectedRegion != "all")
+                where += $" AND bm.region_solid = '{_selectedRegion}'";
+
+            if (_selectedBranch != "1" && _selectedBranch != "all")
+                where += $" AND bm.sol_id = '{_selectedBranch}'";
+
+            // Apply user privilege filters
+            if (_userPrivilege == "ZONE")
+                where += $" AND bm.zone_solid = '{_userZoneSolid}'";
+            else if (_userPrivilege == "REGION")
+                where += $" AND bm.region_solid = '{_userRegionSolid}'";
+            else if (_userPrivilege == "BRANCH")
+                where += $" AND bm.sol_id = '{_userBranchSolid}'";
+
+            string columns = @"A.FGMO, A.REGION, A.BRANCHNAME, A.BRANCHCODE, A.STATE, A.DISTRICT, A.SUBDISTRICT, 
+                A.FULL_NAME, A.VENDORNAME, 
+                CASE A.AGENTTYPE WHEN 'P' THEN 'Primary BC' WHEN 'S' THEN 'Sub BC' WHEN 'A' THEN 'Alternate BC' END AS AGENT_TYPE, 
+                CASE A.STATUS WHEN '3' THEN 'Active' WHEN '4' THEN 'Suspended' WHEN '5' THEN 'Terminated' WHEN '15' THEN 'Temporarily Suspended for 24 hours' END AS STATUS_DESC, 
+                A.LOCATION_TYPE, A.BCCCODE, A.AGENTCODE, A.PINCODE, A.BC_ADDRESS, A.BC_MOBILE_NO, A.BC_GENDER, 
+                A.VILLAGENAME, A.VILLAGECODE, A.DOB, A.EMAIL, A.BC_SETTLEMENT_ACC_NO, A.BC_REMUNERATION_ACC_NO, 
+                A.LOCATION_APPROVED_BY_BANK, A.ISSHGMEMBER, A.IIBFCERTIFIED, A.IIBFCERTNO, A.BASIC_IIBF_CERT_NO, A.ADV_IIBF_CERT_NO, 
+                A.LATITUDE, A.LONGITUDE, A.ONBOARDING_DATE, 
+                bm.ZONE_CODE, bm.zone_name_eng, bm.zone_solid, bm.REGION_CODE, bm.region_name, bm.region_solid, bm.BRANCH_CODE, bm.BRANCH_NAME";
+
+            string finalQuery = $"SELECT {columns} FROM BC_MASTER A LEFT JOIN Branch_Master bm ON A.SOL_ID = bm.SOL_ID WHERE {where}";
+
+            // Data query and as-on-date are independent - run in parallel
+            var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            var dateTask = ReportService.GetAsOnDateAsync("BC_MASTER");
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+            string date = dateTask.Result;
+            _asOnDateLabel = $"Data As On - {date}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "BC_Master.LoadReport");
+            _data = new();
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        try
+        {
+            var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "BC_Master");
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                "BC_Master.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes)
+            );
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "BC_Master.HandleExport");
+        }
+    }
+}

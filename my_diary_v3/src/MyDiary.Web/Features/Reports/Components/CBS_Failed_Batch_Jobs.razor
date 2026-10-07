@@ -1,0 +1,562 @@
+@page "/reports/CbsFailedBatchJobs"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+
+    .group-header th {
+        background-color: #2a2f5b;
+        color: white;
+        text-align: center;
+        font-weight: bold;
+        border: 1px solid #ddd;
+    }
+
+    .mud-table-head {
+        background: #1f2a63 !important;
+    }
+
+    .mud-table-head th {
+            color: white !important;
+            font-weight: 600;
+    }
+
+    .mud-table-row:hover {
+        background-color: #f5f7ff !important;
+    }
+</style>
+<MudGrid Spacing="3" Class="mb-4">
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4 d-flex align-center"
+                  Style="border-left:5px solid #E53935; border-radius:12px;">
+            <MudIcon Icon="@Icons.Material.Filled.ErrorOutline"
+                     Size="Size.Large"
+                     Color="Color.Error"
+                     Class="me-3" />
+
+            <div>
+                <MudText Typo="Typo.caption">Total Failed Jobs</MudText>
+                <MudText Typo="Typo.h4">@_data.Count</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4 d-flex align-center"
+                      Style="border-left:5px solid #FF9800; border-radius:12px;">
+                <MudIcon Icon="@Icons.Material.Filled.Today"
+                         Size="Size.Large"
+                         Color="Color.Warning"
+                         Class="me-3" />
+
+                <div>
+                    <MudText Typo="Typo.caption">Today's Failures</MudText>
+                    <MudText Typo="Typo.h4">
+                        @_data.Count(x =>
+                             x.ContainsKey("EXECUTION_DATE")
+                             && x["EXECUTION_DATE"] != null
+                             && Convert.ToDateTime(x["EXECUTION_DATE"]).Date == AppTime.Today)
+                </MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+            <MudGrid Spacing="2">
+
+                <!-- Row 1 -->
+                <MudItem xs="12" md="3">
+                    <MudSelect T="string"
+                               Label="Zone"
+                               Value="SelectedZone"
+                               ValueChanged="HandleZoneChanged"
+                               Disabled="@IsZoneDisabled"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">
+                                @z["zone_name_eng"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="3">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Disabled="@IsRegionDisabled"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">
+                                @r["region_name"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="3">
+                    <MudSelect T="string"
+                               Label="Branch"
+                               Value="SelectedBranch"
+                               ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Disabled="@IsBranchDisabled"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["sol_id"].ToString()">
+                                @b["branch_name"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="3" Class="d-flex align-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 11px;"
+                               OnClick="OnExportInternal">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+
+                <!-- Row 2 -->
+                <MudItem xs="12" md="4">
+                    <MudDatePicker Label="From Date"
+                                   @bind-Date="FromDate"
+                                   Variant="Variant.Outlined"
+                                   Class="me-2" />
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudDatePicker Label="To Date"
+                                   @bind-Date="ToDate"
+                                   Variant="Variant.Outlined" />
+                </MudItem>
+
+                <MudItem xs="12" md="4" Class="d-flex align-end">
+                    <MudButton Color="Color.Primary"
+                               Variant="Variant.Filled"
+                               OnClick="LoadData">
+                        Search
+                    </MudButton>
+                </MudItem>
+
+            </MudGrid>
+            <MudAlert Severity="Severity.Info"
+                      Dense="true"
+                      Class="mb-2">
+
+                Showing @_data.Count Records
+
+            </MudAlert>
+            <!-- Data Table -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+                    <HeaderContent>
+                        <!-- Actual Column Header Row -->
+                        <MudTh Style="background-color:#2a2f5b; color:white; width:60px; text-align:center;">
+                            S.No
+                        </MudTh>
+
+                        @foreach (var col in _cols)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width:{col.Width}; text-align:center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@(_data.IndexOf(context) + 1)</MudTd>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_cols.Count + 1)" style="text-align:center; padding: 40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // ---- UI / State ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private string _title => string.IsNullOrWhiteSpace(Title) ? "CBS Failed Batch Jobs" : Title!;
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    private string SelectedZone { get; set; } = "All";
+    private string SelectedRegion { get; set; } = "All";
+    private string SelectedBranch { get; set; } = "All";
+
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+    private List<Dictionary<string, object>> _data = new();
+
+    private string UserRole = "BRANCH";
+    private string UserZoneSolId = "";
+    private string UserRegionSolId = "";
+    private string UserBranchSolId = "";
+
+    private bool IsZoneDisabled = false;
+    private bool IsRegionDisabled = false;
+    private bool IsBranchDisabled = false;
+
+    // ---- Columns (match SELECT aliases) ----
+    private List<ColumnConfig> _cols = new();
+
+    private DateTime? FromDate;
+    private DateTime? ToDate;
+
+    private void BuildColumns()
+    {
+        _cols = new()
+        {
+            new ColumnConfig{ Header="Execution Date", PropertyName="EXECUTION_DATE"},
+            new ColumnConfig{ Header="SOL ID", PropertyName="SOL_ID"},
+            new ColumnConfig{ Header="Branch Name", PropertyName="BRANCH_NAME"},
+            new ColumnConfig{ Header="Job ID", PropertyName="JOB_ID"},
+            new ColumnConfig{ Header="Job Name", PropertyName="JOB_NAME"},
+            new ColumnConfig{ Header="Job Description", PropertyName="JOB_DESC"},
+            new ColumnConfig{ Header="Frequency", PropertyName="JOB_FREQUENCY"},
+            new ColumnConfig{ Header="Reason For Failure", PropertyName="REASON_FOR_FAILURE"},
+            new ColumnConfig{ Header="Action Taken", PropertyName="ACTION_TAKEN"},
+            new ColumnConfig{ Header="Rectified", PropertyName="WHETHER_RECTIFIED"},
+            new ColumnConfig{ Header="Rectified Date", PropertyName="RECTIFIED_DATE"},
+            new ColumnConfig{ Header="Rectification Remarks", PropertyName="RECTIFICATION_REMARKS"},
+            new ColumnConfig{ Header="Remarks", PropertyName="REMARKS"},
+            new ColumnConfig{ Header="Zone", PropertyName="ZONE_NAME"},
+            new ColumnConfig{ Header="Region", PropertyName="REGION_NAME"}
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        UserRole =
+            user.FindFirst(ClaimTypes.Role)?.Value?.ToUpper()
+            ?? user.FindFirst("Role")?.Value?.ToUpper()
+            ?? "BRANCH";
+
+        UserZoneSolId =
+            user.FindFirst("zone_solid")?.Value ?? "";
+
+        UserRegionSolId =
+            user.FindFirst("region_solid")?.Value ?? "";
+
+        UserBranchSolId = user.FindFirst("branch_solid")?.Value ?? "";
+
+        _zones = await ReportService.GetLookupDataAsync(
+            "zone_master",
+            "zone_name_eng, zone_solid",
+            "status='A'",
+            "zone_name_eng"
+        );
+
+        if (UserRole == "CO")
+        {
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                "1=1",
+                "region_name"
+            );
+
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                "1=1",
+                "branch_name"
+            );
+        }
+        else if (UserRole == "ZONE")
+        {
+            IsZoneDisabled = true;
+
+            SelectedZone = UserZoneSolId;
+
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"zone_solid='{UserZoneSolId}'",
+                "region_name"
+            );
+
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                $"zone_solid='{UserZoneSolId}'",
+                "branch_name"
+            );
+        }
+        else if (UserRole == "REGION")
+        {
+            IsZoneDisabled = true;
+            IsRegionDisabled = true;
+
+            SelectedZone = UserZoneSolId;
+            SelectedRegion = UserRegionSolId;
+
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"region_solid='{UserRegionSolId}'",
+                "region_name"
+            );
+
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                $"region_solid='{UserRegionSolId}'",
+                "branch_name"
+            );
+        }
+        else
+        {
+            IsZoneDisabled = true;
+            IsRegionDisabled = true;
+            IsBranchDisabled = true;
+
+            SelectedZone = UserZoneSolId;
+            SelectedRegion = UserRegionSolId;
+            SelectedBranch = UserBranchSolId;
+
+            _zones = await ReportService.GetLookupDataAsync(
+                "zone_master",
+                "zone_name_eng, zone_solid",
+                $"status = 'A' and zone_solid='{UserZoneSolId}'",
+                "zone_name_eng"
+            );
+
+            _regions = await ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"region_solid='{UserRegionSolId}'",
+                "region_name"
+            );
+
+            _branches = await ReportService.GetLookupDataAsync(
+                "branch_master",
+                "branch_name, sol_id",
+                $"sol_id='{UserBranchSolId}'",
+                "branch_name"
+            );
+        }
+
+        await LoadData();
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        SelectedZone = value ?? "All";
+        SelectedRegion = "All";
+
+        var regionWhere = SelectedZone.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"zone_solid = '{SelectedZone}'";
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            regionWhere,
+            "region_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        SelectedRegion = value ?? "All";
+        SelectedBranch = "All";
+
+        var branchWhere = SelectedRegion.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"region_solid = '{SelectedRegion}'";
+        _branches = await ReportService.GetLookupDataAsync(
+            "Branch_Master",
+            "branch_name, sol_id",
+            branchWhere,
+            "branch_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        SelectedBranch = value ?? "All";
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+
+        BuildColumns();
+
+        string privilege;
+        string solId = "";
+
+        if (UserRole == "CO")
+        {
+            if (SelectedZone == "All")
+            {
+                privilege = "CO";
+            }
+            else if (SelectedRegion == "All")
+            {
+                privilege = "Zone";
+                solId = SelectedZone;
+            }
+            else if (SelectedBranch == "All")
+            {
+                privilege = "Region";
+                solId = SelectedRegion;
+            }
+            else
+            {
+                privilege = "Branch";
+                solId = SelectedBranch;
+            }
+        }
+        else if (UserRole == "ZONE")
+        {
+            if (SelectedRegion == "All")
+            {
+                privilege = "Zone";
+                solId = UserZoneSolId;
+            }
+            else if (SelectedBranch == "All")
+            {
+                privilege = "Region";
+                solId = SelectedRegion;
+            }
+            else
+            {
+                privilege = "Branch";
+                solId = SelectedBranch;
+            }
+        }
+        else if (UserRole == "REGION")
+        {
+            if (SelectedBranch == "All")
+            {
+                privilege = "Region";
+                solId = UserRegionSolId;
+            }
+            else
+            {
+                privilege = "Branch";
+                solId = SelectedBranch;
+            }
+        }
+        else
+        {
+            privilege = "Branch";
+            solId = UserBranchSolId;
+        }
+
+        if (FromDate.HasValue &&
+    ToDate.HasValue &&
+    FromDate > ToDate)
+        {
+            _loading = false;
+            return;
+        }
+
+        _data = await ReportService.ExecuteStoredProcAsync(
+            "Get_CBS_Failed_Batch_Jobs",
+            new Dictionary<string, object>
+                {
+            { "@Privilege", privilege },
+            { "@SolId", solId },
+            { "@FromDate", FromDate },
+            { "@ToDate", ToDate }
+                });
+
+        _asOnDateLabel = _data.Count > 0
+            ? $"Records Found : {_data.Count}"
+            : "";
+
+        _loading = false;
+    }
+
+    private async Task OnExportInternal()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _cols, "CbsFailedBatchJobs");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "CbsFailedBatchJobs.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+        return val.ToString();
+    }
+}

@@ -1,0 +1,378 @@
+@page "/reports/NoNominationAcc"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Nomination Not Registered Accounts — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // ========= Centralized file path & builders (for NoNomination files) =========
+    // Raw Windows path (edit here if your base folder changes)
+    private const string FileBaseRaw = @"D:\LiveApllication\MyDiary\";
+    // Escaped for SQL string literals inside C# (backslashes doubled)
+    private static readonly string FileBaseSql = FileBaseRaw.Replace(@"\", @"\\");
+    // Zone-level (literal)  ? use when a single zone is selected
+    private static string BuildNoNomZoneFileExpr(string zoneSolid) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = '" + zoneSolid + "' AND filetype = 'NoNomination') AS File_name";
+    // Region-level (literal) ? use when a single region is selected
+    private static string BuildNoNomRegionFileExpr(string regionSolid) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = '" + regionSolid + "' AND filetype = 'NoNomination') AS File_name";
+    // Zone-level (by column) ? grouped zone summaries (many zones), pass column like "B.Zone_SolId"
+    private static string BuildNoNomZoneFileExprByColumn(string zoneSolidColumnExpr) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = " + zoneSolidColumnExpr + " AND filetype = 'NoNomination') AS File_name";
+    // Region-level (by column) ? grouped region summaries (many regions), pass column like "B.region_SolId"
+    private static string BuildNoNomRegionFileExprByColumn(string regionSolidColumnExpr) =>
+        "(SELECT TOP 1 REPLACE(REPLACE(filename, '" + FileBaseSql + "',''), '\\\\','/') " +
+        " FROM RegionZoneFiles WHERE solid = " + regionSolidColumnExpr + " AND filetype = 'NoNomination') AS File_name";
+    // ============================================================================
+
+    // --- Column configurations ---
+    private readonly List<ColumnConfig> _summaryCols = new()
+    {
+        new ColumnConfig { Header = "Zone",                            PropertyName = "zone_name_eng",      Width = "20%" },
+        new ColumnConfig { Header = "Region",                          PropertyName = "region_name",        Width = "20%" },
+        new ColumnConfig { Header = "Branch",                          PropertyName = "branch_name",        Width = "20%" },
+        new ColumnConfig { Header = "No of No-Nomination Accounts",    PropertyName = "NoNominationCount",  IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Total Amount (Rs. in Lacs)",      PropertyName = "NoNominationAmount", IsNumeric = true, Format = "N2", Width = "15%" },
+        new ColumnConfig { Header = "Download",                        PropertyName = "File_name",          IsLink = true, LinkText = "Download File", Width = "10%" }
+    };
+
+    private readonly List<ColumnConfig> _detailedCols = new()
+    {
+        new ColumnConfig { Header = "Sol Id ",                         PropertyName = "SolId",              Width = "20%" },
+        new ColumnConfig { Header = "Branch_Name",                     PropertyName = "branch_name",        Width = "20%" },
+        new ColumnConfig { Header = "No of No-Nomination Accounts",    PropertyName = "NoNominationCount",  IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Total Amount (Rs. in Lacs)",      PropertyName = "NoNominationAmount", IsNumeric = true, Format = "N2", Width = "15%" },
+        new ColumnConfig { Header = "Download",                        PropertyName = "File_name",          IsLink = true, LinkText = "Download File", Width = "10%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "NoNomination Accounts";
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "LTRIM(RTRIM(B.region_solid)) <> ''";
+        string groupBy = "";
+        bool isSummary = true;
+
+        try
+        {
+            if (_userPrivilege == "CO")
+            {
+                if (_selectedZone == "1") // All (Summary)
+                {
+                    columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                              "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                              "'All' AS branch_name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId, '' AS File_name";
+                }
+                else if (_selectedZone == "all")
+                {
+                    if (_selectedRegion == "1") // Zone-wise summary across MANY zones
+                    {
+                        columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                  "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                  "'All' AS branch_name, 'All' AS region_name, " +
+                                  "B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                                  BuildNoNomZoneFileExprByColumn("B.Zone_SolId");
+                        groupBy = " GROUP BY B.Zone_SolId, B.zone_name_eng";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1") // Region-wise summary across MANY regions
+                        {
+                            columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                      "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildNoNomRegionFileExprByColumn("B.region_SolId");
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else // Branchwise detailed
+                        {
+                            isSummary = false;
+                            columns = "NoNominationCount, " +
+                                      "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                                      "NoNominationFileName AS File_name, " +
+                                      "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                    else // Specific Region Selected
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1") // Single-region summary
+                        {
+                            columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                      "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildNoNomRegionFileExpr(_selectedRegion);
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Detailed (optionally branch specific)
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "NoNominationCount, " +
+                                      "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                                      "NoNominationFileName AS File_name, " +
+                                      "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                }
+                else // Specific Zone selected
+                {
+                    where += $" AND B.zone_solid = '{_selectedZone}'";
+
+                    if (_selectedRegion == "1") // Single-zone summary
+                    {
+                        columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                  "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                  "'All' AS branch_name, 'All' AS region_name, " +
+                                  "B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                                  BuildNoNomZoneFileExpr(_selectedZone);
+                        groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                    }
+                    else if (_selectedRegion == "all")
+                    {
+                        if (_selectedBranch == "1") // Region-wise summaries within selected zone
+                        {
+                            columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                      "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildNoNomRegionFileExprByColumn("B.region_SolId");
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            // Detailed in that zone
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "NoNominationCount, " +
+                                      "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                                      "NoNominationFileName AS File_name, " +
+                                      "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                    else // Specific Region within specific Zone
+                    {
+                        where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                        if (_selectedBranch == "1") // Single-region summary inside zone
+                        {
+                            columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                      "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                      "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                      BuildNoNomRegionFileExpr(_selectedRegion);
+                            groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                        }
+                        else
+                        {
+                            isSummary = false;
+
+                            if (_selectedBranch != "all")
+                                where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                            columns = "NoNominationCount, " +
+                                      "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                                      "NoNominationFileName AS File_name, " +
+                                      "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND B.zone_solid = '{_userZoneSolid}'";
+
+                if (_selectedRegion == "1") // Single-zone summary (user's zone)
+                {
+                    columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                              "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                              "'All' AS branch_name, 'All' AS region_name, " +
+                              "B.zone_name_eng, B.Zone_SolId AS SolId, " +
+                              BuildNoNomZoneFileExpr(_userZoneSolid);
+                    groupBy = " GROUP BY B.zone_name_eng, B.Zone_SolId";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1") // Region summaries within zone
+                    {
+                        columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                  "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                  "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                  BuildNoNomRegionFileExprByColumn("B.region_SolId");
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+
+                        if (_selectedBranch != "all")
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        columns = "NoNominationCount, " +
+                                  "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                                  "NoNominationFileName AS File_name, " +
+                                  "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                    }
+                }
+                else // Specific Region
+                {
+                    where += $" AND B.region_solid = '{_selectedRegion}'";
+
+                    if (_selectedBranch == "1") // Single-region summary
+                    {
+                        columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                                  "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                                  "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                                  BuildNoNomRegionFileExpr(_selectedRegion);
+                        groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+
+                        if (_selectedBranch != "all")
+                            where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                        columns = "NoNominationCount, " +
+                                  "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                                  "NoNominationFileName AS File_name, " +
+                                  "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND B.region_solid = '{_userRegionSolid}'";
+
+                if (_selectedBranch == "1") // Single-region summary (user's region)
+                {
+                    columns = "SUM(NoNominationCount) AS NoNominationCount, " +
+                              "ROUND(SUM(NoNominationAmount) / 100000.0, 2) AS NoNominationAmount, " +
+                              "'All' AS branch_name, B.region_name, B.zone_name_eng, B.region_SolId AS SolId, " +
+                              BuildNoNomRegionFileExpr(_userRegionSolid);
+                    groupBy = " GROUP BY B.region_name, B.region_SolId, B.zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+
+                    if (_selectedBranch != "all")
+                        where += $" AND B.SOL_ID = '{_selectedBranch}'";
+
+                    columns = "NoNominationCount, " +
+                              "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                              "NoNominationFileName AS File_name, " +
+                              "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                isSummary = false;
+                where += $" AND B.SOL_ID = '{_userBranchSolid}'";
+                columns = "NoNominationCount, " +
+                          "ROUND(NoNominationAmount / 100000.0, 2) AS NoNominationAmount, " +
+                          "NoNominationFileName AS File_name, " +
+                          "B.Branch_Name AS branch_name, B.region_name, B.zone_name_eng, B.Sol_Id AS SolId";
+            }
+
+            // Build & run query
+            string finalQuery =
+                $"SELECT {columns} " +
+                $"FROM AccountStatus A " +
+                $"JOIN Branch_Master B ON A.SolID = B.SOL_ID " +
+                $"WHERE {where}{groupBy}";
+
+            // Data query and as-on-date are independent - run in parallel
+            var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+            var dateTask = ReportService.GetAsOnDateAsync("AccountStatus");
+            await Task.WhenAll(dataTask, dateTask);
+            _data = dataTask.Result;
+            string date = dateTask.Result;
+            _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+            _asOnDateLabel = $"Data As On - {date} (Rs. in Lacs)";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "NoNominationAccountsReport");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "NoNominationAccountsReport.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

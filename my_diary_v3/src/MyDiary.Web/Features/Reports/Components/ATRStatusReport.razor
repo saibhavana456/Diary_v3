@@ -1,0 +1,451 @@
+@page "/reports/atrstatus"
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Authorization
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<MudPaper Class="pa-4">
+
+    @if (!_dateConfirmed)
+    {
+        <!-- INITIAL VIEW: MudDatePicker + GO -->
+        <MudForm @ref="_dateForm">
+
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.body1" Class="fw-bold">
+                    Select the Report Date (MM/DD/YYYY)
+                </MudText>
+
+
+                <!-- MudDatePicker returns DateTime?; we keep MM/dd/yyyy for parity -->
+                <MudDatePicker @bind-Date="_pickedDate"
+                               Label="Report Date"
+                               DateFormat="MM/dd/yyyy"
+                               OpenTo="OpenTo.Month"
+                               Required="true"
+                               RequiredError="Date is Mandatory"
+                               Class="me-2"
+                               Style="width:320px;" />
+
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="text-white"
+                           OnClick="OnGoAsync">GO</MudButton>
+            </MudStack>
+        </MudForm>
+    }
+    else
+    {
+        <!-- AFTER GO: Date + GO + Export -->
+        <MudForm @ref="_dateForm">
+
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.body1" Class="fw-bold">
+                    Select the Report Date (MM/DD/YYYY)
+                </MudText>
+
+
+                <MudDatePicker @bind-Date="_pickedDate"
+                               Label="Report Date"
+                               DateFormat="MM/dd/yyyy"
+                               OpenTo="OpenTo.Month"
+                               Required="true"
+                               RequiredError="Date is Mandatory"
+                               Class="me-2"
+                               Style="width:320px" />
+
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="text-white"
+                           OnClick="OnGoAsync">GO</MudButton>
+
+      @*           <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="text-white"
+                           OnClick="HandleExport">
+                    Export To Excel
+                </MudButton> *@
+            </MudStack>
+        </MudForm>
+
+        <!-- TOP: Summary + Filters via existing DynamicDashboard (unchanged API) -->
+        <DynamicDashboard Config="_summaryConfig"
+                          Data="_summaryData"
+                          IsLoading="_loading"
+                          AsOnDateLabel="@_asOnDateLabel"
+                          SelectedZone="@_selectedZone"
+                          SelectedRegion="@_selectedRegion"
+                          SelectedBranch="@_selectedBranch"
+                          OnFilterChanged="HandleFilterChanged"
+                          OnExportRequested="HandleExport" />
+
+        <!-- BOTTOM: Branches Wise Status (MudTable with built-in paging) -->
+        @if (_detailsData.Count > 0)
+        {
+            <MudText Typo="Typo.h6" Class="mt-4 mb-2 fw-bold">Branches Wise Status</MudText>
+
+            <MudTable Dense="true"
+                      Hover="true"
+                      Bordered="true"
+                      Striped="true"
+                      Items="_detailsData"
+                      RowsPerPage="50"
+                      RowsPerPageOptions="new int[] { 50 }">
+
+                <HeaderContent>
+                    <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                    @foreach (var c in _detailCols)
+                    {
+                        <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {c.Width}; text-align: center;")">@c.Header</MudTh>
+                    }
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Style="text-align: center;">@(_detailsData.IndexOf(context) + 1)</MudTd>
+                    @foreach (var col in _detailCols)
+                    {
+                        @* Amount/decimal/integer left aligned, others center aligned *@
+                        <MudTd Style="@(col.IsNumeric ? "text-align: left;" : "text-align: center;")">
+                            @FormatValue(context, col)
+                        </MudTd>
+                    }
+                </RowTemplate>
+                @*  <RowTemplate>
+        @foreach (var c in _detailCols)
+        {
+        <MudTd>
+        @{
+        var row = (Dictionary<string, object>)context;
+        row.TryGetValue(c.PropertyName, out var v);
+        }
+        @FormatCell(v, c)
+        </MudTd>
+        }
+        </RowTemplate> *@
+
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
+            </MudTable>
+        }
+        else if (_noData)
+        {
+            <MudText Color="Color.Error" Align="Align.Center" Class="mt-2">No Data Found!</MudText>
+        }
+    }
+
+</MudPaper>
+
+@code {
+
+    // ------------------- Date (MudDatePicker) -------------------
+    private MudForm? _dateForm;
+    private DateTime? _pickedDate;
+    private bool _dateConfirmed = false;
+    private ReportConfig _activeConfig = new();
+    public string? Title { get; set; }
+    // ------------------- Summary + Detail data -------------------
+    private List<Dictionary<string, object>> _summaryData = new(); // SP Table[0]
+    private List<Dictionary<string, object>> _detailsData = new(); // SP Table[1]
+    private bool _loading = false;
+    private bool _noData = false;
+
+    // ------------------- Dashboard config (same columns as ASPX) -------------------
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    protected override async Task OnInitializedAsync()
+    {
+        _activeConfig.Title = Title ?? "ATR Report - Daily Dashboard";
+
+        // Load user privilege from claims
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "BRANCH";
+            _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+            _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+            _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        }
+    }
+    private ReportConfig _summaryConfig = new()
+        {
+            Title = "ATR Report - Daily Dashboard",
+            Columns = new()
+        {
+            new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "18%" },
+            new ColumnConfig { Header = "Region", PropertyName = "region_name",   Width = "18%" },
+            new ColumnConfig { Header = "Branch", PropertyName = "branch_name",   Width = "18%" },
+            new ColumnConfig { Header = "Branch SOL", PropertyName = "solid",     Width = "12%" },
+            new ColumnConfig { Header = "No. Of Branches", PropertyName = "TOT_BR", IsNumeric = true, Format = "N0", Width = "11%" },
+            new ColumnConfig { Header = "No. Of Branches Submitted", PropertyName = "SUB_COUNT", IsNumeric = true, Format = "N0", Width = "11%" },
+            new ColumnConfig { Header = "No. Of Branches Not Submitted", PropertyName = "NOT_SUB_COUNT", IsNumeric = true, Format = "N0", Width = "12%" }
+        }
+        };
+
+    private List<ColumnConfig> _detailCols = new()
+    {
+        new ColumnConfig { Header = "Zone",        PropertyName = "zone_name_eng", Width = "15%" },
+        new ColumnConfig { Header = "Region",      PropertyName = "region_name",   Width = "15%" },
+        new ColumnConfig { Header = "Branch",      PropertyName = "branch_name",   Width = "25%" },
+        new ColumnConfig { Header = "Branch SOL",  PropertyName = "sol_id",        Width = "10%" },
+        new ColumnConfig { Header = "Branch Email",PropertyName = "BR_EMAIL",      Width = "20%" },
+        new ColumnConfig { Header = "Status",      PropertyName = "STATUS",        Width = "15%" }
+    };
+
+    // ------------------- Privilege placeholders (wire from claims/session) -------------------
+    private string _userPrivilege = "BRANCH";      // "CO","ZONE","REGION","BRANCH"
+    private string _userZoneSolid = "00000";
+    private string _userRegionSolid = "00000";
+    private string _userBranchSolid = "00000";
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null)
+            return "-";
+        if (col.IsDate && DateTime.TryParse(val.ToString(), out var dt))
+            return dt.ToString("dd/MM/yyyy");
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d))
+            return d.ToString(col.Format);
+        return val.ToString();
+    }
+    // ------------------- Events -------------------
+    private async Task OnGoAsync()
+    {
+        // Validate date
+        if (_pickedDate is null)
+        {
+            await _dateForm!.Validate();
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+
+        // Keep legacy label & SP date format (MM-dd-yyyy)
+        _asOnDateLabel = $"Mandatory Report dated - {_pickedDate.Value.ToString("MM-dd-yyyy")}";
+        _dateConfirmed = true;
+
+        await DisplayDataAsync();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+
+        _loading = true;
+        StateHasChanged();
+
+        await DisplayDataAsync();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task DisplayDataAsync()
+    {
+        if (_pickedDate is null) return;
+
+        var rptDate = _pickedDate.Value.ToString("MM-dd-yyyy"); // same as WebForms Replace("/", "-")
+        var (userType, zo, ro, br) = BuildAtrParams();          // <-- use exact ASPX mapping
+
+        var res = await ReportService.ExecuteGetAtrReportStatusAsync(rptDate, userType, zo, ro, br);
+        _summaryData = res.Summary;
+        _detailsData = res.Details;
+
+        _noData = _summaryData.Count == 0;
+
+        // Optional: quick debug label to verify parameters being sent
+        // _asOnDateLabel = $"Report: {rptDate} | UT:{userType} ZO:{zo} RO:{ro} BR:{br}";
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportTwoSheets(
+            ("Summary", _summaryData, _summaryConfig.Columns),
+            ("BranchWise", _detailsData, _detailCols)
+        );
+
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "ATRReportStatus.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    // ------------------- Helpers: ASPX mapping -------------------
+    private static string MapScope(string priv) => priv.ToUpper() switch
+    {
+        "CO" => "CO",
+        "ZONE" => "ZO",
+        "REGION" => "RO",
+        "BRANCH" => "BR",
+        _ => "CO"
+    };
+
+    private string GetZoneParam()
+    {
+        if (_userPrivilege == "CO")
+        {
+            if (string.IsNullOrEmpty(_selectedZone)) return "-1"; // initial CO
+            if (_selectedZone == "1") return "0";                 // All(Summary)
+            if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase)) return "ALL";
+            return _selectedZone;                                  // specific Zone
+        }
+        if (_userPrivilege == "ZONE") return _userZoneSolid;
+        return string.Empty;
+    }
+
+    private string GetRegionParam()
+    {
+        if (_userPrivilege == "CO")
+        {
+            if (string.IsNullOrEmpty(_selectedZone) || _selectedZone == "1") return string.Empty;
+
+            if (_selectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrEmpty(_selectedRegion)) return string.Empty;
+                if (_selectedRegion == "1") return "0";
+                if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase)) return "ALL";
+                return _selectedRegion;
+            }
+            // specific zone
+            if (string.IsNullOrEmpty(_selectedRegion)) return string.Empty;
+            if (_selectedRegion == "1") return "0";
+            if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase)) return "ALL";
+            return _selectedRegion;
+        }
+        if (_userPrivilege == "ZONE")
+        {
+            if (string.IsNullOrEmpty(_selectedRegion)) return string.Empty;
+            if (_selectedRegion == "1") return "0";
+            if (_selectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase)) return "ALL";
+            return _selectedRegion;
+        }
+        if (_userPrivilege == "REGION") return _userRegionSolid;
+        return string.Empty;
+    }
+
+    private string GetBranchParam()
+    {
+        if (_userPrivilege == "BRANCH") return _userBranchSolid;
+
+        if (string.IsNullOrEmpty(_selectedBranch)) return string.Empty;
+        if (_selectedBranch == "1") return "0";
+        if (_selectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase)) return "ALL";
+        return _selectedBranch;
+    }
+
+    // Keep <td> clean and Razor-safe
+    private static string FormatCell(object? v, ColumnConfig col)
+    {
+        if (v is null) return string.Empty;
+        if (col.IsNumeric && decimal.TryParse(v.ToString(), out var dv))
+            return dv.ToString(col.Format ?? "N0");
+        if (col.IsDate && DateTime.TryParse(v.ToString(), out var dt))
+            return dt.ToString("yyyy-MM-dd");
+        return v?.ToString() ?? string.Empty;
+    }
+    /// <summary>
+    /// EXACT ASPX mapping to usp_getATRStatusReport(@User_Type,@Selected_ZO,@Selected_RO,@Selected_BR,@Report_Date)
+    /// Returns (userType, zo, ro, br)
+    /// </summary>
+    private (string userType, string zo, string ro, string br) BuildAtrParams()
+    {
+        var sZone = _selectedZone ?? "";
+        var sRegion = _selectedRegion ?? "";
+        var sBranch = _selectedBranch ?? "";
+
+        var priv = _userPrivilege?.ToUpperInvariant() ?? "CO";
+
+        bool IsAllSummary(string v) => string.Equals(v, "1", StringComparison.OrdinalIgnoreCase);   // All(Summary)
+        bool IsAllWise(string v) => string.Equals(v, "all", StringComparison.OrdinalIgnoreCase); // All(�wise)
+
+        switch (priv)
+        {
+            case "CO":
+                {
+                    // Page just opened, before any zone selection (ASPX: SelectedIndex == -1)
+                    if (string.IsNullOrEmpty(sZone))
+                        return ("CO", "-1", "", "");      // initial CO case
+
+                    // Zone = All(Summary)
+                    if (IsAllSummary(sZone))
+                        return ("CO", "0", "", "");       // TOP-LEVEL TOTAL ? 9,423
+
+                    // Zone = All(Zonewise)
+                    if (IsAllWise(sZone))
+                    {
+                        // Region = All(Summary): Zonewise summary
+                        if (IsAllSummary(sRegion)) return ("CO", "ALL", "0", "");
+
+                        // Region = All(Regionwise)
+                        if (IsAllWise(sRegion))
+                        {
+                            // Branch = All(Summary) ? regionwise summary of all zones
+                            if (IsAllSummary(sBranch)) return ("CO", "ALL", "ALL", "0");
+                            // Branch = All(Branchwise) ? branchwise rows of all regions of all zones
+                            if (IsAllWise(sBranch)) return ("CO", "ALL", "ALL", "ALL");
+                            // Specific branch under ALL/ALL (rare)
+                            return ("CO", "ALL", "ALL", sBranch);
+                        }
+
+                        // Specific region under ALL zones
+                        if (IsAllSummary(sBranch)) return ("CO", "ALL", sRegion, "0");
+                        if (IsAllWise(sBranch)) return ("CO", "ALL", sRegion, "ALL");
+                        return ("CO", "ALL", sRegion, sBranch);
+                    }
+
+                    // Specific Zone selected
+                    if (IsAllSummary(sRegion)) return ("CO", sZone, "0", "");
+                    if (IsAllWise(sRegion))
+                    {
+                        if (IsAllSummary(sBranch)) return ("CO", sZone, "ALL", "0");
+                        if (IsAllWise(sBranch)) return ("CO", sZone, "ALL", "ALL");
+                        return ("CO", sZone, "ALL", sBranch);
+                    }
+
+                    if (IsAllSummary(sBranch)) return ("CO", sZone, sRegion, "0");
+                    if (IsAllWise(sBranch)) return ("CO", sZone, sRegion, "ALL");
+                    return ("CO", sZone, sRegion, sBranch);
+                }
+
+            case "ZONE":
+                {
+                    var zo = _userZoneSolid ?? "";
+                    if (IsAllSummary(sRegion)) return ("ZO", zo, "0", "");
+                    if (IsAllWise(sRegion))
+                    {
+                        if (IsAllSummary(sBranch)) return ("ZO", zo, "ALL", "0");
+                        if (IsAllWise(sBranch)) return ("ZO", zo, "ALL", "ALL");
+                        return ("ZO", zo, "ALL", sBranch);
+                    }
+                    if (IsAllSummary(sBranch)) return ("ZO", zo, sRegion, "0");
+                    if (IsAllWise(sBranch)) return ("ZO", zo, sRegion, "ALL");
+                    return ("ZO", zo, sRegion, sBranch);
+                }
+
+            case "REGION":
+                {
+                    var ro = _userRegionSolid ?? "";
+                    if (IsAllSummary(sBranch)) return ("RO", "", ro, "0");
+                    if (IsAllWise(sBranch)) return ("RO", "", ro, "ALL");
+                    return ("RO", "", ro, sBranch);
+                }
+
+            case "BRANCH":
+                {
+                    var br = _userBranchSolid ?? "";
+                    return ("BR", "", "", br);
+                }
+        }
+
+        return ("CO", "0", "", "");
+    }
+}
+

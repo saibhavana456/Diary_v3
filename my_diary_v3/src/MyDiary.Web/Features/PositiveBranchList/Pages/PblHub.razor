@@ -1,0 +1,227 @@
+@page "/pbl/hub"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.PositiveBranchList.Services
+@using MyDiary.Web.Features.PositiveBranchList.Models.DTO
+@inject IPositiveBranchListService PblService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Positive Branch List - My Diary</PageTitle>
+
+<PageHeader Title="Positive Branch List" Subtitle="Daily zone-wise Positive/Negative branch movement — automailer, manual send, and sent-communications tracking." Crumbs="_crumbs" PageKey="pbl-hub" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <div class="d-flex flex-wrap align-center justify-space-between mb-2">
+            <MudText Typo="Typo.h6">Today's Job Status</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Send"
+                       OnClick="OpenManualSendConfirm" Disabled="@_sending">
+                @(_sending ? "Sending..." : "Send Now (Manual)")
+            </MudButton>
+        </div>
+
+        <MudGrid>
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Data date (T-1)</MudText>
+                <MudText Typo="Typo.body1">@(_status.LatestDataDate?.ToString("dd-MMM-yyyy") ?? "—")</MudText>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Data Available</MudText>
+                <MudChip T="string" Size="Size.Small" Color="@(_status.DataAvailable ? Color.Success : Color.Warning)">@(_status.DataAvailable ? "Yes" : "Not yet")</MudChip>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Aggregation Status</MudText>
+                <MudChip T="string" Size="Size.Small" Color="@AggStatusColor(_status.AggStatus)">@_status.AggStatus</MudChip>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Mail Sent Today</MudText>
+                <MudChip T="string" Size="Size.Small" Color="@(_status.MailSent ? Color.Success : Color.Default)">
+                    @(_status.MailSent ? $"Yes — {_status.MailSentAt:HH:mm}" : "No")
+                </MudChip>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Retry Count</MudText>
+                <MudText Typo="Typo.body1">@_status.RetryCount</MudText>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Last Checked</MudText>
+                <MudText Typo="Typo.body1">@(_status.LastCheckedAt?.ToString("dd-MMM HH:mm") ?? "—")</MudText>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Last Triggered By</MudText>
+                <MudText Typo="Typo.body1">@(_status.TriggeredBy ?? "—")</MudText>
+            </MudItem>
+        </MudGrid>
+
+        @if (!string.IsNullOrWhiteSpace(_status.LastError))
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-3" Variant="Variant.Outlined">@_status.LastError</MudAlert>
+        }
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3">
+            Runs automatically every day at 10:30 AM against yesterday's data (T-1), compared to the previous
+            financial year's last day. If T-1's data isn't in yet, it retries hourly. The mail goes out at most
+            once per day automatically — "Send Now" is a manual override for corrections and can resend even if
+            today's mail already went out.
+        </MudAlert>
+    </MudPaper>
+
+    <div class="d-flex align-center mb-2">
+        <MudText Typo="Typo.h6">Sent Communications</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="_search" Label="Search zone / recipient / subject" Variant="Variant.Outlined"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Style="max-width:320px" />
+    </div>
+
+    <MudTable Items="@Filtered" Hover="true" Dense="true" Bordered="true" RowsPerPage="20">
+        <HeaderContent>
+            <MudTh>Run Date</MudTh>
+            <MudTh>Zone</MudTh>
+            <MudTh>Recipient</MudTh>
+            <MudTh>Subject</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Sent At</MudTh>
+            <MudTh>Triggered By</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.RunDate.ToString("dd-MMM-yyyy")</MudTd>
+            <MudTd>@context.ZoneName</MudTd>
+            <MudTd>@context.RecipientEmail</MudTd>
+            <MudTd>@context.Subject</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="@(context.SendStatus == "SENT" ? Color.Success : Color.Error)">@context.SendStatus</MudChip></MudTd>
+            <MudTd>@(context.SentAt?.ToString("dd-MMM HH:mm") ?? "—")</MudTd>
+            <MudTd>@context.TriggeredBy</MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Title="View mail" OnClick="@(() => ViewMail(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" Title="Download attachment" OnClick="@(() => DownloadAttachment(context))" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 20, 50, 100 }" /></PagerContent>
+    </MudTable>
+}
+
+<MudDialog @bind-Visible="_viewOpen" Options="_dialogOptions">
+    <TitleContent>Mail Details</TitleContent>
+    <DialogContent>
+        @if (_viewing is not null)
+        {
+            <MudText Typo="Typo.body2"><b>Zone:</b> @_viewing.ZoneName</MudText>
+            <MudText Typo="Typo.body2"><b>Recipient:</b> @_viewing.RecipientEmail</MudText>
+            <MudText Typo="Typo.body2"><b>Subject:</b> @_viewing.Subject</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2"><b>Status:</b> @_viewing.SendStatus @(_viewing.ErrorMessage is not null ? $"— {_viewing.ErrorMessage}" : "")</MudText>
+            <MudDivider Class="mb-2" />
+            <div style="border:1px solid #ddd;padding:12px;border-radius:6px;max-height:400px;overflow:auto">
+                @((MarkupString)(_viewing.Body ?? ""))
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _viewOpen = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_confirmSendOpen" Options="_dialogOptions">
+    <TitleContent>Send Now — Manual Trigger</TitleContent>
+    <DialogContent>
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            This will re-run the aggregation for yesterday's data and re-send the mail to every active zone,
+            even if today's automated mail already went out. Your PF number will be logged against this send.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _confirmSendOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ManualSendAsync">Confirm &amp; Send</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Positive Branch List") };
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _loading = true, _sending;
+    private PblJobStatus _status = new();
+    private List<PblMailLogRow> _log = new();
+    private string _search = "";
+    private string _pfNo = "";
+
+    private bool _viewOpen;
+    private PblMailLogRow? _viewing;
+    private bool _confirmSendOpen;
+
+    private IEnumerable<PblMailLogRow> Filtered => string.IsNullOrWhiteSpace(_search)
+        ? _log
+        : _log.Where(m =>
+            m.ZoneName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            m.RecipientEmail.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            m.Subject.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _pfNo = state.User.FindFirst("emplid")?.Value ?? "";
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _status = await PblService.GetTodayStatusAsync();
+        _log = await PblService.GetMailLogAsync();
+    }
+
+    private static Color AggStatusColor(string status) => status switch
+    {
+        "DONE" => Color.Success,
+        "RUNNING" => Color.Info,
+        "FAILED" => Color.Error,
+        _ => Color.Default
+    };
+
+    private void OpenManualSendConfirm() => _confirmSendOpen = true;
+
+    private async Task ManualSendAsync()
+    {
+        _confirmSendOpen = false;
+        _sending = true;
+        try
+        {
+            var result = await PblService.RunAggregationAndSendAsync(_pfNo, force: true);
+            Snackbar.Add(result.Message ?? "Done.", result.MailSent ? Severity.Success : Severity.Warning);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Manual send failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private void ViewMail(PblMailLogRow row)
+    {
+        _viewing = row;
+        _viewOpen = true;
+    }
+
+    private async Task DownloadAttachment(PblMailLogRow row)
+    {
+        var file = await PblService.GetAttachmentAsync(row.Id);
+        if (file is null)
+        {
+            Snackbar.Add("No attachment stored for this entry.", Severity.Warning);
+            return;
+        }
+        await JS.InvokeVoidAsync("appDownloadFile", file.Value.FileName, Convert.ToBase64String(file.Value.Content), "application/zip");
+    }
+}

@@ -1,0 +1,456 @@
+@page "/flatmgmt/my/track-grievance-view"
+@attribute [Authorize]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using MudBlazor
+@inject IUserFlatService FlatService
+@inject IUserGrievanceService UserGrievanceService
+@inject IGrievanceActionService GrievanceService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Track Grievance - Flat Management System</PageTitle>
+
+<div class="tv-page">
+    <a href="flatmgmt/my/track-grievance" class="tv-back">&laquo; Back to List</a>
+
+    <PageHeader Title="Track Service Request" Crumbs="_crumbs" PageKey="flatmgmt-my-track-grievance-view" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (loadError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">@loadError</MudAlert>
+    }
+    else
+    {
+        <MudCard Class="tv-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent><MudText Typo="Typo.h6">Flat Details</MudText></CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Flat No.</MudText>
+                        <MudText Typo="Typo.body1">@(flat?.Flat?.FlatNo ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Type / Area</MudText>
+                        <MudText Typo="Typo.body1">@(flat?.Flat?.FlatType ?? "-") / @(flat?.Flat?.CarpetArea ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Building Name</MudText>
+                        <MudText Typo="Typo.body1">@(flat?.Flat?.BuildingName ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Address</MudText>
+                        <MudText Typo="Typo.body1">@(flat?.Flat?.Address ?? "-")</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="tv-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent><MudText Typo="Typo.h6">Current Occupant Details</MudText></CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@occupantRows" Hover="true" Bordered="true" Dense="true" Class="tv-table">
+                    <HeaderContent>
+                        <MudTh>Employee Details</MudTh>
+                        <MudTh>IP-Phone / Mobile / Email</MudTh>
+                        <MudTh>Occupy / Posting / Retirement</MudTh>
+                        <MudTh>Posting / RO / ZO</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee Details">@context.EmplId<br />@context.Name<br />@context.JobDesc</MudTd>
+                        <MudTd DataLabel="IP-Phone / Mobile / Email">@context.ContactNo<br />@context.EmailId</MudTd>
+                        <MudTd DataLabel="Occupy / Posting / Retirement">
+                            @(context.BeginDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.DeptJoinDt?.ToString("dd-MMM-yyyy") ?? "-")<br />
+                            @(context.ExpectedRetirementDate?.ToString("dd-MMM-yyyy") ?? "-")
+                        </MudTd>
+                        <MudTd DataLabel="Posting / RO / ZO">@context.LocationDesc<br />@context.RegionName<br />@context.ZoneName</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText>No Current Occupant</MudText></NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="tv-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent><MudText Typo="Typo.h6">Service Request Details</MudText></CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Reference No.</MudText>
+                        <MudText Typo="Typo.body1">@(grievance?.RefNo ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Status</MudText>
+                        <MudChip T="string" Color="@StatusColor(grievance.Status)" Size="Size.Small">@(grievance.Status ?? "-")</MudChip>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Type</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.Category ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Created On</MudText>
+                        <MudText Typo="Typo.body1">@(grievanceCreatedOn?.ToString("dd-MMM-yyyy") ?? grievance.CreatedOn ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Created By</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.CreatedByCode ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Attachment</MudText>
+                        @if (!string.IsNullOrWhiteSpace(grievance.AttachmentPath))
+                        {
+                            <MudLink Href="@grievance.AttachmentPath" Target="_blank">View Attachment</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body1">-</MudText>
+                        }
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Subject</MudText>
+                        <MudText Typo="Typo.body1">@(grievance.Subject ?? "-")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="tv-label">Description</MudText>
+                        <MudText Typo="Typo.body1" Class="tv-pre">@(grievance.Description ?? "-")</MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @if (feedbackJustSubmitted)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4" Variant="Variant.Filled">
+                Thank you! Your feedback has been submitted.
+            </MudAlert>
+        }
+        else if (alreadySubmitted)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-4" Variant="Variant.Filled">
+                You have already submitted feedback for this service request.
+            </MudAlert>
+        }
+        else if (canSubmitFeedback)
+        {
+            <MudCard Class="tv-card mt-4" Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Your Feedback</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (!string.IsNullOrEmpty(feedbackMessage))
+                    {
+                        <MudAlert Severity="Severity.Error" Class="mb-4" Variant="Variant.Filled"
+                                  ShowCloseIcon="true" CloseIconClicked="@(() => feedbackMessage = null)">
+                            @feedbackMessage
+                        </MudAlert>
+                    }
+
+                    @if (replacedItems.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Replaced Items</MudText>
+                        <MudTable Items="@replacedItems" Dense="true" Bordered="true" Class="mb-4">
+                            <HeaderContent>
+                                <MudTh>Product Name</MudTh>
+                                <MudTh>Quantity</MudTh>
+                                <MudTh>Description</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Product Name">@context.ProductName</MudTd>
+                                <MudTd DataLabel="Quantity">@context.Qty</MudTd>
+                                <MudTd DataLabel="Description">@context.Description</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+
+                        <MudRadioGroup T="string" @bind-Value="itemsCorrect" Class="mb-4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Are the above items correct?*</MudText>
+                            <MudRadio T="string" Value="@("Y")" Color="Color.Primary">Yes</MudRadio>
+                            <MudRadio T="string" Value="@("N")" Color="Color.Primary">No</MudRadio>
+                        </MudRadioGroup>
+
+                        @if (itemsCorrect == "N")
+                        {
+                            <MudAlert Severity="Severity.Info" Class="mb-4" Variant="Variant.Outlined">
+                                Please contact support if replaced items are incorrect.
+                            </MudAlert>
+                        }
+                    }
+
+                    <MudText Typo="Typo.body2" Class="mb-1">Was the work completed?*</MudText>
+                    <MudRadioGroup T="string" @bind-Value="workCompleted" Class="mb-4">
+                        <MudRadio T="string" Value="@("Y")" Color="Color.Primary">Yes</MudRadio>
+                        <MudRadio T="string" Value="@("N")" Color="Color.Primary">No</MudRadio>
+                    </MudRadioGroup>
+
+                    @if (workCompleted == "Y")
+                    {
+                        <MudText Typo="Typo.body2" Class="mb-1">Rating (1 = Poor, 5 = Excellent)*</MudText>
+                        <MudRadioGroup T="int?" @bind-Value="rating" Class="mb-4">
+                            @for (var i = 1; i <= 5; i++)
+                            {
+                                var v = i;
+                                <MudRadio T="int?" Value="@v" Color="Color.Primary">@v</MudRadio>
+                            }
+                        </MudRadioGroup>
+                    }
+
+                    <MudTextField @bind-Value="feedbackText" Label="Feedback*" Variant="Variant.Outlined"
+                                  Lines="4" MaxLength="1000" Class="mb-4" />
+
+                    <MudText Typo="Typo.body2" Class="mb-1">Attachment (optional)</MudText>
+                    <InputFile OnChange="OnFeedbackFileSelected" />
+                    <MudText Typo="Typo.caption" Class="tv-hint">Allowed: .pdf, .png, .jpg, .jpeg, .doc, .docx (max 5 MB)</MudText>
+                    @if (!string.IsNullOrEmpty(feedbackFileName))
+                    {
+                        <MudText Typo="Typo.caption" Class="tv-file-chip">Selected: @feedbackFileName</MudText>
+                    }
+
+                    <div class="tv-actions">
+                        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Disabled="@isSubmittingFeedback"
+                                   OnClick="HandleSubmitFeedback">
+                            @(isSubmittingFeedback ? "Submitting..." : "Submit Feedback")
+                        </MudButton>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        }
+
+        <MudCard Class="tv-card mt-4" Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent><MudText Typo="Typo.h6">Action Taken Details</MudText></CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@actionHistory" Hover="true" Bordered="true" Dense="true" Class="tv-table" RowsPerPage="10">
+                    <HeaderContent>
+                        <MudTh>S.No.</MudTh>
+                        <MudTh>Action Taken</MudTh>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Action Taken Details</MudTh>
+                        <MudTh>Remarks</MudTh>
+                        <MudTh>Attachment</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd DataLabel="S.No.">@(actionHistory.IndexOf(row) + 1)</MudTd>
+                        <MudTd DataLabel="Action Taken">@row.ActionTaken</MudTd>
+                        <MudTd DataLabel="Date">@(row.ActionDate?.ToString("dd-MM-yyyy") ?? "-")</MudTd>
+                        <MudTd DataLabel="Action Taken Details" Class="tv-pre">@row.ActionDetails</MudTd>
+                        <MudTd DataLabel="Remarks" Class="tv-pre">@row.Remarks</MudTd>
+                        <MudTd DataLabel="Attachment">
+                            @if (!string.IsNullOrWhiteSpace(row.AttachmentPath))
+                            {
+                                <MudLink Href="@row.AttachmentPath" Target="_blank">View</MudLink>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText>No action recorded yet.</MudText></NoRecordsContent>
+                    <PagerContent><MudTablePager PageSizeOptions="new[] { 10, 25, 50 }" /></PagerContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Track Service Request") };
+    [SupplyParameterFromQuery(Name = "ref")]
+    public string? RefNoParam { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private static readonly string[] AllowedFeedbackExtensions = { ".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx" };
+    private const long MaxFeedbackFileSize = 5 * 1024 * 1024;
+
+    private string pfNo = string.Empty;
+
+    private bool isLoading = true;
+    private string? loadError;
+
+    private ViewAllocatedFlatResult? flat;
+    private List<CurrentOccupantDetails> occupantRows = new();
+
+    private GrievanceDetailsInfo? grievance;
+    private DateTime? grievanceCreatedOn;
+    private List<ProductRow> replacedItems = new();
+    private List<ActionHistoryRow> actionHistory = new();
+
+    private bool canSubmitFeedback;
+    private bool alreadySubmitted;
+    private bool feedbackJustSubmitted;
+
+    private string? itemsCorrect;
+    private string? workCompleted;
+    private int? rating;
+    private string feedbackText = string.Empty;
+    private string? feedbackFileName;
+    private string? feedbackFileContentType;
+    private byte[]? feedbackFileBytes;
+
+    private bool isSubmittingFeedback;
+    private string? feedbackMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            pfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        loadError = null;
+
+        if (string.IsNullOrWhiteSpace(RefNoParam))
+        {
+            loadError = "Invalid ServiceRequest reference.";
+            isLoading = false;
+            return;
+        }
+
+        grievance = await GrievanceService.GetGrievanceAsync(RefNoParam);
+        if (grievance is null || !string.Equals(grievance.CreatedByCode, pfNo, StringComparison.OrdinalIgnoreCase))
+        {
+            loadError = "Service request not found.";
+            isLoading = false;
+            return;
+        }
+
+        grievanceCreatedOn = DateTime.TryParse(grievance.CreatedOn, out var parsed) ? parsed : null;
+
+        flat = await FlatService.GetAllocatedFlatAsync(pfNo);
+        occupantRows = flat.CurrentOccupant is null
+            ? new List<CurrentOccupantDetails>()
+            : new List<CurrentOccupantDetails> { flat.CurrentOccupant };
+
+        replacedItems = await GrievanceService.GetReplacedItemsAsync(RefNoParam);
+        actionHistory = await GrievanceService.GetActionHistoryAsync(RefNoParam);
+
+        alreadySubmitted = grievance.FeedbackDate is not null
+            || (!string.IsNullOrWhiteSpace(grievance.CompletedYn) && !string.Equals(grievance.CompletedYn, "N", StringComparison.OrdinalIgnoreCase));
+        canSubmitFeedback = !alreadySubmitted
+            && string.Equals(grievance.Status, "Work Completed", StringComparison.OrdinalIgnoreCase);
+
+        isLoading = false;
+    }
+
+    private async Task OnFeedbackFileSelected(InputFileChangeEventArgs e)
+    {
+        feedbackMessage = null;
+        var file = e.File;
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+
+        if (Array.IndexOf(AllowedFeedbackExtensions, ext) < 0)
+        {
+            feedbackMessage = "Invalid file type. Allowed: .pdf, .png, .jpg, .jpeg, .doc, .docx";
+            feedbackFileName = null;
+            feedbackFileBytes = null;
+            return;
+        }
+
+        if (file.Size > MaxFeedbackFileSize)
+        {
+            feedbackMessage = "Maximum file size is 5 MB.";
+            feedbackFileName = null;
+            feedbackFileBytes = null;
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: MaxFeedbackFileSize);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+
+            feedbackFileBytes = buffer.ToArray();
+            feedbackFileName = file.Name;
+            feedbackFileContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"TrackGrievanceView: could not read uploaded file '{file.Name}'");
+            feedbackMessage = UserFacingError.Generic;
+            feedbackFileName = null;
+            feedbackFileBytes = null;
+        }
+    }
+
+    private async Task HandleSubmitFeedback()
+    {
+        feedbackMessage = null;
+
+        if (replacedItems.Count > 0 && string.IsNullOrEmpty(itemsCorrect))
+        {
+            feedbackMessage = "Please confirm whether the replaced items are correct.";
+            return;
+        }
+        if (string.IsNullOrEmpty(workCompleted))
+        {
+            feedbackMessage = "Please select whether the work was completed.";
+            return;
+        }
+        if (workCompleted == "Y" && rating is null)
+        {
+            feedbackMessage = "Please provide a rating.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(feedbackText))
+        {
+            feedbackMessage = "Please enter your feedback.";
+            return;
+        }
+
+        isSubmittingFeedback = true;
+        try
+        {
+            var request = new SubmitFeedbackRequest(
+                RefNo: RefNoParam!,
+                PfNo: pfNo,
+                WorkCompleted: workCompleted == "Y",
+                Rating: workCompleted == "Y" ? rating : null,
+                Feedback: feedbackText.Trim(),
+                AttachmentFileName: feedbackFileName,
+                AttachmentContentType: feedbackFileContentType,
+                AttachmentData: feedbackFileBytes);
+
+            var result = await UserGrievanceService.SubmitFeedbackAsync(request);
+            if (!result.Success)
+            {
+                feedbackMessage = result.Error ?? "Could not submit your feedback.";
+                return;
+            }
+
+            feedbackJustSubmitted = true;
+            await LoadAsync();
+        }
+        finally
+        {
+            isSubmittingFeedback = false;
+        }
+    }
+
+    private static Color StatusColor(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return Color.Default;
+        if (status.Equals("Closed", StringComparison.OrdinalIgnoreCase) || status.Contains("Completed", StringComparison.OrdinalIgnoreCase)) return Color.Success;
+        if (status.Contains("Progress", StringComparison.OrdinalIgnoreCase)) return Color.Warning;
+        if (status.Contains("Raised", StringComparison.OrdinalIgnoreCase) || status.Equals("Open", StringComparison.OrdinalIgnoreCase)) return Color.Info;
+        return Color.Default;
+    }
+}

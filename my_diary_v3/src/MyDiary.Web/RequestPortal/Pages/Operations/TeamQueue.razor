@@ -1,0 +1,141 @@
+@namespace RequestPortal.Web.Pages.Operations
+@page "/requests/team"
+@inject IRequestRepo RequestRepo
+@inject ICurrentUser CurrentUser
+@inject NavigationManager Nav
+
+<PageTitle>Team Queue</PageTitle>
+<PageHeader PageKey="operations-team-queue" Title="Team Queue" Subtitle="All active requests currently being handled at your level."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Operations"), new("Team Queue") })" />
+
+<MudGrid Class="mb-3">
+    <MudItem xs="6" sm="3">
+        <MudPaper Class="pa-3 kpi-card text-center" Elevation="1">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Total Open</MudText>
+            <MudText Typo="Typo.h4" Style="font-weight:700">@_total</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Class="pa-3 kpi-card text-center" Elevation="1">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Breached</MudText>
+            <MudText Typo="Typo.h4" Style="font-weight:700;color:#cf222e">@_breached</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Class="pa-3 kpi-card text-center" Elevation="1">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Due Today</MudText>
+            <MudText Typo="Typo.h4" Style="font-weight:700;color:#9a6700">@_dueToday</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Class="pa-3 kpi-card text-center" Elevation="1">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Clarification Pending</MudText>
+            <MudText Typo="Typo.h4" Style="font-weight:700;color:#0969da">@_clarif</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<div class="d-flex gap-2 mb-3 flex-wrap">
+    <MudSelect T="string" @bind-Value="_statusFilter" Label="Status" Style="min-width:160px" Dense="true" Variant="Variant.Outlined">
+        <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
+        <MudSelectItem T="string" Value="@("InProgress")">In Progress</MudSelectItem>
+        <MudSelectItem T="string" Value="@("ClarificationSought")">Clarification Pending</MudSelectItem>
+        <MudSelectItem T="string" Value="@("Reopened")">Reopened</MudSelectItem>
+    </MudSelect>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="Load">Refresh</MudButton>
+</div>
+
+<MudPaper Elevation="1">
+    <MudTable T="RequestListItem" Items="@_items" Dense="true" Hover="true" Class="rp-data-table" Loading="@_loading"
+              RowClass="cursor-pointer" OnRowClick="@((TableRowClickEventArgs<RequestListItem> e) => Nav.NavigateTo($"requests/{e.Item.Id}"))">
+        <HeaderContent>
+            <MudTh>Ref #</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Subject</MudTh>
+            <MudTh>Raised By</MudTh>
+            <MudTh>Unit</MudTh>
+            <MudTh>Level</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>SLA Due</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <MudLink Href="@($"requests/{context.Id}")" Color="Color.Primary">@context.ReqNo</MudLink>
+            </MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.RequestTypeName</MudChip></MudTd>
+            <MudTd Style="max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@context.Subject</MudTd>
+            <MudTd>@context.RaisedByName</MudTd>
+            <MudTd>@context.UnitName</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Default">L@context.CurrentLevel</MudChip></MudTd>
+            <MudTd>@StatusChip(context.Status)</MudTd>
+            <MudTd>@SlaCell(context.SlaDueUtc)</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-4" Color="Color.Secondary">No requests match the current filter.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<RequestListItem> _items = new();
+    private bool _loading;
+    private string _statusFilter = "";
+    private int _total, _breached, _dueToday, _clarif;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        var filter = new FilterDto(Status: string.IsNullOrEmpty(_statusFilter) ? null : _statusFilter, PageSize: 200);
+        var (items, _) = await RequestRepo.ListAsync(filter, null, null);
+        _items    = items.Where(i => i.Status is not ("Closed" or "Cancelled" or "Resolved")).ToList();
+        var now   = DateTime.UtcNow;
+        _total    = _items.Count;
+        _breached = _items.Count(i => i.SlaDueUtc.HasValue && i.SlaDueUtc < now);
+        _dueToday = _items.Count(i => i.SlaDueUtc.HasValue && i.SlaDueUtc >= now && i.SlaDueUtc < now.AddDays(1));
+        _clarif   = _items.Count(i => i.Status == "ClarificationSought");
+        _loading  = false;
+    }
+
+    private RenderFragment StatusChip(string status) => __builder =>
+    {
+        var (color, label) = status switch
+        {
+            "InProgress"          => (Color.Primary, "In Progress"),
+            "ClarificationSought" => (Color.Info,    "Clarif. Pending"),
+            "Reopened"            => (Color.Warning,  "Reopened"),
+            "Resolved"            => (Color.Success,  "Resolved"),
+            "Closed"              => (Color.Default,  "Closed"),
+            "Cancelled"           => (Color.Error,    "Cancelled"),
+            _                     => (Color.Default,  status)
+        };
+        __builder.OpenComponent<MudChip<string>>(0);
+        __builder.AddAttribute(1, "Size", Size.Small);
+        __builder.AddAttribute(2, "Color", color);
+        __builder.AddAttribute(3, "Variant", Variant.Filled);
+        __builder.AddAttribute(4, "ChildContent", (RenderFragment)(_ => _.AddContent(5, label)));
+        __builder.CloseComponent();
+    };
+
+    private RenderFragment SlaCell(DateTime? due) => __builder =>
+    {
+        if (!due.HasValue) { __builder.AddContent(0, "—"); return; }
+        var diff = due.Value - DateTime.UtcNow;
+        var style = diff.TotalHours < 0
+            ? "color:#cf222e;font-weight:600"
+            : diff.TotalHours < 24
+                ? "color:#9a6700;font-weight:600"
+                : "";
+        var label = diff.TotalHours < 0
+            ? $"Breached {(-diff).Days}d {(-diff).Hours}h ago"
+            : diff.TotalHours < 24
+                ? $"Due in {(int)diff.TotalHours}h"
+                : AppTime.ToIndia(due.Value).ToString("dd-MMM HH:mm");
+        __builder.OpenElement(0, "span");
+        __builder.AddAttribute(1, "style", style);
+        __builder.AddContent(2, label);
+        __builder.CloseElement();
+    };
+}

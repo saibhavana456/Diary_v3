@@ -1,0 +1,132 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@page "/admin/rbac/audit"
+@inject IRbacRepo Repo
+@inject IUserRepo Users
+
+<PageTitle>RBAC Audit Log</PageTitle>
+
+<PageHeader PageKey="rbac-audit-log" Title="RBAC Audit Log" Subtitle="Every RBAC mutation — module / menu / permission / admin-rights changes"
+            Crumbs="_crumbs" />
+
+<MudPaper Elevation="1" Class="pa-3">
+    @* Filter bar — all inputs use Outlined variant + Label so baselines align *@
+    <div class="d-flex flex-wrap gap-3 align-end mb-3">
+        <div style="flex:2; min-width:220px;">
+            <MudTextField @bind-Value="_search" Label="Filter target / details"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" />
+        </div>
+        <div style="flex:1; min-width:180px;">
+            <MudSelect T="RbacAuditAction?" @bind-Value="_actionFilter" Label="Action"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="RbacAuditAction?" Value="@((RbacAuditAction?)null)">— all —</MudSelectItem>
+                @foreach (var a in Enum.GetValues<RbacAuditAction>())
+                {
+                    <MudSelectItem T="RbacAuditAction?" Value="@a">@a</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+        <div style="width:140px;">
+            <MudNumericField T="int" @bind-Value="_take" Label="Recent rows"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Min="50" Max="2000" Step="50" />
+        </div>
+        <div style="padding-bottom:2px;">
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="ReloadAsync" Style="height:40px;">Refresh</MudButton>
+        </div>
+    </div>
+
+    <MudTable Items="@FilteredRows" Dense="true" Hover="true" Striped="true"
+              SortLabel="Sort By" Class="rp-data-table">
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<Row, object>(r => r.At)" InitialDirection="SortDirection.Descending">When</MudTableSortLabel></MudTh>
+            <MudTh>Actor</MudTh>
+            <MudTh>Action</MudTh>
+            <MudTh>Target</MudTh>
+            <MudTh>Details</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@AppTime.ToIndia(context.At).ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+            <MudTd>@context.ActorName</MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Color="@ActionColor(context.Action)">@context.Action</MudChip>
+            </MudTd>
+            <MudTd><code>@context.Target</code></MudTd>
+            <MudTd><small>@context.Details</small></MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="@(new[] { 25, 50, 100, 200 })" />
+        </PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Administration"),
+        new("RBAC Audit Log"),
+    };
+
+    private List<Row> _rows = new();
+    private string _search = "";
+    private RbacAuditAction? _actionFilter;
+    private int _take = 200;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        var audits = await Repo.ListAuditAsync(_take);
+        var actorCodes = audits.Select(a => a.ActorEmpCode).Where(c => c is not null).Distinct().ToList()!;
+        var nameMap = new Dictionary<string, string>();
+        if (actorCodes.Count > 0)
+        {
+            var users = await Users.GetByEmpCodesAsync(actorCodes!);
+            foreach (var u in users)
+                nameMap[u.EmpCode] = u.Name ?? u.EmpCode;
+            foreach (var code in actorCodes.Where(c => !nameMap.ContainsKey(c!)))
+                nameMap[code!] = code!;
+        }
+        _rows = audits.Select(a => new Row(
+            a.AtUtc,
+            a.ActorEmpCode is null ? "—" : nameMap.GetValueOrDefault(a.ActorEmpCode, a.ActorEmpCode),
+            a.Action,
+            a.Target,
+            a.Details
+        )).ToList();
+    }
+
+    private IEnumerable<Row> FilteredRows
+    {
+        get
+        {
+            IEnumerable<Row> q = _rows;
+            if (_actionFilter is RbacAuditAction act)
+                q = q.Where(r => r.Action == act);
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var s = _search.Trim();
+                q = q.Where(r => r.Target.Contains(s, StringComparison.OrdinalIgnoreCase)
+                              || (r.Details ?? "").Contains(s, StringComparison.OrdinalIgnoreCase));
+            }
+            return q;
+        }
+    }
+
+    private static Color ActionColor(RbacAuditAction a) => a switch
+    {
+        RbacAuditAction.GrantAppAdmin       => Color.Success,
+        RbacAuditAction.RevokeAppAdmin      => Color.Error,
+        RbacAuditAction.DeleteModule        => Color.Error,
+        RbacAuditAction.DeleteMenu          => Color.Error,
+        RbacAuditAction.DisableMenu         => Color.Warning,
+        RbacAuditAction.EnableMenu          => Color.Success,
+        RbacAuditAction.UpsertRolePerm      => Color.Info,
+        RbacAuditAction.UpsertUserOverride  => Color.Info,
+        _                                   => Color.Default
+    };
+
+    private sealed record Row(DateTime At, string ActorName, RbacAuditAction Action, string Target, string? Details);
+}

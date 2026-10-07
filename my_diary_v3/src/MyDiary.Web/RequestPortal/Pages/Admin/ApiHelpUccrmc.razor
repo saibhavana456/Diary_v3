@@ -1,0 +1,215 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/api-help/uccrmc"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+
+<PageTitle>API Help — UCCRMC Alerts</PageTitle>
+
+<PageHeader PageKey="admin-api-help-uccrmc" Title="API Help — UCCRMC Alerts"
+            Crumbs="_crumbs"
+            Subtitle="The UCCRMC command centre raises 'UCCRMC Alert' tickets, tracks their status, and reads closure/pendency figures over REST. All endpoints authenticate with a server-to-server API key (X-Api-Key header)." />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-6" Elevation="1">
+            <MudText Typo="Typo.h6">Base URL</MudText>
+            <MudText Class="rp-mono mt-1">@_baseUrl/api/uccrmc</MudText>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Authentication</MudText>
+            <MudText Typo="Typo.body2">
+                Send the shared secret in an <span class="rp-mono">X-Api-Key</span> header. In this
+                environment the UCCRMC key is configured under <span class="rp-mono">ApiKeys:UCCRMC</span>.
+                Assignee and requester are identified by <b>employee (PF) code</b>.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Endpoints</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.AddAlert"  Text="POST /api/uccrmc/alerts                          — raise an alert ticket" />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Search"    Text="GET  /api/uccrmc/alerts/{alertId}/status         — status of a raised alert" />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.BarChart"  Text="GET  /api/uccrmc/alerts/dashboard?from=&to=      — closure / pendency figures" />
+            </MudList>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">1) Create an alert ticket — Request</MudText>
+            <MudText Typo="Typo.body2">POST <span class="rp-mono">@_baseUrl/api/uccrmc/alerts</span></MudText>
+            <pre class="rp-codeblock">@CreateSample</pre>
+
+            <MudText Typo="Typo.h6" Class="mt-4">Field reference</MudText>
+            <MudSimpleTable Dense="true" Striped="true" Class="rp-help-table">
+                <thead>
+                    <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>alertId</td><td>string</td><td>yes</td><td>UCCRMC alert identifier. Stored on the ticket; used for status lookups. Idempotent — re-posting the same alertId returns the existing ticket.</td></tr>
+                    <tr><td>assigneeEmpCode</td><td>string</td><td>yes</td><td>Employee/PF code the ticket is assigned to (the handler). Routing is bypassed — this is the L1 assignee.</td></tr>
+                    <tr><td>requesterEmpCode</td><td>string</td><td>yes</td><td>Employee/PF code of the IT employee raising the alert (the requester).</td></tr>
+                    <tr><td>subject</td><td>string</td><td>no</td><td>Defaults to "UCCRMC Alert {alertId}".</td></tr>
+                    <tr><td>description</td><td>string</td><td>no</td><td>Optional alert details shown on the ticket.</td></tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudText Typo="Typo.h6" Class="mt-4">Create — Response (201 Created)</MudText>
+            <pre class="rp-codeblock">@CreateResponseSample</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">2) Check alert status</MudText>
+            <MudText Typo="Typo.body2">GET <span class="rp-mono">@_baseUrl/api/uccrmc/alerts/ALERT-2026-0042/status</span></MudText>
+            <pre class="rp-codeblock">@StatusSample</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">3) Dashboard — closure &amp; pendency</MudText>
+            <MudText Typo="Typo.body2">
+                GET <span class="rp-mono">@_baseUrl/api/uccrmc/alerts/dashboard?from=2026-01-01&to=2026-12-31</span>
+                (both query params optional; UTC dates)
+            </MudText>
+            <pre class="rp-codeblock">@DashboardSample</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">curl examples</MudText>
+            <pre class="rp-codeblock">@CurlSamples</pre>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6">Errors</MudText>
+            <MudSimpleTable Dense="true" Striped="true" Class="rp-help-table">
+                <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+                <tbody>
+                    <tr><td>401 Unauthorized</td><td>Missing or invalid <span class="rp-mono">X-Api-Key</span> header.</td></tr>
+                    <tr><td>400 Bad Request</td><td>Missing <span class="rp-mono">alertId</span>, <span class="rp-mono">assigneeEmpCode</span> or <span class="rp-mono">requesterEmpCode</span>.</td></tr>
+                    <tr><td>422 Unprocessable</td><td>UCCRMC classification not seeded — run <span class="rp-mono">RP_08_uccrmc.sql</span>.</td></tr>
+                    <tr><td>404 Not Found</td><td>Status lookup for an unknown alertId.</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6">How it maps</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Category" Text="Tickets are created as request type 'UCCRMC Alert' with a fixed UCCRMC classification (Unit → Vertical → Department → Activity)." />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.AssignmentInd" Text="The assignee is set directly (L1) — the command centre owns routing, not the portal's rules engine." />
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Dashboard" Text="Alerts flow into the Request Dashboard automatically; the Oversight page also shows a dedicated UCCRMC card." />
+            </MudList>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mt-3" Elevation="1">
+            <MudText Typo="Typo.h6">Status values</MudText>
+            <MudText Typo="Typo.body2">
+                <span class="rp-mono">Submitted, InProgress, ClarificationSought, ReturnedToEmployee,
+                Resolved, Closed, Reopened, Cancelled</span>. Alerts are created <b>InProgress</b>.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+    </Authorized>
+</AuthorizeView>
+
+<style>
+    .rp-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .rp-codeblock {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 6px;
+        overflow-x: auto; font-size: 12.5px; line-height: 1.5; margin: 8px 0; white-space: pre;
+    }
+    .rp-help-table th { background: #f4f5f7; font-weight: 600; }
+    .rp-help-table td, .rp-help-table th { padding: 8px 10px; vertical-align: top; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("API Admin"),
+        new("UCCRMC Alerts"),
+    };
+
+    private string _baseUrl = "https://requestportal.example.com";
+
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Nav.BaseUri.TrimEnd('/'));
+        _baseUrl = $"{uri.Scheme}://{uri.Authority}";
+    }
+
+    private const string CreateSample = @"{
+  ""alertId"": ""ALERT-2026-0042"",
+  ""assigneeEmpCode"": ""10007"",
+  ""requesterEmpCode"": ""10001"",
+  ""subject"": ""Suspicious login burst on core banking"",
+  ""description"": ""UCCRMC detected 42 failed logins in 60s from a single IP.""
+}";
+
+    private const string CreateResponseSample = @"HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  ""requestId"": 90231,
+  ""reqNo"": ""UC202607031042"",
+  ""alertId"": ""ALERT-2026-0042"",
+  ""status"": ""InProgress""
+}";
+
+    private const string StatusSample = @"HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  ""alertId"": ""ALERT-2026-0042"",
+  ""requestId"": 90231,
+  ""reqNo"": ""UC202607031042"",
+  ""status"": ""InProgress"",
+  ""currentLevel"": 1,
+  ""requesterEmpCode"": ""10001"",
+  ""assigneeEmpCode"": ""10007"",
+  ""createdAt"": ""2026-07-03T09:14:22Z"",
+  ""closedAt"": null,
+  ""slaDueUtc"": ""2026-07-04T09:14:22Z"",
+  ""isOverdue"": false
+}";
+
+    private const string DashboardSample = @"HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  ""total"": 128,
+  ""open"": 34,
+  ""resolved"": 12,
+  ""closed"": 78,
+  ""cancelled"": 4,
+  ""overdue"": 6,
+  ""closureRatePct"": 60.9,
+  ""fromUtc"": ""2026-01-01T00:00:00Z"",
+  ""toUtc"": ""2026-12-31T00:00:00Z"",
+  ""daily"": [
+    { ""day"": ""2026-07-01T00:00:00"", ""raised"": 9, ""closed"": 7 },
+    { ""day"": ""2026-07-02T00:00:00"", ""raised"": 11, ""closed"": 6 }
+  ]
+}";
+
+    private const string CurlSamples = @"# 1) Raise an alert ticket
+curl -X POST ""https://requestportal.example.com/api/uccrmc/alerts"" \
+     -H ""X-Api-Key: <uccrmc-key>"" \
+     -H ""Content-Type: application/json"" \
+     -d '{
+           ""alertId"": ""ALERT-2026-0042"",
+           ""assigneeEmpCode"": ""10007"",
+           ""requesterEmpCode"": ""10001""
+         }'
+
+# 2) Check status
+curl -H ""X-Api-Key: <uccrmc-key>"" \
+     ""https://requestportal.example.com/api/uccrmc/alerts/ALERT-2026-0042/status""
+
+# 3) Dashboard (closure / pendency)
+curl -H ""X-Api-Key: <uccrmc-key>"" \
+     ""https://requestportal.example.com/api/uccrmc/alerts/dashboard?from=2026-01-01&to=2026-12-31""";
+}

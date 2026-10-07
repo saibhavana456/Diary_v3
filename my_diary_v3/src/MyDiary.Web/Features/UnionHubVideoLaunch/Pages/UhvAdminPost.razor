@@ -1,0 +1,229 @@
+@page "/union-hub/video-launch/new"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.UnionHubVideoLaunch.Services
+@using MyDiary.Web.Features.UnionHubVideoLaunch.Models.DTO
+@using global::RequestPortal.Core.Abstractions
+@inject IUnionHubVideoLaunchService Uhv
+@inject INotificationApi NotificationApi
+@inject ICurrentUser CurrentUser
+@inject global::MyDiary.Core.Abstractions.ICurrentUser MdCurrentUser
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<PageTitle>Post a Product Launch — UBI Products</PageTitle>
+
+<PageHeader Title="Post a Product Launch" Subtitle="Union Hub Admins only — upload the launch video plus optional collateral, then publish to notify employees."
+            Crumbs="@(new List<PageHeader.Crumb> { new("Union Hub", "union-hub"), new("UBI Products", "union-hub/video-launch"), new("New") })" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="1" Style="max-width:760px;">
+    <MudSelect T="long" Label="Vertical" @bind-Value="_verticalId" Required="true" Class="mb-3">
+        @foreach (var v in _verticals)
+        {
+            <MudSelectItem T="long" Value="@v.Id">@v.Name</MudSelectItem>
+        }
+    </MudSelect>
+
+    <MudTextField @bind-Value="_productName" Label="Product Name" Required="true" Class="mb-3" />
+    <MudDatePicker @bind-Date="_launchDate" Label="Launch Date" Required="true" Class="mb-3" />
+    <MudTextField @bind-Value="_description" Label="Product Description" Lines="4" Class="mb-4" />
+
+    <MudText Typo="Typo.subtitle2" Class="mb-1">Product Video (required to publish)</MudText>
+    <InputFile OnChange="OnVideoSelected" accept="video/*" />
+    @if (_video is not null) { <MudText Typo="Typo.caption" Color="Color.Secondary">Selected: @_video.FileName (@FmtSize(_video.Content.Length))</MudText> }
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Images</MudText>
+    <InputFile OnChange="@((e) => OnCollateralSelected(e, "IMAGE"))" accept="image/*" multiple />
+    <MudText Typo="Typo.caption" Color="Color.Secondary">@_images.Count selected</MudText>
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Infographics</MudText>
+    <InputFile OnChange="@((e) => OnCollateralSelected(e, "INFOGRAPHIC"))" accept="image/*,.pdf" multiple />
+    <MudText Typo="Typo.caption" Color="Color.Secondary">@_infographics.Count selected</MudText>
+
+    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">PPTs</MudText>
+    <InputFile OnChange="@((e) => OnCollateralSelected(e, "PPT"))" accept=".ppt,.pptx" multiple />
+    <MudText Typo="Typo.caption" Color="Color.Secondary">@_ppts.Count selected</MudText>
+
+    <MudStack Row="true" Class="mt-5" Spacing="3">
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="SaveDraftAsync" Disabled="_busy">Save as Draft</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAndPublishAsync" Disabled="_busy">Save &amp; Publish</MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudText Typo="Typo.h6" Class="mb-2">Existing Launches</MudText>
+<MudTable Items="_existing" Hover="true" Dense="true">
+    <HeaderContent>
+        <MudTh>Product</MudTh><MudTh>Vertical</MudTh><MudTh>Launch Date</MudTh><MudTh>Status</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.ProductName</MudTd>
+        <MudTd>@context.VerticalName</MudTd>
+        <MudTd>@context.LaunchDate.ToString("dd-MMM-yyyy")</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@(context.Status == "PUBLISHED" ? Color.Success : Color.Default)">@context.Status</MudChip>
+        </MudTd>
+        <MudTd>
+            @if (context.Status == "DRAFT")
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Disabled="!context.HasVideo || _busy"
+                           OnClick="@(() => PublishExistingAsync(context.Id))">Publish</MudButton>
+            }
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@code {
+    // Interpretive decision: "Save as draft, then a separate Publish action" is implemented
+    // as one form with two buttons (Save as Draft / Save & Publish) plus a Publish action on
+    // any existing draft row below — covers both "draft now, publish later" and "post & go live
+    // immediately" without a second page.
+    private List<UhvVertical> _verticals = new();
+    private List<UhvLaunch> _existing = new();
+    private long _verticalId;
+    private string _productName = "";
+    private DateTime? _launchDate = DateTime.Today;
+    private string _description = "";
+    private UhvUploadFile? _video;
+    private List<UhvUploadFile> _images = new();
+    private List<UhvUploadFile> _infographics = new();
+    private List<UhvUploadFile> _ppts = new();
+    private bool _busy;
+
+    private const long MaxVideoSize = 500 * 1024 * 1024;   // 500 MB
+    private const long MaxOtherSize = 25 * 1024 * 1024;    // 25 MB per collateral file
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verticals = await Uhv.ListVerticalsAsync();
+        if (_verticals.Count > 0) _verticalId = _verticals[0].Id;
+        _existing = await Uhv.ListAllForAdminAsync();
+    }
+
+    private async Task OnVideoSelected(InputFileChangeEventArgs e)
+    {
+        var f = e.File;
+        await using var ms = new MemoryStream();
+        await f.OpenReadStream(MaxVideoSize).CopyToAsync(ms);
+        _video = new UhvUploadFile { FileName = f.Name, Mime = f.ContentType, Content = ms.ToArray() };
+    }
+
+    private async Task OnCollateralSelected(InputFileChangeEventArgs e, string kind)
+    {
+        var target = kind switch { "IMAGE" => _images, "INFOGRAPHIC" => _infographics, _ => _ppts };
+        foreach (var f in e.GetMultipleFiles(20))
+        {
+            await using var ms = new MemoryStream();
+            await f.OpenReadStream(MaxOtherSize).CopyToAsync(ms);
+            target.Add(new UhvUploadFile { FileName = f.Name, Mime = f.ContentType, Content = ms.ToArray() });
+        }
+    }
+
+    private static string FmtSize(long bytes) => bytes < 1024 * 1024
+        ? $"{bytes / 1024.0:F0} KB" : $"{bytes / (1024.0 * 1024):F1} MB";
+
+    private UhvCreateDraftRequest BuildRequest()
+    {
+        var req = new UhvCreateDraftRequest
+        {
+            VerticalId = _verticalId,
+            ProductName = _productName.Trim(),
+            LaunchDate = _launchDate ?? DateTime.Today,
+            Description = string.IsNullOrWhiteSpace(_description) ? null : _description.Trim(),
+            Video = _video,
+            CreatedByEmp = CurrentUser.EmpCode ?? MdCurrentUser.EmplId ?? "UNKNOWN",
+        };
+        req.Attachments.AddRange(_images.Select(f => ("IMAGE", f)));
+        req.Attachments.AddRange(_infographics.Select(f => ("INFOGRAPHIC", f)));
+        req.Attachments.AddRange(_ppts.Select(f => ("PPT", f)));
+        return req;
+    }
+
+    private bool ValidateBasics()
+    {
+        if (_verticalId <= 0) { Snackbar.Add("Select a vertical.", Severity.Warning); return false; }
+        if (string.IsNullOrWhiteSpace(_productName)) { Snackbar.Add("Enter a product name.", Severity.Warning); return false; }
+        return true;
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (!ValidateBasics()) return;
+        _busy = true;
+        try
+        {
+            await Uhv.CreateDraftAsync(BuildRequest());
+            Snackbar.Add("Draft saved.", Severity.Success);
+            ResetForm();
+            _existing = await Uhv.ListAllForAdminAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveAndPublishAsync()
+    {
+        if (!ValidateBasics()) return;
+        if (_video is null) { Snackbar.Add("A video is required to publish.", Severity.Warning); return; }
+        _busy = true;
+        try
+        {
+            var id = await Uhv.CreateDraftAsync(BuildRequest());
+            await PublishAndNotifyAsync(id);
+            ResetForm();
+            _existing = await Uhv.ListAllForAdminAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task PublishExistingAsync(long id)
+    {
+        _busy = true;
+        try
+        {
+            await PublishAndNotifyAsync(id);
+            _existing = await Uhv.ListAllForAdminAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task PublishAndNotifyAsync(long launchId)
+    {
+        var launch = await Uhv.PublishAsync(launchId);
+        if (launch is null)
+        {
+            Snackbar.Add("Could not publish (already published or missing).", Severity.Warning);
+            return;
+        }
+        Snackbar.Add("Published. Notifying employees…", Severity.Success);
+
+        // In-app notification fan-out, reusing this app's existing bell-notification
+        // mechanism (INotificationApi / RP_NOTIFICATION) rather than inventing a parallel
+        // one, per the brief. Email/SMS/WhatsApp are explicitly out of scope here.
+        var empCodes = await Uhv.ListActiveEmployeeCodesAsync();
+        foreach (var emp in empCodes)
+        {
+            if (!long.TryParse(emp, out var userId)) continue;
+            try
+            {
+                await NotificationApi.CreateAsync(new global::RequestPortal.Core.Dtos.CreateNotificationRequest
+                {
+                    UserId = userId,
+                    Title = "New product launch video",
+                    Message = $"{launch.ProductName} ({launch.VerticalName}) is now live on UBI Products.",
+                    Category = "UnionHubVideoLaunch",
+                    RedirectUrl = "union-hub/video-launch",
+                    Source = global::RequestPortal.Core.Models.NotificationSource.System,
+                    EventCode = "UHV_PUBLISHED",
+                });
+            }
+            catch { /* best-effort per recipient — one bad row shouldn't block the rest */ }
+        }
+    }
+
+    private void ResetForm()
+    {
+        _productName = ""; _description = ""; _launchDate = DateTime.Today;
+        _video = null; _images.Clear(); _infographics.Clear(); _ppts.Clear();
+    }
+}

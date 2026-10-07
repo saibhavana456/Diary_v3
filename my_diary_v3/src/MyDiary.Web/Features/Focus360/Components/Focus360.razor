@@ -1,0 +1,965 @@
+@page "/focus360"
+@page "/app/focus360"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using MudBlazor
+@using System.Data
+@using MyDiary.Web.Features.Focus360.Services
+@using MyDiary.Web.Features.Focus360.Models
+@using MyDiary.Web.Core.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@inject IGapService GapSvc
+@inject GapExportService ExportSvc
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@using Microsoft.Extensions.Options
+@using MyDiary.Web.Features.OperationDashboard.Services
+@inject IOptions<GapReportSettings> ReportConfig
+@inject IOperationDashboardService DashboardService
+@inject ILandingDashboardV2Service LandingDashboardService
+@using MyDiary.Web.Features.Shared.Components
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Core.Extensions
+@inject IStaticAssetPathResolver Assets
+
+<PageTitle>Focus 360° — Financial Operational and Compliance Unit Snapshot</PageTitle>
+
+@* ── Page Header ─────────────────────────────── *@
+<PageHeader PageKey="focus360" Title="Focus 360°"
+            Crumbs="_crumbs"
+            Subtitle="Financial Operational and Compliance Unit Snapshot" />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+            @* ── Filter bar with RBAC-aware cascading dropdowns ───────────────────────────── *@
+            <MudGrid Spacing="2" Class="p-2 align-center">
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string" Label="Zone" Value="@_selectedZone" ValueChanged="OnZoneChangedAsync"
+                               Disabled="@_isZoneDisabled" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                               PopoverClass="zone-dropdown-popover"
+                               Class="a11y-combobox"
+                               id="zone-select"
+                               aria-label="Select Zone">
+                        @if (CanViewAll)
+                        {
+                            <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                        }
+                        @foreach (var zone in _zones)
+                        {
+                            <MudSelectItem Value="@zone.zone_solid">@zone.zone_name_eng</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string" Label="Region" Value="@_selectedRegion" ValueChanged="OnRegionChangedAsync"
+                               Disabled="@_isRegionDisabled" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                               PopoverClass="region-dropdown-popover"
+                               Class="a11y-combobox"
+                               id="region-select"
+                               aria-label="Select Region">
+                        <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                        @foreach (var region in _regions)
+                        {
+                            <MudSelectItem Value="@region.region_solid">@region.region_name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudSelect T="string" Label="Branch" Value="@_selectedBranch" ValueChanged="OnBranchChangedAsync"
+                               Disabled="@_isBranchDisabled" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft"
+                               PopoverClass="branch-dropdown-popover"
+                               Class="a11y-combobox"
+                               id="branch-select"
+                               aria-label="Select Branch">
+                        <MudSelectItem T="string" Value="@("ALL")">ALL</MudSelectItem>
+                        @foreach (var branch in _branches)
+                        {
+                            <MudSelectItem Value="@branch.SOL_ID">@branch.branch_name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2"></MudItem>
+                <MudItem xs="12" sm="4" Class="d-flex align-right gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Medium"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               OnClick="LoadReport" Disabled="@_loading"
+                               Style="white-space:nowrap">
+                        @(_loading ? "Loading…" : "Load Report")
+                    </MudButton>
+                    @if (_report is not null)
+                    {
+                        <MudTooltip Text="Export to Excel">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Medium"
+                                       StartIcon="@Icons.Material.Filled.TableChart"
+                                       OnClick="DownloadExcel">Excel</MudButton>
+                        </MudTooltip>
+                        <MudTooltip Text="Export to PDF">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Medium"
+                                       StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                                       OnClick="DownloadPdf">PDF</MudButton>
+                        </MudTooltip>
+                        <MudTooltip Text="Export to CSV">
+                            <MudButton Variant="Variant.Outlined" Size="Size.Medium"
+                                       StartIcon="@Icons.Material.Filled.FileDownload"
+                                       OnClick="DownloadCsv">CSV</MudButton>
+                        </MudTooltip>
+                    }
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_loading)
+{
+    <div class="text-center pa-8">
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        <MudText Class="mt-3" Color="Color.Secondary">Loading performance report…</MudText>
+    </div>
+}
+
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+
+else if (_report is not null)
+{
+
+    var asOn = _report.AsOnDate?.ToString("dd-MMM-yyyy") ?? "—";
+
+    @* ══ 1. BRANCH DETAILS ══════════════════════════════════════════════════ *@
+    <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+        <div class="f360-sec-hdr" style="background:#0D47A1">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" Class="mr-2" />
+            Branch / ZO Details
+            <span class="f360-sec-sub ml-2">As on @asOn</span>
+        </div>
+        <div style="background:#E3F2FD">
+            <MudGrid Spacing="1" Class="pa-2">
+                @InfoCell("Branch", _report.Branch.BranchName)
+                @InfoCell("Code", _report.Branch.BranchCode)
+                @InfoCell("Region", _report.Branch.RegionName)
+                @InfoCell("Zone", _report.Branch.ZoneName)
+
+                @if (IsBranchLevelReport)
+                {
+                    @InfoCell("BM", $"{_report.Branch.ZMBMName} ({_report.Branch.ZMBMCode})")
+                    @* @InfoCell("Scale",  _report.Branch.Scale) *@
+                    @InfoCell("Working Since", _report.Branch.WorkingSince?.ToString("dd-MMM-yy") ?? "—")
+                    @InfoCell("Open Date", _report.Branch.BranchOpenDate?.ToString("dd-MMM-yy") ?? "—")
+                    @InfoCell("License No.", _report.Branch.License)
+                }
+                @* @InfoCell("Lease Expiry", _report.Branch.Lease?.ToString("dd-MMM-yy") ?? "—") *@
+
+                @* @InfoCell("Guardian Exec",_report.Branch.GuardianExec) *@
+                @*  @InfoCell("Strong Room Keys", _report.Branch.StrongKeys)
+            @InfoCell("Cash Safe keys", _report.Branch.CashSafeKeys)
+            @InfoCell("ATM Room Keys", _report.Branch.ATMRoomKeys)
+            @InfoCell("Alarm System", _report.Branch.AlarmSystem)
+            @InfoCell("Timings",     _report.Branch.BranchTimeDisplay)*@
+            </MudGrid>
+        </div>
+    </MudPaper>
+
+    @* ══ 2. STAFF STRENGTH ══════════════════════════════════════════════════ *@
+    @if (_report.Staff.Any())
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#1565C0">
+                <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Class="mr-2" />
+                Staff Strength &amp; Key Metrics
+            </div>
+            <div class="pa-2" style="background:#E8F5E9">
+                <div class="d-flex flex-wrap gap-2 align-center">
+                    @foreach (var s in _report.Staff.OrderBy(x => x.SortOrder))
+                    {
+                        <div class="f360-staff-chip @(s.HeadCount==0?"f360-staff-zero":"")">
+                            <div class="f360-grade-code">@s.GradeCode</div>
+                            <div class="f360-grade-count">@s.HeadCount</div>
+                        </div>
+                    }
+                    <div class="f360-staff-chip f360-staff-total">
+                        <div class="f360-grade-code">Total</div>
+                        <div class="f360-grade-count">@_report.TotalStaff</div>
+                    </div>
+                    @if (IsBranchLevelReport)
+                    {
+                        <div class="f360-staff-chip f360-staff-peb">
+                            <div class="f360-grade-code">PEB (Cr)</div>
+                            <div class="f360-grade-count">@_report.PerEmployeeBusiness.ToString("N2")</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </MudPaper>
+    }
+
+    @* ══ 3. PERFORMANCE PIVOT TABLE ═════════════════════════════════════════ *@
+    @if (_report.Performance.Any())
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#004D40">
+                <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" Class="mr-2" />
+                Performance Parameters (₹ in Crore) — As on @asOn
+                <MudChip T="string" Size="Size.Small" Class="ml-auto"
+                         Style="background:rgba(255,255,255,.18);color:#fff">@_report.Performance.Count rows</MudChip>
+            </div>
+            <div style="overflow-x:auto">
+                <table class="f360-perf-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;min-width:180px">Parameter</th>
+                            <th style="width:38px">Unit</th>
+                            <th>Last FY</th>
+                            <th>Curr FY Base</th>
+                            <th style="font-weight:800">Actual</th>
+                            <th>FY Target</th>
+                            <th>Gap to Target</th>
+                            <th>Gap to Target%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            string? lastCat = null; int pi = 0;
+                        }
+                        @foreach (var p in _report.Performance)
+                        {
+                            @if (p.Category != lastCat)
+                            {
+
+                                lastCat = p.Category; pi = 0;
+                                <tr>
+                                    <td colspan="8"
+                                        style="background:@_report.GetCategoryColor(p.Category);color:#fff;font-weight:700;padding:4px 10px;font-size:12px">
+                                        @p.Category
+                                    </td>
+                                </tr>
+                            }
+                            <tr class="@(pi++%2==0?"":"f360-alt-row")">
+                                <td style="text-align:left;padding-left:12px;font-weight:500">@p.ParameterName</td>
+                                <td style="text-align:center;color:#78909C;font-size:11px">@p.UnitLabel</td>
+                                <td>@FmtP(p.BaseLastFyCr, p.DataType)</td>
+                                <td>@FmtP(p.BaseCurrentFyCr, p.DataType)</td>
+                                <td style="font-weight:700">@FmtP(p.ActualCr, p.DataType)</td>
+                                <td>
+                                    @(FmtP(p.TargetCr, p.DataType) == "0.00" ? "—" : FmtP(p.TargetCr, p.DataType))
+                                </td>
+                                <td class="@VC(p.Variance)">@FmtP(p.Variance, p.DataType)</td>
+                                <td class="@VC(p.VariancePct)">@(p.VariancePct.HasValue ? $"{p.VariancePct:F1}%" : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </MudPaper>
+    }
+
+    @* ══ 4. BUSINESS ACTIVITY — Loans + Deposits side-by-side ═══════════════ *@
+    @if (_report.LoanActivity.Any(r => r.HasData) || _report.DepositActivity.Any(r => r.HasData))
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#2E7D32">
+                <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Small" Class="mr-2" />
+                Business Activity — Current Month  (as on @asOn)
+            </div>
+            <MudGrid Spacing="0">
+                @if (_report.LoanActivity.Any(r => r.HasData))
+                {
+                    <MudItem xs="12" md="6" Style="border-right:1px solid #CFD8DC">
+                        <div class="f360-subsec-hdr" style="background:#388E3C">Loan Sanctions &amp; Disbursements</div>
+                        <table class="f360-inner-table">
+                            <thead><tr><th>Segment</th><th>Sanctioned (No.)</th><th>Disbursed (Cr)</th></tr></thead>
+                            <tbody>
+                                @{
+                                    int li = 0;
+                                }
+                                @foreach (var row in _report.LoanActivity)
+                                {
+                                    <tr class="@(li++%2==0?"":"f360-alt-row")">
+                                        <td class="f360-lbl">@row.Segment</td>
+                                        <td>@row.Sanctioned</td>
+                                        <td>@row.Disbursed</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </MudItem>
+                }
+                @if (_report.DepositActivity.Any(r => r.HasData))
+                {
+                    <MudItem xs="12" md="6">
+                        <div class="f360-subsec-hdr" style="background:#1976D2">Deposit Account Activity</div>
+                        <table class="f360-inner-table">
+                            <thead><tr><th>Segment</th><th>A/cs Opened (No.)</th><th>Amount (Cr)</th></tr></thead>
+                            <tbody>
+                                @{
+                                    int di = 0;
+                                }
+                                @foreach (var row in _report.DepositActivity)
+                                {
+                                    <tr class="@(di++%2==0?"":"f360-alt-row")">
+                                        <td class="f360-lbl">@row.Segment</td>
+                                        <td>@row.Accounts</td>
+                                        <td>@row.Amount</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    }
+
+    @* ══ 5. ASSET QUALITY — NPA + SMA side-by-side ══════════════════════════ *@
+    @if (_report.NpaRows.Any() || _report.SmaRows.Any())
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#B71C1C">
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="mr-2" />
+                Asset Quality — NPA &amp; Stress Accounts (As on @asOn)
+            </div>
+            <MudGrid Spacing="0">
+                @if (_report.NpaRows.Any())
+                {
+                    <MudItem xs="12" md="6" Style="border-right:1px solid #FFCDD2">
+                        <div class="f360-subsec-hdr" style="background:#C62828">NPA (Gross)</div>
+                        <table class="f360-inner-table">
+                            <thead><tr><th>Type</th><th>Last FY (Cr)</th><th>Actual (Cr)</th></tr></thead>
+                            <tbody>
+                                @{
+                                    int ni = 0;
+                                }
+                                @foreach (var p in _report.NpaRows)
+                                {
+                                    <tr class="@(ni++%2==0?"":"f360-alt-row")">
+                                        <td class="f360-lbl">@p.ParameterName</td>
+                                        <td>@FmtDec(p.BaseCurrentFyCr)</td>
+                                        <td style="font-weight:700;">@FmtDec(p.ActualCr)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </MudItem>
+                }
+                @if (_report.SmaRows.Any())
+                {
+                    <MudItem xs="12" md="6">
+                        <div class="f360-subsec-hdr" style="background:#D32F2F">SMA / Stress (as on @asOn)</div>
+                        <table class="f360-inner-table">
+                            <thead><tr><th>Category</th><th>Amount (Cr)</th><th>Percentage (%)</th></tr></thead>
+                            <tbody>
+                                @{
+                                    int si = 0;
+                                    var smaAmounts = _report.SmaRows.Where(r => r.DataType != "PERCENTAGE").ToList();
+                                    var smaPcts = _report.SmaRows.Where(r => r.DataType == "PERCENTAGE").ToList();
+                                }
+                                @foreach (var amt in smaAmounts)
+                                {
+                                    var category = amt.ParameterName.Replace(" AMOUNT", "").Replace(" AMT", "").Trim();
+                                    var pctRow = smaPcts.FirstOrDefault(p => p.ParameterName.StartsWith(category, StringComparison.OrdinalIgnoreCase));
+                                    <tr class="@(si++%2==0?"":"f360-alt-row")">
+                                        <td class="f360-lbl">@category</td>
+                                        <td>@FmtDec(amt.ActualCr)</td>
+                                        <td>@(pctRow?.ActualCr != null ? $"{pctRow.ActualCr:F2}" : "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    }
+
+    @* ══ 6. OPERATIONS — Income | Lockers | ATMs + KYC (three columns) ════════ *@
+    @if (_report.IncomeRows.Any() || _report.LockerRows.Any() || _report.ChannelRows.Any())
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#37474F">
+                <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Small" Class="mr-2" />
+                Operations &amp; Channels
+            </div>
+            <MudGrid Spacing="0">
+                @if (_report.IncomeRows.Any())
+                {
+                    <MudItem xs="12" md="4" Style="border-right:1px solid #CFD8DC">
+                        <div class="f360-subsec-hdr" style="background:#455A64">Fee Income / Expense (Cr)</div>
+                        @SimpleTable(_report.IncomeRows, "Particulars", "Actual")
+                    </MudItem>
+                }
+                @if (_report.LockerRows.Any())
+                {
+                    <MudItem xs="12" md="4" Style="border-right:1px solid #CFD8DC">
+                        <div class="f360-subsec-hdr" style="background:#455A64">Locker Status</div>
+                        @SimpleTable(_report.LockerRows, "Metric", "Value")
+                    </MudItem>
+                }
+                @if (_report.ChannelRows.Any())
+                {
+                    <MudItem xs="12" md="4">
+                        <div class="f360-subsec-hdr" style="background:#455A64">ATMs / Channels / KYC Pending</div>
+                        @SimpleTable(_report.ChannelRows, "Metric", "Value")
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    }
+
+    @* ══ 7. DIGITAL BANKING (top-left) + THIRD PARTY (bottom-left) + DIGITAL LOANS (right) ══ *@
+    @if (_report.DigitalBankingTable.Any() || _report.DigitalLoans.Any() || _report.ThirdParty.Any() || _report.FinancialInclusion.Any())
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#1A237E">
+                <MudIcon Icon="@Icons.Material.Filled.PhoneAndroid" Size="Size.Small" Class="mr-2" />
+                Digital Banking &amp; Loans, Third Party Products and Financial Inclusion
+            </div>
+            <MudGrid Spacing="0">
+                @* LEFT column: Digital Banking on top, Third Party below *@
+                <MudItem xs="12" md="6" Style="border-right:1px solid #CFD8DC">
+                    @if (_report.DigitalBankingTable.Any())
+                    {
+                        <div class="f360-subsec-hdr" style="background:#006064">Digital Banking — Registrations &amp; Eligibility</div>
+                        <table class="f360-inner-table">
+                            <thead><tr><th>Product</th><th>Registered (No.)</th><th>Eligible (No.)</th></tr></thead>
+                            <tbody>
+                                @{
+                                    int dbi = 0;
+                                }
+                                @foreach (var row in _report.DigitalBankingTable)
+                                {
+                                    <tr class="@(dbi++%2==0?"":"f360-alt-row")">
+                                        <td class="f360-lbl">@row.Product</td>
+                                        <td>@row.Registered</td>
+                                        <td>@row.Eligible</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    @if (_report.ThirdParty.Any())
+                    {
+                        <div class="f360-subsec-hdr" style="background:#6A1B9A;margin-top:1px">Third Party Products</div>
+                        <table class="f360-inner-table">
+                            <thead><tr><th>Product</th><th>Actual</th>@* <th>Target</th> *@</tr></thead>
+                            <tbody>
+                                @{
+                                    int tpi = 0;
+                                }
+                                @foreach (var p in _report.ThirdParty)
+                                {
+                                    <tr class="@(tpi++%2==0?"":"f360-alt-row")">
+                                        <td class="f360-lbl">@p.ParameterName</td>
+                                        <td>@p.ActualDisplay</td>
+                                       @*  <td>@(FmtDec(p.TargetCr) == "0.00" ? "—" : FmtDec(p.TargetCr))</td> *@
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </MudItem>
+                @* RIGHT column: Digital Loans *@
+                <MudItem xs="12" md="6">
+                    @{ var digitalLoans = _report.GetDigitalLoans(IsBranchLevelReport); }
+                    @if (digitalLoans.Any())
+                    {
+                        <div class="f360-subsec-hdr" style="background:#283593">Digital Loans (₹ in @(IsBranchLevelReport ? "Lakhs" : "Crores"))</div>
+                        <table class="f360-inner-table">
+                            <thead><tr><th>Loan Type</th><th>Actual (@(IsBranchLevelReport ? "L" : "Cr"))</th>@* <th>Target (L)</th> *@</tr></thead>
+                            <tbody>
+                                @{
+                                    int dli = 0;
+                                }
+                                @foreach (var p in digitalLoans)
+                                {
+                                    <tr class="@(dli++%2==0?"":"f360-alt-row")">
+                                        <td class="f360-lbl">@p.ParameterName</td>
+                                        <td>@FmtDec(p.ActualCr)</td>
+                                        @*  <td>@(FmtDec(p.TargetCr)== "0.00" ? "—" : FmtDec(p.TargetCr))</td> *@
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+
+                    @* Financial Inclusion — full-width table *@
+                    @if (_report.FinancialInclusion.Any())
+                    {
+                        <div class="f360-subsec-hdr" style="background:#558B2F">Govt Schemes &amp; Financial Inclusion</div>
+                        <div style="overflow-x:auto">
+                            <table class="f360-inner-table f360-full-table">
+                                <thead><tr><th>Scheme</th><th>Count</th><th>Target</th></tr></thead>
+                                <tbody>
+                                    @{
+                                        int fii = 0;
+                                    }
+                                    @foreach (var p in _report.FinancialInclusion)
+                                    {
+                                        <tr class="@(fii++%2==0?"":"f360-alt-row")">
+                                            <td class="f360-lbl">@p.ParameterName</td>
+                                            <td>@p.ActualDisplay</td>
+                                            <td>@(FmtDec(p.TargetCr) == "0.00" ? "—" : FmtDec(p.TargetCr))</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    }
+
+    @* ══ 8. FINANCIAL INCLUSION (top) + JANSAMARTH 6-col table (below) ════════ *@
+    @* @if (_report.FinancialInclusion.Any() || _report.JanSamarthTable.Any(r => r.HasData))
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#33691E">
+                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" Class="mr-2" />
+                Financial Inclusion &amp; JanSamarth
+            </div>
+
+            @if (_report.FinancialInclusion.Any())
+            {
+                <div class="f360-subsec-hdr" style="background:#558B2F">Govt Schemes &amp; Financial Inclusion</div>
+                <div style="overflow-x:auto">
+                    <table class="f360-inner-table f360-full-table">
+                        <thead><tr><th>Scheme</th><th>Count</th><th>Target</th></tr></thead>
+                        <tbody>
+                            @{
+                                int fii = 0;
+                            }
+                            @foreach (var p in _report.FinancialInclusion)
+                            {
+                                <tr class="@(fii++%2==0?"":"f360-alt-row")">
+                                    <td class="f360-lbl">@p.ParameterName</td>
+                                    <td>@p.ActualDisplay</td>
+                                    <td>@(FmtDec(p.TargetCr) == "0.00" ? "—" : FmtDec(p.TargetCr))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            @if (_report.JanSamarthTable.Any(r => r.HasData))
+            {
+                <div class="f360-subsec-hdr" style="background:#880E4F;margin-top:1px">
+                    JanSamarth — Scheme-wise Status (as on @asOn)
+                </div>
+                <div style="overflow-x:auto">
+                    <table class="f360-inner-table f360-full-table">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left;min-width:110px">Scheme</th>
+                                <th>Total</th>
+                                <th>Sanctioned</th>
+                                <th>Disbursed</th>
+                                <th>Rejected</th>
+                                <th style="font-weight:800">Pending</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int ji = 0;
+                            }
+                            @foreach (var row in _report.JanSamarthTable)
+                            {
+                                <tr class="@(ji++%2==0?"":"f360-alt-row")">
+                                    <td class="f360-lbl" style="color:#880E4F">@row.Scheme</td>
+                                    <td>@row.Total</td>
+                                    <td>@row.Sanctioned</td>
+                                    <td>@row.Disbursed</td>
+                                    <td style="color:#B71C1C">@row.Rejected</td>
+                                    <td style="font-weight:700">@row.Pending</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            </MudPaper>
+    }*@
+
+    @* ══ 9. OPERATIONS DASHBOARD ══════════════════════════════════════════════ *@
+    @if (dashboardData != null)
+    {
+        <MudPaper Elevation="1" Class="mb-3" Style="overflow:hidden">
+            <div class="f360-sec-hdr" style="background:#0070C0">
+                <MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Small" Class="mr-2" />
+                Operations
+            </div>
+            <MudGrid Spacing="0" Class="flex-nowrap">
+                <MudItem xs="6" Style="border-right:1px solid #CFD8DC">
+                    <F360SuspenseSundryPanel DashboardData="dashboardData" />
+                </MudItem>
+                <MudItem xs="6">
+                    <F360DefaultingPanel DashboardData="dashboardData" />
+                </MudItem>
+            </MudGrid>
+            <MudGrid Spacing="0" Class="flex-nowrap" Style="border-top:1px solid #CFD8DC">
+                <MudItem xs="6" Style="border-right:1px solid #CFD8DC">
+                    <F360CashHoldingPanel DashboardData="dashboardData" />
+                </MudItem>
+                <MudItem xs="6">
+                    <F360CustomerComplaintsPanel DashboardData="dashboardData" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    }
+}
+
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Business"),
+        new("Focus 360°"),
+    };
+
+    private List<BranchDto> _branches = new();
+    private List<RegionDto> _regions = new();
+    private List<ZoneDto> _zones = new();
+    private GapReportViewModel? _report = null;
+    private bool _loading = false;
+    private string? _error = null;
+
+    // RBAC-aware cascading dropdown state
+    private string _selectedZone = "ALL";
+    private string _selectedRegion = "ALL";
+    private string _selectedBranch = "ALL";
+    private bool _isZoneDisabled = false;
+    private bool _isRegionDisabled = false;
+    private bool _isBranchDisabled = false;
+
+    // User claims for RBAC
+    private string _loggedInRole = "CO";
+    private string? _loggedInZoneSolid;
+    private string? _loggedInRegionSolid;
+    private string? _loggedInBranchSolid;
+
+    private int scaleCode = 0;
+    private bool CanViewAll = false;
+
+    private bool CanLoadReport => !_loading;
+    private GapReportSettings config = new();
+
+    /// <summary>
+    /// True when a specific branch is selected (not Zone/Region/ALL level).
+    /// Used to conditionally show branch-specific fields (BM, Working Since, Open Date, License).
+    /// </summary>
+    private bool IsBranchLevelReport =>
+        !string.IsNullOrEmpty(_selectedBranch) && _selectedBranch != "ALL";
+
+    // Operations Dashboard state
+    private string currentSolId = null;
+    private bool isLoading = true;
+    private DataSet dashboardData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        config = ReportConfig.Value;
+
+        // Auth state and zones are independent — load in parallel
+        var authTask = AuthStateProvider.GetAuthenticationStateAsync();
+        var zonesTask = LandingDashboardService.GetZonesAsync();
+
+        AuthenticationState authState;
+        try
+        {
+            await Task.WhenAll(authTask, zonesTask);
+            authState = authTask.Result;
+            _zones = zonesTask.Result;
+        }
+        catch
+        {
+            authState = await authTask;
+            try { _zones = await zonesTask; }
+            catch (Exception ex) { AppLogger.LogError(ex, "Focus360: Failed to load zones"); }
+        }
+
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _loggedInRole = user.FindFirst(ClaimTypes.Role)?.Value?.ToUpper()
+                 ?? user.FindFirst("Role")?.Value?.ToUpper()
+                 ?? "CO";
+            _loggedInZoneSolid = user.FindFirst("zone_solid")?.Value;
+            _loggedInRegionSolid = user.FindFirst("region_solid")?.Value;
+            _loggedInBranchSolid = user.FindFirst("branch_solid")?.Value;
+
+            int.TryParse(user.FindFirst("employee_scale_code")?.Value, out scaleCode);
+            CanViewAll = _loggedInRole.Equals("co", StringComparison.OrdinalIgnoreCase) && scaleCode < 6;
+        }
+
+        // Apply role-based security rules (same pattern as Business_New)
+        if (_loggedInRole == "ZONE")
+        {
+            _selectedZone = _loggedInZoneSolid;
+            _isZoneDisabled = true;
+            if (!string.IsNullOrEmpty(_selectedZone))
+                _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+        }
+        else if (_loggedInRole == "REGION")
+        {
+            _selectedZone = _loggedInZoneSolid;
+            _selectedRegion = _loggedInRegionSolid;
+            _isZoneDisabled = true;
+            _isRegionDisabled = true;
+            if (!string.IsNullOrEmpty(_selectedZone))
+                _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+            if (!string.IsNullOrEmpty(_selectedRegion))
+                _branches = await LandingDashboardService.GetBranchesByRegionAsync(_selectedRegion);
+        }
+        else if (_loggedInRole == "BRANCH")
+        {
+            _selectedZone = _loggedInZoneSolid;
+            _selectedRegion = _loggedInRegionSolid;
+            _selectedBranch = _loggedInBranchSolid;
+            _isZoneDisabled = true;
+            _isRegionDisabled = true;
+            _isBranchDisabled = true;
+            if (!string.IsNullOrEmpty(_selectedZone))
+                _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+            if (!string.IsNullOrEmpty(_selectedRegion))
+                _branches = await LandingDashboardService.GetBranchesByRegionAsync(_selectedRegion);
+        }
+        else if (!CanViewAll && _zones.Count > 0)
+        {
+            // CO user with scale >= 6: no "All Zones" option, auto-select first zone
+            _selectedZone = _zones.First().zone_solid;
+            _selectedRegion = "ALL";
+            _selectedBranch = "ALL";
+            _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+        }
+    }
+
+
+    private async Task RefreshDashboard(string newSolId)
+    {
+        isLoading = true;
+        dashboardData = null;
+        StateHasChanged();
+
+        currentSolId = string.IsNullOrWhiteSpace(newSolId) ? null : newSolId.PadLeft(5, '0');
+        dashboardData = await DashboardService.GetDashboardDataAsync(currentSolId);
+        AppLogger.LogInfo($"Focus360: Operations Dashboard loaded — Tables count: {dashboardData?.Tables.Count}");
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    // ── Cascading dropdown handlers ───────────────────────────────────────────
+    private async Task OnZoneChangedAsync(string? newValue)
+    {
+        _selectedZone = newValue ?? "ALL";
+        _selectedRegion = "ALL";
+        _selectedBranch = "ALL";
+        _regions.Clear();
+        _branches.Clear();
+        _report = null;
+        if (_selectedZone != "ALL")
+            _regions = await LandingDashboardService.GetRegionsByZoneAsync(_selectedZone);
+    }
+
+    private async Task OnRegionChangedAsync(string? newValue)
+    {
+        _selectedRegion = newValue ?? "ALL";
+        _selectedBranch = "ALL";
+        _branches.Clear();
+        _report = null;
+        if (_selectedRegion != "ALL")
+            _branches = await LandingDashboardService.GetBranchesByRegionAsync(_selectedRegion);
+    }
+
+    private Task OnBranchChangedAsync(string? newValue)
+    {
+        _selectedBranch = newValue ?? "ALL";
+        _report = null;
+        return Task.CompletedTask;
+    }
+
+    // ── Report loading ────────────────────────────────────────────────────────
+    private async Task LoadReport()
+    {
+        string resolvedSolId = ResolveEffectiveSolId();
+
+        _loading = true; _error = null; _report = null;
+        dashboardData = null;
+        StateHasChanged();
+
+        try
+        {
+            _report = await GapSvc.BuildReportAsync(resolvedSolId, isCOUser: _loggedInRole.Equals("CO", StringComparison.OrdinalIgnoreCase) && resolvedSolId == "80010"); // TBD
+            AppLogger.LogInfo($"Focus360: Report loaded for SOL_ID={resolvedSolId}");
+            await RefreshDashboard(resolvedSolId);
+        }
+        catch (Exception ex)
+        {
+            _error = UserFacingError.Generic;
+            AppLogger.LogError(ex, $"Focus360: Failed to load report for SOL_ID={resolvedSolId}");
+            Snackbar.Add(_error, Severity.Error);
+        }
+        finally { _loading = false; }
+    }
+
+    /// <summary>
+    /// Resolves the effective SOL_ID based on dropdown selection.
+    /// </summary>
+    private string ResolveEffectiveSolId()
+    {
+        if (_selectedBranch != "ALL" && !string.IsNullOrEmpty(_selectedBranch))
+            return _selectedBranch.PadLeft(5, '0');
+        if (_selectedRegion != "ALL" && !string.IsNullOrEmpty(_selectedRegion))
+            return _selectedRegion.PadLeft(5, '0');
+        if (_selectedZone != "ALL" && !string.IsNullOrEmpty(_selectedZone))
+            return _selectedZone.PadLeft(5, '0');
+
+        return _loggedInRole switch
+        {
+            "ZONE"   => (_loggedInZoneSolid ?? "00000").PadLeft(5, '0'),
+            "REGION" => (_loggedInRegionSolid ?? "00000").PadLeft(5, '0'),
+            "BRANCH" => (_loggedInBranchSolid ?? "00000").PadLeft(5, '0'),
+            _        => (_loggedInBranchSolid ?? "00000").PadLeft(5, '0')
+        };
+    }
+
+    // ── Export handlers ───────────────────────────────────────────────────────
+    private async Task DownloadExcel()
+    {
+        if (_report is null) return;
+        var bytes = ExportSvc.ExportToExcel_Styled(_report, dashboardData, IsBranchLevelReport);
+        await JS.InvokeVoidAsync("focus360Download",
+            $"Focus360_{_report.Branch.BranchCode}_{AppTime.Now:yyyyMMdd_HHmm}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
+        AppLogger.LogInfo($"Focus360: Excel exported for {_report.Branch.BranchCode}");
+    }
+
+    private async Task DownloadPdf()
+    {
+        if (_report is null) return;
+        var cfg = ReportConfig.Value;
+
+        var settings = new GapReportSettings
+        {
+            ReportName = cfg.ReportName,
+            BankName = cfg.BankName,
+            ReportFooter = cfg.ReportFooter
+        };
+
+        var appLogo = Assets.Resolve(cfg.AppLogoPath);
+        var coLogo = Assets.Resolve(cfg.LogoPath);
+
+        try
+        {
+            byte[] bytes = GapPdfBuilder.Build(_report, settings, appLogo, coLogo, dashboardData, IsBranchLevelReport);
+            AppLogger.LogInfo($"Focus360: PDF generated — size: {bytes.Length} bytes");
+
+            var stream = new MemoryStream(bytes);
+            stream.Position = 0;
+            using var streamRef = new DotNetStreamReference(stream);
+
+            await JS.InvokeVoidAsync(
+                "focus360DownloadStream",
+                TimeSpan.FromMinutes(2),
+                $"Focus360_{_report.Branch.BranchId}_{AppTime.Now:yyyyMMdd_HHmm}.pdf",
+                streamRef);
+        }
+        catch (JSException ex)
+        {
+            AppLogger.LogError(ex, "Focus360: PDF JS interop failed");
+            Snackbar.Add("PDF download failed", Severity.Error);
+        }
+        catch (TaskCanceledException)
+        {
+            AppLogger.LogWarning("Focus360: PDF download timed out");
+            Snackbar.Add("PDF download timeout", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Focus360: PDF export failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    private async Task DownloadCsv()
+    {
+        if (_report is null) return;
+        var bytes = ExportSvc.ExportToCsv(_report, dashboardData, IsBranchLevelReport);
+        await JS.InvokeVoidAsync("focus360Download",
+            $"Focus360_{_report.Branch.BranchCode}_{AppTime.Now:yyyyMMdd_HHmm}.csv",
+            "text/csv", bytes);
+        AppLogger.LogInfo($"Focus360: CSV exported for {_report.Branch.BranchCode}");
+    }
+
+    // ── Render helpers ────────────────────────────────────────────────────────
+    private static string FmtP(decimal? v, string dtype) =>
+        !v.HasValue ? "—" : dtype == "PERCENTAGE" ? $"{v.Value:F2}%" : v.Value.ToString("N2");
+
+    private static string FmtDec(decimal? v) => v.HasValue ? v.Value.ToString("N2") : "—";
+
+    private static string VC(decimal? v) =>
+        !v.HasValue ? "" : v.Value < 0 ? "f360-neg" : v.Value > 0 ? "f360-pos" : "";
+
+    // 2-column helper table (Name | Actual)
+    private RenderFragment SimpleTable(List<GapPerformanceRow> rows, string col1, string col2) =>
+        @<table class="f360-inner-table">
+            <thead><tr><th>@col1</th><th>@col2</th></tr></thead>
+            <tbody>
+                @{ int i2 = 0; }
+                @foreach (var p in rows)
+                {
+                    <tr class="@(i2++ % 2 == 0 ? "" : "f360-alt-row")">
+                        <td class="f360-lbl">@p.ParameterName</td>
+                        <td style="@(p.ActualAsOn < 0 ? "color:#B71C1C;font-weight:700" : "")">
+                            @SimpleValue(p)
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>;
+
+    // Formats a value for the 2-column helper tables, respecting the row's DataType:
+    // COUNT rows (e.g. Lockers, Channels, KYC) render as whole numbers; PERCENTAGE
+    // rows keep their % suffix; amount rows (Cr/Lakhs) keep 2 decimals. Value shown
+    // absolute since negatives are indicated by red styling on the cell.
+    private static string SimpleValue(GapPerformanceRow p)
+    {
+        // Locker Rent Overdue is maintained in Crores in the source data, so it
+        // must be displayed in Crores (Cr) rather than as a raw COUNT value.
+        if (p.ParameterName.Contains("RENT", StringComparison.OrdinalIgnoreCase) &&
+         p.ParameterName.Contains("OVERDUE", StringComparison.OrdinalIgnoreCase))
+        {
+            return p.ActualCr.HasValue
+            ? $"{Math.Abs(p.ActualCr.Value):N2} Cr"
+            : "—";
+        }
+
+        if (p.DataType == "PERCENTAGE")
+            return p.ActualAsOn.HasValue ? $"{Math.Abs(p.ActualAsOn.Value):F2}%" : "—";
+
+        if (p.DataType is "TOTAL" or "STANDARD" or "LAKHS")
+            return p.ActualCr.HasValue ? Math.Abs(p.ActualCr.Value).ToString("N2") : "—";
+
+        // COUNT (and anything else) → whole-number count
+        return p.ActualAsOn.HasValue ? Math.Abs(p.ActualAsOn.Value).ToString("N0") : "—";
+    }
+
+    // Branch detail info cell
+    private static RenderFragment InfoCell(string label, string value) =>
+        @<MudItem xs="6" sm="4" md="2">
+            <div class="f360-info-lbl">@label</div>
+            <div class="f360-info-val">@value</div>
+        </MudItem>;
+}

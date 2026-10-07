@@ -1,0 +1,163 @@
+@using System.Data
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Focus360.Models
+
+<div class="f360-ops-panel" role="region" aria-label="Suspense and Sundry Entries">
+    <div class="f360-ops-subheader" style="background:#204060;color:#fff;font-weight:700;">Suspense and Sundry Entries</div>
+
+    @if (_error)
+    {
+        <div class="pa-2" role="alert"><small class="text-warning">Data unavailable for this panel.</small></div>
+    }
+    else if (_data == null)
+    {
+        <div class="text-center pa-2"><small class="text-muted">No data available</small></div>
+    }
+    else
+    {
+        <table class="f360-ops-table" aria-label="Suspense and Sundry Entries comparison data">
+            <thead>
+                <tr style="background:#c6e0b4;">
+                    <th></th>
+                    <th>Previous Month<br/><small>(@_data.PrevMonthDt)</small></th>
+                    <th>Previous Day<br/><small>(@_data.PrevDayDt)</small></th>
+                    <th class="today-col">Present Day<br/><small>(@_data.TodayDt)</small></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="section-header-row"><td colspan="4" style="background:#2f75b5;color:#fff;font-weight:700;text-align:left;">Suspense Entries</td></tr>
+                <tr>
+                    <td class="lbl">No. Of Entries</td>
+                    <td>@FmtD(_data.SuspPrevMonthEntries)</td>
+                    <td>@FmtD(_data.SuspPrevDayEntries)</td>
+                    <td class="today-col fw-bold">@FmtD(_data.SuspTodayEntries)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Outstanding</td>
+                    <td>@FmtN(_data.SuspPrevMonthTotal)</td>
+                    <td>@FmtN(_data.SuspPrevDayTotal)</td>
+                    <td class="today-col fw-bold">@FmtN(_data.SuspTodayTotal)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">w/w Older than 90 Days</td>
+                    <td></td>
+                    <td>@FmtD(_data.SuspPrevDay90Entries)</td>
+                    <td class="today-col">@FmtN(_data.SuspToday90Total)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">w/w Older than 180 Days</td>
+                    <td></td>
+                    <td>@FmtD(_data.SuspPrevDay180Entries)</td>
+                    <td class="today-col">@FmtN(_data.SuspToday180Total)</td>
+                </tr>
+                <tr class="var-row">
+                    <td class="lbl">Variations :</td>
+                    <td></td>
+                    <td class="@VarClass(_data.SuspVariation)">@FmtVar(_data.SuspVariation) | @VarPct(_data.SuspVariationPct)</td>
+                    <td class="today-col @VarClass(_data.SuspVarToday)">@FmtVar(_data.SuspVarToday) | @VarPct(_data.SuspVarTodayPct)</td>
+                </tr>
+
+                <tr class="section-header-row"><td colspan="4" style="background:#f4b084;color:#fff;font-weight:700;text-align:left;">Sundry Entries</td></tr>
+                <tr>
+                    <td class="lbl">No. Of Entries</td>
+                    <td>@FmtD(_data.SundPrevMonthEntries)</td>
+                    <td>@FmtD(_data.SundPrevDayEntries)</td>
+                    <td class="today-col fw-bold">@FmtD(_data.SundTodayEntries)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Outstanding</td>
+                    <td>@FmtN(_data.SundPrevMonthTotal)</td>
+                    <td>@FmtN(_data.SundPrevDayTotal)</td>
+                    <td class="today-col fw-bold">@FmtN(_data.SundTodayTotal)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">w/w Older than 90 Days</td>
+                    <td></td>
+                    <td>@FmtD(_data.SundPrevDay90Entries)</td>
+                    <td class="today-col">@FmtN(_data.SundToday90Total)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">w/w Older than 180 Days</td>
+                    <td></td>
+                    <td>@FmtD(_data.SundPrevDay180Entries)</td>
+                    <td class="today-col">@FmtN(_data.SundToday180Total)</td>
+                </tr>
+                <tr class="var-row">
+                    <td class="lbl">Variations :</td>
+                    <td></td>
+                    <td class="@VarClass(_data.SundVariation)">@FmtVar(_data.SundVariation) | @VarPct(_data.SundVariationPct)</td>
+                    <td class="today-col @VarClass(_data.SundVarToday)">@FmtVar(_data.SundVarToday) | @VarPct(_data.SundVarTodayPct)</td>
+                </tr>
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public DataSet? DashboardData { get; set; }
+    private F360SuspenseSundryModel? _data;
+    private bool _error;
+
+    protected override void OnParametersSet()
+    {
+        if (DashboardData == null) return;
+        try { _data = Extract(DashboardData); _error = false; }
+        catch (Exception ex) { AppLogger.LogError(ex, "[F360SuspenseSundryPanel] Extract failed"); _error = true; }
+    }
+
+    private F360SuspenseSundryModel? Extract(DataSet ds)
+    {
+        var model = new F360SuspenseSundryModel();
+        foreach (DataTable table in ds.Tables)
+        {
+            if (table.Rows.Count == 0 || !table.Columns.Contains("TableName")) continue;
+            var name = table.Rows[0]["TableName"]?.ToString();
+            var r = table.Rows[0];
+
+            if (name == "SuspenseOSReport")
+            {
+                model.SuspPrevMonthDt = SafeDate(r, "PrevMonthDt");
+                model.SuspPrevDayDt = SafeDate(r, "PrevDay2Dt");
+                model.SuspTodayDtVal = SafeDate(r, "PrevDayDt");
+                model.SuspPrevMonthEntries = SafeInt(r, "PrevMonthEntries");
+                model.SuspPrevMonthTotal = SafeDec(r, "PrevMonthTotal");
+                model.SuspPrevDayEntries = SafeInt(r, "PrevDay2Entries");
+                model.SuspPrevDayTotal = SafeDec(r, "PrevDay2Total");
+                model.SuspTodayEntries = SafeInt(r, "PrevDayEntries");
+                model.SuspTodayTotal = SafeDec(r, "PrevDayTotal");
+                model.SuspPrevDay90Entries = SafeInt(r, "PrevDayEntries90Days");
+                model.SuspToday90Total = SafeDec(r, "PrevDayTotal90Days");
+                model.SuspPrevDay180Entries = SafeInt(r, "PrevDayEntries180Days");
+                model.SuspToday180Total = SafeDec(r, "PrevDayTotal180Days");
+            }
+            else if (name == "SundryOSReport")
+            {
+                model.SundPrevMonthDt = SafeDate(r, "PrevMonthDt");
+                model.SundPrevDayDt = SafeDate(r, "PrevDay2Dt");
+                model.SundTodayDtVal = SafeDate(r, "PrevDayDt");
+                model.SundPrevMonthEntries = SafeInt(r, "PrevMonthEntries");
+                model.SundPrevMonthTotal = SafeDec(r, "PrevMonthTotal");
+                model.SundPrevDayEntries = SafeInt(r, "PrevDay2Entries");
+                model.SundPrevDayTotal = SafeDec(r, "PrevDay2Total");
+                model.SundTodayEntries = SafeInt(r, "PrevDayEntries");
+                model.SundTodayTotal = SafeDec(r, "PrevDayTotal");
+                model.SundPrevDay90Entries = SafeInt(r, "PrevDayEntries90Days");
+                model.SundToday90Total = SafeDec(r, "PrevDayTotal90Days");
+                model.SundPrevDay180Entries = SafeInt(r, "PrevDayEntries180Days");
+                model.SundToday180Total = SafeDec(r, "PrevDayTotal180Days");
+            }
+        }
+        model.Calculate();
+        return model;
+    }
+
+    private static string SafeDate(DataRow r, string col) { try { return r.Table.Columns.Contains(col) && r[col] != DBNull.Value ? Convert.ToDateTime(r[col]).ToString("dd/MM/yyyy") : "—"; } catch { return "—"; } }
+    private static int SafeInt(DataRow r, string col) { try { return r.Table.Columns.Contains(col) && r[col] != DBNull.Value ? Convert.ToInt32(r[col]) : 0; } catch { return 0; } }
+    private static decimal SafeDec(DataRow r, string col) { try { return r.Table.Columns.Contains(col) && r[col] != DBNull.Value ? Convert.ToDecimal(r[col]) : 0m; } catch { return 0m; } }
+
+    private static string FmtD(int v) => v.ToString("N0");
+    private static string FmtN(decimal v) => v.ToString("N2");
+    private static string FmtVar(decimal v) => v >= 0 ? $"+{v:N0}" : v.ToString("N0");
+    private static string VarPct(decimal v) => $"{v:0.00}%";
+    private static string VarClass(decimal v) => v <= 0 ? "text-success fw-bold" : "text-danger fw-bold";
+}

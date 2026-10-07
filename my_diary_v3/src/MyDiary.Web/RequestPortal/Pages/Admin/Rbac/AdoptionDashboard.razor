@@ -1,0 +1,549 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@page "/admin/rbac/adoption-dashboard"
+@using ApexCharts
+@using OfficeOpenXml
+@using RequestPortal.Core.Models
+@inject IPageUsageRepo UsageRepo
+@inject IRbacRepo RbacRepo
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Adoption Dashboard</PageTitle>
+
+<PageHeader PageKey="rbac-adoption-dashboard" Title="Adoption Dashboard"
+            Subtitle="Logins, module &amp; menu usage, and report generation — sliced by date range, drilled down Bank → Zone → Region → Branch"
+            Crumbs="_crumbs" />
+
+<MudPaper Elevation="1" Class="pa-3 mb-3">
+    <MudGrid Spacing="2" AlignItems="Center">
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker Label="From" @bind-Date="_fromDate" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker Label="To" @bind-Date="_toDate" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="UsageTrendGranularity" @bind-Value="_granularity" Label="Granularity" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem Value="UsageTrendGranularity.Daily">Daily</MudSelectItem>
+                <MudSelectItem Value="UsageTrendGranularity.Monthly">Monthly</MudSelectItem>
+                <MudSelectItem Value="UsageTrendGranularity.Quarterly">Quarterly</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3" Class="d-flex gap-2 justify-end">
+            <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReloadAllAsync">Apply</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Success" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="ExportToExcelAsync" Disabled="@_exporting">Export</MudButton>
+        </MudItem>
+    </MudGrid>
+
+    <div class="d-flex align-center gap-1 mt-3 flex-wrap">
+        <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(_drillLevel == UsageScopeLevel.Bank ? MudBlazor.Color.Primary : MudBlazor.Color.Default)"
+                 OnClick="@(() => DrillToAsync(UsageScopeLevel.Bank, null))">Bank</MudChip>
+        @if (_zoneScopeId is not null)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
+            <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(_drillLevel == UsageScopeLevel.Zone ? MudBlazor.Color.Primary : MudBlazor.Color.Default)"
+                     OnClick="@(() => DrillToAsync(UsageScopeLevel.Zone, _zoneScopeId))">Zone @_zoneScopeId</MudChip>
+        }
+        @if (_regionScopeId is not null)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
+            <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(_drillLevel == UsageScopeLevel.Region ? MudBlazor.Color.Primary : MudBlazor.Color.Default)"
+                     OnClick="@(() => DrillToAsync(UsageScopeLevel.Region, _regionScopeId))">Region @_regionScopeId</MudChip>
+        }
+        @if (_branchScopeId is not null)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
+            <MudChip T="string" Size="MudBlazor.Size.Small" Color="MudBlazor.Color.Primary">Branch @_branchScopeId</MudChip>
+        }
+    </div>
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Class="my-4" />
+}
+else
+{
+    <MudPaper Elevation="1" Class="pa-2">
+        <MudTabs Outlined="true" Position="Position.Top" Rounded="true" KeepPanelsAlive="true" PanelClass="pa-3">
+
+            <!-- ───────────────────────── Logins ───────────────────────── -->
+            <MudTabPanel Text="Logins">
+                <MudGrid Class="mb-3">
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Elevation="0" Class="pa-3 text-center" Style="background:#f5f7fd; border-radius:10px;">
+                            <MudText Typo="Typo.h5" Class="fw-bold">@_loginDau</MudText>
+                            <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">DAU (today)</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Elevation="0" Class="pa-3 text-center" Style="background:#f5f7fd; border-radius:10px;">
+                            <MudText Typo="Typo.h5" Class="fw-bold">@_loginWau</MudText>
+                            <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">WAU (7d)</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Elevation="0" Class="pa-3 text-center" Style="background:#f5f7fd; border-radius:10px;">
+                            <MudText Typo="Typo.h5" Class="fw-bold">@_loginMau</MudText>
+                            <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">MAU (30d)</MudText>
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudPaper Elevation="0" Class="pa-3 text-center" Style="background:#f5f7fd; border-radius:10px;">
+                            <MudText Typo="Typo.h5" Class="fw-bold">@(_loginHeadcount is > 0 ? $"{Math.Round(100.0 * _loginMau / _loginHeadcount.Value, 1)}%" : "—")</MudText>
+                            <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">Adoption % (30d ÷ headcount)</MudText>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Login trend</MudText>
+                <div style="height: 240px;">
+                    <ApexChart TItem="TrendChartPoint" Options="@_loginChartOptions" Height="240">
+                        <ApexPointSeries TItem="TrendChartPoint" Items="_loginChartData" Name="Logins" SeriesType="SeriesType.Line"
+                                         XValue="@(e => e.Label)" YValue="@(e => e.Value)" />
+                    </ApexChart>
+                </div>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Adoption by @NextLevelLabel</MudText>
+                @if (_adoptionRows.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">No login activity in this range for this scope.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="@_adoptionRows" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                        <HeaderContent>
+                            <MudTh>@($"{NextLevelLabel} SOL ID")</MudTh>
+                            <MudTh>@($"{NextLevelLabel} Name")</MudTh>
+                            <MudTh Style="text-align:right">Unique users</MudTh>
+                            <MudTh Style="text-align:right">Logins</MudTh>
+                            <MudTh Style="text-align:right">Headcount</MudTh>
+                            <MudTh Style="text-align:right">Adoption %</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.ScopeId</MudTd>
+                            <MudTd>@(string.IsNullOrWhiteSpace(context.ScopeName) ? "—" : context.ScopeName)</MudTd>
+                            <MudTd Style="text-align:right">@context.UniqueUsers</MudTd>
+                            <MudTd Style="text-align:right">@context.LoginCount</MudTd>
+                            <MudTd Style="text-align:right">@(context.Headcount?.ToString() ?? "—")</MudTd>
+                            <MudTd Style="text-align:right">@(context.AdoptionPercent is not null ? $"{context.AdoptionPercent}%" : "—")</MudTd>
+                            <MudTd>
+                                @if (_drillLevel != UsageScopeLevel.Branch)
+                                {
+                                    <MudButton Size="MudBlazor.Size.Small" Variant="Variant.Text" EndIcon="@Icons.Material.Filled.ArrowForward"
+                                               OnClick="@(() => DrillIntoAsync(context.ScopeId))">Drill in</MudButton>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <!-- ───────────────────── Modules Usage ────────────────────── -->
+            <MudTabPanel Text="Modules Usage">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Total visits trend (all modules, current scope)</MudText>
+                <div style="height: 220px;">
+                    <ApexChart TItem="TrendChartPoint" Options="@_moduleChartOptions" Height="220">
+                        <ApexPointSeries TItem="TrendChartPoint" Items="_moduleChartData" Name="Visits" SeriesType="SeriesType.Bar"
+                                         XValue="@(e => e.Label)" YValue="@(e => e.Value)" />
+                    </ApexChart>
+                </div>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Usage by module</MudText>
+                @if (_moduleRows.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">No module activity in this range for this scope.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="@_moduleRows" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                        <HeaderContent>
+                            <MudTh>Module</MudTh>
+                            <MudTh Style="text-align:right">Visits</MudTh>
+                            <MudTh Style="text-align:right">Unique users</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.ModuleLabel</MudTd>
+                            <MudTd Style="text-align:right">@context.VisitCount</MudTd>
+                            <MudTd Style="text-align:right">@context.UniqueUsers</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <!-- ───────────────────────── Menu Usage ───────────────────── -->
+            <MudTabPanel Text="Menu Usage">
+                <MudSelect T="string" Value="_selectedMenuCode" Label="Page / menu (optional)" Variant="Variant.Outlined"
+                           Margin="Margin.Dense" Clearable="true" Class="mb-3" Style="max-width:360px" ValueChanged="OnMenuFilterChanged">
+                    @foreach (var m in _allMenus)
+                    {
+                        <MudSelectItem Value="@m.Code">@m.Label</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                    Usage trend @(string.IsNullOrEmpty(_selectedMenuCode) ? "(all pages, total)" : $"— {_allMenus.FirstOrDefault(m => m.Code == _selectedMenuCode)?.Label}")
+                </MudText>
+                <div style="height: 220px;">
+                    <ApexChart TItem="TrendChartPoint" Options="@_menuChartOptions" Height="220">
+                        <ApexPointSeries TItem="TrendChartPoint" Items="_menuChartData" Name="Visits" SeriesType="SeriesType.Line"
+                                         XValue="@(e => e.Label)" YValue="@(e => e.Value)" />
+                    </ApexChart>
+                </div>
+
+                <MudGrid Class="mt-3">
+                    <MudItem xs="12" md="7">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Drill down — @NextLevelLabel</MudText>
+                        @if (_drillRows.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">No activity in this range for this scope.</MudText>
+                        }
+                        else
+                        {
+                            <MudTable Items="@_drillRows" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                                <HeaderContent>
+                                    <MudTh>@($"{NextLevelLabel} SOL ID")</MudTh>
+                                    <MudTh>@($"{NextLevelLabel} Name")</MudTh>
+                                    <MudTh Style="text-align:right">Visits</MudTh>
+                                    <MudTh Style="text-align:right">Unique users</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>@context.ScopeId</MudTd>
+                                    <MudTd>@(string.IsNullOrWhiteSpace(context.ScopeName) ? "—" : context.ScopeName)</MudTd>
+                                    <MudTd Style="text-align:right">@context.VisitCount</MudTd>
+                                    <MudTd Style="text-align:right">@context.UniqueUsers</MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    </MudItem>
+                    <MudItem xs="12" md="5">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Least-used pages — this scope (30d snapshot)</MudText>
+                        @if (_underused.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">Nothing computed for this scope yet — runs nightly at 2 AM.</MudText>
+                        }
+                        else
+                        {
+                            <MudTable Items="@_underused" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                                <HeaderContent>
+                                    <MudTh>Page</MudTh>
+                                    <MudTh Style="text-align:right">Visits (30d)</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>@(context.MenuLabel ?? context.MenuCode)</MudTd>
+                                    <MudTd Style="text-align:right">
+                                        <MudChip T="string" Size="MudBlazor.Size.Small" Color="@(context.VisitCount30D == 0 ? MudBlazor.Color.Error : MudBlazor.Color.Warning)">@context.VisitCount30D</MudChip>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <!-- ─────────────────── Reports Generation ─────────────────── -->
+            <MudTabPanel Text="Reports Generation">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Reports/exports generated — trend</MudText>
+                <div style="height: 220px;">
+                    <ApexChart TItem="TrendChartPoint" Options="@_reportChartOptions" Height="220">
+                        <ApexPointSeries TItem="TrendChartPoint" Items="_reportChartData" Name="Reports generated" SeriesType="SeriesType.Bar"
+                                         XValue="@(e => e.Label)" YValue="@(e => e.Value)" />
+                    </ApexChart>
+                </div>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">By report</MudText>
+                @if (_reportRows.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        No reports generated in this range for this scope yet. Coverage is opt-in — currently wired to this dashboard's own Export button;
+                        add a one-line <code>UsageRepo.InsertReportGenerationAsync(...)</code> call to any other report/export action to track it here too.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_reportRows" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+                        <HeaderContent>
+                            <MudTh>Report</MudTh>
+                            <MudTh Style="text-align:right">Generated</MudTh>
+                            <MudTh Style="text-align:right">Unique users</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.ReportKey</MudTd>
+                            <MudTd Style="text-align:right">@context.GenCount</MudTd>
+                            <MudTd Style="text-align:right">@context.UniqueUsers</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <!-- ───────────────────────── Insights ─────────────────────── -->
+            <MudTabPanel Text="Insights">
+                @if (_insights.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">Nothing to surface yet for this scope — needs a few days of history.</MudText>
+                }
+                else
+                {
+                    <MudGrid>
+                        @foreach (var insight in _insights)
+                        {
+                            <MudItem xs="12" sm="6" md="4">
+                                <MudAlert Severity="@(insight.Severity == "Success" ? Severity.Success : insight.Severity == "Warning" ? Severity.Warning : Severity.Info)" Variant="Variant.Outlined">
+                                    <MudText Typo="Typo.subtitle2">@insight.Title</MudText>
+                                    <MudText Typo="Typo.body2">@insight.Detail</MudText>
+                                </MudAlert>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
+            </MudTabPanel>
+
+        </MudTabs>
+    </MudPaper>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Administration"),
+        new("Adoption Dashboard"),
+    };
+
+    private DateTime? _fromDate = AppTime.Today.AddDays(-30);
+    private DateTime? _toDate = AppTime.Today;
+    private UsageTrendGranularity _granularity = UsageTrendGranularity.Daily;
+    private string? _selectedMenuCode;
+    private List<AppMenu> _allMenus = new();
+
+    private UsageScopeLevel _drillLevel = UsageScopeLevel.Bank;
+    private string? _zoneScopeId;
+    private string? _regionScopeId;
+    private string? _branchScopeId;
+
+    private bool _loading = true;
+    private bool _exporting;
+
+    // Logins tab
+    private long _loginDau, _loginWau, _loginMau;
+    private int? _loginHeadcount;
+    private List<TrendChartPoint> _loginChartData = new();
+    private ApexChartOptions<TrendChartPoint> _loginChartOptions = new();
+    private List<AdoptionRow> _adoptionRows = new();
+
+    // Modules Usage tab
+    private List<ModuleUsageRow> _moduleRows = new();
+    private List<TrendChartPoint> _moduleChartData = new();
+    private ApexChartOptions<TrendChartPoint> _moduleChartOptions = new();
+
+    // Menu Usage tab
+    private List<PageUsageDrilldownRow> _drillRows = new();
+    private List<UnderusedPageInsight> _underused = new();
+    private List<TrendChartPoint> _menuChartData = new();
+    private ApexChartOptions<TrendChartPoint> _menuChartOptions = new();
+
+    // Reports Generation tab
+    private List<ReportGenerationRow> _reportRows = new();
+    private List<TrendChartPoint> _reportChartData = new();
+    private ApexChartOptions<TrendChartPoint> _reportChartOptions = new();
+
+    // Insights tab
+    private List<AdoptionInsight> _insights = new();
+
+    private string NextLevelLabel => _drillLevel switch
+    {
+        UsageScopeLevel.Bank   => "Zone",
+        UsageScopeLevel.Zone   => "Region",
+        UsageScopeLevel.Region => "Branch",
+        _                       => ""
+    };
+
+    private string _currentEmpCode = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentEmpCode = authState.User.FindFirst("emplid")?.Value ?? "";
+
+        var menus = await RbacRepo.ListMenusAsync();
+        _allMenus = menus.Where(m => m.IsActive && m.IsEnabled).OrderBy(m => m.Label).ToList();
+        await ReloadAllAsync();
+    }
+
+    private Task OnMenuFilterChanged(string value)
+    {
+        _selectedMenuCode = value;
+        return ReloadAllAsync();
+    }
+
+    private Task DrillToAsync(UsageScopeLevel level, string? scopeId)
+    {
+        _drillLevel = level;
+        if (level == UsageScopeLevel.Bank) { _zoneScopeId = null; _regionScopeId = null; _branchScopeId = null; }
+        else if (level == UsageScopeLevel.Zone) { _zoneScopeId = scopeId; _regionScopeId = null; _branchScopeId = null; }
+        else if (level == UsageScopeLevel.Region) { _regionScopeId = scopeId; _branchScopeId = null; }
+        return ReloadAllAsync();
+    }
+
+    private Task DrillIntoAsync(string scopeId)
+    {
+        var nextLevel = _drillLevel switch
+        {
+            UsageScopeLevel.Bank   => UsageScopeLevel.Zone,
+            UsageScopeLevel.Zone   => UsageScopeLevel.Region,
+            UsageScopeLevel.Region => UsageScopeLevel.Branch,
+            _                       => _drillLevel
+        };
+        if (nextLevel == UsageScopeLevel.Zone) _zoneScopeId = scopeId;
+        else if (nextLevel == UsageScopeLevel.Region) _regionScopeId = scopeId;
+        else if (nextLevel == UsageScopeLevel.Branch) _branchScopeId = scopeId;
+        _drillLevel = nextLevel;
+        return ReloadAllAsync();
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var from = _fromDate ?? AppTime.Today.AddDays(-30);
+        var to = _toDate ?? AppTime.Today;
+        UsageScopeLevel? filterLevel = _drillLevel == UsageScopeLevel.Bank ? null : _drillLevel;
+        var filterScopeId = _drillLevel switch
+        {
+            UsageScopeLevel.Zone   => _zoneScopeId,
+            UsageScopeLevel.Region => _regionScopeId,
+            UsageScopeLevel.Branch => _branchScopeId,
+            _                       => null
+        };
+        var nextDrillLevel = _drillLevel switch
+        {
+            UsageScopeLevel.Bank   => UsageScopeLevel.Zone,
+            UsageScopeLevel.Zone   => UsageScopeLevel.Region,
+            UsageScopeLevel.Region => UsageScopeLevel.Branch,
+            _                       => UsageScopeLevel.Branch
+        };
+
+        // ── Logins ──
+        var (dau, wau, mau, headcount) = await UsageRepo.GetLoginSummaryAsync(_drillLevel, filterScopeId);
+        _loginDau = dau; _loginWau = wau; _loginMau = mau; _loginHeadcount = headcount;
+        var loginTrend = await UsageRepo.GetLoginTrendAsync(from, to, _granularity, filterLevel, filterScopeId);
+        _loginChartData = loginTrend.Select(p => new TrendChartPoint(FormatBucket(p.Bucket, _granularity), p.LoginCount)).ToList();
+        _loginChartOptions = BuildChartOptions(ApexCharts.ChartType.Line);
+        _adoptionRows = _drillLevel == UsageScopeLevel.Branch
+            ? new List<AdoptionRow>()
+            : (await UsageRepo.GetAdoptionDrilldownAsync(from, to, nextDrillLevel, filterScopeId)).ToList();
+
+        // ── Modules Usage ──
+        _moduleRows = (await UsageRepo.GetModuleUsageAsync(from, to, filterLevel, filterScopeId)).ToList();
+        var moduleTrend = await UsageRepo.GetModuleTrendAsync(from, to, _granularity, filterLevel, filterScopeId);
+        _moduleChartData = moduleTrend
+            .GroupBy(p => p.Bucket).OrderBy(g => g.Key)
+            .Select(g => new TrendChartPoint(FormatBucket(g.Key, _granularity), g.Sum(x => x.VisitCount)))
+            .ToList();
+        _moduleChartOptions = BuildChartOptions(ApexCharts.ChartType.Bar);
+
+        // ── Menu Usage ──
+        var menuTrend = await UsageRepo.GetTrendAsync(from, to, _granularity, _selectedMenuCode, filterLevel, filterScopeId);
+        _menuChartData = menuTrend
+            .GroupBy(t => t.Bucket).OrderBy(g => g.Key)
+            .Select(g => new TrendChartPoint(FormatBucket(g.Key, _granularity), g.Sum(x => x.VisitCount)))
+            .ToList();
+        _menuChartOptions = BuildChartOptions(ApexCharts.ChartType.Line);
+        _drillRows = _drillLevel == UsageScopeLevel.Branch
+            ? new List<PageUsageDrilldownRow>()
+            : (await UsageRepo.GetDrilldownAsync(from, to, nextDrillLevel, filterScopeId)).ToList();
+        _underused = (await UsageRepo.GetUnderusedPagesAsync(_drillLevel, filterScopeId, take: 10)).ToList();
+
+        // ── Reports Generation ──
+        _reportRows = (await UsageRepo.GetReportGenerationSummaryAsync(from, to, filterLevel, filterScopeId)).ToList();
+        var reportTrend = await UsageRepo.GetReportGenerationTrendAsync(from, to, _granularity, null, filterLevel, filterScopeId);
+        _reportChartData = reportTrend.Select(p => new TrendChartPoint(FormatBucket(p.Bucket, _granularity), p.GenCount)).ToList();
+        _reportChartOptions = BuildChartOptions(ApexCharts.ChartType.Bar);
+
+        // ── Insights ──
+        _insights = (await UsageRepo.GetInsightsAsync(_drillLevel, filterScopeId)).ToList();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private static string FormatBucket(DateTime bucket, UsageTrendGranularity g) => g switch
+    {
+        UsageTrendGranularity.Monthly   => bucket.ToString("MMM yyyy"),
+        UsageTrendGranularity.Quarterly => $"Q{(bucket.Month - 1) / 3 + 1} {bucket.Year}",
+        _                                 => bucket.ToString("dd MMM")
+    };
+
+    private static ApexChartOptions<TrendChartPoint> BuildChartOptions(ApexCharts.ChartType type) => new()
+    {
+        Chart = new Chart { Type = type, Toolbar = new Toolbar { Show = false } },
+        Stroke = new Stroke { Curve = Curve.Smooth, Width = new List<double> { 3 } },
+        Tooltip = new Tooltip { Enabled = true }
+    };
+
+    private async Task ExportToExcelAsync()
+    {
+        _exporting = true;
+        try
+        {
+            using var package = new ExcelPackage();
+
+            void WriteSheet<T>(string name, IReadOnlyList<T> rows, string[] headers, Func<T, object?[]> row)
+            {
+                var ws = package.Workbook.Worksheets.Add(name);
+                for (int c = 0; c < headers.Length; c++) ws.Cells[1, c + 1].Value = headers[c];
+                for (int r = 0; r < rows.Count; r++)
+                {
+                    var vals = row(rows[r]);
+                    for (int c = 0; c < vals.Length; c++) ws.Cells[r + 2, c + 1].Value = vals[c];
+                }
+                if (ws.Dimension is not null) ws.Cells[ws.Dimension.Address].AutoFitColumns();
+            }
+
+            WriteSheet("Logins", _adoptionRows, new[] { $"{NextLevelLabel} SOL ID", $"{NextLevelLabel} Name", "Unique users", "Logins", "Headcount", "Adoption %" },
+                r => new object?[] { r.ScopeId, r.ScopeName, r.UniqueUsers, r.LoginCount, r.Headcount, r.AdoptionPercent });
+            WriteSheet("Modules Usage", _moduleRows, new[] { "Module", "Visits", "Unique users" },
+                r => new object?[] { r.ModuleLabel, r.VisitCount, r.UniqueUsers });
+            WriteSheet("Menu Usage", _drillRows, new[] { $"{NextLevelLabel} SOL ID", $"{NextLevelLabel} Name", "Visits", "Unique users" },
+                r => new object?[] { r.ScopeId, r.ScopeName, r.VisitCount, r.UniqueUsers });
+            WriteSheet("Least-used pages", _underused, new[] { "Page", "Visits (30d)" },
+                r => new object?[] { r.MenuLabel ?? r.MenuCode, r.VisitCount30D });
+            WriteSheet("Reports Generation", _reportRows, new[] { "Report", "Generated", "Unique users" },
+                r => new object?[] { r.ReportKey, r.GenCount, r.UniqueUsers });
+
+            var bytes = package.GetAsByteArray();
+            using var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
+            var fileName = $"AdoptionDashboard_{AppTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+
+            if (!string.IsNullOrWhiteSpace(_currentEmpCode))
+            {
+                // Fire-and-forget, like page-visit/login logging — but Oracle
+                // collapses an empty string to NULL, which a NOT NULL EMP_CODE
+                // column then rejects silently (the exception is on an
+                // unobserved Task and never surfaces). Guard against that here
+                // rather than ever passing an empty EmpCode through.
+                _ = UsageRepo.InsertReportGenerationAsync(new ReportGenerationEvent
+                {
+                    ReportKey = "adoption-dashboard",
+                    ReportLabel = "Adoption Dashboard export",
+                    EmpCode = _currentEmpCode,
+                    GeneratedAtUtc = DateTime.UtcNow
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "AdoptionDashboard: export failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
+
+    private sealed record TrendChartPoint(string Label, long Value);
+}

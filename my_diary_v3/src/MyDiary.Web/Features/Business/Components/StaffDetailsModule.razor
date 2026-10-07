@@ -1,0 +1,349 @@
+@using MudBlazor
+@using MyDiary.Web.Components.Dialogs
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject ILandingDashboardV2Service LandingDashboardService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDialogService DialogService
+
+@if (_staffLoading)
+{
+    <div class="d-flex justify-center pa-10">
+        <MudProgressCircular Color="MudBlazor.Color.Primary" Indeterminate="true" />
+        <MudText Class="ml-3">Loading Staff Details...</MudText>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_staffError))
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_staffError</MudAlert>
+}
+else if (!_staffDetails.Any())
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4">No staff records found.</MudAlert>
+}
+else
+{
+    <div class="d-flex justify-end mb-4">
+        <MudTextField @bind-Value="_staffSearch"
+                      Placeholder="Search by Branch, Region or Zone..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="MudBlazor.Size.Medium"
+                      Immediate="true"
+                      Style="max-width:350px;"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense" />
+    </div>
+
+    <MudTable Items="@_filteredStaff"
+              Dense="true"
+              Hover="true"
+              Bordered="true"
+              Striped="true"
+              Elevation="0"
+              RowsPerPage="25"
+              Style="border:1px solid #e2e8f0;"
+              T="StaffDetail">
+        <HeaderContent>
+            <MudTh Style="background:#1b4a98;color:white;">S.No.</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Zone</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Region</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Branch</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Clerk</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 1</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 2</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 3</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 4</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 5</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 6</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 7</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Scale 8</MudTh>
+            <MudTh Style="background:#1b4a98;color:white;">Sub Staff</MudTh>
+            <MudTh Style="background:#1b4a98;color:white; width:60px; text-align:center;">View</MudTh>
+        </HeaderContent>
+
+        <RowTemplate>
+            <MudTd>@context.SNo</MudTd>
+            <MudTd>@context.Zone</MudTd>
+            <MudTd>@context.Region</MudTd>
+            <MudTd>@context.Branch</MudTd>
+            <MudTd>@context.Clerk</MudTd>
+            <MudTd>@context.Scale1</MudTd>
+            <MudTd>@context.Scale2</MudTd>
+            <MudTd>@context.Scale3</MudTd>
+            <MudTd>@context.Scale4</MudTd>
+            <MudTd>@context.Scale5</MudTd>
+            <MudTd>@context.Scale6</MudTd>
+            <MudTd>@context.Scale7</MudTd>
+            <MudTd>@context.Scale8</MudTd>
+            <MudTd>@context.SubStaff</MudTd>
+            <MudTd Style="text-align:center;">
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility"
+                               Size="MudBlazor.Size.Small"
+                               Color="MudBlazor.Color.Primary"
+                               Disabled="@_dialogLoading"
+                               OnClick="@(() => OpenBranchStaffDialog(context))"
+                               AriaLabel="View staff details"
+                               Title="View staff members" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+        </PagerContent>
+    </MudTable>
+}
+
+@code {
+    [Parameter] public string? ParentUserRole { get; set; }
+    [Parameter] public string? ParentBrSolid { get; set; }
+    [Parameter] public string? ParentRegionSolid { get; set; }
+    [Parameter] public string? ParentZoneSolid { get; set; }
+
+    private List<StaffDetail> _staffDetails = new();
+    private bool _staffLoading = false;
+    private bool _dialogLoading = false;
+    private string? _staffError;
+    private string _staffSearch = "";
+
+    private string _userRole = "";
+    private string _brSolid = "";
+    private string _regionSolid = "";
+    private string _zoneSolid = "";
+    private string _branchCode = "";
+    private string _regionCode = "";
+    private string _zoneCode = "";
+
+    private IEnumerable<StaffDetail> _filteredStaff => string.IsNullOrWhiteSpace(_staffSearch)
+        ? _staffDetails
+        : _staffDetails.Where(s =>
+            (s.Branch?.Contains(_staffSearch, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (s.Region?.Contains(_staffSearch, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (s.Zone?.Contains(_staffSearch, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private bool _isCO = false;
+    private string? _lastFilterKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userRole = user.FindFirst(ClaimTypes.Role)?.Value ?? user.FindFirst("Role")?.Value ?? "";
+            _brSolid = user.FindFirst("branch_solid")?.Value
+                     ?? user.FindFirst("br_solid")?.Value ?? "";
+            _regionSolid = user.FindFirst("region_solid")?.Value ?? "";
+            _zoneSolid = user.FindFirst("zone_solid")?.Value ?? "";
+            _branchCode = user.FindFirst("branch_code")?.Value ?? "";
+            _regionCode = user.FindFirst("region_code")?.Value ?? "";
+            _zoneCode = user.FindFirst("zone_code")?.Value ?? "";
+
+            string upperRole = _userRole?.ToUpper() ?? "";
+            _isCO = upperRole.Contains("CENTRAL") || upperRole.Contains("CO");
+        }
+
+        // Use parent-provided values if available (from Business_New dropdowns)
+        ApplyParentFilters();
+        await LoadStaffDetails();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Re-load only when filter values actually changed
+        var newKey = $"{ParentUserRole}|{ParentBrSolid}|{ParentRegionSolid}|{ParentZoneSolid}";
+        if (newKey == _lastFilterKey) return;
+        _lastFilterKey = newKey;
+
+        ApplyParentFilters();
+        await LoadStaffDetails();
+    }
+
+    private void ApplyParentFilters()
+    {
+        if (!string.IsNullOrEmpty(ParentUserRole))
+            _userRole = ParentUserRole;
+        if (!string.IsNullOrEmpty(ParentBrSolid))
+            _brSolid = ParentBrSolid;
+        if (!string.IsNullOrEmpty(ParentRegionSolid))
+            _regionSolid = ParentRegionSolid;
+        if (!string.IsNullOrEmpty(ParentZoneSolid))
+            _zoneSolid = ParentZoneSolid;
+
+        string upperRole = _userRole?.ToUpper() ?? "";
+        _isCO = upperRole.Contains("CENTRAL") || upperRole.Contains("CO");
+    }
+
+    // Name -> SOL ID lookups so an aggregate grid row (which only carries zone/region NAMES)
+    // can be scoped back to a zone_solid / region_solid for the "View Details" fetch. This is
+    // what lets a CO scale>=4 zone-level row show only that zone's staff.
+    private Dictionary<string, string> _zoneNameToSolid = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _regionNameToSolid = new(StringComparer.OrdinalIgnoreCase);
+
+    private async Task LoadStaffDetails()
+    {
+        _staffLoading = true;
+        _staffError = null;
+        try
+        {
+            _staffDetails = await LandingDashboardService.GetStaffDetailsAsync(_userRole, _brSolid, _regionSolid, _zoneSolid);
+            await EnrichRowScopeAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Staff details DB unavailable: {ex.Message}");
+        }
+        finally { _staffLoading = false; }
+    }
+
+    /// <summary>
+    /// Resolves each grid row's zone/region SOL ID from its zone/region name so "View Details"
+    /// can be scoped to the clicked row. Needed because MD_sp_get_staff_data returns names only,
+    /// and for CO scale>=4 the grid shows one aggregate row per zone with no ambient zone filter.
+    /// </summary>
+    private async Task EnrichRowScopeAsync()
+    {
+        try
+        {
+            if (_zoneNameToSolid.Count == 0)
+            {
+                var zones = await LandingDashboardService.GetZonesAsync();
+                foreach (var z in zones)
+                {
+                    if (!string.IsNullOrWhiteSpace(z.zone_name_eng) && !string.IsNullOrWhiteSpace(z.zone_solid))
+                        _zoneNameToSolid[z.zone_name_eng.Trim()] = z.zone_solid.Trim();
+                }
+            }
+
+            foreach (var row in _staffDetails)
+            {
+                if (!string.IsNullOrWhiteSpace(row.Zone) &&
+                    !row.Zone.Equals("All", StringComparison.OrdinalIgnoreCase) &&
+                    _zoneNameToSolid.TryGetValue(row.Zone.Trim(), out var zSolid))
+                {
+                    row.ZoneSolId = zSolid;
+
+                    // Regions are looked up per zone (region names are only unique within a zone).
+                    if (!string.IsNullOrWhiteSpace(row.Region) &&
+                        !row.Region.Equals("All", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var regKey = $"{zSolid}|{row.Region.Trim()}";
+                        if (!_regionNameToSolid.TryGetValue(regKey, out var rSolid))
+                        {
+                            var regions = await LandingDashboardService.GetRegionsByZoneAsync(zSolid);
+                            foreach (var r in regions)
+                            {
+                                if (!string.IsNullOrWhiteSpace(r.region_name) && !string.IsNullOrWhiteSpace(r.region_solid))
+                                    _regionNameToSolid[$"{zSolid}|{r.region_name.Trim()}"] = r.region_solid.Trim();
+                            }
+                            _regionNameToSolid.TryGetValue(regKey, out rSolid);
+                        }
+                        if (!string.IsNullOrWhiteSpace(rSolid))
+                            row.RegionSolId = rSolid;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"[StaffDetailsModule] Could not resolve row scope: {ex.Message}");
+        }
+    }
+
+    private async Task OpenBranchStaffDialog(StaffDetail staff)
+    {
+        // Prevent duplicate popups while loading
+        if (_dialogLoading) return;
+        _dialogLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var options = new DialogOptions
+            {
+                CloseOnEscapeKey = true,
+                MaxWidth = MaxWidth.ExtraLarge,
+                FullWidth = true
+            };
+
+            // Scope the "View Details" fetch by the CLICKED ROW, not by the logged-in user's role.
+            //   • A single-branch row (real branch SOL ID + a real Branch name) must show ONLY that
+            //     branch's staff — even for a CO / Zone / Region user viewing branch-level rows.
+            //   • An aggregate row (e.g. the CO scale>=4 zone-level single record, where the grid shows
+            //     one row per zone with Branch == "All") must show the whole zone's staff.
+            // The grid maps a null branch to "All" (see GetStaffDetailsAsync), so an aggregate row has
+            // Branch == "All" (or empty) and no usable per-branch SOL ID.
+            bool isSingleBranchRow =
+                !string.IsNullOrWhiteSpace(staff.SolId) &&
+                !string.IsNullOrWhiteSpace(staff.Branch) &&
+                !staff.Branch.Equals("All", StringComparison.OrdinalIgnoreCase);
+
+            if (isSingleBranchRow)
+            {
+                // Single branch — load only that branch's staff by its SOL ID (branch_code), regardless
+                // of the logged-in user's role. Small dataset, loaded all at once.
+                var staffMembers = await LandingDashboardService.GetBranchStaffMembersAsync(staff.SolId);
+
+                // Exclude ED/CMD
+                staffMembers = staffMembers
+                    .Where(m => !string.Equals(m.EmpScaleDescr, "ED/CMD", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                int sno = 1;
+                foreach (var m in staffMembers)
+                    m.SNo = sno++;
+
+                var parameters = new DialogParameters<BranchStaffDialog>
+                {
+                    { x => x.BranchName, staff.Branch ?? "Staff Members" },
+                    { x => x.StaffMembers, staffMembers }
+                };
+
+                await DialogService.ShowAsync<BranchStaffDialog>("", parameters, options);
+            }
+            else
+            {
+                // Aggregate row (zone/region/CO level) — large dataset, use server-side paging.
+                // Scope the fetch to the CLICKED ROW, not the ambient user scope. This fixes:
+                //   • Zone selected with Region=All & Branch=All -> only that zone's staff.
+                //   • CO scale>=4 zone-level consolidated row -> all staff under THAT zone.
+                // Priority: the row's own region SOL ID, then its zone SOL ID; fall back to the
+                // ambient parent-supplied scope when the row could not be resolved (e.g. CO "All" row).
+                bool rowIsRegion = !string.IsNullOrWhiteSpace(staff.Region) &&
+                                   !staff.Region.Equals("All", StringComparison.OrdinalIgnoreCase);
+
+                string regionScope = rowIsRegion && !string.IsNullOrWhiteSpace(staff.RegionSolId)
+                    ? staff.RegionSolId
+                    : (rowIsRegion ? _regionSolid : "");
+
+                string zoneScope = !string.IsNullOrWhiteSpace(staff.ZoneSolId)
+                    ? staff.ZoneSolId
+                    : _zoneSolid;
+
+                var parameters = new DialogParameters<BranchStaffDialog>
+                {
+                    { x => x.BranchName, staff.Branch ?? "Staff Members" },
+                    { x => x.UseServerPaging, true },
+                    { x => x.UserRole, _userRole },
+                    { x => x.BranchSolId, "" },
+                    { x => x.RegionSolId, regionScope ?? "" },
+                    { x => x.ZoneSolId, zoneScope ?? "" },
+                    { x => x.DashboardService, LandingDashboardService }
+                };
+
+                await DialogService.ShowAsync<BranchStaffDialog>("", parameters, options);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"[StaffDetailsModule] Error opening staff dialog: {ex.Message}");
+        }
+        finally
+        {
+            _dialogLoading = false;
+            StateHasChanged();
+        }
+    }
+}

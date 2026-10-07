@@ -1,0 +1,175 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/dormant-inactive-gt-1lakh"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Dormant Inactive Accounts > 1 Lakh — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private readonly List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1";
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    // ---- User scope (defaults; wire to claims if available) ----
+    private string _userPrivilege = "CO"; // CO | CRBD | ZONE | REGION | BRANCH
+    private string _userZoneCode = "00000", _userRegionCode = "00000", _userBranchSolid = "00000";
+
+    // ---- Columns (detailed only; this report doesn't have a summary grid) ----
+    private readonly List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone",                  PropertyName = "zone_name_eng",  Width = "12%" },
+        new ColumnConfig { Header = "Region",                PropertyName = "region_name",    Width = "12%" },
+        new ColumnConfig { Header = "Branch",                PropertyName = "Branch_Name",    Width = "16%" },
+        new ColumnConfig { Header = "Branch Solid",          PropertyName = "SolId",          Width = "8%"  },
+        new ColumnConfig { Header = "Account No",            PropertyName = "ACC_NO",         Width = "12%" },
+        new ColumnConfig { Header = "Account Name",          PropertyName = "ACCT_NAME",      Width = "16%" },
+        new ColumnConfig { Header = "Scheme Type",           PropertyName = "SCHM_TYPE",      Width = "10%" },
+        new ColumnConfig { Header = "Account Open Date",     PropertyName = "AcOpenDate",     IsDate = true, Width = "10%" },
+        new ColumnConfig { Header = "Account Status",        PropertyName = "ACCT_STATUS",    Width = "10%" },
+        new ColumnConfig { Header = "Account Status Date",   PropertyName = "ACCT_STATUS_DATE", IsDate = true, Width = "12%" },
+        new ColumnConfig { Header = "Mobile Number",         PropertyName = "MOBILE",         Width = "12%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneCode = __scope.ZoneCode;
+            _userRegionCode = __scope.RegionCode;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Dormant / Inactive Accounts > ₹1 Lakh";
+
+        // Optional: read auth/claims to set privilege and scope
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege     = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneCode      = user.FindFirst("zone_code")?.Value ?? "00000";
+        //     _userRegionCode    = user.FindFirst("region_code")?.Value ?? "00000";
+        //     _userBranchSolid   = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        _activeConfig.Columns = _detailedCols; // single detailed view
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Base WHERE and ORDER
+        string where = "1=1";
+        string orderBy = " ORDER BY b.zone_name_eng, b.region_name, b.BRANCH_NAME, A.ACC_NO";
+
+        // ---- Privilege Scope (mirrors WebForms usage of session values) ----
+        switch (_userPrivilege)
+        {
+            case "BRANCH":
+                where += $" AND b.sol_id = '{_userBranchSolid}'";
+                break;
+            case "REGION":
+                where += $" AND b.region_code = '{_userRegionCode}'";
+                break;
+            case "ZONE":
+                where += $" AND b.zone_code = '{_userZoneCode}'";
+                break;
+            // CO / CRBD -> no scope restriction
+            case "CRBD":
+            case "CO":
+            default:
+                break;
+        }
+
+        // ---- Dropdown Filters (only "All" = "1"; no "all" breakdown here) ----
+        if (_selectedZone != "1") where += $" AND b.zone_code   = '{_selectedZone}'";
+        if (_selectedRegion != "1") where += $" AND b.region_code = '{_selectedRegion}'";
+        if (_selectedBranch != "1") where += $" AND b.sol_id      = '{_selectedBranch}'";
+
+        // ---- Columns (ACCT_OPN_DATE: 1900-01-01 -> NULL, so UI shows blank) ----
+        string columns =
+            "b.zone_name_eng, " +
+            "b.region_name, " +
+            "b.BRANCH_NAME AS Branch_Name, " +
+            "b.SOL_ID AS SolId, " +
+            "A.ACC_NO, A.ACCT_NAME, A.SCHM_TYPE, " +
+            "NULLIF(CONVERT(date, A.ACCT_OPN_DATE), '1900-01-01') AS AcOpenDate, " +
+            "A.ACCT_STATUS, A.ACCT_STATUS_DATE, A.MOBILE";
+
+        string finalQuery =
+            $"SELECT {columns} " +
+            "FROM DormantInactiveMoreThan1LakhNew A " +
+            "JOIN Branch_Master B ON A.SOL_ID = B.SOL_ID " +
+            $"WHERE {where}{orderBy}";
+
+        // Fetch rows
+        var rows = await ReportService.ExecuteRawQueryAsync(finalQuery);
+        _data.Clear();
+        _data.AddRange(rows);
+
+        // As On Date (from table used in your WebForms)
+        string date = "";
+        try
+        {
+            var asOn = await ReportService.ExecuteRawQueryAsync(
+                "SELECT CONVERT(varchar, MAX(LastUpdateDate), 103) AS AsOn FROM DormantInactiveMoreThan1LakhNew"
+            );
+            date = asOn.FirstOrDefault()?["AsOn"]?.ToString() ?? "";
+        }
+        catch (Exception ex) {
+            AppLogger.LogError(ex, "[DormantInactiveGt1Lakh] Unhandled error: " + ex.Message);
+        }
+
+        _asOnDateLabel = string.IsNullOrWhiteSpace(date) ? "" : $"Data As On - {date}";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        // Export using the currently bound columns and data
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "DormantInactive_GT1Lakh");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "DormantInactive_GT1Lakh.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)
+        );
+    }
+}

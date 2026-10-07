@@ -1,0 +1,165 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/financialresults"
+@using MudBlazor
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Hosting
+@using Microsoft.AspNetCore.Components.Web
+@using MyDiary.Web.Core.Extensions
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IStaticAssetPathResolver Assets
+@layout MyDiary.Web.Components.Layout.MainLayout
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Financial Results — My Diary</PageTitle>
+
+
+
+<style>
+    .selector-container {
+        padding: 16px 20px 24px 20px;
+        min-height: 70vh;
+    }
+
+    /* Compact tile style (matches “alert” style feel) */
+    .category-card {
+        background-color: #F8FAFC !important;
+        border-radius: 14px !important;
+        padding: 18px !important; /* ↓ from 30px */
+        min-height: 120px !important; /* ↓ from 180px */
+        border: 1px solid #e2e8f0 !important;
+        transition: all 0.2s ease;
+        text-transform: none !important;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center; /* vertical center */
+        gap: 8px;
+        text-align: center;
+    }
+
+        .category-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 20px rgba(0,0,0,0.08) !important;
+            border-color: #1E3A8A !important;
+        }
+
+    .card-icon {
+        font-size: 2.25rem; /* ↓ from 3rem */
+        margin-bottom: 2px; /* ↓ smaller spacing */
+        color: #1E3A8A;
+    }
+
+    /* Title tweaks for tighter, balanced text */
+    .fr-title {
+        font-weight: 700;
+        line-height: 1.25;
+        word-break: break-word;
+    }
+
+    /* Responsive: keep 4-up on desktop, 2-up tablet, 1-up mobile */
+    /* (MudItem breakpoints already handle layout; no media needed here) */
+</style>
+
+<div class="selector-container">
+    <MudGrid Spacing="2">
+        <!-- Desktop md=3 -> 4 columns; Tablet sm=6 -> 2 columns; Mobile xs=12 -> 1 column -->
+        <!-- Card 1: Final Investor Presentation (PDF) -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudButton Class="category-card"
+                       OnClick="@(async () => await DownloadAsync(
+                            "Quarterly/Final Investor Presentation Q3FY26 14.01.26.pdf",
+                            "Final Investor Presentation Q3FY26 14.01.26.pdf"))">
+                <MudIcon Icon="@Icons.Material.Filled.Slideshow" Class="card-icon" />
+                <MudText Typo="Typo.subtitle1" Class="fr-title">
+                    Final Investor Presentation Q3FY26 14.01.26
+                </MudText>
+            </MudButton>
+        </MudItem>
+
+        <!-- Card 2: Final Press Release (English) -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudButton Class="category-card"
+                       OnClick="@(async () => await DownloadAsync(
+                            "Quarterly/PRESS RELEASE Q3FY25-26.docx",
+                            "Final Press Release Q3FY2026 English.docx"))">
+                <MudIcon Icon="@Icons.Material.Filled.Description" Class="card-icon" Style="color:#EF4444;" />
+                <MudText Typo="Typo.subtitle1" Class="fr-title">
+                    Final Press Release Q3FY2026 English
+                </MudText>
+            </MudButton>
+        </MudItem>
+
+        <!-- Card 3: Final Press Release (Hindi) -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudButton Class="category-card"
+                       OnClick="@(async () => await DownloadAsync(
+                            "Quarterly/hindi press release (003).docx",
+                            "Final Press Release Q3FY2026 Hindi.docx"))">
+                <MudIcon Icon="@Icons.Material.Filled.Article" Class="card-icon" Style="color:#10B981;" />
+                <MudText Typo="Typo.subtitle1" Class="fr-title">
+                    Final Press Release Q3FY2026 Hindi
+                </MudText>
+            </MudButton>
+        </MudItem>
+
+        <!-- Card 4: Draft Press Release -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudButton Class="category-card"
+                       OnClick="@(async () => await DownloadAsync(
+                            "Quarterly/PRESS RELEASE Q3FY25-26.docx",
+                            "Draft Press Release (Local Publication).docx"))">
+                <MudIcon Icon="@Icons.Material.Filled.DriveFileRenameOutline" Class="card-icon" Style="color:#6366F1;" />
+                <MudText Typo="Typo.subtitle1" Class="fr-title">
+                    Draft Press Release (Local Publication)
+                </MudText>
+            </MudButton>
+        </MudItem>
+
+    </MudGrid>
+</div>
+
+@code {
+    private async Task DownloadAsync(string relativePath, string downloadFileName)
+    {
+        try
+        {
+            // Resolved from the NFS-aware assets root (wwwroot/MyDiary/... under NFS,
+            // wwwroot/... locally).
+            var fullPath = Assets.Resolve(relativePath);
+
+            if (!System.IO.File.Exists(fullPath))
+            {
+                // Optional: Snackbar.Add("File not found.", Severity.Warning);
+                return;
+            }
+
+            var bytes = await System.IO.File.ReadAllBytesAsync(fullPath);
+            var mime = GetContentTypeByExtension(Path.GetExtension(fullPath));
+            await JS.InvokeVoidAsync(
+                "BlazorDownloadFile",
+                downloadFileName,
+                mime,
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[FinancialResults] Unhandled error: " + ex.Message);
+            // Optional: log or show a toast
+        }
+    }
+
+    private static string GetContentTypeByExtension(string? ext)
+        => string.IsNullOrWhiteSpace(ext) ? "application/octet-stream"
+         : ext.ToLowerInvariant() switch
+         {
+             ".pdf" => "application/pdf",
+             ".doc" => "application/msword",
+             ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+             ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+             ".xls" => "application/vnd.ms-excel",
+             _ => "application/octet-stream"
+         };
+}

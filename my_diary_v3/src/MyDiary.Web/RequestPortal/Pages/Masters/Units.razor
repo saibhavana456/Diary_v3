@@ -1,0 +1,86 @@
+@namespace RequestPortal.Web.Pages.Masters
+@page "/masters/units"
+@inject IMasterRepo MasterRepo
+
+<PageTitle>Units</PageTitle>
+<PageHeader PageKey="masters-units" Title="Units" Subtitle="Organisational unit hierarchy."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Masters"), new("Units") })" />
+
+<SuperAdminOnly>
+<MudPaper Elevation="1">
+    <MudTable Items="@_units" Dense="true" Hover="true" Striped="true" Class="rp-data-table"
+              Filter="@(u => FilterRow(u, _search))">
+        <ToolBarContent>
+            <MudText Typo="Typo.subtitle1" Class="mr-4"><b>@_units.Count</b> units</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_search" Placeholder="Search…"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Clearable="true" Immediate="true" Style="max-width:260px" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Code</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Parent</MudTh>
+            <MudTh>Status</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><MudText Typo="Typo.caption" Style="font-family:monospace;font-weight:600">@context.Code</MudText></MudTd>
+            <MudTd>
+                <div class="d-flex align-center gap-1">
+                    @if (context.Depth > 0)
+                    {
+                        <span style="display:inline-block;width:@(context.Depth * 16)px"></span>
+                        <MudIcon Icon="@Icons.Material.Filled.SubdirectoryArrowRight" Size="Size.Small" Color="Color.Secondary" />
+                    }
+                    @context.Name
+                </div>
+            </MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.TypeName</MudChip></MudTd>
+            <MudTd><MudText Typo="Typo.caption" Color="Color.Secondary">@(context.ParentName ?? "—")</MudText></MudTd>
+            <MudTd>
+                @if (context.IsActive)
+                { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Active</MudChip> }
+                else
+                { <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">Inactive</MudChip> }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+</SuperAdminOnly>
+
+@code {
+    private List<UnitRow> _units = new();
+    private string _search = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var unitsTask     = MasterRepo.ListUnitsAllAsync(null);
+        var unitTypesTask = MasterRepo.ListUnitTypesAllAsync();
+        await Task.WhenAll(unitsTask, unitTypesTask);
+        var units     = unitsTask.Result;
+        var unitTypes = unitTypesTask.Result;
+
+        var typeMap   = unitTypes.ToDictionary(t => t.Id, t => t.Name);
+        var nameMap   = units.ToDictionary(u => u.Id, u => u.Name);
+
+        int Depth(Unit u, int d = 0) =>
+            u.ParentUnitId.HasValue && nameMap.ContainsKey(u.ParentUnitId.Value) ? d + 1 : d;
+
+        _units = units.Select(u => new UnitRow(
+            u.Code, u.Name,
+            typeMap.GetValueOrDefault(u.UnitTypeId, "—"),
+            u.ParentUnitId.HasValue ? nameMap.GetValueOrDefault(u.ParentUnitId.Value) : null,
+            u.IsActive,
+            Depth(u)
+        )).ToList();
+    }
+
+    private static bool FilterRow(UnitRow r, string s) =>
+        string.IsNullOrWhiteSpace(s) ||
+        r.Code.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+        r.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+        r.TypeName.Contains(s, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record UnitRow(string Code, string Name, string TypeName, string? ParentName, bool IsActive, int Depth);
+}

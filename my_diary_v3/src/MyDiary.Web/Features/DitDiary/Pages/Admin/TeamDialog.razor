@@ -1,0 +1,509 @@
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@inject IAdminMasterService AdminService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<style>
+    .team-tabs {
+        width: 100%;
+    }
+
+    .team-tab-panel {
+        width: 100%;
+        padding: 16px 0 0 0 !important;
+    }
+
+    .team-panel {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .team-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+  </style>
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6"><MudIcon Icon="@Icons.Material.Filled.Groups" Class="mr-2 mb-1" />Team — @SectionName</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_loadError))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">@_loadError</MudAlert>
+        }
+
+        <MudTabs Elevation="0"
+                 Rounded="true"
+                 ApplyEffectsToContainer="true"
+                 PanelClass="team-tab-panel"
+                 Class="team-tabs">
+
+            @* ================= TEAM LEADERS ================= *@
+            <MudTabPanel Text="Team Leaders"
+                         Icon="@Icons.Material.Filled.SupervisorAccount">
+
+                <MudPaper Class="team-panel pa-4"
+                          Elevation="1">
+
+                    <div class="team-panel-header">
+                        <div>
+                            <MudText Typo="Typo.subtitle1">
+                                <b>Team Leaders</b>
+                            </MudText>
+
+                            <MudText Typo="Typo.caption"
+                                     Color="Color.Secondary">
+                                Enter PF number. Staff details will load automatically.
+                            </MudText>
+                        </div>
+
+                        <MudButton Color="Color.Primary"
+                                   Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.Save"
+                                   OnClick="ConfirmSaveLeaders">
+                            Save Leaders
+                        </MudButton>
+                    </div>
+
+                    <div class="team-table-container">
+                        <MudSimpleTable Dense="true"
+                                        Bordered="true"
+                                        Striped="true"
+                                        Hover="true"
+                                        Class="team-table">
+
+                            <thead>
+                                <tr>
+                                    <th class="leader-role-column">Role</th>
+                                    <th class="leader-pf-column">PF Number</th>
+                                    <th class="leader-name-column">Name</th>
+                                    <th class="leader-designation-column">
+                                        Designation
+                                    </th>
+                                    <th class="leader-scale-column">Scale</th>
+                                    <th class="leader-mobile-column">Mobile</th>
+                                    <th class="leader-email-column">Email</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                @foreach (var role in _leaderRoles)
+                                {
+                                    var st = _leaderStaff.TryGetValue(
+                                    role,
+                                    out var value
+                                    ) ? value : null;
+
+                                    <tr>
+                                        <td>
+                                            <div class="role-cell">
+                                                <b>@role</b>
+
+                                                @if (!string.IsNullOrEmpty(
+                                               _leaderInfo[role]
+                                               ) && st != null)
+                                                {
+                                                    <MudTooltip Text="@_leaderInfo[role]">
+                                                        <MudIcon Icon="@Icons.Material.Filled.Warning"
+                                                                 Color="Color.Warning"
+                                                                 Size="Size.Small" />
+                                                    </MudTooltip>
+                                                }
+                                            </div>
+                                        </td>
+
+                                        <td>
+                                            <MudTextField T="string"
+                                                          Value="@_leaders[role]"
+                                                          ValueChanged="@(value =>
+                                                      OnLeaderPfChanged(
+                                                          role,
+                                                          value
+                                                      ))"
+                                                          Immediate="false"
+                                                          Margin="Margin.Dense"
+                                                          Variant="Variant.Outlined"
+                                                          Placeholder="PF No."
+                                                          MaxLength="12"
+                                                          FullWidth="true" />
+                                        </td>
+
+                                        @if (st != null)
+                                        {
+                                            <td class="wrap-cell">
+                                                @st.NAME
+                                            </td>
+
+                                            <td class="wrap-cell">
+                                                @st.EMP_DESGN_DESC
+                                            </td>
+
+                                            <td class="wrap-cell">
+                                                @st.EMP_SCALE_DESCR
+                                            </td>
+
+                                            <td class="nowrap-cell">
+                                                @st.PHONE
+                                            </td>
+
+                                            <td class="email-cell">
+                                                @st.EMAIL
+                                            </td>
+                                        }
+                                        else
+                                        {
+                                            <td colspan="5"
+                                                class="empty-detail-cell">
+                                                @(_leaderInfo[role] ??
+                                                    "Enter a PF number to load staff details")
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                </MudPaper>
+            </MudTabPanel>
+
+            @* ================= TEAM MEMBERS ================= *@
+            <MudTabPanel Text="Team Members"
+                         Icon="@Icons.Material.Filled.Groups">
+
+                <MudPaper Class="team-panel pa-4"
+                          Elevation="1">
+
+                    <MudText Typo="Typo.subtitle1"
+                             Class="mb-3">
+                        <b>Team Members</b>
+                    </MudText>
+
+                    <MudGrid Spacing="2"
+                             Class="mb-4 align-center">
+
+                        <MudItem xs="12" sm="4" md="3">
+                            <MudTextField T="string"
+                                          Value="@_newPf"
+                                          ValueChanged="OnNewPfChanged"
+                                          Label="PF Number"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          MaxLength="12"
+                                          FullWidth="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="5" md="4">
+                            <MudTextField T="string"
+                                          @bind-Value="_newRole"
+                                          Label="Role"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          FullWidth="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="3" md="2">
+                            <MudButton Color="Color.Primary" Variant="Variant.Filled" FullWidth="true"
+                                       StartIcon="@(_editPf == null ? Icons.Material.Filled.PersonAdd : Icons.Material.Filled.Save)"
+                                       OnClick="@(_editPf == null ? AddMember : SaveRole)">
+                                @(_editPf == null ? "Add" : "Save")
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+
+                    <div class="team-table-container members-table-container">
+                        <MudSimpleTable Dense="true"
+                                        Bordered="true"
+                                        Striped="true"
+                                        Hover="true"
+                                        Class="team-table members-table">
+
+                            <thead>
+                                <tr>
+                                    <th class="member-sol-column">SOL ID</th>
+                                    <th class="member-pf-column">PF</th>
+                                    <th class="member-name-column">Name</th>
+                                    <th class="member-designation-column">
+                                        Designation
+                                    </th>
+                                    <th class="member-scale-column">Scale</th>
+                                    <th class="member-mobile-column">Mobile</th>
+                                    <th class="member-email-column">Email</th>
+                                    <th class="member-role-column">Role</th>
+                                    <th class="member-action-column">Action</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                @foreach (var member in _members)
+                                {
+                                    var st = _memberStaff.TryGetValue(
+                                    member.PF_NUMBER,
+                                    out var value
+                                    ) ? value : null;
+
+                                    <tr>
+                                        <td class="nowrap-cell">
+                                            @st?.BRSOLID
+                                        </td>
+
+                                        <td class="nowrap-cell">
+                                            @member.PF_NUMBER
+                                        </td>
+
+                                        <td class="wrap-cell">
+                                            @(st?.NAME ?? member.MEMBER_NAME)
+                                        </td>
+
+                                        <td class="wrap-cell">
+                                            @st?.EMP_DESGN_DESC
+                                        </td>
+
+                                        <td class="wrap-cell">
+                                            @st?.EMP_SCALE_DESCR
+                                        </td>
+
+                                        <td class="nowrap-cell">
+                                            @st?.PHONE
+                                        </td>
+
+                                        <td class="email-cell">
+                                            @st?.EMAIL
+                                        </td>
+
+                                        <td class="wrap-cell">
+                                            @member.MEMBER_ROLE
+                                        </td>
+
+                                        <td class="action-cell">
+                                            <MudTooltip Text="Remove member">
+                                               
+                                            <td>
+                                                <MudTooltip Text="Edit role">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small"
+                                                                   OnClick="@(() => StartEditRole(member))" />
+                                                </MudTooltip>
+                                                <MudTooltip Text="Remove member">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                                                   OnClick="@(() => RemoveMember(member.PF_NUMBER, member.MEMBER_NAME ?? ""))" />
+                                                </MudTooltip>
+                                            </td>
+                                            </MudTooltip>
+                                        </td>
+                                    </tr>
+                                }
+
+                                @if (_members.Count == 0)
+                                {
+                                    <tr>
+                                        <td colspan="9"
+                                            class="no-record-cell">
+                                            No members have been added.
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                </MudPaper>
+            </MudTabPanel>
+        </MudTabs>
+      
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public long SectionId { get; set; }
+    [Parameter] public string SectionName { get; set; } = "";
+
+    private readonly string[] _leaderRoles = { "CM", "AGM", "DGM", "GM", "CGM" };
+    private Dictionary<string, string?> _leaders = new();
+    private Dictionary<string, string?> _leaderInfo = new();
+    private Dictionary<string, DitStaffDetail?> _leaderStaff = new();
+    private Dictionary<string, DitStaffDetail?> _memberStaff = new();
+    private List<SectionTeamMember> _members = new();
+    private string? _newPf, _newRole, _loadError;
+    private string? _editPf, _editRole;
+
+    private void StartEditRole(SectionTeamMember m) { _editPf = m.PF_NUMBER; _editRole = m.MEMBER_ROLE; _newPf = m.PF_NUMBER; _newRole = m.MEMBER_ROLE; }
+
+    private async Task SaveRole()
+    {
+        if (string.IsNullOrWhiteSpace(_editPf)) return;
+        await AdminService.UpdateMemberRoleAsync(SectionId, _editPf, _newRole);
+        _members = await AdminService.GetMembersAsync(SectionId);
+        await LoadMemberStaff();
+        _editPf = null; _newPf = null; _newRole = null;
+        Snackbar.Add("Role updated", Severity.Success);
+    }
+
+    private static string OnlyDigits(string? s) => new string((s ?? "").Where(char.IsDigit).ToArray());
+
+    protected override async Task OnInitializedAsync()
+    {
+        foreach (var r in _leaderRoles) { _leaders[r] = null; _leaderInfo[r] = null; _leaderStaff[r] = null; }
+        try
+        {
+            var (cm, agm, dgm, gm, cgm) = await AdminService.GetLeadersAsync(SectionId);
+            _leaders["CM"] = cm; _leaders["AGM"] = agm; _leaders["DGM"] = dgm; _leaders["GM"] = gm; _leaders["CGM"] = cgm;
+            foreach (var r in _leaderRoles)
+                if (!string.IsNullOrWhiteSpace(_leaders[r])) await LookupLeader(r);
+            _members = await AdminService.GetMembersAsync(SectionId);
+            await LoadMemberStaff();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+            Snackbar.Add($"Load error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnLeaderPfChanged(string role, string pf)
+    {
+        _leaders[role] = OnlyDigits(pf);          // PF number only
+        await LookupLeader(role);
+    }
+
+    private void OnNewPfChanged(string pf) => _newPf = OnlyDigits(pf);
+
+    private async Task LookupLeader(string role)
+    {
+        var pf = _leaders[role];
+        _leaderStaff[role] = null;
+        if (string.IsNullOrWhiteSpace(pf)) { _leaderInfo[role] = null; return; }
+        try
+        {
+            var s = await AdminService.GetStaffByPfAsync(pf.Trim());
+            _leaderStaff[role] = s;
+            if (s == null)
+            {
+                _leaderInfo[role] = "PF not found";
+                Snackbar.Add($"PF {pf} not found in staff details ({role}).", Severity.Error);
+            }
+            else
+            {
+                _leaderInfo[role] = !DesignationMatches(role, s)
+                    ? $"This person's designation is '{s.EMP_DESGN_DESC}', which does not match the {role} row."
+                    : null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _leaderInfo[role] = "Lookup failed: " + ex.Message;
+            Snackbar.Add($"Lookup failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ConfirmSaveLeaders()
+    {
+        var filled = _leaderRoles.Count(r => !string.IsNullOrWhiteSpace(_leaders[r]));
+        var p = new DialogParameters
+        {
+            ["Title"] = "Save Team Leaders",
+            ["Message"] = $"Save team leaders for '{SectionName}'?",
+            ["SubMessage"] = $"{filled} of 5 roles filled. Existing leaders for this section will be replaced.",
+            ["ConfirmText"] = "Save",
+            ["ConfirmColor"] = Color.Primary,
+            ["Icon"] = Icons.Material.Filled.Save,
+            ["IconColor"] = Color.Primary
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true };
+        var dlg = await DialogService.ShowAsync<ConfirmDialog>(string.Empty, p, o);
+        var res = await dlg.Result;
+        if (!res.Canceled && res.Data is bool ok && ok) await SaveLeaders();
+    }
+
+    private async Task SaveLeaders()
+    {
+        try
+        {
+            await AdminService.SaveLeadersAsync(SectionId, _leaders["CM"], _leaders["AGM"],
+                                                _leaders["DGM"], _leaders["GM"], _leaders["CGM"]);
+            Snackbar.Add("Leaders saved", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task AddMember()
+    {
+        if (string.IsNullOrWhiteSpace(_newPf)) { Snackbar.Add("Enter a PF number", Severity.Warning); return; }
+        var s = await AdminService.GetStaffByPfAsync(_newPf);
+        if (s == null) { Snackbar.Add($"PF {_newPf} not found in staff details.", Severity.Error); return; }
+        try
+        {
+            await AdminService.AddMemberAsync(SectionId, _newPf, s.NAME ?? "", _newRole);
+            _members = await AdminService.GetMembersAsync(SectionId);
+            await LoadMemberStaff();
+            _newPf = null; _newRole = null;
+            Snackbar.Add("Member added", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task RemoveMember(string pf, string name)
+    {
+        var n = await AdminService.CountSubmissionsByPfAsync(pf);
+        var p = new DialogParameters
+        {
+            ["Title"] = "Remove team member",
+            ["Message"] = $"Remove {name} (PF {pf}) from this team?",
+            ["SubMessage"] = n > 0
+                ? $"This person has {n} budget submission(s). Those records are KEPT for audit — only their access to this section is removed."
+                : "They will no longer have access to this section's data.",
+            ["ConfirmText"] = "Remove",
+            ["ConfirmColor"] = Color.Error,
+            ["Icon"] = Icons.Material.Filled.PersonRemove,
+            ["IconColor"] = Color.Error
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true };
+        var dlg = await DialogService.ShowAsync<ConfirmDialog>(string.Empty, p, o);
+        var res = await dlg.Result;
+        if (res.Canceled || res.Data is not bool ok || !ok) return;
+
+        await AdminService.RemoveMemberAsync(SectionId, pf);
+        _members = await AdminService.GetMembersAsync(SectionId);
+        await LoadMemberStaff();
+        Snackbar.Add("Member removed", Severity.Info);
+    }
+
+    private async Task LoadMemberStaff()
+    {
+        _memberStaff.Clear();
+        var pfs = _members.Select(m => m.PF_NUMBER).Distinct().ToList();
+        if (pfs.Count == 0) return;
+        try
+        {
+            foreach (var s in await AdminService.GetStaffByPfListAsync(pfs))
+                if (!string.IsNullOrEmpty(s.EMPLID)) _memberStaff[s.EMPLID] = s;
+        }
+        catch { }
+    }
+
+    private static bool DesignationMatches(string role, DitStaffDetail s)
+    {
+        var d = (s.EMP_DESGN_DESC ?? "").ToUpperInvariant();
+        return role switch
+        {
+            "CM" => d.Contains("CHIEF MANAGER") && !d.Contains("GENERAL"),
+            "AGM" => d.StartsWith("AGM") || ((d.Contains("ASST") || d.Contains("ASSISTANT")) && d.Contains("GENERAL MANAGER")),
+            "DGM" => d.StartsWith("DGM") || d.Contains("DEPUTY GENERAL MANAGER"),
+            "GM" => d.Contains("GENERAL MANAGER") && !d.Contains("CHIEF") && !d.Contains("ASST")
+                     && !d.Contains("ASSISTANT") && !d.Contains("DEPUTY") && !d.StartsWith("DGM"),
+            "CGM" => d.StartsWith("CGM") || d.Contains("CHIEF GENERAL MANAGER"),
+            _ => true
+        };
+    }
+
+    private void Close() => MudDialog.Close();
+}

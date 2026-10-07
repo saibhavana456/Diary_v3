@@ -1,0 +1,706 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Union Hub & Corporate Feed — Shared Event Styles (ev-*)
+   Used by: UnionHub.razor, Explore.razor, HomeEmployee.razor
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ev-scope {
+    width: 100%;
+    max-width: 100%;
+}
+
+.ev-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+    align-items: start;
+}
+
+.ev-feed-col {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.ev-side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: sticky;
+    top: 12px;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+.ev-card {
+    background: #fff;
+    border: 1px solid #e9edf5;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(16, 24, 64, .04), 0 6px 20px rgba(16, 24, 64, .06);
+    overflow: hidden;
+    width: 100%;
+}
+
+.ev-post {
+    padding: 18px 20px;
+}
+
+.ev-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: #64748b;
+    font-size: .9rem;
+}
+
+/* ── Post header ───────────────────────────────────────────────────────── */
+.ev-post-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.ev-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.ev-avatar-sm {
+    width: 30px;
+    height: 30px;
+    font-size: .68rem;
+}
+
+.ev-avatar-md {
+    width: 42px;
+    height: 42px;
+    font-size: .82rem;
+}
+
+.ev-ring-blue {
+    background: #1E3A8A;
+}
+
+.ev-post-meta {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ev-post-author {
+    margin: 0;
+    font-weight: 700;
+    font-size: .9rem;
+    color: #1b2a4a;
+}
+
+.ev-post-time {
+    margin: 0;
+    font-size: .72rem;
+    color: #64748b;
+}
+
+/* ── Chips ─────────────────────────────────────────────────────────────── */
+.ev-chip {
+    display: inline-block;
+    font-size: .68rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.ev-chip-blue {
+    background: #e8f0fe;
+    color: #1a56db;
+}
+
+/* ── Post content ──────────────────────────────────────────────────────── */
+.ev-post-text {
+    margin: 0 0 10px;
+    font-size: .9rem;
+    line-height: 1.55;
+    color: #334155;
+    width: 100%;
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.ev-post-event {
+    margin: 0 0 10px;
+    font-size: .82rem;
+    color: #475569;
+}
+
+/* ── Post images ───────────────────────────────────────────────────────── */
+.ev-post-imgs {
+    display: grid;
+    gap: 8px;
+    border-radius: 12px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    margin-bottom: 10px;
+}
+
+.ev-post-imgs.ev-cols-1 {
+    grid-template-columns: 1fr;
+}
+
+.ev-post-imgs.ev-cols-2 {
+    grid-template-columns: 1fr 1fr;
+}
+
+.ev-post-imgs.ev-cols-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+.ev-post-img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform .15s ease;
+}
+
+.ev-post-img:hover {
+    transform: scale(1.02);
+}
+
+/* Video thumbnail in the feed — same footprint as a photo tile, with a play badge overlay. */
+.ev-post-video-thumb {
+    position: relative;
+    cursor: pointer;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: transform .15s ease;
+}
+
+.ev-post-video-thumb:hover {
+    transform: scale(1.02);
+}
+
+.ev-post-video-thumb video {
+    display: block;
+    pointer-events: none; /* clicks open the lightbox instead of the inline controls */
+}
+
+.ev-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+    color: #fff;
+    background: rgba(0, 0, 0, .28);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+    pointer-events: none;
+}
+
+/* Small play badge on the composer preview thumbnails. */
+.ev-thumb-badge {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    font-size: .7rem;
+    color: #fff;
+    background: rgba(0, 0, 0, .55);
+    border-radius: 4px;
+    padding: 1px 5px;
+    pointer-events: none;
+}
+
+/* ── Composer media previews (photos & videos) ─────────────────────────── */
+.ev-upload-previews {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.ev-upload-thumb {
+    position: relative;
+    width: 84px;
+    height: 84px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #0f172a;
+}
+
+    .ev-upload-thumb img,
+    .ev-upload-thumb video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .ev-upload-thumb button {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 20px;
+        height: 20px;
+        line-height: 18px;
+        text-align: center;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, .6);
+        color: #fff;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+/* ── Actions bar ───────────────────────────────────────────────────────── */
+.ev-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-top: 10px;
+    border-top: 1px solid #e9edf5;
+    font-size: .8rem;
+    color: #64748b;
+}
+
+.ev-act {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: .8rem;
+    color: #64748b;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background .15s;
+}
+
+.ev-act:hover {
+    background: #f1f5f9;
+}
+
+.ev-act-right {
+    margin-left: auto;
+    color: #1E3A8A;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.ev-act-right:hover {
+    text-decoration: underline;
+}
+
+.ev-heart {
+    font-size: 1rem;
+}
+
+.ev-liked {
+    color: #dc2626;
+}
+
+.ev-saved {
+    color: #f59e0b;
+}
+
+.ev-hover-blue:hover {
+    color: #1E3A8A;
+}
+
+/* ── Comments ──────────────────────────────────────────────────────────── */
+.ev-comments {
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ev-comment {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.ev-comment-bubble {
+    background: #f8fafc;
+    border: 1px solid #e9edf5;
+    border-radius: 12px;
+    padding: 8px 12px;
+    flex: 1;
+}
+
+.ev-comment-author {
+    margin: 0;
+    font-weight: 700;
+    font-size: .78rem;
+    color: #1b2a4a;
+}
+
+.ev-comment-text {
+    margin: 2px 0 0;
+    font-size: .82rem;
+    color: #475569;
+}
+
+.ev-comment-compose {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.ev-comment-input {
+    flex: 1;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: .82rem;
+    outline: none;
+    transition: border-color .15s;
+}
+
+.ev-comment-input:focus {
+    border-color: #1E3A8A;
+}
+
+.ev-comment-send {
+    background: #1E3A8A;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: .78rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ev-comment-send:hover {
+    background: #152e6e;
+}
+
+/* ── View more ─────────────────────────────────────────────────────────── */
+.ev-viewmore {
+    text-align: center;
+    padding: 8px 0 2px;
+}
+
+.ev-btn-ghost {
+    display: inline-block;
+    font-weight: 700;
+    font-size: .85rem;
+    color: #1E3A8A;
+    text-decoration: none;
+    border: 1px solid #e9edf5;
+    border-radius: 999px;
+    padding: 8px 18px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(16, 24, 64, .04), 0 6px 20px rgba(16, 24, 64, .06);
+    cursor: pointer;
+}
+
+.ev-btn-ghost:hover {
+    border-color: #1E3A8A;
+}
+
+.ev-viewmore-sub {
+    font-size: .72rem;
+    color: #94a3b8;
+    margin-top: 6px;
+}
+
+/* ── Sidebar cards ─────────────────────────────────────────────────────── */
+.ev-side-card {
+    padding: 16px;
+}
+
+.ev-side-title {
+    font-size: .9rem;
+    font-weight: 700;
+    color: #1b2a4a;
+    margin: 0 0 12px;
+}
+
+.ev-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ev-upcoming {
+    padding: 16px;
+}
+
+.ev-upcoming-title {
+    font-size: .9rem;
+    font-weight: 700;
+    color: #1b2a4a;
+    margin: 0 0 12px;
+}
+
+.ev-upcoming-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ev-upcoming-item {
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.ev-upcoming-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.ev-upcoming-name {
+    margin: 0;
+    font-size: .85rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.ev-upcoming-when {
+    margin: 2px 0 0;
+    font-size: .72rem;
+    color: #94a3b8;
+}
+
+/* ── Lightbox ──────────────────────────────────────────────────────────── */
+.ev-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, .85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.ev-lb-inner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    max-width: 90vw;
+    max-height: 85vh;
+}
+
+.ev-lb-figure {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.ev-lightbox-img {
+    max-width: 80vw;
+    max-height: 75vh;
+    border-radius: 12px;
+    object-fit: contain;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
+}
+
+.ev-lightbox-video {
+    max-width: 80vw;
+    max-height: 75vh;
+    width: auto;
+    height: auto;
+    border-radius: 12px;
+    background: #000;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
+}
+
+.ev-lb-caption {
+    margin-top: 12px;
+    color: #e2e8f0;
+    font-size: .82rem;
+    text-align: center;
+    display: flex;
+    gap: 12px;
+}
+
+.ev-lb-count {
+    opacity: .6;
+}
+
+.ev-lb-arrow {
+    background: rgba(255, 255, 255, .12);
+    border: none;
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    cursor: pointer;
+    transition: background .15s;
+    flex-shrink: 0;
+}
+
+.ev-lb-arrow:hover {
+    background: rgba(255, 255, 255, .25);
+}
+
+.ev-lb-arrow svg {
+    width: 22px;
+    height: 22px;
+}
+
+.ev-lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 2rem;
+    cursor: pointer;
+    line-height: 1;
+}
+
+/* ── Modals ────────────────────────────────────────────────────────────── */
+.ev-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    background: rgba(0, 0, 0, .5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.ev-modal-card {
+    background: #fff;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 520px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .2);
+    overflow: hidden;
+}
+
+.ev-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid #e9edf5;
+}
+
+.ev-modal-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1b2a4a;
+}
+
+.ev-modal-sub {
+    margin: 2px 0 0;
+    font-size: .78rem;
+    color: #64748b;
+}
+
+.ev-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    color: #94a3b8;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.ev-modal-body {
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ev-modal-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid #e9edf5;
+}
+
+.ev-label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #475569;
+}
+
+.ev-input {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 9px 14px;
+    font-size: .85rem;
+    outline: none;
+    transition: border-color .15s;
+}
+
+.ev-input:focus {
+    border-color: #1E3A8A;
+}
+
+.ev-btn-primary {
+    background: #1E3A8A;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 9px 18px;
+    font-weight: 700;
+    font-size: .85rem;
+    cursor: pointer;
+}
+
+.ev-btn-primary:hover {
+    background: #152e6e;
+}
+
+.ev-btn-primary:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.ev-btn-text {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-weight: 600;
+    font-size: .85rem;
+    padding: 9px 14px;
+    cursor: pointer;
+    border-radius: 10px;
+}
+
+.ev-btn-text:hover {
+    background: #f8fafc;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+    .ev-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ev-side-col {
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .ev-side-col > .ev-card {
+        flex: 1 1 280px;
+    }
+}

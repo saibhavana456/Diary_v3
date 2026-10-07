@@ -1,0 +1,414 @@
+﻿@page "/dbv/otherinformation"
+
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.DigitalBusinessVertical.Models
+@using MyDiary.Web.Features.DigitalBusinessVertical.Services
+
+@inject IDbvService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>DBV Other Information - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+
+    <PageHeader PageKey="dbv-otherinitiatives"
+                Title="Other Information"
+                Subtitle="Other Information and supporting documents from the Digital Business Vertical."
+                Crumbs="_crumbs" />
+
+    @if (_isAdmin)
+    {
+        <div class="d-flex justify-space-between align-center mb-3">
+            <MudSwitch T="bool"
+                       Value="_includeArchived"
+                       ValueChanged="OnArchivedChanged"
+                       Label="Show archived (department only)"
+                       Color="Color.Warning" />
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenNew">
+                New Information
+            </MudButton>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else if (_items.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info"
+                  Variant="Variant.Outlined">
+            No Information available.
+        </MudAlert>
+    }
+    else
+    {
+        <MudGrid>
+
+            @foreach (var item in _items)
+            {
+                <MudItem xs="12" md="6">
+
+                    <MudPaper Class="pa-4"
+                              Style="height:100%"
+                              Elevation="1">
+
+                        <div class="d-flex justify-space-between align-start">
+
+                            <MudText Typo="Typo.subtitle1">
+                                <b>@item.Title</b>
+                            </MudText>
+
+                            @if (item.IsArchived)
+                            {
+                                <MudChip T="string" Size="Size.Small">
+                                    Archived
+                                </MudChip>
+                            }
+
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(item.Description))
+                        {
+                            <MudText Typo="Typo.body2"
+                                     Class="mb-2"
+                                     Style="white-space:pre-wrap">
+                                @item.Description
+                            </MudText>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(item.FilePath))
+
+                        {
+                            <MudLink Href="@(item.FilePath)"
+                                     Target="_gn-center gap-1">
+
+                                <MudIcon Icon="@Icons.Material.Filled.Download"
+                                         Size="Size.Small" />
+
+                                @item.FileName
+
+                            </MudLink>
+                        }
+
+                        @if (_isAdmin)
+                        {
+                            <div class="d-flex justify-end gap-1 mt-2">
+
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small"
+                                               OnClick="@(() => OpenEdit(item))" />
+
+                                <MudIconButton Icon="@(item.IsArchived
+                                    ? Icons.Material.Filled.Unarchive
+                                    : Icons.Material.Filled.Archive)"
+                                               Size="Size.Small"
+                                               OnClick="@(() => ToggleArchiveAsync(item))" />
+
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => DeleteAsync(item))" />
+
+                            </div>
+                        }
+
+                    </MudPaper>
+
+                </MudItem>
+            }
+
+        </MudGrid>
+    }
+
+    <MudDialog @bind-Visible="_editOpen"
+               Options="_dlg">
+
+        <TitleContent>
+            @(_form.Id == 0 ? "New Information" : "Edit Information")
+        </TitleContent>
+
+        <DialogContent>
+
+            <MudGrid Spacing="2">
+
+                <MudItem xs="12">
+
+                    <MudTextField T="string"
+                                  Label="Title"
+                                  @bind-Value="_form.Title"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Required="true"
+                                  MaxLength="200" />
+
+                </MudItem>
+
+                <MudItem xs="12">
+
+                    <MudTextField T="string"
+                                  Label="Description"
+                                  @bind-Value="_form.Description"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Lines="4"
+                                  MaxLength="4000" />
+
+                </MudItem>
+
+                <MudItem xs="12">
+
+                    <MudFileUpload T="IBrowserFile"
+                                   FilesChanged="OnPicked"
+                                   Accept=".png,.jpg,.jpeg,.gif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+
+                        <ActivatorContent>
+
+                            <MudButton Variant="Variant.Outlined"
+                                       StartIcon="@Icons.Material.Filled.CloudUpload">
+
+                                @(_file is null
+                                    ? "Attach File"
+                                    : "Replace File")
+
+                            </MudButton>
+
+                        </ActivatorContent>
+
+                    </MudFileUpload>
+
+                    @if (_file is not null)
+                    {
+                        <div class="mt-1">
+                            @_file.Name
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_form.FileName))
+                    {
+                        <div class="mt-1">
+                            Current: @_form.FileName
+                        </div>
+                    }
+
+                </MudItem>
+
+                @if (_form.Id == 0)
+                {
+                    <MudItem xs="12">
+
+                        <MudCheckBox T="bool"
+                                     @bind-Value="_notify"
+                                     Label="Send an in-app push notification to all users"
+                                     Color="Color.Primary" />
+
+                    </MudItem>
+                }
+
+            </MudGrid>
+
+        </DialogContent>
+
+        <DialogActions>
+
+            <MudButton OnClick="@(() => _editOpen = false)">
+                Cancel
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="SaveAsync"
+                       Disabled="_saving">
+
+                Save
+
+            </MudButton>
+
+        </DialogActions>
+
+    </MudDialog>
+
+</AuthenticatedOnly>
+
+@code {
+
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Departments", "departmentsnew"),
+        new("Digital Business Vertical", "activitiesnew?DeptID=59"),
+        new("Other Initiatives")
+    };
+
+    private readonly DialogOptions _dlg = new()
+    {
+        MaxWidth = MaxWidth.Small,
+        FullWidth = true,
+        CloseOnEscapeKey = true
+    };
+
+    private const long MaxFileBytes = 10 * 1024 * 1024;
+
+    private bool _loading = true;
+    private bool _isAdmin;
+    private bool _saving;
+    private bool _includeArchived;
+    private bool _editOpen;
+    private bool _notify = true;
+
+    private string _actor = "";
+
+    private List<DbvOtherInitiative> _items = new();
+    private DbvOtherInitiative _form = new();
+
+    private IBrowserFile? _file;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        _actor = state.User.FindFirst("emplid")?.Value ?? "";
+
+        _isAdmin = await Svc.IsAdminAsync(state.User);
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+
+        _items = await Svc.ListOtherInitiativesAsync(
+            _isAdmin && _includeArchived);
+
+        _loading = false;
+    }
+
+    private async Task OnArchivedChanged(bool value)
+    {
+        _includeArchived = value;
+
+        await ReloadAsync();
+    }
+
+    private void OpenNew()
+    {
+        _form = new DbvOtherInitiative();
+
+        _file = null;
+
+        _notify = true;
+
+        _editOpen = true;
+    }
+
+    private void OpenEdit(DbvOtherInitiative item)
+    {
+        _form = new DbvOtherInitiative
+        {
+            Id = item.Id,
+            Title = item.Title,
+            Description = item.Description,
+            FileName = item.FileName,
+            FilePath = item.FilePath,
+            IsArchived = item.IsArchived
+        };
+
+        _file = null;
+
+        _editOpen = true;
+    }
+
+    private void OnPicked(IBrowserFile file)
+    {
+        if (file.Size > MaxFileBytes)
+        {
+            Snackbar.Add(
+                "File exceeds the 10 MB limit.",
+                Severity.Warning);
+
+            return;
+        }
+
+        _file = file;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+
+        try
+        {
+            if (_file is not null)
+            {
+                await using var stream =
+                    _file.OpenReadStream(MaxFileBytes);
+
+                var result =
+                    await Svc.SaveFileAsync(
+                        "otherinitiatives",
+                        stream,
+                        _file.Name);
+
+                _form.FilePath = result.RelativePath;
+                _form.FileName = result.FileName;
+            }
+
+            var isNew = _form.Id == 0;
+
+            await Svc.SaveOtherInitiativeAsync(
+                _form,
+                _actor,
+                _notify);
+
+            Snackbar.Add(
+                isNew
+                    ? "Initiative added."
+                    : "Initiative updated.",
+                Severity.Success);
+
+            _editOpen = false;
+
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ToggleArchiveAsync(
+        DbvOtherInitiative item)
+    {
+        await Svc.SetOtherInitiativeArchivedAsync(
+            item.Id,
+            !item.IsArchived,
+            _actor);
+
+        await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(
+        DbvOtherInitiative item)
+    {
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Delete '{item.Title}' permanently? Use Archive to keep it.");
+
+        if (!confirmed)
+            return;
+
+        await Svc.DeleteOtherInitiativeAsync(item.Id);
+
+        await ReloadAsync();
+    }
+}

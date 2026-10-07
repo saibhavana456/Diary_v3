@@ -1,0 +1,49 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else if (_rows.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No history recorded.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_rows" Dense="true" Hover="true" Bordered="true" T="BcpAuditRow" Elevation="0">
+                <HeaderContent>
+                    <MudTh>When</MudTh><MudTh>Action</MudTh><MudTh>By</MudTh><MudTh>Detail</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.At.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                    <MudTd>@context.Action</MudTd>
+                    <MudTd>@context.Actor <span style="opacity:.6">(@context.ActorLevel)</span></MudTd>
+                    <MudTd>@context.Detail</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions><MudButton OnClick="@(() => MudDialog.Cancel())">Close</MudButton></DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string Entity { get; set; } = "DRILL";
+    [Parameter] public string EntityId { get; set; } = "";
+
+    private bool _loading = true;
+    private List<BcpAuditRow> _rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _rows = await Svc.ListAuditAsync(user, Entity, EntityId);
+        _loading = false;
+    }
+}

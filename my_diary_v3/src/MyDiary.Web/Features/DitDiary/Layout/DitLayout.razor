@@ -1,0 +1,43 @@
+@inherits LayoutComponentBase
+@layout MyDiary.Web.Components.Layout.MainLayout
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.DitDiary.Services
+@inject DitUserSession Session
+@inject NavigationManager Nav
+
+@* DIT Diary module frame: a compact module bar above every DIT page (the standalone app's own sidebar), inside My Diary's normal layout. *@
+<AuthenticatedOnly>
+    <MudPaper Elevation="0" Class="pa-2 mb-3 d-flex flex-wrap align-center gap-1" Style="border:1px solid var(--mud-palette-lines-default);border-radius:10px">
+        <MudText Typo="Typo.subtitle2" Class="mr-3"><b>DIT Diary</b></MudText>
+        @Link("dit", "Home", Icons.Material.Filled.Home, exact: true)
+        @Link("dit/project/dashboard", "Project Dashboard", Icons.Material.Filled.BarChart)
+        @Link("dit/project/details", "Project List", Icons.Material.Filled.FormatListBulleted)
+        @Link("dit/budget/dashboard", "Budget Dashboard", Icons.Material.Filled.Insights)
+        @Link("dit/budget/details", "Budget Utilization", Icons.Material.Filled.AccountBalanceWallet)
+        @if (Session.User?.IsAdmin == true)
+        {
+            @Link("dit/budget/allocation", "Budget Allocation", Icons.Material.Filled.Savings)
+        }
+        @if (Session.User?.IsAdmin == true || Session.User?.HasScope == true)
+        {
+            @Link("dit/admin/departments", "Departments", Icons.Material.Filled.Business)
+            @Link("dit/admin/sections", "Sections", Icons.Material.Filled.AccountTree)
+        }
+    </MudPaper>
+    @Body
+</AuthenticatedOnly>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LoadAsync();
+        Session.OnChange += () => InvokeAsync(StateHasChanged);
+    }
+
+    private RenderFragment Link(string href, string text, string icon, bool exact = false) => __builder =>
+    {
+        var current = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Trim('/');
+        var active = exact ? current.Equals(href, StringComparison.OrdinalIgnoreCase) : current.StartsWith(href, StringComparison.OrdinalIgnoreCase);
+        <MudButton Href="@href" Size="Size.Small" StartIcon="@icon" Variant="@(active ? Variant.Filled : Variant.Text)" Color="@(active ? Color.Primary : Color.Default)">@text</MudButton>
+    };
+}

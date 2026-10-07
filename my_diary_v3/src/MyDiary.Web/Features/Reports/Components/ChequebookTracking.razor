@@ -1,0 +1,118 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/ChequebookTracking"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Chequebook Tracking — My Diary</PageTitle>
+
+<div class="row">
+    <div class="col-md-12">
+        <table class="table brSelect" style="border: none">
+            <tr>
+                <td>
+                    <label class="dropdownlabel" style="width: 250px;">
+                        <b>
+                            You are here :
+                            <span style="color: rgb(40, 78, 152);">Chequebook Tracking</span>
+                        </b>
+                    </label>
+                </td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<div class="content-wrapper">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-3"></div>
+
+            <div class="col-md-6">
+                <div class="form-group has-success">
+                    <label class="control-label" for="txtAccount">Search Using Account Number</label>
+                    <input id="txtAccount"
+                           class="form-control"
+                           placeholder="Enter Account Number"
+                           @bind="AccountNo"
+                           @bind:event="oninput"
+                           autocomplete="off" />
+                </div>
+            </div>
+
+            <div class="col-md-3"></div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4"></div>
+
+            <div class="col-md-2">
+                <br />
+                <button class="btn"
+                        style="background-color:#000066; color:#fff; width:100%;"
+                        disabled="@IsSearching"
+                        @onclick="OnSearch">
+                    @(IsSearching ? "Searching..." : "Search")
+                </button>
+            </div>
+
+            <div class="col-md-2">
+                <br />
+            </div>
+
+            <div class="col-md-4"></div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string AccountNo { get; set; } = string.Empty;
+    private bool IsSearching { get; set; } = false;
+
+    private async Task OnSearch()
+    {
+        // Basic validation
+        var raw = AccountNo?.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            await JS.InvokeVoidAsync("alert", "Please enter an account number.");
+            return;
+        }
+
+        IsSearching = true;
+        try
+        {
+            // Optional: check existence (LIKE '%...%'), or change to exact '='
+            var like = raw.Replace("'", "''");
+            string sql = $"SELECT TOP 1 1 AS ExistsFlag FROM ChequeBookTracking WHERE ACCOUNTNO LIKE '%{like}%'";
+            var rows = await ReportService.ExecuteRawQueryAsync(sql) ?? new();
+
+            if (rows.Count < 1)
+            {
+                AccountNo = string.Empty;
+                await JS.InvokeVoidAsync("alert", "Sorry you have not initiated any cheque book request");
+                return;
+            }
+
+            // Navigate to the new Blazor result page with query param
+            var target = $"reports/chequebook-tracking-result?accountno={Uri.EscapeDataString(raw)}";
+            Nav.NavigateTo($"reports/chequebook-tracking-result?accountno={Uri.EscapeDataString(raw)}"); // Blazor route - no forceLoad
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[ChequebookTracking] Unhandled error: " + ex.Message);
+            await JS.InvokeVoidAsync("alert", "Error occurred. Please try again later.");
+        }
+        finally
+        {
+            IsSearching = false;
+            StateHasChanged();
+        }
+    }
+}

@@ -1,0 +1,102 @@
+@page "/emanual/document"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@inject NavigationManager Nav
+@layout MyDiary.Web.Components.Layout.MainLayout
+<PageTitle>Document E-Manual</PageTitle>
+
+<PageHeader Title="Document E-Manual"
+            Subtitle="Standard & Auxiliary Banking Documents — Union Bank of India"
+            PageKey="emanual-document"
+            Crumbs="_crumbs" />
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+
+    <MudGrid Spacing="3">
+        @foreach (var doc in _documents)
+        {
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="emanual-file-card"
+                         Style="border-radius:12px; cursor:pointer; overflow:hidden; height:100%;">
+                    <div style="height:4px; background:#37474f;"></div>
+
+                    <!-- Document icon area -->
+                    <div style="height:130px; background: linear-gradient(145deg,#eceff1,#cfd8dc);
+                                display:flex; flex-direction:column;
+                                align-items:center; justify-content:center; gap:6px;">
+                        <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf"
+                                 Style="font-size:3.5rem; color:#e53935; opacity:0.85;" />
+                        <MudChip T="string" Size="Size.Small"
+                                 Style="background:#37474f; color:white; font-weight:700;
+                                        font-size:0.72rem; height:20px;">
+                            @doc.Tag
+                        </MudChip>
+                    </div>
+
+                    <MudCardContent Class="pa-3">
+                        <MudTooltip Text="@doc.Label" Placement="Placement.Top" Arrow="true" Color="Color.Dark">
+                            <MudText Typo="Typo.subtitle2"
+                                     Style="font-weight:700; color:#1a237e; font-size:0.88rem;
+                                            line-height:1.4; display:-webkit-box;
+                                            -webkit-line-clamp:3; -webkit-box-orient:vertical;
+                                            overflow:hidden; min-height:3.6em;">
+                                @doc.Label
+                            </MudText>
+                        </MudTooltip>
+                    </MudCardContent>
+
+                    <MudCardActions Class="pa-2 pt-0">
+                        <MudButton FullWidth="true" Variant="Variant.Filled"
+                                   Style="background:#37474f; color:white; font-size:0.78rem;
+                                          border-radius:8px; font-weight:600;"
+                                   StartIcon="@Icons.Material.Filled.OpenInNew"
+                                   Size="Size.Small"
+                                   Href="@doc.Href" Target="_blank">
+                            Open PDF
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+
+</MudContainer>
+
+<style>
+    .emanual-file-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .emanual-file-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.14) !important;
+    }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("E-manual Content", "emanual"),
+        new("Document E-Manual"),
+    };
+
+    private record DocItem(string Tag, string Label, string Href);
+
+    private List<DocItem> _documents = new()
+    {
+        new("01", "Standard Documents (SD)",
+            "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/Document E manual/Standard Documents SD.pdf"),
+
+        new("02", "Auxiliary Documents (AD)",
+            "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/Document E manual/Auxiliary Documents AD.pdf"),
+
+        new("03", "Document Formats (as on 30-09-2024)",
+            "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/Document E manual/03 Document Formats Final as on 30092024.pdf"),
+
+        new("04", "Product-wise Facility-wise Documentation",
+            "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/Document E manual/Facility wise product wise documentation.pdf"),
+
+        new("05", "Compendium on Documentation for Loans and Advances",
+            "https://ubinet.unionbankofindia.co.in/download/eManual/27-10-2025/CRD-Credit Recovery/Loans & Advances.pdf"),
+    };
+}

@@ -1,0 +1,289 @@
+@page "/bcp-drill/submit"
+@page "/bcp-drill/submit/{Id:long}"
+@using System.Security.Claims
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IWebHostEnvironment Env
+
+<PageTitle>BCP / DR Drill Submission - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="@(Id.HasValue ? "Edit drill submission" : "Submit BCP / DR drill")"
+                Subtitle="Annexure-I - format for BCP testing / DR drill of Branch / Office."
+                Crumbs="_crumbs" PageKey="bcp-drill-submit" />
+
+    @if (_loading) { <MudProgressCircular Indeterminate="true" /> }
+    else if (_scope is null || !_scope.CanSubmitDrill)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            Drill compliance is submitted by the branch. @(_scope?.DisplayLevel) users can review and monitor it from the main page.
+        </MudAlert>
+        <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Back</MudButton>
+    }
+    else if (_savedId.HasValue)
+    {
+        <MudPaper Elevation="1" Class="pa-6">
+            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">
+                Drill compliance saved (ref <b>BCP/@_savedSol/@_savedId</b>). Your Regional Office can now review it.
+            </MudAlert>
+            <div class="d-flex gap-2 flex-wrap">
+                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="DownloadPdfAsync">Download certificate (PDF)</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Back to submissions</MudButton>
+            </div>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-3">Take a printout and obtain the physical signatures of the Branch Head, FGMO Security officer / BCP In-charge and FGMO Risk Officer.</MudText>
+        </MudPaper>
+    }
+    else if (_home is null && !_scope.IsAdmin)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            Your branch is not in the BCP branch mapping, so a drill cannot be submitted. Please ask your Regional Office / App Admin to add it under Branch mapping.
+        </MudAlert>
+    }
+    else
+    {
+        <MudPaper Elevation="1" Class="pa-4 mb-3">
+            <MudText Typo="Typo.h6" Class="mb-3">Drill details</MudText>
+            <MudGrid Spacing="2">
+                @if (_scope.IsAdmin && !Id.HasValue)
+                {
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudSelect T="string" Label="Region (RO)" Value="@_pickRegion" ValueChanged="OnPickRegionAsync" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var r in _regions) { <MudSelectItem T="string" Value="@r.Code">@r.Name</MudSelectItem> }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudSelect T="string" Label="Branch" Value="@_pickBranch" ValueChanged="OnPickBranchAsync" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var b in _branches) { <MudSelectItem T="string" Value="@b.Code">@b.Name</MudSelectItem> }
+                        </MudSelect>
+                    </MudItem>
+                }
+                <MudItem xs="12" sm="6" md="4"><MudTextField T="string" Label="Branch name" Value="@(_home?.BranchName)" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="2"><MudTextField T="string" Label="SOL ID" Value="@(_home?.SolId)" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudTextField T="string" Label="Region (RO)" Value="@(_home?.RegionName ?? _home?.RegionCode)" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudTextField T="string" Label="Zone (ZO)" Value="@(_home?.ZoneName ?? _home?.ZoneCode)" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" @bind-Value="_d.DrillType" Label="Type of drill conducted" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true">
+                        <MudSelectItem T="string" Value="@BcpTypes.Bcp">BCP Testing</MudSelectItem>
+                        <MudSelectItem T="string" Value="@BcpTypes.Dr">DR Drill</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudDatePicker Date="@_d.DrillDate" DateChanged="@(dt => _d.DrillDate = dt ?? DateTime.Today)" Label="Date of drill conducted" Variant="Variant.Outlined"
+                                   Margin="Margin.Dense" MaxDate="DateTime.Today" DateFormat="dd-MMM-yyyy" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="_d.Category" Label="Category of branch" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="50" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudNumericField T="int?" @bind-Value="_d.StaffNormal" Label="No of staff (Award staff / Officers)" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Elevation="1" Class="pa-4 mb-3">
+            <MudText Typo="Typo.h6" Class="mb-3">Branch where the operations will be carried out</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6" md="5">
+                    <MudSelect T="string" Label="BCP / alternate branch" Value="@_altPick" ValueChanged="OnAltPick" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true">
+                        @foreach (var p in _peers) { <MudSelectItem T="string" Value="@p.SolId">@p.BranchName (@p.SolId)</MudSelectItem> }
+                        <MudSelectItem T="string" Value="@("OTHER")">Other - enter manually</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                @if (_altPick == "OTHER")
+                {
+                    <MudItem xs="12" sm="6" md="4"><MudTextField T="string" @bind-Value="_d.AltBranchName" Label="Branch name" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="_d.AltSolId" Label="SOL ID" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="20" /></MudItem>
+                    <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="_d.AltRegion" Label="Region" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" /></MudItem>
+                    <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="_d.AltZone" Label="Zone" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" /></MudItem>
+                    <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="_d.AltCategory" Label="Category" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="50" /></MudItem>
+                }
+                <MudItem xs="12" sm="6" md="@(_altPick == "OTHER" ? 3 : 4)"><MudNumericField T="int?" @bind-Value="_d.StaffAlt" Label="No of staff at that branch" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Elevation="1" Class="pa-4 mb-3">
+            <MudText Typo="Typo.h6" Class="mb-1">Particulars of operations</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">Number (and amount where applicable) during normal days, and from where the operations will be carried out.</MudText>
+            <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;min-width:820px">
+                    <thead>
+                        <tr style="background:var(--mud-palette-background-gray)">
+                            <th style="text-align:left;padding:6px">Particular</th>
+                            <th style="padding:6px">Normal days - No</th><th style="padding:6px">Normal days - Amount</th>
+                            <th style="padding:6px">Alternate site - No</th><th style="padding:6px">Alternate site - Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            <tr style="border-top:1px solid var(--mud-palette-lines-default)">
+                                <td style="padding:6px">@row.Def.Label</td>
+                                <td style="padding:4px"><MudNumericField T="long?" @bind-Value="row.Value.NormalCount" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></td>
+                                <td style="padding:4px">@if (row.Def.HasAmount) { <MudNumericField T="decimal?" @bind-Value="row.Value.NormalAmount" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /> } else { <span style="opacity:.4">n/a</span> }</td>
+                                <td style="padding:4px"><MudNumericField T="long?" @bind-Value="row.Value.AltCount" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></td>
+                                <td style="padding:4px">@if (row.Def.HasAmount) { <MudNumericField T="decimal?" @bind-Value="row.Value.AltAmount" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /> } else { <span style="opacity:.4">n/a</span> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </MudPaper>
+
+        <MudPaper Elevation="1" Class="pa-4 mb-3">
+            <MudGrid Spacing="2">
+                <MudItem xs="12"><MudTextField T="string" @bind-Value="_d.Remarks" Label="Remarks" Lines="3" MaxLength="4000" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12">
+                    <MudCheckBox T="bool" @bind-Value="_d.IsCompliant" Color="Color.Primary" Label="I certify that the drill was carried out as per the prescribed checklist." />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+                        <ActivatorContent><MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AttachFile">Attach supporting document (optional)</MudButton></ActivatorContent>
+                    </MudFileUpload>
+                    @if (_fileName is not null) { <span class="ml-2" style="font-size:.85rem">@_fileName (@((_fileBytes?.Length ?? 0) / 1024) KB)</span> }
+                    else if (!string.IsNullOrEmpty(_d.DocName)) { <span class="ml-2" style="font-size:.85rem">Existing: @_d.DocName (kept unless you attach a new file)</span> }
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-1">pdf, doc, docx, xls, xlsx, jpg or png. Max 10 MB.</MudText>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        @if (_d.Status == BcpStatus.Returned && !string.IsNullOrWhiteSpace(_d.ReviewRemarks))
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-3">Returned by your Regional Office: @_d.ReviewRemarks</MudAlert>
+        }
+
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveAsync" Disabled="@_saving">@(_saving ? "Saving..." : (Id.HasValue ? "Save & resubmit" : "Submit"))</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Cancel</MudButton>
+        </div>
+    }
+</AuthenticatedOnly>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private sealed class MetricRow { public BcpMetrics.Def Def { get; init; } = default!; public BcpMetricValue Value { get; init; } = new(); }
+
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("BCP / DR Drill Compliance", "bcp-drill"), new("Submit") };
+
+    private ClaimsPrincipal _user = new();
+    private BcpScope? _scope;
+    private bool _loading = true, _saving;
+    private BcpDrillEntry _d = new();
+    private BcpBranch? _home;
+    private List<BcpBranch> _peers = new();
+    private List<OrgOption> _regions = new(), _branches = new();
+    private string _pickRegion = "", _pickBranch = "", _altPick = "";
+    private readonly List<MetricRow> _rows = BcpMetrics.All.Select(m => new MetricRow { Def = m, Value = new BcpMetricValue { Code = m.Code } }).ToList();
+
+    private IBrowserFile? _file;
+    private string? _fileName;
+    private byte[]? _fileBytes;
+    private long? _savedId;
+    private string? _savedSol;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _scope = Svc.GetScope(_user);
+        if (_scope.CanSubmitDrill)
+        {
+            if (Id.HasValue)
+            {
+                var existing = await Svc.GetDrillAsync(_user, Id.Value);
+                if (existing is null) { Snackbar.Add("Submission not found, or outside your scope.", Severity.Warning); Nav.NavigateTo("bcp-drill"); return; }
+                _d = existing;
+                foreach (var row in _rows)
+                {
+                    var m = existing.Metrics.FirstOrDefault(x => x.Code == row.Def.Code);
+                    if (m is not null) { row.Value.NormalCount = m.NormalCount; row.Value.NormalAmount = m.NormalAmount; row.Value.AltCount = m.AltCount; row.Value.AltAmount = m.AltAmount; }
+                }
+                _home = (await Svc.ListBranchMapAsync(_user)).FirstOrDefault(b => b.SolId == existing.SolId);
+                await LoadPeersAsync();
+                _altPick = existing.AltSolId is not null && _peers.Any(p => p.SolId == existing.AltSolId) ? existing.AltSolId : "OTHER";
+            }
+            else if (_scope.IsAdmin)
+            {
+                _regions = await Svc.GetRegionsAsync(_user, null);
+            }
+            else
+            {
+                _home = await Svc.GetMyBranchAsync(_user);
+                if (_home is not null) { _d.SolId = _home.SolId; await LoadPeersAsync(); }
+            }
+        }
+        _loading = false;
+    }
+
+    private async Task LoadPeersAsync()
+    {
+        _peers = _home is null ? new() : await Svc.GetPeerBranchesAsync(_user, _home.SolId);
+    }
+
+    private async Task OnPickRegionAsync(string? v)
+    {
+        _pickRegion = v ?? ""; _pickBranch = ""; _home = null; _peers = new();
+        _branches = string.IsNullOrEmpty(_pickRegion) ? new() : await Svc.GetBranchesAsync(_user, _pickRegion);
+    }
+
+    private async Task OnPickBranchAsync(string? v)
+    {
+        _pickBranch = v ?? "";
+        _home = (await Svc.ListBranchMapAsync(_user, _pickRegion)).FirstOrDefault(b => b.SolId == _pickBranch);
+        _d.SolId = _home?.SolId ?? "";
+        _altPick = ""; _d.AltSolId = null; _d.AltBranchName = null;
+        await LoadPeersAsync();
+    }
+
+    private void OnAltPick(string? v)
+    {
+        _altPick = v ?? "";
+        if (_altPick == "OTHER") { _d.AltSolId = null; _d.AltBranchName = null; return; }
+        var p = _peers.FirstOrDefault(x => x.SolId == _altPick);
+        _d.AltSolId = p?.SolId; _d.AltBranchName = p?.BranchName;
+    }
+
+    private async Task OnFileSelected(IBrowserFile? f)
+    {
+        if (f is null) return;
+        if (f.Size > 10 * 1024 * 1024) { Snackbar.Add("File is larger than 10 MB.", Severity.Warning); return; }
+        await using var s = f.OpenReadStream(10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await s.CopyToAsync(ms);
+        _file = f; _fileName = f.Name; _fileBytes = ms.ToArray();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_home is null) { Snackbar.Add("Select the branch first.", Severity.Warning); return; }
+        if (string.IsNullOrEmpty(_altPick)) { Snackbar.Add("Select the branch where operations will be carried out.", Severity.Warning); return; }
+        if (!_d.IsCompliant) { Snackbar.Add("Please certify the drill was carried out as per the checklist.", Severity.Warning); return; }
+        _saving = true;
+        try
+        {
+            _d.SolId = _home.SolId;
+            _d.Metrics = _rows.Select(r => r.Value).ToList();
+            _savedId = await Svc.SaveDrillAsync(_user, _d, _fileBytes, _file?.ContentType, _fileName);
+            _savedSol = _home.SolId;
+            Snackbar.Add("Drill compliance saved.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        _saving = false;
+    }
+
+    private async Task DownloadPdfAsync()
+    {
+        try
+        {
+            var d = _savedId.HasValue ? await Svc.GetDrillAsync(_user, _savedId.Value) : null;
+            if (d is null) return;
+            var pdf = BcpDocuments.DrillPdf(d, BcpDocuments.LoadLogo(Env.WebRootPath, "UBI_Logo.png"), BcpDocuments.LoadLogo(Env.WebRootPath, "My_Diary_Log-transparent_small.png"));
+            await JS.InvokeVoidAsync("BlazorDownloadFile", $"BCP_Annexure-I_{d.SolId}_{d.DrillDate:yyyyMMdd}.pdf", "application/pdf", Convert.ToBase64String(pdf));
+        }
+        catch (Exception ex) { Snackbar.Add("Could not generate the PDF: " + ex.Message, Severity.Error); }
+    }
+}

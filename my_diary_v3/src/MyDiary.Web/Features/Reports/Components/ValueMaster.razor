@@ -1,0 +1,230 @@
+@page "/reports/ValueMaster"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+
+<style>
+	.fixed-table {
+		table-layout: fixed !important;
+		width: 100% !important;
+	}
+
+	.mud-table-container {
+		overflow-x: auto;
+	}
+
+	.mud-table-head {
+		background-color: #2a2f5b;
+	}
+</style>
+
+<MudGrid Spacing="3">
+	<MudItem xs="12">
+		<MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+			@* --- Breadcrumb --- *@
+			<ReportBreadcrumb />
+
+			<PageTitle>Valuers Master � My Diary</PageTitle>
+
+			@* <!-- Header -->
+			<MudCard Class="overflow-hidden h-100" Elevation="2"
+					 Style="border-top-left-radius: 10px; border-top-right-radius: 10px; border-bottom-left-radius: 0; border-bottom-right-radius: 0;">
+				<MudCardHeader Class="d-flex align-center justify-center text-white"
+							   Style="height:50px; font-weight:800; letter-spacing:.3px;
+                                      background: linear-gradient(180deg, #c8102e 0%, #0b4ea2 100%);">
+					<MudText Typo="Typo.h6">@_title</MudText>
+				</MudCardHeader>
+			</MudCard> *@
+
+			<!-- Filters + Export -->
+			<MudGrid Spacing="2" Class="pa-4 align-center">
+				<MudItem xs="12" sm="3">
+					<MudSelect T="string"
+							   Label="State"
+							   Value="SelectedState"
+							   ValueChanged="HandleStateChanged"
+							   Variant="Variant.Outlined"
+							   Margin="Margin.Dense"
+							   Dense="true">
+						<MudSelectItem Value="@("All")">All</MudSelectItem>
+						@foreach (var s in _states)
+
+
+
+						{
+							<MudSelectItem Value="@s["state_code_finacle"].ToString()">
+								@s["state_name_eng"].ToString()
+							</MudSelectItem>
+						}
+					</MudSelect>
+				</MudItem>
+
+				<MudSpacer />
+
+				<MudItem xs="12" sm="3" Class="d-flex justify-end">
+					<MudButton Variant="Variant.Filled"
+							   StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+							   Style="background-color: #000066; color: white; font-size: 11px;"
+							   OnClick="OnExportInternal">
+						Export To Excel
+					</MudButton>
+				</MudItem>
+			</MudGrid>
+
+			<!-- As On Label -->
+			<div class="px-4 d-flex justify-end">
+				<MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+					@_asOnDateLabel
+				</MudText>
+			</div>
+
+			<!-- Data Table -->
+			<MudItem xs="12" Class="pa-4">
+				<MudTable Items="_data"
+						  Loading="_loading"
+						  Dense="true"
+						  Striped="true"
+						  Bordered="true"
+						  FixedHeader="true"
+						  Height="700px"
+						  Elevation="2"
+						  Class="fixed-table"
+						  RowsPerPage="50">
+					<HeaderContent>
+						<MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+						@foreach (var col in _cols)
+
+
+
+						{
+							<MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+								<MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+									@col.Header
+								</MudTableSortLabel>
+							</MudTh>
+						}
+					</HeaderContent>
+					<RowTemplate>
+						<MudTd Style="text-align: center;">@(_data.IndexOf(context) + 1)</MudTd>
+						@foreach (var col in _cols)
+
+
+
+						{
+							<MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+								@FormatValue(context, col)
+							</MudTd>
+						}
+					</RowTemplate>
+					<NoRecordsContent>
+						<td colspan="@(_cols.Count + 1)" style="text-align:center; padding: 40px;">
+							<MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+						</td>
+					</NoRecordsContent>
+					<PagerContent>
+						<MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+					</PagerContent>
+				</MudTable>
+			</MudItem>
+		</MudPaper>
+	</MudItem>
+</MudGrid>
+
+@code {
+	// ---- UI / State ----
+
+	[SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+	private string _title => string.IsNullOrWhiteSpace(Title) ? "Value Master" : Title!;
+	private string _asOnDateLabel = "";
+	private bool _loading = true;
+	private string SelectedState { get; set; } = "All";
+	private List<Dictionary<string, object>> _states = new();
+	private List<Dictionary<string, object>> _data = new();
+
+	// ---- Columns (match SELECT aliases) ----
+	private readonly List<ColumnConfig> _cols = new()
+	{
+		new ColumnConfig { Header = "NAME",                          PropertyName = "name",       Width = "18%" },
+		new ColumnConfig { Header = "ADDRESS",                       PropertyName = "addr3",      Width = "24%" },
+		new ColumnConfig { Header = "CITY",                          PropertyName = "city",       Width = "12%" },
+		new ColumnConfig { Header = "STATE",                         PropertyName = "state",      Width = "10%" },
+		new ColumnConfig { Header = "PINCODE",                       PropertyName = "pin",        Width = "8%",  IsNumeric = true, Format = "N0" },
+		new ColumnConfig { Header = "MOBILE NO",                     PropertyName = "mobno",      Width = "10%" },
+		new ColumnConfig { Header = "CONTACT PERSON",                PropertyName = "contper",    Width = "10%" },
+		new ColumnConfig { Header = "CONTACT PERSON MOBILE NO",      PropertyName = "contpermob", Width = "12%" },
+		new ColumnConfig { Header = "EMAILID",                       PropertyName = "email",      Width = "16%" }
+	};
+
+	protected override async Task OnInitializedAsync()
+	{
+		// State dropdown and initial data load are independent — run in parallel
+		var statesTask = ReportService.GetLookupDataAsync("State_Master", "state_name_eng,state_code_finacle", "1=1", "state_name_eng");
+		var dataTask = LoadData();
+		await Task.WhenAll(statesTask, dataTask);
+		_states = statesTask.Result;
+	}
+
+	private async Task HandleStateChanged(string value)
+	{
+		SelectedState = value;
+		await LoadData();
+	}
+
+	private async Task LoadData()
+	{
+		_loading = true;
+		StateHasChanged();
+
+		// SQL: identical to WebForms (valuers case)
+		// Include LastUpdateDate in SELECT to compute AsOn label (not shown in grid)
+
+		string selectColumns = "valuers_name as name," + "CONCAT(CONCAT(CONCAT(CONCAT(valuers_address1,' '),valuers_address2),' '),valuers_address3) as addr3," +
+								"valuers_city as city," +
+								"valuers_state as state," +
+								"valuers_pincode as pin," +
+								"CONCAT(CONCAT(CONCAT(CONCAT(valuers_off_phoneno,' '),valuers_res_phoneno),' '),valuers_res_mobno) as mobno," +
+								"valuers_contper as contper," +
+								"valuers_contper_phmobno as contpermob," +
+								"valuers_email as email," +
+								"LastUpdateDate";
+
+		string where = "(valuers_blacklist='' OR valuers_blacklist='1')";
+		if (!string.Equals(SelectedState, "All", StringComparison.OrdinalIgnoreCase))
+			where += $" and valuers_state= '{SelectedState}'";
+
+		string finalQuery = $"SELECT {selectColumns} FROM ValuersMaster WHERE {where}";
+		// Data query and as-on-date are independent - run in parallel
+		var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+		var dateTask = ReportService.GetAsOnDateAsync("ValuersMaster");
+		await Task.WhenAll(dataTask, dateTask);
+		_data = dataTask.Result;
+		string date = dateTask.Result;
+		_asOnDateLabel = $"Data from LAS, as on : {date}";
+
+		_loading = false;
+		StateHasChanged();
+	}
+
+
+	private async Task OnExportInternal()
+	{
+		var bytes = ReportService.ExportToExcel(_data, _cols, "ValueMaster");
+		await JS.InvokeVoidAsync("BlazorDownloadFile",
+			"ValueMaster.xlsx",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			Convert.ToBase64String(bytes));
+	}
+
+	private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+	{
+		if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "�";
+		if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+		return val.ToString();
+	}
+}

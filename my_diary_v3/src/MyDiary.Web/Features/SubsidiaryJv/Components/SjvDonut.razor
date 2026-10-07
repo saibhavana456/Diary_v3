@@ -1,0 +1,43 @@
+@using MyDiary.Web.Features.SubsidiaryJv.Models
+
+@* Shareholding donut (plain SVG). *@
+@if (Data.Count == 0)
+{
+    <MudText Typo="Typo.body2">No shareholding data yet.</MudText>
+}
+else
+{
+    var total = Math.Max(0.0001m, Data.Sum(d => d.Pct));
+    const double r = 40, c = 2 * Math.PI * r;
+    double offset = 0;
+    <div class="sjv-donut">
+        <svg viewBox="0 0 120 120" width="170" height="170" role="img" aria-label="Shareholding pattern">
+            @for (int i = 0; i < Data.Count; i++)
+            {
+                var len = (double)(Data[i].Pct / total) * c;
+                <circle cx="60" cy="60" r="@r" fill="none" stroke="@Colors[i % Colors.Length]" stroke-width="18"
+                        stroke-dasharray="@FormattableString.Invariant($"{len:0.###} {c - len:0.###}")" stroke-dashoffset="@FormattableString.Invariant($"{-offset:0.###}")"
+                        transform="rotate(-90 60 60)"><title>@Data[i].HolderName @Data[i].Pct.ToString("0.##")%</title></circle>
+                offset += len;
+            }
+            @((MarkupString)$"<text x=\"60\" y=\"66\" text-anchor=\"middle\" font-size=\"16\" font-weight=\"700\" fill=\"#111827\">{Data.Sum(d => d.Pct):0.##}%</text>")
+        </svg>
+        <div class="sjv-donut-legend">
+            @for (int i = 0; i < Data.Count; i++)
+            {
+                <div><i style="background:@Colors[i % Colors.Length]"></i>@Data[i].HolderName <b>@Data[i].Pct.ToString("0.##")%</b></div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .sjv-donut { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .sjv-donut-legend { font-size: .8rem; }
+    .sjv-donut-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+</style>
+
+@code {
+    [Parameter] public List<SjvHolder> Data { get; set; } = new();
+    private static readonly string[] Colors = { "#1e40af", "#dc2626", "#0ea5e9", "#f59e0b", "#10b981", "#8b5cf6", "#64748b" };
+}

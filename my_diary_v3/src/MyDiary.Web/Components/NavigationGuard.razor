@@ -1,0 +1,96 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Auth
+@using MyDiary.Web.Core.Extensions
+@inject NavigationManager Nav
+@inject CustomAuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+@* Redirects unauthenticated users to /login on any navigation *@
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        await CheckAuthAsync();
+    }
+
+    private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        try
+        {
+            await CheckAuthAsync();
+        }
+        catch (Exception ex)
+        {
+            // Swallow navigation-guard errors after circuit disposal or during error recovery.
+            // Without this, an unobserved exception in async void kills the circuit and
+            // the page appears permanently stuck.
+            AppLogger.LogWarning($"NavigationGuard: CheckAuthAsync failed during navigation — {ex.Message}");
+        }
+    }
+
+    // Public pages (the pre-login portal) — served WITHOUT any session check.
+    // Everything else (the authenticated application, MainLayout pages) is guarded.
+    private static readonly HashSet<string> PublicExact = new(StringComparer.OrdinalIgnoreCase)
+    {
+            "",
+            "login",
+            "oldlogin",
+            "session-expired",
+            "not-found",
+            "reports/not-found",
+            "network",
+            "download",
+            "downloads",
+            "departments",
+            "applications",
+            "about",
+            "documents",
+            "activities",
+            "ip-directory",
+            "error",
+            "rates-charges",
+            "faq-sop",
+            "divya",
+            "code_policy",
+            "code-of-ethics",
+            "divya-previous-emailers",
+            "emanual",
+            "emanual/dept",
+            "emi-calculator",
+            "pmsby",
+            "pmjjby",
+            "dept-page",
+            "rd-calculator",
+            "capitaline",
+            "reports/deployment-pulse-itsm",
+            "reports/project-muskaan"
+    };
+
+    private static readonly string[] PublicPrefixes =
+    {
+        "dept-page",                // /dept-page/{key}
+        "staff-details",            // /staff-details/{id}
+        "ip-directory",             // /ip-directory and any sub-paths
+        "executive-branch-visit",   // /executive-branch-visit — opens in new tab, self-guards auth
+    };
+
+    private async Task CheckAuthAsync()
+    {
+        var uri = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Trim('/');
+
+        var skip = PublicExact.Contains(uri)
+                || PublicPrefixes.Any(p => uri.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
+        if (skip) return;
+
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            var returnUrl = Uri.EscapeDataString("/" + uri);
+            Nav.NavigateTo($"login?returnUrl={returnUrl}", forceLoad: false);
+        }
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

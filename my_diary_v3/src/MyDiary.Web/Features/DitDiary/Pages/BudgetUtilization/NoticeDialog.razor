@@ -1,0 +1,78 @@
+@* Reusable styled notice — blocks, warnings and information messages *@
+
+<MudDialog>
+	<TitleContent>
+		<div style="display:flex;align-items:center;gap:12px;">
+			<div style="@($"width:40px;height:40px;border-radius:11px;background:{Soft};display:flex;align-items:center;justify-content:center;flex:none;")">
+				<MudIcon Icon="@Icon" Style="@($"color:{Accent};")" />
+			</div>
+			<div>
+				<div style="font-size:1.05rem;font-weight:600;line-height:1.25;color:#111827;">@Title</div>
+				@if (!string.IsNullOrWhiteSpace(Subtitle))
+				{
+					<div style="font-size:0.75rem;color:#6b7280;">@Subtitle</div>
+				}
+			</div>
+		</div>
+	</TitleContent>
+
+	<DialogContent>
+		<div style="@($"border:1px solid {Border};background:{Soft};border-radius:12px;padding:13px 15px;")">
+			<div style="font-size:0.88rem;line-height:1.55;color:#1f2937;">@Message</div>
+			@if (!string.IsNullOrWhiteSpace(Detail))
+			{
+				<div style="@($"font-size:0.82rem;line-height:1.55;color:{Accent};margin-top:9px;font-weight:600;")">@Detail</div>
+			}
+		</div>
+	</DialogContent>
+
+	<DialogActions>
+		<MudButton OnClick="Ok" Variant="Variant.Filled"
+				   Style="@($"background:{Accent};color:#ffffff;")">@OkText</MudButton>
+	</DialogActions>
+</MudDialog>
+
+@code {
+	[CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+	[Parameter] public string Title { get; set; } = "";
+	[Parameter] public string Subtitle { get; set; } = "";
+	[Parameter] public string Message { get; set; } = "";
+	[Parameter] public string Detail { get; set; } = "";
+	[Parameter] public string Kind { get; set; } = "warning";   // warning | info | error | success
+	[Parameter] public string OkText { get; set; } = "OK";
+
+	private string Accent => Kind switch
+	{
+		"info" => "#0277bd",
+		"error" => "#c62828",
+		"success" => "#2e7d32",
+		_ => "#b26a00"
+	};
+
+	private string Soft => Kind switch
+	{
+		"info" => "#e3f2fd",
+		"error" => "#fdecea",
+		"success" => "#e8f5e9",
+		_ => "#fff8e1"
+	};
+
+	private string Border => Kind switch
+	{
+		"info" => "#bbdefb",
+		"error" => "#f5c6c2",
+		"success" => "#c8e6c9",
+		_ => "#ffe0a3"
+	};
+
+	private string Icon => Kind switch
+	{
+		"info" => Icons.Material.Filled.Info,
+		"error" => Icons.Material.Filled.ErrorOutline,
+		"success" => Icons.Material.Filled.CheckCircleOutline,
+		_ => Icons.Material.Filled.WarningAmber
+	};
+
+	private void Ok() => MudDialog.Close(DialogResult.Ok(true));
+}

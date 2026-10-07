@@ -1,0 +1,276 @@
+@namespace RequestPortal.Web.Pages.Admin
+@page "/admin/setup-audit"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@inject IAuditRepo AuditRepo
+@inject IUserRepo UserRepo
+@inject ISnackbar Snackbar
+
+<PageTitle>Setup Audit Log</PageTitle>
+
+<PageHeader PageKey="admin-setup-audit" Title="Setup Audit Log"
+            Subtitle="Complete history of every create, edit, delete and activate/deactivate action performed in Admin setup screens."
+            Crumbs="_crumbs" />
+
+<AuthorizeView Policy="AppAdmin">
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">You need Request Portal Admin rights to access this page.</MudAlert>
+    </NotAuthorized>
+    <Authorized Context="authContext">
+
+@* ── Filter bar — all Outlined + Margin.Dense so baselines align ─────────── *@
+<MudPaper Elevation="1" Class="pa-4 mb-3">
+    <div class="d-flex flex-wrap gap-3 align-end">
+        <div style="flex:2; min-width:200px;">
+            <MudSelect T="string" @bind-Value="_entityFilter" Label="Entity / Area"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" Placeholder="— All entities —">
+                @foreach (var e in AuditEntityNames.SetupEntities)
+                {
+                    <MudSelectItem T="string" Value="@e">@e</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+        <div style="flex:1; min-width:160px;">
+            <MudSelect T="string" @bind-Value="_actionFilter" Label="Action"
+                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Clearable="true" Placeholder="— All —">
+                <MudSelectItem T="string" Value="@AuditEntityNames.ActionCreate">CREATE</MudSelectItem>
+                <MudSelectItem T="string" Value="@AuditEntityNames.ActionUpdate">UPDATE</MudSelectItem>
+                <MudSelectItem T="string" Value="@AuditEntityNames.ActionDelete">DELETE</MudSelectItem>
+                <MudSelectItem T="string" Value="@AuditEntityNames.ActionActivate">ACTIVATE</MudSelectItem>
+                <MudSelectItem T="string" Value="@AuditEntityNames.ActionDeactivate">DEACTIVATE</MudSelectItem>
+            </MudSelect>
+        </div>
+        <div style="flex:1; min-width:150px;">
+            <MudDatePicker @bind-Date="_fromDate" Label="From date"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           DateFormat="yyyy-MM-dd" />
+        </div>
+        <div style="flex:1; min-width:150px;">
+            <MudDatePicker @bind-Date="_toDate" Label="To date"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           DateFormat="yyyy-MM-dd" />
+        </div>
+        <div style="width:110px;">
+            <MudNumericField T="int" @bind-Value="_take" Label="Max rows"
+                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Min="50" Max="2000" Step="50" />
+        </div>
+        <div class="d-flex gap-2" style="padding-bottom:2px;">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="SearchAsync" Style="height:40px;">Search</MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Clear"
+                       OnClick="ClearFilters" Style="height:40px;">Clear</MudButton>
+        </div>
+    </div>
+</MudPaper>
+
+@* ── Result summary ─────────────────────────────────────────────────────── *@
+@if (_rows is not null)
+{
+    <div class="d-flex align-center mb-2 gap-3">
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Showing <strong>@_rows.Count</strong> @(_rows.Count == 1 ? "entry" : "entries")
+            @if (!string.IsNullOrEmpty(_entityFilter)) { <text> · Entity: <strong>@_entityFilter</strong></text> }
+            @if (!string.IsNullOrEmpty(_actionFilter)) { <text> · Action: <strong>@_actionFilter</strong></text> }
+        </MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            Audit chain integrity is cryptographically protected (SHA-256 hash chain).
+        </MudText>
+    </div>
+
+    <MudPaper Elevation="1">
+        <MudTable Items="@_rows" Dense="true" Hover="true" Striped="true"
+                  SortLabel="Sort By" Class="rp-data-table">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<Row,object>(r=>r.At)" InitialDirection="SortDirection.Descending">When</MudTableSortLabel></MudTh>
+                <MudTh>Actor (Login ID)</MudTh>
+                <MudTh>Entity</MudTh>
+                <MudTh>ID</MudTh>
+                <MudTh>Action</MudTh>
+                <MudTh>Before</MudTh>
+                <MudTh>After</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <div style="font-size:13px; font-weight:600;">@AppTime.ToIndia(context.At).ToString("yyyy-MM-dd")</div>
+                    <div style="font-size:11px; color:#666;">@AppTime.ToIndia(context.At).ToString("HH:mm:ss")</div>
+                </MudTd>
+                <MudTd>
+                    <div style="font-size:13px; font-weight:600; color:var(--rp-navy)">@context.ActorDisplay</div>
+                    @if (!string.IsNullOrEmpty(context.ActorLogin))
+                    {
+                        <div style="font-size:11px; color:#888; font-family:monospace">@context.ActorLogin</div>
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@EntityColor(context.Entity)"
+                             Style="font-size:11px; font-family:monospace">@context.Entity</MudChip>
+                </MudTd>
+                <MudTd>
+                    <code style="font-size:12px; color:#59636e">#@context.EntityId</code>
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@ActionColor(context.Action)"
+                             Style="font-size:11px">@context.Action</MudChip>
+                </MudTd>
+                <MudTd>
+                    @if (!string.IsNullOrEmpty(context.OldJson))
+                    {
+                        <MudTooltip Text="@context.OldJson" Placement="Placement.Left">
+                            <code style="font-size:11px; color:#C62828; cursor:pointer">
+                                @TruncateJson(context.OldJson)
+                            </code>
+                        </MudTooltip>
+                    }
+                    else { <span style="color:#ccc">—</span> }
+                </MudTd>
+                <MudTd>
+                    @if (!string.IsNullOrEmpty(context.NewJson))
+                    {
+                        <MudTooltip Text="@context.NewJson" Placement="Placement.Left">
+                            <code style="font-size:11px; color:#1a7f37; cursor:pointer">
+                                @TruncateJson(context.NewJson)
+                            </code>
+                        </MudTooltip>
+                    }
+                    else { <span style="color:#ccc">—</span> }
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="@(new[] { 25, 50, 100, 200 })" />
+            </PagerContent>
+        </MudTable>
+    </MudPaper>
+}
+else if (_searched)
+{
+    <MudAlert Severity="Severity.Info">No audit entries found for the selected filters.</MudAlert>
+}
+
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Admin Portal"),
+        new("Setup Audit Log"),
+    };
+
+    private string?   _entityFilter;
+    private string?   _actionFilter;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private int       _take = 200;
+    private bool      _searched;
+
+    private List<Row>? _rows;
+
+    // Actor name/login cache
+    private readonly Dictionary<string, (string Name, string Login)> _actorCache = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Auto-load last 200 entries on open
+            await SearchAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "SetupAuditLog: failed to load audit log entries");
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        _searched = true;
+        var fromUtc = _fromDate.HasValue ? _fromDate.Value.ToUniversalTime() : (DateTime?)null;
+        var toUtc   = _toDate.HasValue   ? _toDate.Value.AddDays(1).ToUniversalTime() : (DateTime?)null;
+
+        var logs = await AuditRepo.ListSetupAuditAsync(
+            _take,
+            entityFilter: _entityFilter,
+            actionFilter: _actionFilter,
+            fromUtc: fromUtc,
+            toUtc: toUtc);
+
+        // Resolve actor display names (batch lookup, cached)
+        var newCodes = logs
+            .Where(l => l.ActorEmpCode is not null)
+            .Select(l => l.ActorEmpCode!)
+            .Distinct()
+            .Where(c => !_actorCache.ContainsKey(c))
+            .ToList();
+
+        if (newCodes.Count > 0)
+        {
+            var users = await UserRepo.GetByEmpCodesAsync(newCodes);
+            foreach (var u in users)
+                _actorCache[u.EmpCode] = (u.Name ?? u.AdSamAccountName, u.AdSamAccountName);
+            foreach (var code in newCodes.Where(c => !_actorCache.ContainsKey(c)))
+                _actorCache[code] = (code, "");
+        }
+
+        _rows = logs.Select(l =>
+        {
+            var (name, login) = l.ActorEmpCode is not null && _actorCache.TryGetValue(l.ActorEmpCode, out var a)
+                ? a : ("System", "");
+            return new Row(l.ActedAt, name, login, l.Entity, l.EntityId, l.Action, l.OldJson, l.NewJson);
+        }).ToList();
+    }
+
+    private void ClearFilters()
+    {
+        _entityFilter = null; _actionFilter = null;
+        _fromDate = null; _toDate = null;
+        _take = 200; _rows = null; _searched = false;
+    }
+
+    private static string TruncateJson(string json)
+    {
+        if (json.Length <= 60) return json;
+        return json[..57] + "...";
+    }
+
+    private static Color EntityColor(string entity) => entity switch
+    {
+        AuditEntityNames.RequestType or AuditEntityNames.UnitType
+            or AuditEntityNames.Vertical or AuditEntityNames.Unit
+            or AuditEntityNames.Department or AuditEntityNames.Activity => Color.Primary,
+        AuditEntityNames.SlaConfig   => Color.Warning,
+        AuditEntityNames.RoutingRule or AuditEntityNames.RoutingAssignee => Color.Info,
+        AuditEntityNames.HolidayCalendar or AuditEntityNames.Holiday     => Color.Secondary,
+        AuditEntityNames.NotifTemplate   => Color.Dark,
+        AuditEntityNames.Delegation      => Color.Error,
+        AuditEntityNames.PageInfo        => Color.Tertiary,
+        AuditEntityNames.MomType         => Color.Tertiary,
+        AuditEntityNames.ReportDef       => Color.Tertiary,
+        _                                => Color.Default,
+    };
+
+    private static Color ActionColor(string action) => action switch
+    {
+        AuditEntityNames.ActionCreate     => Color.Success,
+        AuditEntityNames.ActionUpdate     => Color.Info,
+        AuditEntityNames.ActionDelete     => Color.Error,
+        AuditEntityNames.ActionDeactivate => Color.Warning,
+        AuditEntityNames.ActionActivate   => Color.Success,
+        _                                 => Color.Default,
+    };
+
+    private sealed record Row(
+        DateTime At,
+        string ActorDisplay,
+        string ActorLogin,
+        string Entity,
+        long EntityId,
+        string Action,
+        string? OldJson,
+        string? NewJson);
+}

@@ -1,0 +1,111 @@
+﻿@page "/Blank_Dashboard"
+@using ApexCharts
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@inject MyDiary.Web.Features.Landing_Dashboard_V2.Services.ILandingDashboardV2Service DashboardService
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@using MyDiary.Web.Components.Dialogs
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+
+<PageTitle>Home Dashboard — My Diary | Union Bank of India</PageTitle>
+
+<MudGrid Spacing="3">
+
+</MudGrid>
+
+
+
+
+<style>
+    .category-nav-wrapper {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+    }
+
+    .nav-item {
+        padding: 10px 22px;
+        background-color: #d1e3ff;
+        color: #1e3a8a;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 700;
+        white-space: nowrap;
+        font-size: 0.9rem;
+        transition: 0.2s;
+    }
+
+        .nav-item.active {
+            background-color: #1b4a98;
+            color: #ffffff;
+        }
+
+    .sub-nav-tabs .mud-tab {
+        color: #666 !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        text-transform: none !important;
+        border-bottom: 3px solid transparent;
+    }
+
+        .sub-nav-tabs .mud-tab.mud-tab-active {
+            color: #1b4a98 !important;
+            border-bottom: 3px solid #1b4a98 !important;
+        }
+
+    .sub-nav-tabs .mud-tabs-slider {
+        display: none !important;
+    }
+
+    .custom-toggle {
+        background: #eee;
+        border-radius: 6px;
+        padding: 2px;
+    }
+
+        .custom-toggle .mud-toggle-item {
+            font-size: 0.75rem !important;
+            padding: 4px 12px !important;
+            border: none !important;
+        }
+
+        .custom-toggle .mud-toggle-item-selected {
+            background: #1a2035 !important;
+            color: white !important;
+            border-radius: 4px !important;
+        }
+
+    .border-bottom {
+        border-bottom: 2px solid #f0f0f0;
+    }
+
+    .border-left {
+        border-left: 1px solid #e0e0e0;
+    }
+
+    .fw-bold {
+        font-weight: 700 !important;
+    }
+
+    .uppercase {
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .dashboard-bottom-card {
+        height: 300px; /* ✅ same height for all cards */
+        display: flex;
+        flex-direction: column;
+    }
+
+        .dashboard-bottom-card .mud-card-content {
+            flex: 1 1 auto; /* ✅ take remaining height */
+            overflow-y: auto; /* ✅ enable scrolling if needed */
+        }
+</style>

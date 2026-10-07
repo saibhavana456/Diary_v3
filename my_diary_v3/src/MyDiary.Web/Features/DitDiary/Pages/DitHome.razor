@@ -1,0 +1,47 @@
+@page "/dit"
+@using global::RequestPortal.Web.Shared
+@inject DitUserSession Session
+@inject NavigationManager Nav
+
+<PageTitle>DIT Diary - My Diary</PageTitle>
+
+<PageHeader Title="DIT Diary"
+            Subtitle="IT projects portfolio and budget utilization (capital and revenue) for the Department of Information Technology."
+            Crumbs="_crumbs" PageKey="dit-home" />
+
+@if (Session.User is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+        Signed in as <b>@Session.User.Name</b> (PF @Session.User.PfNumber), role <b>@Session.User.Role</b>@(Session.User.IsAdmin ? ", administrator." : (Session.User.HasScope ? "." : ". You are not mapped to any section yet, so the budget screens are hidden; ask an administrator to add you to a section team."))
+    </MudAlert>
+
+    <MudGrid Spacing="3">
+        @Card("Project Dashboard", "Portfolio KPIs: status mix, cost, vendors and timeline health.", Icons.Material.Filled.BarChart, "dit/project/dashboard", true)
+        @Card("Project List", "Register, edit and track every IT project: milestones, issues, resources, documents.", Icons.Material.Filled.FormatListBulleted, "dit/project/details", true)
+        @Card("Budget Dashboard", "Allocation vs utilization, this month and next-month projection.", Icons.Material.Filled.Insights, "dit/budget/dashboard", Session.User.IsAdmin || Session.User.HasScope)
+        @Card("Budget Utilization", "Submit the monthly capital and revenue utilization for your section.", Icons.Material.Filled.AccountBalanceWallet, "dit/budget/details", Session.User.IsAdmin || Session.User.HasScope)
+        @Card("Budget Allocation", "Set the financial-year allotments (spillover / fresh) per project.", Icons.Material.Filled.Savings, "dit/budget/allocation", Session.User.IsAdmin)
+        @Card("Departments and Sections", "Masters, section leaders and team members.", Icons.Material.Filled.AdminPanelSettings, "dit/admin/departments", Session.User.IsAdmin || Session.User.HasScope)
+    </MudGrid>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("DIT Diary") };
+
+    protected override async Task OnInitializedAsync() => await Session.LoadAsync();
+
+    private RenderFragment Card(string title, string desc, string icon, string href, bool enabled) => __builder =>
+    {
+        <MudItem xs="12" sm="6" md="4">
+            <MudPaper Elevation="1" Class="pa-4" Style="@(enabled ? "cursor:pointer;height:100%" : "opacity:.45;height:100%")" @onclick="@(() => { if (enabled) Nav.NavigateTo(href); })">
+                <MudIcon Icon="@icon" Color="Color.Primary" Class="mb-2" />
+                <MudText Typo="Typo.h6">@title</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@desc</MudText>
+            </MudPaper>
+        </MudItem>
+    };
+}

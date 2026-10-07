@@ -1,0 +1,21 @@
+@namespace RequestPortal.Web.Shared
+@* ───────────────────────────────────────────────────────────────────────
+   SuperAdminOnly — page-level guard that renders its content only for
+   users satisfying the SuperAdmin policy (rp_super_admin claim). Used to
+   protect the Masters module pages against direct-URL access, since the
+   sidebar links are hidden but the routes would otherwise be reachable.
+   ─────────────────────────────────────────────────────────────────────── *@
+<AuthorizeView Policy="SuperAdmin">
+    <Authorized>
+        @ChildContent
+    </Authorized>
+    <NotAuthorized>
+        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="ma-4">
+            Super Admin access is required to view this page.
+        </MudAlert>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

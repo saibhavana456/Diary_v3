@@ -1,0 +1,1300 @@
+@using MyDiary.Web.Core.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Core.Services.Authentication
+@using MyDiary.Web.Auth
+@using MyDiary.Web.Shared
+@using MyDiary.Web.Features.Shared.Components
+@using MyDiary.Web.Services
+@using System.Security.Claims
+
+@using Oracle.ManagedDataAccess.Client
+@using System.Text.RegularExpressions
+@using System.Linq
+
+@inherits LayoutComponentBase
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ReportStateService State
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject IConfiguration Configuration
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject MyDiary.Web.Core.Services.Storage.ISessionStorageService SessionStorage
+@inject MyDiary.Web.Features.Shared.Services.IVCardService VCardService
+@inject MyDiary.Core.Abstractions.ISessionRepository SessionTracker
+@inject MyDiary.Web.Services.AppModuleNav ModuleNav
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser RpCurrentUser
+@inject global::RequestPortal.Core.Abstractions.IRbacRepo RbacRepoForUsageLog
+@inject global::RequestPortal.Core.Abstractions.IPageUsageRepo PageUsageRepo
+@implements IDisposable
+
+
+
+<MudThemeProvider />
+
+<MudPopoverProvider />
+
+<MudDialogProvider />
+
+<MudSnackbarProvider />
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        @{
+            State.Initialize(auth.User);
+        }
+        @* WCAG 2.4.1 Bypass Blocks — skip directly to main content *@
+        <a href="#main-content" class="skip-to-content">Skip to main content</a>
+
+        <MudLayout @onclick="CloseQuickLinks">
+            <MudAppBar Elevation="0" Style="background-color: #ffffff; border-bottom: 1px solid #ebedf2; color: #2a2f5b;" Fixed="true">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="MudBlazor.Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" Class="d-lg-none mr-3" AriaLabel="Toggle navigation menu" />
+
+                @* Active module name — shown next to the sidebar *@
+                <MudChip T="string" Color="MudBlazor.Color.Primary" Variant="Variant.Text" Size="MudBlazor.Size.Medium"
+                         Icon="@Icons.Material.Filled.Dashboard" Class="ml-1 fw-bold" Style="font-size:0.95rem;">
+                    @ModuleNav.ActiveLabel
+                </MudChip>
+
+                <MudSpacer />
+
+                @* Bank Logo — centered *@
+                <div class="d-flex justify-center align-center position-absolute w-100"
+                     style="pointer-events: none; left: 0; height: 100%; overflow: hidden;">
+                    <MudImage Src="images/UBI_Logo.png"
+                              ObjectFit="ObjectFit.Contain"
+                              Style="pointer-events: auto; height: inherit;" />
+                </div>
+
+                <MudSpacer />
+
+                <div @onclick="OnToolbarClick" @onclick:stopPropagation="true">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+
+                    @* Page information ⓘ — route-aware, for My-Diary module pages.
+                       Request Portal pages carry their own ⓘ inside the PageHeader. *@
+                    @if (_pageInfoKey is not null)
+                    {
+                        <div class="appbar-info">
+                            <global::RequestPortal.Web.Shared.PageInfoIcon PageKey="@_pageInfoKey" />
+                        </div>
+                    }
+
+                    @* Search — magnifying-glass icon by default, expands to a search box on click *@
+                    <div style="position:relative;">
+    @if (!_searchExpanded)
+    {
+        <MudIconButton Icon="@Icons.Material.Filled.Search"
+                       Class="appbar-icon-btn"
+                       aria-label="Open search"
+                       Title="Search"
+                       OnClick="ExpandSearch" />
+    }
+    else
+    {
+    <MudAutocomplete T="string"
+                     @ref="_searchAutoRef"
+                     AutoFocus="true"
+                     OnBlur="CollapseSearchIfEmpty"
+                     Value="@searchString"
+                     ValueChanged="OnSuggestionPickedByValue"
+                     Placeholder="Search..."
+                     Variant="Variant.Outlined"
+                     Margin="Margin.Dense"
+                     Class="appbar-search"
+                     Style="width:250px; font-style:italic;"
+                     SearchFunc="SuggestAsync"
+                     MinCharacters="1"
+                     DebounceInterval="200"
+                     Clearable="true"
+                     CoerceText="true"
+                     Strict="true"
+                     OnClearButtonClick="ClearSearch"
+                     OnKeyDown="OnSearchKeyDown" />
+
+    @if (_showResults)
+    {
+        <div class="inline-popover-panel"
+             style="position:absolute; top:100%; right:0; z-index:9999; min-width:350px; max-width:450px; max-height:400px; overflow-y:auto;
+                    background:white; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.18); padding:8px 0;">
+
+            @if ((_results?.Count ?? 0) == 0)
+            {
+                <div class="px-3 py-2" style="color:#888; font-size:0.85rem;">No results</div>
+            }
+            else
+            {
+                @foreach (var r in _results)
+                {
+                    <div class="px-3 py-2 cursor-pointer search-result-item"
+                         style="border-bottom:1px solid #f0f0f0; transition:background 0.15s;"
+                         @onclick="() => OpenResultAsync(r)">
+                        <div style="font-weight:600; font-size:0.9rem; color:#1f2937;">
+                            @(!string.IsNullOrWhiteSpace(r.name) ? r.name : "(no name)")
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(r.category) || !string.IsNullOrWhiteSpace(r.subCategory))
+                        {
+                            <div style="font-size:0.78rem; color:#6b7280; margin-top:2px;">
+                                @r.category
+                                @if (!string.IsNullOrWhiteSpace(r.subCategory))
+                                {
+                                    <text> / @r.subCategory</text>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+    }
+</div>
+
+
+                    @* Quick Links — native button + inline panel (not teleported to MudPopoverProvider) *@
+                    <div style="position:relative; display:inline-block;">
+                        <button type="button"
+                                id="mainQuickLinksBtn"
+                                class="appbar-icon-btn"
+                                aria-label="Open quick links"
+                                title="Open quick links"
+                                aria-haspopup="true"
+                                aria-expanded="@(_showQuickLinks ? "true" : "false")"
+                                @onclick="ToggleQuickLinks">
+                            <MudIcon Icon="@Icons.Material.Filled.GridView"
+                                     Style="color:#2a2f5b; font-size:1.5rem;"
+                                     aria-hidden="true" />
+                        </button>
+
+                        @* Inline dropdown — stays in DOM order so Tab key reaches it immediately *@
+                        @if (_showQuickLinks)
+                        {
+                            <div class="inline-popover-panel" role="menu" aria-label="Quick links"
+                                 style="position:absolute; top:100%; right:0; z-index:9999;
+                                        background:white; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.18);
+                                        min-width:300px; margin-top:8px;">
+                                <QuickLinksPanel OnClose="CloseQuickLinksAsync" />
+                            </div>
+                        }
+                    </div>
+
+                    @* Project A notifications / messaging — request & message updates *@
+                    <NotificationBell @ref="_notificationBell" OnOpened="OnNotificationPanelOpened" />
+
+                    @* <MudButton Variant="Variant.Text"
+                               Class="lang-globe-btn"
+                               OnClick="ToggleLanguage"
+                               AriaLabel="@(_currentLang == "en" ? "Switch to Hindi" : "Switch to English")"
+                               Title="@(_currentLang == "en" ? "हिंदी में देखें" : "View in English")">
+
+                        <svg xmlns="http://www.w3.org/2000/svg"
+                             viewBox="0 0 24 24"
+                             width="20"
+                             height="20"
+                             fill="none"
+                             stroke="currentColor"
+                             stroke-width="1.8"
+                             stroke-linecap="round"
+                             stroke-linejoin="round"
+                             aria-hidden="true"
+                             focusable="false">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="2" y1="12" x2="22" y2="12" />
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10
+                             15.3 15.3 0 0 1-4 10
+                             15.3 15.3 0 0 1-4-10
+                             15.3 15.3 0 0 1 4-10z" />
+                        </svg>
+
+                        <span class="ml-1" aria-hidden="true" lang="@(_currentLang == "en" ? "hi" : "en")">
+                            @(_currentLang == "en" ? "हिंदी" : "English")
+                        </span>
+
+                    </MudButton> *@
+
+                    @* User profile menu — inline rendering so Tab key reaches menu items immediately *@
+                    <div style="position:relative; display:inline-block;" @onclick:stopPropagation="true">
+                        <button type="button"
+                                class="profile-activator-btn"
+                                tabindex="0"
+                                aria-label="@($"User profile menu for {_userName}. Press Enter to open.")"
+                                aria-haspopup="menu"
+                                aria-expanded="@(_profileMenuOpen ? "true" : "false")"
+                                @onclick="ToggleProfileMenu">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Class="pa-1">
+                                <UserAvatar Size="MudBlazor.Size.Medium"
+                                            AvatarStyle="@($"background-color:{_avatarBg}; color:white; font-weight:700; font-size:0.95rem;")"
+                                            Initials="@_initials" />
+                                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                                    <div class="d-flex flex-column ml-2 text-start" style="line-height: 1.2;">
+                                        <MudText Typo="Typo.caption" Class="text-muted">Hi,</MudText>
+                                        <MudText Typo="Typo.subtitle2" Class="fw-bold text-dark">@_userName</MudText>
+                                    </div>
+                                </MudHidden>
+                            </MudStack>
+                        </button>
+
+                        @* Inline profile dropdown — stays in DOM order *@
+                        @if (_profileMenuOpen)
+                        {
+                            <div class="inline-popover-panel" role="menu" aria-label="User profile options"
+                                 style="position:absolute; top:100%; right:0; z-index:9999;
+                                        background:white; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.18);
+                                        min-width:240px; margin-top:8px; padding:0; overflow:hidden;">
+                                <div class="px-4 py-3">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                                        <UserAvatar Size="MudBlazor.Size.Large"
+                                                    AvatarStyle="@($"background-color:{_avatarBg}; color:white; font-weight:700; font-size:1.25rem;")"
+                                                    Initials="@_initials" />
+                                        <div>
+                                            <MudText Typo="Typo.subtitle2" Class="fw-bold">@_userName</MudText>
+                                            <MudText Typo="Typo.caption" Class="text-muted">@_userEmail</MudText>
+                                        </div>
+                                    </MudStack>
+                                </div>
+                                <MudDivider />
+                                <button type="button"
+                                        role="menuitem"
+                                        aria-label="Open my VCard"
+                                        class="profile-menu-btn"
+                                        tabindex="0"
+                                        id="profileMenuVCard"
+                                        @onclick="HandleVCardClickAsync">
+                                    <MudIcon Icon="@Icons.Material.Filled.CreditCard" Size="MudBlazor.Size.Small" Class="mr-2" aria-hidden="true" />
+                                    Visiting Card
+                                </button>
+                                <MudDivider />
+                                <button type="button"
+                                        role="menuitem"
+                                        aria-label="Logout"
+                                        class="logout-btn"
+                                        tabindex="0"
+                                        id="profileMenuLogout"
+                                        @onclick="HandleLogout">
+                                    <MudIcon Icon="@Icons.Material.Filled.Logout" Size="MudBlazor.Size.Small" Class="mr-2" aria-hidden="true" />
+                                    Logout
+                                </button>
+                            </div>
+                        }
+                    </div>
+                    </MudStack>
+                </div>
+                </MudAppBar>
+
+                <NavMenu @bind-SideBarOpen="_drawerOpen" />
+
+                <MudMainContent Class="pt-16" Style="background-color: #f5f7fd;">
+                    @* Focus target for the skip link. MudMainContent already provides the
+                       <main> landmark, so this stays a div to avoid a duplicate landmark. *@
+                    <div id="main-content" tabindex="-1" class="pa-5">
+                        <ErrorBoundary @ref="_bodyErrorBoundary">
+                            <ChildContent>
+                                @Body
+                            </ChildContent>
+                            <ErrorContent>
+                                <MudContainer MaxWidth="MaxWidth.Small" Class="mt-8 text-center">
+                                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">
+                                        An error occurred while loading this page.
+                                    </MudAlert>
+                                    <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary"
+                                               Class="rounded-pill"
+                                               OnClick="RecoverBodyError">
+                                        Try Again
+                                    </MudButton>
+                                </MudContainer>
+                            </ErrorContent>
+                        </ErrorBoundary>
+                </div>
+            </MudMainContent>
+        </MudLayout>
+    </Authorized>
+
+    <Authorizing>
+        @* Smooth loading state during authentication check *@
+        <div class="auth-loading-overlay">
+            <div class="auth-loading-content">
+                <MudProgressCircular Color="MudBlazor.Color.Primary" Indeterminate="true" Size="MudBlazor.Size.Large" />
+                <MudText Typo="Typo.h6" Class="mt-4" Style="color: #2a2f5b;">Verifying session...</MudText>
+            </div>
+        </div>
+    </Authorizing>
+    <NotAuthorized>
+        @* Show nothing - let NavigationGuard handle redirect *@
+    </NotAuthorized>
+</AuthorizeView>
+<style>
+    /* --- KAIADMIN THEME REPLICATION --- */
+
+    /* Search result hover */
+    .search-result-item:hover {
+        background-color: #f5f7fd;
+    }
+
+    /* Page-info ⓘ button in the (light) app bar — recolour for a white background,
+       since the shared .pi-btn is styled for the dark gradient PageHeader. */
+    .appbar-info .pi-btn {
+        color: #1b4a98;
+        border: 2px solid #dfe4ee;
+        background: #fff;
+        width: 38px;
+        height: 38px;
+    }
+    .appbar-info .pi-btn:hover {
+        background: #eef2ff;
+        border-color: #1b4a98;
+    }
+
+    /* Navbar */
+    .kaiadmin-navbar {
+        background-color: #ffffff !important;
+        border-bottom: 1px solid #eee;
+        color: #2a2f5b;
+    }
+
+    /* Sidebar - Dark Blue */
+    .kaiadmin-sidebar {
+        background-color: #1a2035 !important;
+        color: #b9babf;
+        border-right: none;
+    }
+
+    /* Search Input style */
+    .kai-search-input {
+        border: none;
+        outline: none;
+        background: transparent;
+        color: #2a2f5b;
+        font-size: 0.9rem;
+    }
+
+    /* Utility Text Colors */
+    .text-dark {
+        color: #2a2f5b !important;
+    }
+
+    .text-muted {
+        color: #8d9498 !important;
+    }
+
+    .text-white {
+        color: #ffffff !important;
+    }
+
+    /* Hover effect for Profile */
+    .hover-effect:hover {
+        background-color: rgba(0,0,0,0.04);
+    }
+
+    /* Profile activator — native button so it receives tab focus */
+    .profile-activator-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .profile-activator-btn:hover {
+        background-color: rgba(0,0,0,0.04);
+    }
+
+    .profile-activator-btn:focus-visible {
+        outline: 2px solid #1b4a98;
+        outline-offset: 2px;
+    }
+
+    .profile-activator-btn:focus {
+        outline: 2px solid #1b4a98;
+        outline-offset: 2px;
+    }
+
+    /* Logout button inside profile menu — native button with correct role and tab focus */
+    .logout-btn {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 10px 16px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #2a2f5b;
+        text-align: left;
+        transition: background 0.15s;
+    }
+
+    .logout-btn:hover {
+        background-color: rgba(0,0,0,0.06);
+    }
+
+    .logout-btn:focus-visible {
+        outline: 2px solid #1b4a98;
+        outline-offset: -2px;
+    }
+
+    /* Profile menu action buttons (VCard, etc.) — same style as logout-btn */
+    .profile-menu-btn {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 10px 16px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #2a2f5b;
+        text-align: left;
+        transition: background 0.15s;
+    }
+
+    .profile-menu-btn:hover {
+        background-color: rgba(0,0,0,0.06);
+    }
+
+    .profile-menu-btn:focus-visible {
+        outline: 2px solid #1b4a98;
+        outline-offset: -2px;
+    }
+
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0,0,0,0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    /* AppBar icon buttons — native buttons for correct JAWS Enter key activation */
+    .appbar-icon-btn {
+        background: none;
+        border: none;
+        padding: 8px;
+        cursor: pointer;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #2a2f5b;
+        transition: background 0.15s;
+    }
+
+        .appbar-icon-btn:hover {
+            background-color: rgba(0,0,0,0.06);
+        }
+
+        .appbar-icon-btn:focus-visible {
+            outline: 2px solid #1b4a98;
+            outline-offset: 2px;
+        }
+
+    .notif-popover.mud-list-item:hover {
+        background-color: rgba(0, 0, 0, 0.03);
+    }
+
+    /* --- AUTHENTICATION LOADING STATES --- */
+
+    /* Smooth loading overlay - appears immediately */
+    .auth-loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        background-color: #f5f7fd;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+
+    .auth-loading-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Session expired - fade in after delay to prevent flash */
+    .session-expired-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        background-color: #f5f7fd;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        animation: fadeInDelayed 0.3s ease-in 1.5s forwards;
+    }
+
+    @@keyframes fadeInDelayed {
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+</style>
+
+
+@code {
+    bool _drawerOpen = true;
+    private ErrorBoundary? _bodyErrorBoundary;
+    private string _userName = "Test User";
+    private string _userEmail = "test@example.com";
+    private string _userPhone = "";
+    private string _userDesignation = "";
+    private string _userBranch = "";
+    private bool _authChecked = false;
+    private string _searchQuery = "";
+    private bool _showQuickLinks = false;
+    private bool _searchExpanded = false;
+    private MudTextField<string>? _searchField;
+    private bool _profileMenuOpen = false;
+    private string _currentLang = "en";
+    private NotificationBell? _notificationBell;
+
+    private ElementReference _vcardButtonRef;
+
+    private string searchString = "";
+private bool _loading = false;
+private string? _error;
+private List<SearchResult> _results = new();
+private bool _showResults = false;
+private MudAutocomplete<string>? _searchAutoRef;
+
+private void ClearSearch()
+{
+    searchString = string.Empty;
+    _results.Clear();
+    _showResults = false;
+    StateHasChanged();
+}
+
+private void SetResultsVisibility()
+{
+    var hasText = !string.IsNullOrWhiteSpace(searchString);
+    _showResults = hasText && (_results?.Count > 0);
+}
+
+private async Task OpenResultAsync(SearchResult r)
+{
+    if (string.IsNullOrWhiteSpace(r.url))
+        return;
+
+    // Close search popup before navigating
+    _showResults = false;
+    searchString = string.Empty;
+    _results.Clear();
+    StateHasChanged();
+
+    // Check if URL is internal (relative or contains base URI)
+    if (IsInternalUrl(r.url))
+    {
+        Navigation.NavigateTo(r.url, forceLoad: false);
+    }
+    else
+    {
+        await JS.InvokeVoidAsync("window.open", r.url, "_blank");
+    }
+}
+
+private bool IsInternalUrl(string url)
+{
+    if (string.IsNullOrWhiteSpace(url))
+        return false;
+
+    // Relative URL → internal
+    if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        return true;
+
+    // Absolute URL → check if same domain
+    var baseUri = new Uri(Navigation.BaseUri);
+    var targetUri = new Uri(url, UriKind.Absolute);
+
+    return baseUri.Host.Equals(targetUri.Host, StringComparison.OrdinalIgnoreCase);
+}
+
+private async Task OnSuggestionPickedByValue(string picked)
+{
+    if (string.IsNullOrWhiteSpace(picked)) return;
+
+    searchString = picked.Trim();
+    await RunSearchAsync();
+}
+
+
+public sealed class SearchResult
+{
+    public int id { get; set; }
+    public string? name { get; set; }
+    public string? url { get; set; }
+    public string? category { get; set; }
+    public string? subCategory { get; set; }
+    public string? description { get; set; }
+    public string? keywords { get; set; }
+    public decimal score { get; set; }
+}
+
+static string BuildOracleTextQuery(string q)
+{
+    var tokens = Regex.Matches(q ?? "", @"[\p{L}\p{N}]+")
+        .Select(m => m.Value)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    if (tokens.Length == 0) return "";
+
+    var andGroup = string.Join(" & ", tokens.Select(t => $"({t} | {t}%)"));
+    var fuzzies = string.Join(" | ", tokens.Select(t => $"fuzzy({t}, 70, 200, weight)"));
+
+    return $"{andGroup} | {fuzzies}";
+}
+
+private async Task<IEnumerable<string>> SuggestAsync(string value, CancellationToken ct)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        _results.Clear();
+        _showResults = false;
+        return Array.Empty<string>();
+    }
+
+    try
+    {
+            const string sql = @"
+    SELECT term FROM (
+        SELECT DISTINCT t.term
+        FROM mydiarydb.mydiary_suggest_terms t
+        JOIN mydiarydb.mydiary_landing_sitemap s ON t.link_id = s.id
+        WHERE UPPER(t.term) LIKE UPPER(:pfx)||'%'
+          AND s.SHOW_AFTER_LOGIN = 'Y'
+        ORDER BY t.term
+    )
+    WHERE ROWNUM <= :take";
+
+        using var con = new OracleConnection(Configuration.GetConnectionString("MyDiaryDBConnection"));
+        await con.OpenAsync(ct);
+
+        using var cmd = new OracleCommand(sql, con) { BindByName = true };
+        cmd.Parameters.Add("pfx", value);
+        cmd.Parameters.Add("take", 8);
+
+        var list = new List<string>();
+        using var r = await cmd.ExecuteReaderAsync(ct);
+
+        while (await r.ReadAsync(ct))
+            list.Add(r.GetString(0));
+
+        // Hide results popover during suggestions
+        _results.Clear();
+        _showResults = false;
+
+        return list;
+    }
+    catch (Exception ex)
+    {
+        AppLogger.LogError(ex, "[MainLayout] Unhandled error: " + ex.Message);
+        return Array.Empty<string>();
+    }
+}
+
+private async Task RunSearchAsync()
+{
+    _loading = true;
+    _results.Clear();
+
+    try
+    {
+        var textQuery = BuildOracleTextQuery(searchString);
+
+            string sql = @"
+    SELECT
+        l.id, l.name, l.url, l.category, l.sub_category,
+        ( NVL(SCORE(1),0) * 5
+          + CASE WHEN UPPER(l.name) LIKE UPPER(:pfx)||'%' THEN 200 ELSE 0 END
+        ) AS rank_score
+    FROM mydiarydb.mydiary_landing_sitemap l
+    WHERE l.SHOW_AFTER_LOGIN = 'Y'
+      AND (
+          CONTAINS(l.keywords, :textQuery, 1) > 0 OR
+          UPPER(l.name) LIKE UPPER(:pfx)||'%'
+      )
+    ORDER BY rank_score DESC";
+
+        using var con = new OracleConnection(Configuration.GetConnectionString("MyDiaryDBConnection"));
+        await con.OpenAsync();
+
+        using var cmd = new OracleCommand(sql, con) { BindByName = true };
+        cmd.Parameters.Add("pfx", searchString ?? "");
+
+        if (!string.IsNullOrWhiteSpace(textQuery))
+            cmd.Parameters.Add("textQuery", textQuery);
+
+        using var r = await cmd.ExecuteReaderAsync();
+
+        var list = new List<SearchResult>();
+
+        while (await r.ReadAsync())
+        {
+            list.Add(new SearchResult
+            {
+                id = r.GetInt32(0),
+                name = r.GetString(1),
+                url = r.GetString(2),
+                category = r.IsDBNull(3) ? null : r.GetString(3),
+                subCategory = r.IsDBNull(4) ? null : r.GetString(4),
+                score = r.IsDBNull(5) ? 0 : Convert.ToDecimal(r.GetValue(5))
+            });
+        }
+
+        _results = list;
+        _results = list;
+        SetResultsVisibility();
+    }
+    finally
+    {
+        _loading = false;
+        StateHasChanged();
+    }
+}
+
+private async Task OnSearchKeyDown(KeyboardEventArgs e)
+{
+    if (e.Key == "Escape")
+    {
+        _results.Clear();
+        _showResults = false;
+        StateHasChanged();
+        return;
+    }
+
+    if (e.Key == "Enter")
+        await RunSearchAsync();
+}
+
+
+    private void ToggleProfileMenu()
+    {
+        _profileMenuOpen = !_profileMenuOpen;
+        // Close quick links if open
+        if (_profileMenuOpen && _showQuickLinks) _showQuickLinks = false;
+        // Close notification panel if open
+        if (_profileMenuOpen) _notificationBell?.ClosePanel();
+    }
+
+    private async Task OnProfileMenuOpened()
+    {
+        _profileMenuOpen = true;
+    }
+
+    /// <summary>
+    /// Called directly from the activator button's @onclick.
+    /// </summary>
+    private async Task OnProfileActivatorClicked()
+    {
+        _profileMenuOpen = true;
+    }
+
+    /// <summary>
+    /// Attempts to focus the VCard button inside the profile menu popover.
+    /// Uses retry logic because MudMenu's popover renders asynchronously.
+    /// </summary>
+    private async Task FocusVCardButtonAsync()
+    {
+        await Task.Delay(100);
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                "document.getElementById('profileMenuVCard')?.focus()");
+        }
+        catch (Exception ex) {
+            AppLogger.LogError(ex, "[MainLayout] Unhandled error: " + ex.Message);
+        }
+    }
+
+    private void OnProfileMenuClosed()
+    {
+        _profileMenuOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task ToggleLanguage()
+    {
+        var current = await JS.InvokeAsync<string>("localStorage.getItem", "lang1");
+        var next = current == "hi" ? "en" : "hi";
+
+        await JS.InvokeVoidAsync("applyLanguage", next);
+
+        _currentLang = next;
+        StateHasChanged();
+    }
+
+    private async Task SyncLanguageAsync()
+    {
+        try
+        {
+            _currentLang = await JS.InvokeAsync<string>(
+                "localStorage.getItem",
+                "lang1"
+            ) ?? "en";
+        }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+        catch (TaskCanceledException) { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await SyncLanguageAsync();
+            await JS.InvokeVoidAsync("loadLanguage");
+
+        // Fix accessibility: use a MutationObserver to persistently label any unlabeled buttons
+        // rendered by MudBlazor internals (e.g., MudDrawer overlay button).
+        // The observer ensures labels survive re-renders.
+        await JS.InvokeVoidAsync("eval", @"
+            (function() {
+                // Helper: label all unlabeled buttons currently in the DOM
+                function labelUnlabeledButtons() {
+                    var allButtons = document.querySelectorAll('button');
+                    allButtons.forEach(function(btn) {
+                        if (btn.getAttribute('aria-label') || btn.getAttribute('aria-labelledby') || btn.getAttribute('title')) return;
+                        var text = (btn.textContent || '').trim();
+                        if (text) return;
+                        var img = btn.querySelector('img[alt]');
+                        if (img && img.alt) return;
+                        // Assign label based on context
+                        if (btn.closest('.mud-drawer-overlay') || btn.classList.contains('mud-overlay-drawer')) {
+                            btn.setAttribute('aria-label', 'Close navigation panel');
+                        } else if (btn.closest('.mud-drawer') || btn.closest('.mud-nav')) {
+                            btn.setAttribute('aria-label', 'Toggle navigation panel');
+                        } else if (btn.closest('.mud-appbar')) {
+                            btn.setAttribute('aria-label', 'Menu');
+                        } else if (btn.closest('.mud-overlay')) {
+                            btn.setAttribute('aria-label', 'Close overlay');
+                        } else {
+                            btn.setAttribute('aria-label', 'Toggle navigation panel');
+                        }
+                    });
+                    // Also handle focusable overlays
+                    var overlays = document.querySelectorAll('.mud-overlay');
+                    overlays.forEach(function(el) {
+                        if (el.tabIndex >= 0 && !el.getAttribute('aria-label')) {
+                            el.setAttribute('aria-label', 'Close overlay');
+                            el.setAttribute('role', 'button');
+                        }
+                    });
+                }
+
+                // Run immediately
+                labelUnlabeledButtons();
+
+                // Ensure Quick Links button activates with Enter key for JAWS users.
+                // JAWS in browse mode may not trigger Blazor's @onclick on Enter.
+                // This native listener guarantees activation.
+                var qlBtn = document.getElementById('mainQuickLinksBtn');
+                if (qlBtn && !qlBtn._a11yEnhanced) {
+                    qlBtn._a11yEnhanced = true;
+                    qlBtn.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            qlBtn.click();
+                        }
+                    });
+                }
+
+                // Set up MutationObserver to catch dynamically added/re-rendered buttons
+                if (!window._mainLayoutA11yObserver) {
+                    window._mainLayoutA11yObserver = new MutationObserver(function() {
+                        labelUnlabeledButtons();
+                        labelDropdownListboxes();
+                    });
+                    window._mainLayoutA11yObserver.observe(document.body, { childList: true, subtree: true });
+                }
+
+                // Fix Issue #17: MudSelect teleports its dropdown to MudPopoverProvider at the
+                // bottom of the DOM. JAWS cannot associate the detached list with the trigger.
+                // This adds role=listbox and stable IDs so aria-controls on the wrapper works.
+                function labelDropdownListboxes() {
+                    var mappings = [
+                        { popoverClass: 'zone-dropdown-popover', listId: 'zone-listbox-ul' },
+                        { popoverClass: 'region-dropdown-popover', listId: 'region-listbox-ul' },
+                        { popoverClass: 'branch-dropdown-popover', listId: 'branch-listbox-ul' }
+                    ];
+                    mappings.forEach(function(m) {
+                        var lists = document.querySelectorAll('.' + m.popoverClass + ' .mud-list');
+                        lists.forEach(function(list) {
+                            if (!list.id) list.id = m.listId;
+                            if (!list.getAttribute('role')) list.setAttribute('role', 'listbox');
+                            // Mark each item as an option
+                            list.querySelectorAll('.mud-list-item').forEach(function(item) {
+                                if (!item.getAttribute('role')) item.setAttribute('role', 'option');
+                            });
+                        });
+                    });
+                }
+
+                labelDropdownListboxes();
+
+
+            })()
+        ");
+        }
+        catch (JSDisconnectedException) { /* Circuit disconnected — safe to ignore */ }
+        catch (InvalidOperationException) { /* JS interop unavailable during prerender */ }
+        catch (TaskCanceledException) { /* Circuit disposed during async call */ }
+    }
+
+    private async Task ExpandSearch()
+    {
+        _searchExpanded = true;
+        StateHasChanged();
+        // Small delay to let the field render before focusing
+        await Task.Delay(50);
+        if (_searchField != null)
+            await _searchField.FocusAsync();
+    }
+
+    private void CollapseSearch()
+    {
+        _searchExpanded = false;
+        _searchQuery = "";
+        StateHasChanged();
+    }
+
+    // Collapse back to the icon when the search box loses focus and is empty.
+    // Small delay so clicking a result/suggestion still registers before collapse.
+    private async Task CollapseSearchIfEmpty()
+    {
+        await Task.Delay(200);
+        if (string.IsNullOrWhiteSpace(searchString) && !_showResults)
+        {
+            _searchExpanded = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // Derive initials from full name — "Rajesh Kumar Sharma" → "RS"
+    private string _initials => GetInitials(_userName);
+
+    private static string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{char.ToUpper(parts[0][0])}{char.ToUpper(parts[^1][0])}"
+            : char.ToUpper(parts[0][0]).ToString();
+    }
+
+    // Deterministic pastel-on-dark color from name so the same user always gets the same color
+    private static readonly string[] _avatarPalette =
+    {
+        "#1b4a98", "#0d7377", "#6a1b9a", "#c62828",
+        "#2e7d32", "#e65100", "#283593", "#00695c"
+    };
+
+    private string _avatarBg => _avatarPalette[
+        Math.Abs((_userName ?? "").GetHashCode()) % _avatarPalette.Length
+    ];
+
+    private void ToggleQuickLinks(MouseEventArgs e)
+    {
+        _showQuickLinks = !_showQuickLinks;
+        // Close profile menu if open
+        if (_showQuickLinks && _profileMenuOpen) _profileMenuOpen = false;
+        // Close notification panel if open
+        if (_showQuickLinks) _notificationBell?.ClosePanel();
+    }
+
+    private void CloseQuickLinks()
+    {
+        if (_showQuickLinks) { _showQuickLinks = false; }
+        if (_profileMenuOpen) { _profileMenuOpen = false; }
+        if (_showResults) { _showResults = false; _results.Clear(); }
+        _notificationBell?.ClosePanel();
+        StateHasChanged();
+    }
+
+    private Task CloseQuickLinksAsync() { CloseQuickLinks(); return Task.CompletedTask; }
+
+    private void OnNotificationPanelOpened()
+    {
+        // Close other menus when notification panel opens
+        if (_showQuickLinks) _showQuickLinks = false;
+        if (_profileMenuOpen) _profileMenuOpen = false;
+        if (_showResults) { _showResults = false; _results.Clear(); }
+    }
+
+    private void OnToolbarClick()
+    {
+        // Any click in the toolbar that wasn't stopped by a specific button/panel
+        // should close the notification panel (acts as "click outside" for the toolbar area)
+        _notificationBell?.ClosePanel();
+    }
+
+
+
+
+    private void RecoverBodyError()
+    {
+        _bodyErrorBoundary?.Recover();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userName = user.FindFirst(ClaimTypes.Name)?.Value ?? "Test User";
+            _userEmail = user.FindFirst("email")?.Value ?? "test@example.com";
+            _userPhone = user.FindFirst("phone")?.Value ?? "";
+            _userDesignation = user.FindFirst("employee_designation")?.Value ?? "";
+            _userBranch = user.FindFirst("br_code")?.Value ?? "";
+
+            // Warm the Request Portal current-user resolution once per circuit, in
+            // this async context. Pages then read the sync ICurrentUser getters
+            // (EmpCode/UserId/Roles) safely from cache — avoiding a sync-over-async
+            // session read that could block the circuit.
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await RpCurrentUser.RefreshAsync().WaitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                AppLogger.LogWarning("MainLayout: RpCurrentUser.RefreshAsync timed out after 10s — continuing with cached user state");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"MainLayout: RpCurrentUser.RefreshAsync failed — {ex.Message}");
+            }
+        }
+
+        _authChecked = true;
+        ModuleNav.Changed += OnModuleChanged;
+
+        Navigation.LocationChanged += OnLocationChangedForInfo;
+        UpdatePageInfoKey();
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            // Read straight off the "emplid" claim rather than RpCurrentUser.EmpCode —
+            // the latter resolves via a DB round trip (RP_USER/effective-roles lookup)
+            // that can fail independently of the session actually being valid (e.g. a
+            // missing supporting table locally), silently leaving EmpCode null forever
+            // after the first failed resolve. The claim is always present and cheap.
+            _usageLogEmpCode = user.FindFirst("emplid")?.Value ?? RpCurrentUser.EmpCode ?? "";
+            _usageLogBranchSolId = user.FindFirst("branch_solid")?.Value;
+            _usageLogRegionSolId = user.FindFirst("region_solid")?.Value;
+            _usageLogZoneSolId = user.FindFirst("zone_solid")?.Value;
+            _usageLogBranchName = user.FindFirst("branch_name")?.Value;
+            _usageLogRegionName = user.FindFirst("region_name")?.Value;
+            _usageLogZoneName = user.FindFirst("zone_name")?.Value;
+            Navigation.LocationChanged += OnLocationChangedForUsageLog;
+            LogPageVisitFireAndForget(Navigation.Uri); // the page this circuit landed on
+
+            // One login event per circuit (Adoption Dashboard's Logins tab) — a
+            // fresh circuit is the closest reliable proxy for "a login happened"
+            // available without duplicating this at both Login.razor success paths
+            // (AD/OTP flow and Developer Bypass).
+            if (!string.IsNullOrWhiteSpace(_usageLogEmpCode))
+            {
+                _ = PageUsageRepo.InsertLoginAsync(new global::RequestPortal.Core.Models.LoginEvent
+                {
+                    EmpCode = _usageLogEmpCode,
+                    LoginAtUtc = AppTime.Now,
+                    LoginMethod = "SESSION",
+                    BranchSolId = _usageLogBranchSolId,
+                    RegionSolId = _usageLogRegionSolId,
+                    ZoneSolId = _usageLogZoneSolId,
+                    BranchName = _usageLogBranchName,
+                    RegionName = _usageLogRegionName,
+                    ZoneName = _usageLogZoneName
+                });
+            }
+        }
+    }
+
+    // ── Page/menu usage logging (Menu Access Dashboard) ─────────────────────
+    // Fire-and-forget: never awaited on the render path, any failure is
+    // swallowed after logging — a usage-tracking hiccup must never break
+    // navigation. Only routes registered as an active/enabled RBAC menu item
+    // are logged (matches the dashboard's "menu access" framing) — the menu
+    // list is fetched once per circuit and cached, not re-queried per click.
+    private string _usageLogEmpCode = "";
+    private string? _usageLogBranchSolId;
+    private string? _usageLogRegionSolId;
+    private string? _usageLogZoneSolId;
+    private string? _usageLogBranchName;
+    private string? _usageLogRegionName;
+    private string? _usageLogZoneName;
+    private Dictionary<string, string>? _usageLogMenuRoutes; // route (lowercase, trimmed) -> menu code
+
+    private void OnLocationChangedForUsageLog(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => LogPageVisitFireAndForget(e.Location);
+
+    private void LogPageVisitFireAndForget(string absoluteOrRelativeUri)
+        => _ = LogPageVisitAsync(absoluteOrRelativeUri);
+
+    private async Task LogPageVisitAsync(string uri)
+    {
+        try
+        {
+            if (_usageLogMenuRoutes is null)
+            {
+                var menus = await RbacRepoForUsageLog.ListMenusAsync();
+                _usageLogMenuRoutes = menus
+                    .Where(m => m.IsEnabled && m.IsActive && !string.IsNullOrWhiteSpace(m.Route))
+                    .GroupBy(m => m.Route.Trim('/').ToLowerInvariant())
+                    .ToDictionary(g => g.Key, g => g.First().Code);
+            }
+
+            var rel = Navigation.ToBaseRelativePath(uri).Split('?', '#')[0].Trim('/').ToLowerInvariant();
+            if (!_usageLogMenuRoutes.TryGetValue(rel, out var menuCode)) return; // not an RBAC menu route — skip
+            if (string.IsNullOrWhiteSpace(_usageLogEmpCode)) return;
+
+            await PageUsageRepo.InsertVisitAsync(new global::RequestPortal.Core.Models.PageVisit
+            {
+                MenuCode = menuCode,
+                Route = rel,
+                EmpCode = _usageLogEmpCode,
+                VisitedAtUtc = AppTime.Now,
+                BranchSolId = _usageLogBranchSolId,
+                RegionSolId = _usageLogRegionSolId,
+                ZoneSolId = _usageLogZoneSolId,
+                BranchName = _usageLogBranchName,
+                RegionName = _usageLogRegionName,
+                ZoneName = _usageLogZoneName
+            });
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"[MainLayout] Page-visit logging failed for {uri} — {ex.Message}");
+        }
+    }
+
+    private void OnModuleChanged() => InvokeAsync(StateHasChanged);
+
+    void IDisposable.Dispose()
+    {
+        ModuleNav.Changed -= OnModuleChanged;
+        Navigation.LocationChanged -= OnLocationChangedForInfo;
+    }
+
+    // ── Route-aware page-information key (My-Diary module pages) ───────────────
+    private string? _pageInfoKey;
+
+    private static readonly Dictionary<string, string> PageInfoKeyByRoute = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["home"]                    = "md-home",
+        ["home-dashboard"]          = "md-home-exec",
+        ["landing_dashboard_v2_1"]  = "md-home-legacy",
+        ["departmentsnew"]          = "md-departments",
+        ["circulars"]               = "md-ecirculars",
+        ["policies"]                = "md-policies",
+        ["downloads2"]              = "md-downloads",
+        ["dashboard_new_1"]         = "md-kpi",
+        ["focus360"]                = "md-focus360",
+        ["business-360"]            = "md-business360",
+        ["business-new"]            = "md-business360-legacy",
+        ["assurance-snapshot"]      = "md-assurance-snapshot",
+        ["dashboards2"]             = "md-assurance-corner",
+        ["mis"]                     = "md-mis",
+        ["qlik-dashboard"]          = "md-qlik",
+        ["app-portal1"]             = "md-applications",
+    };
+
+    private static readonly (string Prefix, string Key)[] PageInfoKeyByPrefix =
+    {
+        ("atmindent",  "md-atm-indent"),
+        ("ecircular",  "md-ecirculars"),
+        ("union-hub",  "md-union-hub"),
+        ("dept-page",  "md-departments"),
+    };
+
+    private void OnLocationChangedForInfo(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // Auto-recover from error boundary on navigation — prevents the error page
+        // from persisting when the user navigates to a different URL.
+        _bodyErrorBoundary?.Recover();
+
+        UpdatePageInfoKey();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdatePageInfoKey()
+    {
+        var rel = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/').ToLowerInvariant();
+        if (PageInfoKeyByRoute.TryGetValue(rel, out var key)) { _pageInfoKey = key; return; }
+        var match = PageInfoKeyByPrefix.FirstOrDefault(p => rel.StartsWith(p.Prefix, StringComparison.OrdinalIgnoreCase));
+        _pageInfoKey = match.Key;   // null when no prefix matches
+    }
+
+    /// <summary>
+    /// Opens the employee's VCard in a new browser tab.
+    /// Reads the base URL from config, delegates URL construction to VCardService.
+    /// </summary>
+    private async Task HandleVCardClickAsync()
+    {
+        string baseUrl = Configuration["ApiEndpoints:VCardBaseUrl"] ?? "";
+
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            Snackbar.Add("VCard URL is not configured. Please contact your administrator.", Severity.Warning);
+            return;
+        }
+
+        string employeeId = await SessionStorage.GetAsync<string>("UserId") ?? "";
+        if (string.IsNullOrWhiteSpace(employeeId))
+        {
+            Snackbar.Add("Unable to load Visiting Card — user session not found. Please log in again.", Severity.Warning);
+            return;
+        }
+
+        string finalUrl = await VCardService.BuildVCardUrlAsync(baseUrl, employeeId);
+        await JS.InvokeVoidAsync("window.open", finalUrl, "_blank");
+    }
+
+    async void HandleLogout()
+    {
+        try
+        {
+            // 1. Clear profile image cache
+            await SessionStorage.RemoveAsync("ProfileImageSrc");
+            await SessionStorage.RemoveAsync("ProfileImageUserId");
+
+            // 2. Remove session tracking record from database
+            var userId = await SessionStorage.GetAsync<string>("UserId");
+            if (!string.IsNullOrWhiteSpace(userId))
+                await SessionTracker.RemoveSessionAsync(userId);
+
+            // 3. Clear authentication state
+            await ((MyDiary.Web.Auth.CustomAuthenticationStateProvider)AuthStateProvider).MarkLoggedOutAsync();
+
+            // 4. Force reload to clear all state and redirect to landing page
+            Navigation.NavigateTo("", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[MainLayout] Error during logout: " + ex.Message);
+            Navigation.NavigateTo("", forceLoad: true);
+        }
+    }
+}

@@ -1,0 +1,238 @@
+@page "/emanual/dfb-ibd/volume4"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using global::RequestPortal.Web.Shared
+@inject NavigationManager Nav
+@layout MyDiary.Web.Components.Layout.MainLayout
+<PageTitle>DFB & IBD – Volume 4 Others</PageTitle>
+
+<PageHeader Title="DFB & IBD – Volume 4 Others"
+            Subtitle="Foreign Exchange, SWIFT, KYC/AML & More — Union Bank of India"
+            PageKey="emanual-dfb-ibd-volume4"
+            Crumbs="_crumbs" />
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+
+    <!-- Search -->
+    <MudPaper Elevation="1" Class="pa-3 mb-5" Style="border-radius:10px;">
+        <MudTextField @bind-Value="_searchText"
+                      Placeholder="Search documents..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      AdornmentColor="Color.Primary"
+                      Variant="Variant.Outlined"
+                      Clearable="true"
+                      Immediate="true"
+                      Margin="Margin.Dense"
+                      FullWidth="true"
+                      Style="font-size:0.9rem;" />
+    </MudPaper>
+
+    <!-- Grouped Sections -->
+    @foreach (var sec in FilteredSections)
+    {
+        <MudPaper Elevation="2" Class="pa-4 mb-4" Style="border-radius:10px; border-left: 4px solid #0277bd;">
+            <!-- Section Header -->
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+                <MudIcon Icon="@sec.Icon" Style="color:#0277bd;" />
+                <MudText Typo="Typo.h6" Style="font-weight:700; color:#1a237e;">
+                    @sec.Title
+                </MudText>
+                <MudChip T="string" Size="Size.Small"
+                         Style="background:#0277bd; color:white; font-size:0.75rem; font-weight:600; height:22px; margin-left:auto;">
+                    @sec.Documents.Count doc@(sec.Documents.Count != 1 ? "s" : "")
+                </MudChip>
+            </MudStack>
+            <MudDivider Class="mb-3" />
+
+            <MudGrid Spacing="3">
+                @foreach (var doc in sec.Documents)
+                {
+                    <MudItem xs="12" sm="6" md="4" lg="3">
+                        <MudCard Elevation="1" Class="v4-doc-card"
+                                 Style="border-radius:10px; overflow:hidden; height:100%; cursor:pointer;">
+                            <div style="height:3px; background:#0277bd;"></div>
+                            <div style="height:100px; background:linear-gradient(145deg,#e1f5fe,#b3e5fc);
+                                        display:flex; align-items:center; justify-content:center;">
+                                <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf"
+                                         Style="font-size:3rem; color:#e53935; opacity:0.85;" />
+                            </div>
+                            <MudCardContent Class="pa-2" Style="padding-bottom:2px !important;">
+                                <MudTooltip Text="@doc.Label" Placement="Placement.Top" Arrow="true" Color="Color.Dark">
+                                    <MudText Typo="Typo.body2"
+                                             Style="font-weight:600; color:#333; font-size:0.8rem;
+                                                    line-height:1.4; display:-webkit-box;
+                                                    -webkit-line-clamp:3; -webkit-box-orient:vertical;
+                                                    overflow:hidden; min-height:3.4em;">
+                                        @doc.Label
+                                    </MudText>
+                                </MudTooltip>
+                            </MudCardContent>
+                            <MudCardActions Class="pa-2 pt-1">
+                                <MudButton FullWidth="true" Variant="Variant.Filled"
+                                           Style="background:#0277bd; color:white; font-size:0.75rem;
+                                                  border-radius:6px; font-weight:600;"
+                                           StartIcon="@Icons.Material.Filled.OpenInNew"
+                                           Size="Size.Small"
+                                           Href="@doc.Href" Target="_blank">
+                                    Open PDF
+                                </MudButton>
+                            </MudCardActions>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    }
+
+    @if (!FilteredSections.Any())
+    {
+        <MudAlert Severity="Severity.Info" Style="border-radius:10px;">
+            No documents found matching "<strong>@_searchText</strong>".
+        </MudAlert>
+    }
+
+</MudContainer>
+
+<style>
+    .v4-doc-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .v4-doc-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(2,119,189,0.2) !important;
+    }
+</style>
+
+@code {
+    private string _searchText = "";
+
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("E-manual Content", "emanual"),
+        new("DFB & IBD", "emanual/dfb-ibd"),
+        new("Volume 4 – Others"),
+    };
+
+    private record DocItem(string Label, string Href);
+    private record SectionItem(string Title, string Icon, List<DocItem> Documents);
+
+    private IEnumerable<SectionItem> FilteredSections =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _sections
+            : _sections
+                .Select(s => new SectionItem(s.Title, s.Icon,
+                    s.Documents.Where(d => d.Label.Contains(_searchText, StringComparison.OrdinalIgnoreCase)).ToList()))
+                .Where(s => s.Documents.Any());
+
+    private List<SectionItem> _sections = new()
+    {
+        new("01 – Policy on Foreign Exchange Operations",
+            Icons.Material.Filled.CurrencyExchange,
+            new()
+            {
+                new("01.1 Policy on Foreign Exchange Operations FY 2024-25",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/01 Policy on Foreign Exchange Operations FY 2024-25/01.1 Policy on Foreign Exchange Operations FY 2024-25.pdf"),
+                new("01.2 SOP on ODI",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/01 Policy on Foreign Exchange Operations FY 2024-25/01.2 SOP on ODI.pdf"),
+                new("01.3 SOP on FDI",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/01 Policy on Foreign Exchange Operations FY 2024-25/01.3 SOP on FDI.pdf"),
+            }),
+
+        new("02 – Credit Risk Management 2024-25",
+            Icons.Material.Filled.Shield,
+            new()
+            {
+                new("02.1 Credit Risk Management Policy 2024-25",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/02 Credit Risk Management 2024-25/02.1 Credit Risk Management Policy 2024-25.pdf"),
+                new("02.2 SOP on Exposure Limits for Banks & Financial Institutions, Country Risk Management, UFCE",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/02 Credit Risk Management 2024-25/02.2 SOP on Exposure limits for Banks & Financial Institutions, Country Risk Management, UFCE.pdf"),
+            }),
+
+        new("03 – Policy on Bills Discounting and Guarantee & Co-Acceptances",
+            Icons.Material.Filled.Receipt,
+            new()
+            {
+                new("03.1 Policy on Bills Discounting and Guarantee & Co-Acceptances",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/03 Policy on Bills Discounting and Guarantee & Co-Acceptances/03.1 Policy on Bills Discounting and Guarantee & Co-Acceptances.pdf"),
+                new("03.2 Operational Guidelines to Policy on Bills Discounting and Guarantee & Co-Acceptances",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/03 Policy on Bills Discounting and Guarantee & Co-Acceptances/03.2 Operational Guidelines to Policy on Bills Discounting and Guarantee & Co-Acceptances.pdf"),
+            }),
+
+        new("04 – SWIFT",
+            Icons.Material.Filled.SwapHoriz,
+            new()
+            {
+                new("04.1 SWIFT Alliance User Manual",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/04 SWIFT/04.1 SWIFT ALLIANCE USER MANUAL.pdf"),
+                new("04.2 Sanction Screening User Manual",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/04 SWIFT/04.2 SANCTION SCREENING USER MANUAL.pdf"),
+                new("04.3 Circular on Reiteration of Guidelines on Creation, Deletion, Reset & Transfer of SWIFT",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/04 SWIFT/04.3 Circular on Reiteration of guidelines on Creation  Deletion  Reset Transfer of SWIFT u.pdf"),
+                new("04.4 Circular on Specified Structured Message Type for SWIFT Communication",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/04 SWIFT/04.4 Circular on Specified Structured Message Type for SWIFT Communication.pdf"),
+            }),
+
+        new("05 – External Commercial Borrowing (ECB)",
+            Icons.Material.Filled.AccountBalance,
+            new()
+            {
+                new("05.1 External Commercial Borrowings",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/05 External Commercial Borrowing/05.1 External Commercial Borrowings.pdf"),
+                new("05.2 Circular on RBI Notification – External Commercial Borrowing",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/05 External Commercial Borrowing/05.2 Circular on RBI Notification External Commerci.pdf"),
+                new("05.3 Circular on Late Submission Fee (LSF) for Reporting Delays",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/05 External Commercial Borrowing/05.3 Circular on Late Submission Fee (LSF).pdf"),
+            }),
+
+        new("06 – FDI Related Communications",
+            Icons.Material.Filled.Public,
+            new()
+            {
+                new("06.1 Circular on Issuance of Partly Paid Units to Persons Resident Outside India (FEM Non-Debt Instruments)",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/06  FDI Related Communications/06.1 Circular on Issuance of partly paid units to persons resident outside India by investment vehicles under FEM (Non-debt Instr.).pdf"),
+                new("06.1 FDI – Foreign Exchange Management (Non-Debt Instruments) Rules, 2019",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/06  FDI Related Communications/06.1 FDI-FOREIGN EXCHANGE MANAGEMENT (NON-DEBT INSTRUMENTS) RULES,2019.pdf"),
+                new("06.2 Circular on Foreign Exchange Management (Mode of Payment and Reporting of Non-Debt Instruments) Amendment Regulations, 2024",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/06  FDI Related Communications/06.2 Circular on Foreign Exchange Management (Mode of Payment and Reporting of Non-Debt Instruments) (Amendment) Regulations, 2024.pdf"),
+                new("06.3 Circular on Operational Framework for Reclassification of FPI to FDI",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/06  FDI Related Communications/06.3 Circular on Operational framework for reclassification of Foreign Portfolio Investment to Foreign Direct Investment (FDI).pdf"),
+            }),
+
+        new("07 – Asian Clearing Union (ACU)",
+            Icons.Material.Filled.Hub,
+            new()
+            {
+                new("07.1 Asian Clearing Union (ACU)",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/07 Asian Clearing Union- ACU/07.1 Asian Clearing Union -ACU.pdf"),
+                new("07.2 Circular on Settlement System Under ACU Mechanism",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/07 Asian Clearing Union- ACU/07.2 Circular on SETTLEMENT SYSTEM UNDER ASIAN CLEARING UNION (ACU) MECHANISM.pdf"),
+            }),
+
+        new("08 – FEDAI Rules",
+            Icons.Material.Filled.Gavel,
+            new()
+            {
+                new("08.1 Updated Version of FEDAI Rules 10th Edition",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/08 Updated version of FEDAI Rules 10th Edition/08.1 Updated version of FEDAI Rules 10th Edition.pdf"),
+            }),
+
+        new("09 – KYC / AML / TBML",
+            Icons.Material.Filled.VerifiedUser,
+            new()
+            {
+                new("09.1 KYC Policy 2024-25",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/09 KYC AML TBML/09.1 KYC Policy 2024-25.pdf"),
+                new("09.2 Amendments to KYC Policy for the Year 2024-25",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/09 KYC AML TBML/09.2 Amendments to KYC Policy for the year 2024-25.pdf"),
+            }),
+
+        new("10 – Forex Related Returns",
+            Icons.Material.Filled.Summarize,
+            new()
+            {
+                new("10.1 Forex Related Returns",
+                    "https://ubinet.unionbankofindia.co.in/UBINET/emanual/Emanuals/DFB and IBD/Volume 4 Others/Volume 4/10 Forex Related Returns/10.1 Forex Related Returns.PDF"),
+            }),
+    };
+}

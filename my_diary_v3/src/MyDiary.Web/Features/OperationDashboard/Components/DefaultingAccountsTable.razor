@@ -1,0 +1,242 @@
+﻿@using System.Data
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.OperationDashboard.Models
+@using MyDiary.Web.Features.OperationDashboard.Services
+
+<div class="card mb-2 shadow-sm">
+    <div class="card-header text-white py-1 px-2"
+         style="min-height:28px;
+            background: #1E3A8A;">
+        <h6 class="mb-0" style="font-size:13px;">Defaulting Accounts</h6>
+    </div>
+
+    <div class="card-body p-1" style="padding:2px !important;">
+        @if (isLoading)
+        {
+            <div class="p-2 text-center">
+                <div class="spinner-border text-primary" style="width:18px;height:18px;"></div>
+            </div>
+        }
+        else if (data == null || hasError)
+        {
+            <div class="p-3 text-center text-muted small">
+                <i class="fa-solid fa-folder-open mb-1"></i><br />
+                <strong>No record present currently.</strong>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm mb-0 text-center compact-table">
+
+                    <thead>
+                        <tr style="height:18px;">
+                            <th colspan="4">Prev Month</th>
+                            <th colspan="4">Prev Day</th>
+                            <th colspan="4" class="text-primary">Today</th>
+                        </tr>
+
+                        <tr style="height:18px;">
+                            <th colspan="4"><small>(@data.PrevMonthDt.ToString("dd/MM/yyyy"))</small></th>
+                            <th colspan="4"><small>(@data.PrevDay2Dt.ToString("dd/MM/yyyy"))</small></th>
+                            <th colspan="4" class="text-primary"><small>(@data.PrevDayDt.ToString("dd/MM/yyyy"))</small></th>
+                        </tr>
+                    </thead>
+
+                    <!-- Section 1 -->
+                    <tbody>
+                        <tr>
+                            <td>Dormant</td>
+                            <td>Inactive</td>
+                            <td colspan="2">NoNomination</td>
+
+                            <td>Dormant</td>
+                            <td>Inactive</td>
+                            <td colspan="2">NoNomination</td>
+
+                            <td>Dormant</td>
+                            <td>Inactive</td>
+                            <td colspan="2">NoNomination</td>
+                        </tr>
+
+                        <tr>
+                            <td>@data.PrevMonthNoOfDormant.ToString("N0")</td>
+                            <td>@data.PrevMonthNoOfInactive.ToString("N0")</td>
+                            <td colspan="2">@data.PrevMonthNoOfNoNomination.ToString("N0")</td>
+
+                            <td>@data.PrevDay2NoOfDormant.ToString("N0")</td>
+                            <td>@data.PrevDay2NoOfInactive.ToString("N0")</td>
+                            <td colspan="2">@data.PrevDay2NoOfNoNomination.ToString("N0")</td>
+
+                            <td class="bg-light fw-bold text-danger">@data.PrevDayNoOfDormant.ToString("N0")</td>
+                            <td class="bg-light fw-bold text-danger">@data.PrevDayNoOfInactive.ToString("N0")</td>
+                            <td colspan="2" class="bg-light fw-bold text-danger">@data.PrevDayNoOfNoNomination.ToString("N0")</td>
+                        </tr>
+
+                        <tr class="table-warning">
+                            <td colspan="8" class="text-end fw-bold small">Var:</td>
+                            <td>@RenderVariation(data.PrevDayNoOfDormant, data.PrevDay2NoOfDormant, "N0")</td>
+                            <td>@RenderVariation(data.PrevDayNoOfInactive, data.PrevDay2NoOfInactive, "N0")</td>
+                            <td colspan="2">@RenderVariation(data.PrevDayNoOfNoNomination, data.PrevDay2NoOfNoNomination, "N0")</td>
+                        </tr>
+                    </tbody>
+
+                    <!-- Section 2 -->
+                    <tbody>
+                        <tr>
+                            <td>Lien Marked</td>
+                            <td>Amt Lien Marked</td>
+                            <td>No of Deaf</td>
+                            <td>Amount Deaf</td>
+
+                            <td>Lien Marked</td>
+                            <td>Amt Lien Marked</td>
+                            <td>No of Deaf</td>
+                            <td>Amount Deaf</td>
+
+                            <td>Lien Marked</td>
+                            <td>Amt Lien Marked</td>
+                            <td>No of Deaf</td>
+                            <td>Amount Deaf</td>
+                        </tr>
+
+                        <tr>
+                            <td>@data.PrevMonthLienMarked.ToString("N0")</td>
+                            <td>@data.PrevMonthAmountLienMarked.ToString("N2")</td>
+                            <td>@data.PrevMonthNoOfDeaf.ToString("N0")</td>
+                            <td>@data.PrevMonthAmountDeaf.ToString("N2")</td>
+
+                            <td>@data.PrevDay2LienMarked.ToString("N0")</td>
+                            <td>@data.PrevDay2AmountLienMarked.ToString("N2")</td>
+                            <td>@data.PrevDay2NoOfDeaf.ToString("N0")</td>
+                            <td>@data.PrevDay2AmountDeaf.ToString("N2")</td>
+
+                            <td class="text-end fw-bold small">@data.PrevDayLienMarked.ToString("N0")</td>
+                            <td class="text-end fw-bold small">@data.PrevDayAmountLienMarked.ToString("N2")</td>
+                            <td class="text-end fw-bold small">@data.PrevDayNoOfDeaf.ToString("N0")</td>
+                            <td class="text-end fw-bold small">@data.PrevDayAmountDeaf.ToString("N2")</td>
+                        </tr>
+
+                        <tr class="table-warning">
+                            <td colspan="8" class="text-end fw-bold small">Var:</td>
+                            <td>@RenderVariation(data.PrevDayLienMarked, data.PrevDay2LienMarked, "N0")</td>
+                            <td>@RenderVariation(data.PrevDayAmountLienMarked, data.PrevDay2AmountLienMarked, "N2")</td>
+                            <td>@RenderVariation(data.PrevDayNoOfDeaf, data.PrevDay2NoOfDeaf, "N0")</td>
+                            <td>@RenderVariation(data.PrevDayAmountDeaf, data.PrevDay2AmountDeaf, "N2")</td>
+                        </tr>
+                    </tbody>
+
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .compact-table {
+        font-size: 10.5px;
+        border-collapse: collapse;
+    }
+
+        .compact-table th, .compact-table td {
+            padding: 2px 4px !important;
+            line-height: 1 !important;
+            height: 18px !important;
+        }
+
+        .compact-table thead th {
+            font-size: 10px;
+        }
+</style>
+
+@code {
+    [Parameter] public DataSet DashboardData { get; set; }
+
+    private bool isLoading = true;
+    private bool hasError = false;
+    private AccountStatusReportDto data;
+
+    protected override void OnParametersSet()
+    {
+        isLoading = true;
+        hasError = false;
+
+        try
+        {
+            if (DashboardData != null)
+            {
+                data = ExtractDefaultingAccounts(DashboardData);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[DefaultingAccountsTable] Error: " + ex.Message);
+            hasError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private AccountStatusReportDto ExtractDefaultingAccounts(DataSet ds)
+    {
+        foreach (DataTable table in ds.Tables)
+        {
+            if (table.Rows.Count > 0 && table.Columns.Contains("TableName"))
+            {
+                var row = table.Rows[0];
+
+                if (row["TableName"]?.ToString() == "AccountStatusReport")
+                {
+                    return new AccountStatusReportDto
+                        {
+                            PrevDayDt = Convert.ToDateTime(row["PrevDayDt"]),
+                            PrevDayNoOfDormant = Convert.ToInt32(row["PrevDayNoOfDormant"]),
+                            PrevDayNoOfInactive = Convert.ToInt32(row["PrevDayNoOfInactive"]),
+                            PrevDayNoOfNoNomination = Convert.ToInt32(row["PrevDayNoOfNoNomination"]),
+                            PrevDayNoOfDeaf = Convert.ToInt32(row["PrevDayNoOfDeaf"]),
+                            PrevDayLienMarked = Convert.ToInt32(row["PrevDayLienMarked"]),
+                            PrevDayAmountLienMarked = Convert.ToDecimal(row["PrevDayAmountLienMarked"]),
+                            PrevDayAmountDeaf = Convert.ToDecimal(row["PrevDayAmountDeaf"]),
+
+                            PrevDay2Dt = Convert.ToDateTime(row["PrevDay2Dt"]),
+                            PrevDay2NoOfDormant = Convert.ToInt32(row["PrevDay2NoOfDormant"]),
+                            PrevDay2NoOfInactive = Convert.ToInt32(row["PrevDay2NoOfInactive"]),
+                            PrevDay2NoOfNoNomination = Convert.ToInt32(row["PrevDay2NoOfNoNomination"]),
+                            PrevDay2NoOfDeaf = Convert.ToInt32(row["PrevDay2NoOfDeaf"]),
+                            PrevDay2LienMarked = Convert.ToInt32(row["PrevDay2LienMarked"]),
+                            PrevDay2AmountLienMarked = Convert.ToDecimal(row["PrevDay2AmountLienMarked"]),
+                            PrevDay2AmountDeaf = Convert.ToDecimal(row["PrevDay2AmountDeaf"]),
+
+                            PrevMonthDt = Convert.ToDateTime(row["PrevMonthDt"]),
+                            PrevMonthNoOfDormant = Convert.ToInt32(row["PrevMonthNoOfDormant"]),
+                            PrevMonthNoOfInactive = Convert.ToInt32(row["PrevMonthNoOfInactive"]),
+                            PrevMonthNoOfNoNomination = Convert.ToInt32(row["PrevMonthNoOfNoNomination"]),
+                            PrevMonthNoOfDeaf = Convert.ToInt32(row["PrevMonthNoOfDeaf"]),
+                            PrevMonthLienMarked = Convert.ToInt32(row["PrevMonthLienMarked"]),
+                            PrevMonthAmountLienMarked = Convert.ToDecimal(row["PrevMonthAmountLienMarked"]),
+                            PrevMonthAmountDeaf = Convert.ToDecimal(row["PrevMonthAmountDeaf"]),
+
+                            TableName = "AccountStatusReport"
+                        };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private RenderFragment RenderVariation(decimal current, decimal previous, string format) => __builder =>
+    {
+        var metrics = VariationMetrics.Calculate(current, previous);
+
+        string colorClass = metrics.AbsoluteChange <= 0 ? "text-success" : "text-danger";
+        string sign = metrics.AbsoluteChange > 0 ? "+" : "";
+
+        <span class="@colorClass fw-bold small">
+            @sign@metrics.AbsoluteChange.ToString(format)
+        </span>
+        ;
+    };
+}

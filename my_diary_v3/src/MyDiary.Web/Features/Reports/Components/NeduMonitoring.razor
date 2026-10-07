@@ -1,0 +1,238 @@
+﻿@page "/reports/nedumonitoring"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+@* --- UNIFIED SECTION: Wrapped in single MudGrid/MudItem matching KPI Dashboard --- *@
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>NEDU TV Status — My Diary</PageTitle>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <div id="report-page-root" class="mb-4">
+            <MudPaper Elevation="0" Style="background-color: #ffffff;">
+                <DynamicDashboard 
+                    Config="_activeConfig" 
+                    Data="_data" 
+                    IsLoading="_loading" 
+                    AsOnDateLabel="@_asOnDateLabel"
+                    SelectedZone="@_selectedZone" 
+                    SelectedRegion="@_selectedRegion" 
+                    SelectedBranch="@_selectedBranch"
+                    OnFilterChanged="HandleFilterChanged"
+                    OnExportRequested="HandleExport" />
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // [CascadingParameter] private Task<AuthenticationState>? authStateTask { get; set; }
+    [SupplyParameterFromQuery] [Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+    
+    private string _userPrivilege = "CO", _userSolid = "00000";
+
+    private List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "20%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "20%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "branch_name", Width = "15%" },
+        new ColumnConfig { Header = "Installed Branches", PropertyName = "Total", IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Active Branches", PropertyName = "ActiveTVCount", IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Inactive Branches", PropertyName = "InactiveTVCount", IsNumeric = true, Format = "N0", Width = "15%" }
+    };
+
+    private List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "15%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "15%" },
+        new ColumnConfig { Header = "Branch Name", PropertyName = "Branch_Name", Width = "20%" },
+        new ColumnConfig { Header = "Sol ID", PropertyName = "SolId", Width = "10%" },
+        new ColumnConfig { Header = "Status", PropertyName = "StatusDesc", Width = "15%" },
+        new ColumnConfig { Header = "Last Accessed Time", PropertyName = "Last_Accessed", Width = "25%" }
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _activeConfig.Title = Title ?? "NEDU TV Status";
+
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        // _userSolid holds the user's own unit SOL ID for their privilege level.
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userSolid = __scope.Privilege switch
+            {
+                "ZONE" => __scope.ZoneSolid,
+                "REGION" => __scope.RegionSolid,
+                "BRANCH" => __scope.BranchSolid,
+                _ => "00000"
+            };
+        }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+
+        string columns = "";
+        string where = "1=1 ";
+        string groupBy = "";
+        bool isSummary = true;
+
+        // Replicable SQL field logic
+        string sumFields = "count(*) As Total, sum(case when CONVERT(DATETIME,Last_Accessed,103) > DateAdd(DAY,0,cast(DataAsOn as date)) then 1 else 0 end) ActiveTVCount, sum(case when CONVERT(DATETIME,Last_Accessed,103) > DateAdd(DAY,0,cast(DataAsOn as date)) then 0 else 1 end) InactiveTVCount";
+        string detFields = "A.Status As StatusCode, Case when CONVERT(DATETIME,Last_Accessed,103) > DateAdd(DAY,0,cast(DataAsOn as date)) then 'Active' else 'Inactive' end StatusDesc, Last_Accessed, Branch_Name, region_name, zone_name_eng, Sol_Id As SolId";
+
+        // EXACT Logic Implementation from NeduMonitoring.aspx.cs
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = $"{sumFields}, 'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As SolId";
+            }
+            else if (_selectedZone == "all") // All(Zonewise)
+            {
+                if (_selectedRegion == "1")
+                {
+                    columns = $"{sumFields}, 'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = $"{sumFields}, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Detailed
+                    {
+                        isSummary = false;
+                        columns = detFields;
+                    }
+                }
+                else // Specific Region
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = $"{sumFields}, 'All' As Branch_Name, region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and sol_id = '{_selectedBranch}'";
+                        columns = detFields;
+                    }
+                }
+            }
+            else // Specific Zone Selected
+            {
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (_selectedRegion == "1")
+                {
+                    columns = $"{sumFields}, 'All' As branch_name, 'All' As region_name, zone_name_eng, Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = $"{sumFields}, 'All' As branch_name, region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By region_name, region_SolId, zone_name_eng";
+                    }
+                    else { isSummary = false; columns = detFields; }
+                }
+                else // Particular Region in Particular Zone
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = $"{sumFields}, 'All' As branch_name, region_name, zone_name_eng, region_SolId As SolId";
+                        groupBy = " Group By region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = detFields;
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userSolid}'";
+            if (_selectedRegion == "1") { columns = $"{sumFields}, 'All' As branch_name, 'All' As region_name, 'All' As zone_name_eng, 'All' As SolId"; }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1") { columns = $"{sumFields}, 'All' As branch_name, region_name, zone_name_eng, region_solid As SolId"; groupBy = " Group By Region_name, region_SolId, zone_name_eng"; }
+                else { isSummary = false; columns = detFields; if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'"; }
+            }
+            else // Specific Region
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1") { columns = $"{sumFields}, 'All' As branch_name, region_name, zone_name_eng, region_solid As SolId"; groupBy = " Group By Region_name, region_SolId, zone_name_eng"; }
+                else { isSummary = false; columns = detFields; if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'"; }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userSolid}'";
+            if (_selectedBranch == "1") { columns = $"{sumFields}, 'All' As branch_name, region_name, zone_name_eng, region_solid As SolId"; groupBy = " Group By Region_name, region_SolId, zone_name_eng"; }
+            else { isSummary = false; columns = detFields; if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'"; }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" and sol_id = '{_userSolid}'";
+            columns = detFields;
+        }
+
+        // Final Data Execution
+        string finalQuery = $"SELECT {columns} FROM NeduData A JOIN Branch_Master B On A.BranchCode = B.Branch_Code WHERE {where} {groupBy} Order By Zone_Name_Eng, Region_Name, Branch_Name";
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+        // Footer Timestamp Logic
+        var dateTable = await ReportService.ExecuteRawQueryAsync("SELECT Max(LastUpdateDate) as max_date FROM NeduData");
+        if (dateTable.Any())
+        {
+            _asOnDateLabel = "Data As On - " + Convert.ToDateTime(dateTable.First()["max_date"]).ToString("dd-MM-yyyy hh:mm tt");
+        }
+
+        _activeConfig.Columns = isSummary ? _summaryCols : _detailedCols;
+        _loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "NEDUMonitoring");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "NEDU_Monitoring.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

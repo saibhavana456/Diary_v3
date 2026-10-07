@@ -1,0 +1,38 @@
+﻿@page "/staff-details/{EncryptedId}"
+@inject MyDiary.Web.Services.IEncryptionService EncryptionService
+
+<MudPaper Class="pa-4 mt-4">
+    <MudText Typo="Typo.h5">Staff Details</MudText>
+
+    @if (_decryptionFailed)
+    {
+        <MudAlert Severity="Severity.Error">Invalid or tampered Link.</MudAlert>
+    }
+    else
+    {
+        <MudText><b>Decrypted ID:</b> @_realId</MudText>
+        <MudText>Showing details for Staff ID: @_realId...</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public string EncryptedId { get; set; } = "";
+
+    private string _realId = "";
+    private bool _decryptionFailed = false;
+
+    protected override void OnInitialized()
+    {
+        // DECRYPT THE ID
+        _realId = EncryptionService.Decrypt(EncryptedId);
+
+        if (string.IsNullOrEmpty(_realId))
+        {
+            _decryptionFailed = true;
+        }
+        else
+        {
+            // You can now use int.Parse(_realId) to fetch data from DB
+        }
+    }
+}

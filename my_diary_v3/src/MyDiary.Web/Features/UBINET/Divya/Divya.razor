@@ -1,0 +1,784 @@
+@page "/divya"
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using MyDiary.Web.Components.Layout
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout PublicLayout
+<PageTitle>Divya Portal</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+
+    @* Page Header *@
+    <MudPaper Elevation="0" Class="divya-header-banner mb-2 pa-3 rounded-lg">
+        <MudText Typo="Typo.h4" Class="divya-title">
+            <MudIcon Icon="@Icons.Material.Filled.Accessibility" Class="mr-2" Style="vertical-align:middle;" />
+            Divya Portal
+        </MudText>
+        <MudText Typo="Typo.body2" Class="divya-subtitle mt-1">
+            Divya Portal has been developed to provide one stop platform for information related to various circulars,
+            publications and guidelines related to persons with disabilities. Bank endeavour is to make conducive
+            environment of equality for all. In that direction this portal which is conceptualized by the training
+            college is a humble beginning.
+        </MudText>
+    </MudPaper>
+
+    <MudDivider Class="mb-4" />
+
+    @* Section 1: Circulars - Customer Services *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Circulars related to Customer Services to PwDs
+        </MudText>
+
+        <MudTable Items="@customerCirculars" Hover="true" Striped="true" Dense="true"
+                  Breakpoint="Breakpoint.Sm" Class="circular-table" Elevation="0">
+            <HeaderContent>
+                <MudTh Style="width:60px;">S.No.</MudTh>
+                <MudTh>Circular Subject</MudTh>
+                <MudTh>Download Link</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="S.No.">@context.SNo</MudTd>
+                    <MudTd DataLabel="Circular Subject">@context.Subject</MudTd>
+                    <MudTd DataLabel="Download Link">
+                        <MudLink Href="@context.Url" Target="_blank" Class="circular-link">
+                            <MudIcon Icon="@Icons.Material.Filled.Download" Size="MudBlazor.Size.Small" Class="mr-1" />
+                            @context.LinkText
+                    </MudLink>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    @* Section 2: Circulars - Staff *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Badge" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Circulars related to Differently Abled Staff Members
+        </MudText>
+
+        <MudTable Items="@staffCirculars" Hover="true" Striped="true" Dense="true"
+                  Breakpoint="Breakpoint.Sm" Class="circular-table" Elevation="0">
+            <HeaderContent>
+                <MudTh Style="width:60px;">S.No.</MudTh>
+                <MudTh>Circular Subject</MudTh>
+                <MudTh>Download Link</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="S.No.">@context.SNo</MudTd>
+                    <MudTd DataLabel="Circular Subject">@context.Subject</MudTd>
+                    <MudTd DataLabel="Download Link">
+                        <MudLink Href="@context.Url" Target="_blank" Class="circular-link">
+                            <MudIcon Icon="@Icons.Material.Filled.Download" Size="MudBlazor.Size.Small" Class="mr-1" />
+                            @context.LinkText
+                    </MudLink>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    @* Section 3: Empower Through Access *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-1">
+            <MudIcon Icon="@Icons.Material.Filled.FlashOn" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Empower Through Access
+        </MudText>
+        <MudText Typo="Typo.caption" Class="mb-3 ml-7 d-block" Style="color:var(--mud-palette-text-secondary);">
+            Current Month Publications
+        </MudText>
+
+        <MudList T="EmpowerItem" Dense="true" DisablePadding="true">
+            @foreach (var item in empowerItems)
+            {
+                <MudListItem T="EmpowerItem" Dense="true" Class="empower-item">
+                    <MudLink Href="@item.Url" Target="_blank" Class="circular-link d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+                        @item.Title
+                    </MudLink>
+                </MudListItem>
+            }
+        </MudList>
+
+        <MudDivider Class="my-2" />
+        <MudLink Href="divya-previous-emailers" Target="_blank" Class="circular-link d-flex align-center mt-2">
+            <MudIcon Icon="@Icons.Material.Filled.History" Size="MudBlazor.Size.Small" Class="mr-2" />
+            Previous Month Emailers
+        </MudLink>
+    </MudPaper>
+
+    @* Section 4: Knowledge Centre *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Union Bank Knowledge Centre Publications
+        </MudText>
+        <MudList T="ResourceItem" Dense="true" DisablePadding="true">
+            @foreach (var item in knowledgeItems)
+            {
+                <MudListItem T="ResourceItem" Dense="true" Class="empower-item">
+                    <MudLink Href="@item.Url" Target="_blank" Class="circular-link d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+                        @item.Title
+                    </MudLink>
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+
+    @* Section 5: Grahak Seva Book *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.AutoStories" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            ग्राहक सेवा उत्कृष्टता के विविध आयाम (Grahak Seva Ke Vividh Aayam Book)
+        </MudText>
+        <MudList T="ResourceItem" Dense="true" DisablePadding="true">
+            @foreach (var item in grahakItems)
+            {
+                <MudListItem T="ResourceItem" Dense="true" Class="empower-item">
+                    <MudLink Href="@item.Url" Target="_blank" Class="circular-link d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+                        @item.Title
+                    </MudLink>
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+
+    @* Section 6: Instruction Manuals *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Summarize" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Instructions Manuals Prepared by Union Access Team
+        </MudText>
+        <MudList T="ResourceItem" Dense="true" DisablePadding="true">
+            @foreach (var item in manualItems)
+            {
+                <MudListItem T="ResourceItem" Dense="true" Class="empower-item">
+                    <MudLink Href="@item.Url" Target="_blank" Class="circular-link d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+                        @item.Title
+                    </MudLink>
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+
+    @* Section 7: JAWS SOP *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Hearing" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Standard Operating Procedure (SOP) for JAWS Screen Reader
+        </MudText>
+        <MudLink Href="https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06717-2024~37642519~Information%20Circulars"
+                 Target="_blank" Class="circular-link d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+            Standard Operating Procedure (SOP) for JAWS screen reader
+        </MudLink>
+    </MudPaper>
+
+    @* Section 8: Union Vidya *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.School" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Union Vidya Modules
+        </MudText>
+        <MudList T="string" Dense="true" DisablePadding="true">
+            @foreach (var course in vidyaCourses)
+            {
+                <MudListItem T="string" Dense="true" Class="empower-item">
+                    <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+                    @course
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+
+    @* Section 9: Union Radio *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Radio" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Links to Union Radio and Podcast
+        </MudText>
+        <MudLink Href="https://#/course/view.php?id=727" Target="_blank" Class="circular-link d-flex align-center mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+            Union Radio (Login Required)
+        </MudLink>
+        <MudLink Href="https://#/enrol/index.php?id=2835" Target="_blank" Class="circular-link d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+            Podcasts (Login Required)
+        </MudLink>
+    </MudPaper>
+
+    @* Section 10: Videos *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.VideoLibrary" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Videos
+        </MudText>
+        <MudList T="ResourceItem" Dense="true" DisablePadding="true">
+            @foreach (var item in videoItems)
+            {
+                <MudListItem T="ResourceItem" Dense="true" Class="empower-item">
+                    <MudLink Href="@item.Url" Target="_blank" Class="circular-link d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.PlayCircle" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+                        @item.Title
+                    </MudLink>
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+
+    @* Section 11: IDPD Panel *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Groups" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            IDPD 2024 Panel Discussion
+        </MudText>
+        <MudLink Href="https://youtu.be/9y9beQYhNdM?si=tcSX6ffA3Jckg1gW" Target="_blank" Class="circular-link d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+            IDPD 2024 Panel Discussion (YouTube)
+        </MudLink>
+    </MudPaper>
+
+    @* Section 12: Screen Reader Software *@
+    <MudPaper Elevation="2" Class="section-card mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.ScreenSearchDesktop" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Screen Reader Softwares
+        </MudText>
+        <MudList T="ResourceItem" Dense="true" DisablePadding="true">
+            @foreach (var item in screenReaderItems)
+            {
+                <MudListItem T="ResourceItem" Dense="true" Class="empower-item">
+                    <MudLink Href="@item.Url" Target="_blank" Class="circular-link d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord" Size="MudBlazor.Size.Small" Class="mr-2 bullet-icon" />
+                        @item.Title
+                    </MudLink>
+                </MudListItem>
+            }
+        </MudList>
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3" Variant="Variant.Text">
+            NVDA screen reader software is supplementary to JAWS screen reader considering its feature of multi languages
+            text-to-speech support for efficiently working in both English and Hindi languages simultaneously.
+        </MudAlert>
+    </MudPaper>
+
+    @* Section 13: Contact Details *@
+    <MudPaper Elevation="2" Class="section-card contact-section mb-5 pa-4 rounded-lg">
+        <MudText Typo="Typo.h6" Class="section-heading mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.ContactPhone" Class="mr-2 section-icon" Style="vertical-align:middle;" />
+            Contact Details
+        </MudText>
+
+        <MudGrid>
+            @* Inclusion Cell *@
+            <MudItem xs="12" sm="12" md="4">
+                <MudCard Elevation="0" Class="contact-card h-100">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <MudAvatar Color=MudBlazor.Color.Primary Variant="Variant.Filled">
+                                <MudIcon Icon="@Icons.Material.Filled.Groups" />
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Inclusion Cell</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            Bank has established an Inclusion Cell at HR vertical at Central Office as per Equal Opportunity Policy.
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.Email" Size="MudBlazor.Size.Small" Class="mr-1" />
+                            <MudLink Href="mailto:inclusion.cell@unionbankofindia.bank.in" Class="circular-link">
+                                inclusion.cell@unionbankofindia.bank.in
+                            </MudLink>
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1">
+                            <MudIcon Icon="@Icons.Material.Filled.Phone" Size="MudBlazor.Size.Small" Class="mr-1" />
+                            IP Phone: 116266
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+
+            @* Union Access *@
+            <MudItem xs="12" sm="12" md="4">
+                <MudCard Elevation="0" Class="contact-card h-100">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <MudAvatar Color="MudBlazor.Color.Secondary" Variant="Variant.Filled">
+                                <MudIcon Icon="@Icons.Material.Filled.Accessibility" />
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Union Access</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            Union Access team is functional at Department of Information Technology for any digital accessibility related issues/feedback.
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.Email" Size="MudBlazor.Size.Small" Class="mr-1" />
+                            <MudLink Href="mailto:unionaccess@unionbankofindia.bank.in" Class="circular-link">
+                                unionaccess@unionbankofindia.bank.in
+                            </MudLink>
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1">
+                            <MudIcon Icon="@Icons.Material.Filled.Phone" Size="MudBlazor.Size.Small" Class="mr-1" />
+                            IP Phone: 530309, 220538
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+
+            @* Union Sampark *@
+            <MudItem xs="12" sm="12" md="4">
+                <MudCard Elevation="0" Class="contact-card h-100">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <MudAvatar Color="MudBlazor.Color.Tertiary" Variant="Variant.Filled">
+                                <MudIcon Icon="@Icons.Material.Filled.HelpCenter" />
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Union Sampark – Ask Us</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            A unique facility by training college whereby staff members lodge their queries/practical issues faced by them.
+                        </MudText>
+                        <MudLink Href="https://app2.unionbankofindia.co.in/QueryCornerLive/" Target="_blank" Class="circular-link">
+                            <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="MudBlazor.Size.Small" Class="mr-1" />
+                            Visit Link – Ask Us
+                        </MudLink>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+</MudContainer>
+
+<style>
+    .divya-header-banner {
+        background: linear-gradient(135deg, #7b0000 0%, #c0392b 60%, #e74c3c 100%);
+        color: white;
+        border-left: 6px solid #FFD700;
+    }
+
+    .divya-title {
+        color: white !important;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+
+    .divya-subtitle {
+        color: rgba(255,255,255,0.88) !important;
+        line-height: 1.6;
+    }
+
+    .section-card {
+        border-left: 4px solid #c0392b;
+        transition: box-shadow 0.2s ease;
+    }
+
+        .section-card:hover {
+            box-shadow: 0 4px 20px rgba(192, 57, 43, 0.15) !important;
+        }
+
+    .section-heading {
+        color: #7b0000 !important;
+        font-weight: 700;
+        border-bottom: 2px solid #f5e6e6;
+        padding-bottom: 8px;
+    }
+
+    .section-icon {
+        color: #c0392b !important;
+    }
+
+    .circular-table th {
+        background-color: #7b0000 !important;
+        color: white !important;
+        font-weight: 600;
+    }
+
+    .circular-link {
+        color: #c0392b !important;
+        text-decoration: none;
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
+
+        .circular-link:hover {
+            color: #7b0000 !important;
+            text-decoration: underline;
+        }
+
+    .bullet-icon {
+        color: #c0392b !important;
+        font-size: 8px !important;
+        flex-shrink: 0;
+    }
+
+    .empower-item {
+        border-bottom: 1px dotted #f0d0d0;
+        padding-top: 4px !important;
+        padding-bottom: 4px !important;
+    }
+
+        .empower-item:last-child {
+            border-bottom: none;
+        }
+
+    .contact-section {
+        background-color: #fff8f8;
+    }
+
+    .contact-card {
+        background-color: #ffffff;
+        border: 1px solid #f5e6e6;
+        border-radius: 8px;
+    }
+</style>
+
+@code {
+
+    // ── Data Models ──────────────────────────────────────────────────
+    private record CircularItem(int SNo, string Subject, string Url, string LinkText);
+    private record EmpowerItem(string Title, string Url);
+    private record ResourceItem(string Title, string Url);
+
+    // ── Customer Circulars ───────────────────────────────────────────
+    private readonly List<CircularItem> customerCirculars = new()
+    {
+        new(1, "Incorporation of Accessibility Parameters in Bank branches and Offices",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=101677-2026~80328776~Instruction%20Circulars&subject=Incorporation%20of%20Accessibility%20Parameters%20in%20Bank%20branches%20and%20Offices",
+            "101678-2026 Incorporation of Accessibility Parameters in Bank branches and Offices Dated 07/02/2026"),
+
+        new(2, "Launching of \"Union Sparsh\" Credit Card for Visually Impaired Persons",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=101034-2025~68361544~Instruction%20Circulars",
+            "101034-2025 Launching of \"Union Sparsh\" Credit Card for Visually Impaired Persons Dated 15/10/2025"),
+
+        new(3, "Refinance Facility with NBCFDC NSFDC NDFDC and NMDFC for concessional credit to beneficiaries",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=100646-2025~63976166~Instruction%20Circulars",
+            "100646-2025 Refinance Facility with NBCFDC NSFDC NDFDC and NMDFC Dated 11/08/2025"),
+
+        new(4, "Barrier Free Access in Branches/ATMS for persons with Disabilities",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/05345-2025Barrier Free Access.pdf",
+            "05345 Barrier Free Access in Branches/ATMS for persons with Disabilities Dated 06/01/2025"),
+
+        new(5, "Amendment in Refinance Policy of NDFDC",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06909-2024~44116595~Information%20Circulars",
+            "06909-2024 Amendment in Refinance Policy of NDFDC"),
+
+        new(6, "Credit Card Policy 2024-25",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=00071-2024~35843398~Instruction%20Circulars",
+            "00071-2024 Credit Card Policy 2024-25 Dated 03/04/2024"),
+
+        new(7, "Information Technology Policy 2026-27",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=101935-2026~85386854~POLICY&subject=Information%20Technology%20Policy%2020262027%27",
+            "101935-2026 Information Technology Policy 2025-26 Dated 25/03/2026"),
+
+        new(8, "IT Procurement Policy 2025-26",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=05545-2025~49059855~Instruction%20Circulars&subject=IT%20Procurement%20Policy%202025%2026%27",
+            "05545-2025 IT Procurement Policy 2025-26 Dated 31/03/2025"),
+
+        new(9, "ATM Policy for Year 2026-27",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=101957-2026~85492281~POLICY&subject=%20202627%20%20%20%20%20%20ATM%20Policy%20for%20the%20year%202026%2027%27",
+            "101957-2026 ATM Policy for the year 2026-27 Dated 30/03/2026"),
+
+        new(10, "Debit Card Policy 2026-27",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=101946-2026~85322197~POLICY&subject=%20%20%202026%2027%20Debit%20Card%20Policy%202026%2027%27",
+            "101946-2026 Debit Card Policy 2026-27 Dated 27/03/2026"),
+
+        new(11, "MoA with National Divyangjan Finance & Development Corporation (NDFDC) - Addition of New Schemes",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=04602-2024~34728447~Instruction%20Circulars",
+            "04602-2024 MoA with NDFDC for PwD - Addition of New Schemes Dated 07/02/2024"),
+
+        new(12, "MoA with National Handicapped Finance & Development Corporation (NHFDC) - Additional Eligibility Criteria",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=04098-2023~30840796~Instruction%20Circulars",
+            "4098-2023 MoA with NHFDC - Additional Eligibility Criteria Dated 22/05/2023"),
+
+        new(13, "Standard Operating Procedure (SOP) for RuPay Sparsh Braille Debit Card Issuance",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06214-2023~30154262~Instruction%20Circulars",
+            "06214-2023 SOP for RuPay Sparsh Braille Debit Card Issuance Dated 17/03/2023"),
+
+        new(14, "Launching of \"Union Sparsh\" - Braille Debit Card for Blind, Visually Impaired and Partially Sighted People",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=03756-2022~29333637~Instruction%20Circulars",
+            "03756-2022 Launching of \"Union Sparsh\" Braille Debit Card Dated 17/12/2022"),
+
+        new(15, "MoA with National Handicapped Finance & Development Corporation (NHFDC) for availing refinance upon financing to PwD",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=03359-2022~27918728~Instruction%20Circulars",
+            "03359-2022 MoA with NHFDC for PwD Dated 16/06/2022"),
+
+        new(16, "Launching of Union Access - A Digital Accessibility Initiative",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=00383-2022~27519580~Information%20Circulars",
+            "00383-2022 Launching of Union Access - A Digital Accessibility Initiative Dated 27/05/2022"),
+
+        new(17, "Management of Credit Portfolio - Accessibility of Credit for Persons with Special Needs",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=04055~12771139~Circular%20Letter",
+            "04055 Management of Credit Portfolio - Accessibility of Credit Dated 04/07/2019"),
+
+        new(18, "Providing Door Step Banking to Senior Citizens above 70 years age & Differently abled persons",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=01573-2019~12079581~Instruction%20Circulars",
+            "01573-2019 Providing Door Step Banking to Senior Citizens & Differently abled Dated 27/05/2019"),
+
+        new(19, "Providing Banking Facility for Senior Citizens and Differently Abled Persons",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=01067-2018~9050074~Instruction%20Circulars",
+            "01067-2018 Providing Banking Facility for Senior Citizens and Differently Abled Dated 03/01/2018"),
+
+        new(20, "Barrier Free Access in Branches ATMs for Persons with Disabilities",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=34517~7740405~Circular%20Letter",
+            "34517 Barrier Free Access in Branches ATMs for Persons with Disabilities Dated 24/04/2017"),
+
+        new(21, "Customer Service - Availability of Magnifying Glass at Branches",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=00401-2016~4868615~Instruction%20Circulars",
+            "00401-2016 Customer Service - Availability of Magnifying Glass at Branches Dated 16/03/2016"),
+
+        new(22, "Barrier Free Access to Branches ATMs for Persons with Disabilities",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=01045~4358415~Circular%20Letter",
+            "01045 Barrier Free Access to Branches ATMs for Persons with Disabilities Dated 31/12/2015"),
+
+        new(23, "Issuing Debit Card to Visually Impaired Customers",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=00059-2015~3144645~Instruction%20Circulars",
+            "00059-2015 Issuing Debit Card to Visually Impaired Customers Dated 12/05/2015"),
+
+        new(24, "Operation of Bank accounts by Old/sick/incapaciated person",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=08219~46556~INSTRUCTION%20CIRCULARS",
+            "8219 Operation of Bank accounts by Old/sick/incapaciated person Dated 20/01/2009"),
+
+        new(25, "Issuance of Cheque Book to Visually Handicapped",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06998~46381~Instruction%20Circulars",
+            "06998 Issuance of Cheque Book to Visually Handicapped Dated 15/09/2004"),
+
+        new(26, "Improvement in facilities offered to senior citizens and physically disabled",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06955~46373~INSTRUCTION%20CIRCULARS",
+            "06955 Improvement in facilities offered to senior citizens and physically disabled Dated 09/08/2004"),
+    };
+
+    // ── Staff Circulars ──────────────────────────────────────────────
+    private readonly List<CircularItem> staffCirculars = new()
+    {
+        new(1, "Staff Benefits Payable to Employees",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=101893-2026~86274026~Staff%20Circulars&subject=Staff%20Benefits%20Payable%20to%20Employees%27",
+            "101893-2026 Staff Benefits Payable to Employees Dated 16/03/2026"),
+
+        new(2, "Implementation of Mandatory Accessibility Requirements under RPwD Act, RBI and DFS Directives EASE 8.0 and BIS IS 17802 Standards",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=101452-2025~76014277~Instruction%20Circulars",
+            "101452-2025 Implementation of Mandatory Accessibility Requirements Dated 29/12/2025"),
+
+        new(3, "Introduction of Sashaktikaran Scheme - Empowerment of Divyang Employees and Divyang wards",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=100985-2025~67447546~Instruction%20Circulars",
+            "100985-2025 Introduction of Sashaktikaran Scheme Dated 07/10/2025"),
+
+        new(4, "Digital Accessible Library in Collaboration with DAISY Forum of India",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=08561~48012876~Staff%20Circulars",
+            "08561 Digital Accessible Library in Collaboration with DAISY Forum of India"),
+
+        new(5, "International Day of Persons with Disabilities - Message",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=00284~43828320~MDCEO%20Circulars",
+            "00284 International Day of Persons with Disabilities - Message"),
+
+        new(6, "Modifications under staff welfare schemes",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=08454~42512356~Staff%20Circulars",
+            "08454 Modifications under staff welfare schemes"),
+
+        new(7, "Policy on Prevention, Prohibition & Redressal of Sexual Harassment at Workplace, Equal Opportunity and Diversity, Equity & Inclusion (DEI)",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=100433-2025~56618641~Staff%20Circulars",
+            "100433-2025 Policy on Prevention, Prohibition & Redressal of Sexual Harassment Dated 02/07/2025"),
+
+        new(8, "Increase in Conveyance Allowance to Disabled Employees",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=08276~36787212~Staff%20Circulars",
+            "08276 Increase in Conveyance Allowance to Disabled Employees Dated 07/05/2024"),
+
+        new(9, "Staff Welfare Schemes - Modification and Reiteration of Schemes",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=08221~35595697~Staff%20Circulars",
+            "08221 Staff Welfare Schemes - Modification and Reiteration of Schemes Dated 18/03/2024"),
+
+        new(10, "Implementation of Accessibility in Email Communications & Circulars",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=04346-2023~32626323~Instruction%20Circulars",
+            "04346-2023 Implementation of Accessibility in Email Communications & Circulars Dated 27/09/2023"),
+
+        new(11, "Availability of NVDA for visually impaired Official Language Officers",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=32923~31651491~Circular%20Letter",
+            "32923 Availability of NVDA for visually impaired Official Language Officers Dated 21/07/2023"),
+
+        new(12, "Additional monthly Conveyance Reimbursement to PwD Employees (Procedure)",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=07856~29125327~Staff%20Circulars",
+            "07856 Additional monthly Conveyance Reimbursement to PwD Employees Dated 07/12/2022"),
+
+        new(13, "Additional Monthly Conveyance Reimbursement to PwD Employees",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=07808~28551834~Staff%20Circulars",
+            "07808 Additional Monthly Conveyance Reimbursement to PwD Employees Dated 19/10/2022"),
+
+        new(14, "Celebration of White Cane Safety Day - October 15, 2022",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=07804~28492467~Staff%20Circulars",
+            "07804 Celebration of White Cane Safety Day - October 15, 2022 Dated 14/10/2022"),
+
+        new(15, "Guidelines for Digital Accessibility Implementation",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=03616-2022~28416139~Instruction%20Circulars",
+            "03616-2022 Guidelines for Digital Accessibility Implementation Dated 03/10/2022"),
+
+        new(16, "Creation of new field 007 in Finacle for differently abled",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=01787-2019~12897974~Instruction%20Circulars",
+            "01787-2019 Creation of new field 007 in Finacle for differently abled Dated 17/10/2019"),
+
+        new(17, "Changes in ECircular Process under Document Management System",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=00708~29075209~DIT%20Letters",
+            "00708 Changes in ECircular Process under Document Management System Dated 09/04/2018"),
+
+        new(18, "Guidelines for Providing Special Casual Leave to employees with disability appointed in the Bank",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06222~3594398~Staff%20Circulars",
+            "06222 Guidelines for Providing Special Casual Leave to employees with disability Dated 04/08/2015"),
+
+        new(19, "Empowerment of Visually Impaired Employees appointed in Bank",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06219~3540478~Staff%20Circulars",
+            "06219 Empowerment of Visually Impaired Employees appointed in Bank Dated 25/07/2015"),
+
+        new(20, "Inclusive CD for Blind and partially sighted employees",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06093~1696240~Staff%20Circulars",
+            "06093 Inclusive CD for Blind and partially sighted employees Dated 12/06/2014"),
+
+        new(21, "Payment of Conveyance Allowance to Deaf and Dumb Employees",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=06091~1657692~Staff%20Circulars",
+            "06091 Payment of Conveyance Allowance to Deaf and Dumb Employees Dated 27/05/2014"),
+
+        new(22, "Rate of Conveyance Allowance to Blind and Orthopedically Handicapped Employees",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=04823~48952~STAFF%20CIRCULARS",
+            "04823 Rate of Conveyance Allowance to Blind and Orthopedically Handicapped Employees Dated 25/02/2002"),
+
+        new(23, "Staff Welfare Measures - Launching of New Schemes",
+            "https://dms.unionbankofindia.co.in/webdesktop/CustomJobs/eCircular/ViewDocument.jsp?value=04782~48915~STAFF%20CIRCULARS",
+            "04782 Staff Welfare Measures - Launching of New Schemes Dated 01/10/2001"),
+    };
+
+    // ── Empower Through Access ───────────────────────────────────────
+    private readonly List<EmpowerItem> empowerItems = new()
+    {
+        // new("30 April GAAD 2026 Awareness Series – Small Steps. Big Access – Images with Alt Text and Infographic",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/30  April GAAD 2026 Awareness Series Small Steps. Big Access  Images with Alt Text and Info graphic.pdf"),
+        // new("30 April GAAD 2026 जागरूकता श्रृंखला – लघु स्तरीय प्रयास – व्यापक सुगम्यता – छवियाँ Alt Text और इन्फोग्राफिक",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/30 April GAAD 2026 जागरूकता श्रृंखला  लघु स्तरीय  प्रयास  व्यापक सुगम्यता  छवियाँ  Alt Text और इन्फोग्राफिक.pdf"),
+        // new("23 April GAAD 2026 Awareness Series – Small Steps. Big Access. Structured Content",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/23 April GAAD 2026 Awareness Series Small Steps. Big Access. Structured Content.pdf"),
+        // new("23 April GAAD 2026 जागरूकता श्रृंखला – सूक्ष्म पहल – विस्तृत अभिगम – संरचित सामग्री",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/23 April GAAD 2026 जागरूकता श्रृंखला सूक्ष्म पहल  विस्तृत अभिगम   संरचित सामग्री.pdf"),
+        // new("16 April GAAD 2026 Awareness Series – Small Steps. Big Access – Fonts & Typography",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/16th April  GAAD 2026 Awareness Series  Small Steps. Big Access  Fonts & Typography.pdf"),
+        // new("16 April GAAD 2026 जागरूकता श्रृंखला – सूक्ष्म कदम – व्यापक सुगम्यता – फ़ॉन्ट एवं टाइपोग्राफी",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/16th April GAAD 2026 जागरूकता श्रृंखला   सूक्ष्म कदम  व्यापक सुगम्यता  फ़ॉन्ट एवं टाइपोग्राफी.pdf"),
+        // new("9 April GAAD 2026 Awareness Series – Small Steps. Big Access. – Colour Contrast",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/9 April 2026 GAAD 2026 Awareness Series Small Steps. Big Access. – Colour Contrast.pdf"),
+        // new("9 April GAAD 2026 जागरूकता श्रृंखला – छोटे कदम – व्यापक पहुँच – रंग कंट्रास्ट",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/9 April  GAAD 2026 जागरूकता श्रृंखला  छोटे कदम  व्यापक पहुँच   रंग कंट्रास्ट Colour Contrast.pdf"),
+        // new("1 April Inclusive Beginning – Enhancing User Experience for all by Creating Accessible and Inclusive Banking Environment",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/1 April Inclusive Beginning – Enhancing User experience for all by creating Accessible and Inclusive Banking Environment.pdf"),
+        // new("2 April समावेशी शुरुआत – सभी के लिए सुगम्य एवं समावेशी बैंकिंग वातावरण के माध्यम से उपयोगकर्ता अनुभव को सुदृढ़ करना",
+        //     "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/2 April समावेशी शुरुआत – सभी के लिए सुगम्य एवं समावेशी बैंकिंग वातावरण के माध्यम से उपयोगकर्ता अनुभव को सुदृढ़ करना.pdf"),
+
+        new("Empower Through Access- 7 May GAAD 2026 Awareness Series Banking Without Barriers",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/7th May  GAAD 2026 Awareness Series  Banking Without Barriers pdf.pdf"),
+        new("Empower Through Access- 7 May GAAD 2026 जागरूकता श्रृंखला बाधारहित एवं समावेशी बैंकिंग",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Empower files/7th May  GAAD 2026 जागरूकता श्रृंखला बाधारहित एवं समावेशी बैंकिंग.pdf"),
+    };
+
+    // ── Knowledge Centre ─────────────────────────────────────────────
+    private readonly List<ResourceItem> knowledgeItems = new()
+    {
+        new("Standard Operating Procedures for using Alt text in Outlook",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/SOP for using Alt Text in Outlook.pdf"),
+        new("Handbook on Credit Monitoring Job Roles User Manual for Visually Impaired Employees",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Credit Monitoring Job Roles User Manual for Visually Impaired Employees.pdf"),
+        new("Handbook on UBINET User Manual for Visually Impaired JAWS Users",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/UBINET User Manual for Visually Impaired JAWS Users.pdf"),
+        new("Handbook on User Manual for Visually Impaired JAWS Users to work with Finacle 10",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/User Manual for Visually Impaired JAWS Users to work with Finacle 10.pdf"),
+        new("Handbook for visually impaired official language officials (दृष्टिबाधित राजभाषा अधिकारियों हेतु मार्गदर्शिका)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/दृष्टिबाधित राजभाषा अधिकारियों हेतु मार्गदर्शिका.pdf"),
+        new("Divya (Digital Information to Vitalize Your Accessibility) – Handbook for PwDs",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Divya 2025 Ver5.pdf"),
+        new("Hands in Harmony by ULA Digital Transformation – Success Stories of Employees With Hearing Impairment",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Hands in Harmony by ULA Digital Transformation_IDSL 2023.pdf"),
+    };
+
+    // ── Grahak Seva Items ────────────────────────────────────────────
+    private readonly List<ResourceItem> grahakItems = new()
+    {
+        new("ग्राहक सेवा उत्कृष्टता के विविध आयाम (Grahak Seva Ke Vividh Aayam) Accessible Word Format",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Latest ग्राहक सेवा उत्कृष्टता के विविध आयाम (Grahak Seva Ke Vividh Aayam).docx"),
+        new("ग्राहक सेवा उत्कृष्टता के विविध आयाम (Grahak Seva Ke Vividh Aayam) Accessible PDF Format",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/ग्राहक सेवा उत्कृष्टता के विविध आयाम (Grahak Seva Ke Vividh Aayam)_accessible.pdf"),
+        new("ग्राहक_सेवा_उत्कृष्टता_के_विविध_आयाम_.epub (Accessible Publication)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/ग्राहक_सेवा_उत्कृष्टता_के_विविध_आयाम_(Grahak_Seva_Ke_Vividh_Aayam)_accessible.epub"),
+        new("Grahak Seva Ke Vividh Aayam (DAISY format)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Grahak Seva Ke Vividh Aayam.zip"),
+    };
+
+    // ── Instruction Manuals ──────────────────────────────────────────
+    private readonly List<ResourceItem> manualItems = new()
+    {
+        new("CBDC User Manual",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/CBDC_USER_MANUAL.pdf"),
+        new("User Manual for using Outlook 365 Webmail with Screen Reader",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/User Manual for using Outlook 365 Webmail with Screen Reader_UnionAccess.pdf"),
+        new("Internet Banking User Guide for Visually Impaired",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Accessing_IB_Portal_with_Keyboard_and_Screen_Reader.pdf"),
+        new("User Manual on Enabling Accessibility in Cisco 8800 Series IP Phone",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/User Manual on Enabling Accessibility in Cisco 8800 Series IP Phone_.pdf"),
+        new("IP Messenger User Manual for Visually Impaired JAWS Screen Reader Users",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/IP Messenger Messaging Application - User Manual for Visually Impaired JAWS Screen Reader Users.pdf"),
+    };
+
+    // ── Videos ───────────────────────────────────────────────────────
+    private readonly List<ResourceItem> videoItems = new()
+    {
+        new("Session on JAWS by Rajneesh Gosain (mp4, 91.7 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Video/Session on JAWS by Rajneesh Gosain.mp4"),
+        new("Session on Union Vidya by Pardha Saradhi Reddy (mp4, 290 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Video/Session on Union Vidya by Pardha Saradhi Reddy.mp4"),
+        new("Union Sparsh – Braille and Tactile Featured Debit Card (mp4, 77.2 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/UBI Union Sparsh Video.mp4"),
+        new("UVConn with Sign Language (mp4, 14.9 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/UV Conn ISL Dec 2024.mp4"),
+        new("International Day of Sign Languages 2024 (mp4, 13.3 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/International Day of Sign Languages.mp4"),
+        new("Union Access with Sign Language (mp4, 124 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Union Access.mp4"),
+        new("Internet Banking Portal Accessibility Features (mp4, 49 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/UBI Internet Banking Accessibility features.mp4"),
+        new("Project Union Access (mp4, 22 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Project Union Access.mp4"),
+        new("Sparsh Credit Card (mp4, 26 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/Sparsh Credit Card.mp4"),
+    };
+
+    // ── Screen Reader Software ───────────────────────────────────────
+    private readonly List<ResourceItem> screenReaderItems = new()
+    {
+        new("Download JAWS Demo Software setup J2024.2409.2.400-Offline-x64 (file Size 1.42 gb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/software/J2024.2409.2.400-Offline-x64.exe"),
+        new("Download JAWS Demo Software setup J2025.2412.102.400-Offline-x64 (file Size 1.43 gb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/software/J2025.2412.102.400-Offline-x64.exe"),
+        new("Download NVDA 2025.3.3 screen reading software for Official language officers (file size 48.6 mb)",
+            "https://ubinet.unionbankofindia.co.in/download/Divya/software/nvda_2025.3.3.exe"),
+    };
+
+    // ── Union Vidya Courses ──────────────────────────────────────────
+    private readonly List<string> vidyaCourses = new()
+    {
+        "e-Learning Course code PE0019 – Disability Etiquette",
+        "e-Learning Course code OP0029 – Banking Services for Persons with Disabilities (PwDs)",
+        "e-Learning Course code PE0042 – General Awareness on Disability, Inclusion and Accessibility",
+        "e-Learning Course code PE0043 – Capacity Building Module for IT and Digital Banking Verticals on Digital Accessibility",
+        "e-Learning Course code PE0044 – Introductory Course on Indian Sign Language",
+        "e-Learning Course code PE0045 – JAWS screen reader training for visually impaired employees",
+        "e-Learning Course code DT0041 – Mobile Accessibility Essentials for Android Developers in the Banking Sector",
+        "e-Learning Course code DT0042 – Mobile Accessibility Essentials for IOS Developers in the Banking Sector",
+        "e-Learning Course code PE0055 – Accessibility",
+    };
+}

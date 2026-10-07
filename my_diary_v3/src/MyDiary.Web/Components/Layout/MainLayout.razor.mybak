@@ -1,0 +1,227 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Auth
+@using System.Security.Claims
+@inherits LayoutComponentBase
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IConfiguration Config
+@inject ISnackbar Snackbar
+@inject MyDiary.Web.Core.Services.Storage.ISessionStorageService SessionStorage
+@inject MyDiary.Core.Abstractions.ISessionRepository SessionRepo
+
+<MudThemeProvider Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        <MudLayout @onclick="CloseOverlays">
+            @* ── Top App Bar ────────────────────────────────────────────── *@
+            <MudAppBar Elevation="0"
+                       Style="background-color:#ffffff; border-bottom:1px solid #ebedf2; color:#2a2f5b;"
+                       Fixed="true">
+
+                <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                               Color="MudBlazor.Color.Inherit"
+                               Edge="Edge.Start"
+                               OnClick="@(() => _drawerOpen = !_drawerOpen)"
+                               Class="d-lg-none mr-3"
+                               aria-label="Toggle navigation" />
+
+                <MudSpacer />
+
+                @* Centred bank logo *@
+                <div class="d-flex justify-center align-center position-absolute w-100"
+                     style="pointer-events:none; left:0; height:100%; overflow:hidden;">
+                    <MudImage Src="images/UBI_Logo.png"
+                              ObjectFit="ObjectFit.Contain"
+                              Style="pointer-events:auto; height:inherit;" />
+                </div>
+
+                <MudSpacer />
+
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" @onclick:stopPropagation="true">
+
+                    @* Notification bell (from Project A) *@
+                    <NotificationBell />
+
+                    @* User profile dropdown *@
+                    <div style="position:relative; display:inline-block;" @onclick:stopPropagation="true">
+                        <button type="button"
+                                class="profile-activator-btn"
+                                aria-label="@($"User profile menu for {_userName}")"
+                                aria-haspopup="menu"
+                                aria-expanded="@(_profileOpen ? "true" : "false")"
+                                @onclick="() => _profileOpen = !_profileOpen">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Class="pa-1">
+                                <MudAvatar Style="@($"background-color:{_avatarBg}; color:white; font-weight:700;")"
+                                           Size="MudBlazor.Size.Medium">
+                                    @_initials
+                                </MudAvatar>
+                                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                                    <div class="d-flex flex-column ml-2 text-start" style="line-height:1.2;">
+                                        <MudText Typo="Typo.caption" Class="text-muted">Hi,</MudText>
+                                        <MudText Typo="Typo.subtitle2" Class="fw-bold text-dark">@_userName</MudText>
+                                    </div>
+                                </MudHidden>
+                            </MudStack>
+                        </button>
+
+                        @if (_profileOpen)
+                        {
+                            <div class="inline-popover-panel" role="menu" aria-label="User profile options"
+                                 style="position:absolute; top:100%; right:0; z-index:9999; background:white;
+                                        border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.18);
+                                        min-width:240px; margin-top:8px; overflow:hidden;">
+                                <div class="px-4 py-3">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                                        <MudAvatar Style="@($"background-color:{_avatarBg}; color:white; font-weight:700;")"
+                                                   Size="MudBlazor.Size.Large">@_initials</MudAvatar>
+                                        <div>
+                                            <MudText Typo="Typo.subtitle2" Class="fw-bold">@_userName</MudText>
+                                            <MudText Typo="Typo.caption" Class="text-muted">@_userEmail</MudText>
+                                        </div>
+                                    </MudStack>
+                                </div>
+                                <MudDivider />
+                                <button type="button" role="menuitem" class="profile-menu-btn" @onclick="LogoutAsync">
+                                    <MudIcon Icon="@Icons.Material.Filled.Logout" Size="MudBlazor.Size.Small" Class="mr-2" aria-hidden="true" />
+                                    Logout
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </MudStack>
+            </MudAppBar>
+
+            @* ── Sidebar ────────────────────────────────────────────────── *@
+            <NavMenu @bind-SideBarOpen="_drawerOpen" />
+
+            @* ── Main content ────────────────────────────────────────────── *@
+            <MudMainContent Class="pt-16" Style="background-color:#f5f7fd;">
+                <div class="pa-5">
+                    <ErrorBoundary @ref="_errorBoundary">
+                        <ChildContent>@Body</ChildContent>
+                        <ErrorContent>
+                            <MudContainer MaxWidth="MaxWidth.Small" Class="mt-8 text-center">
+                                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">
+                                    An error occurred while loading this page.
+                                </MudAlert>
+                                <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary"
+                                           Class="rounded-pill" OnClick="() => _errorBoundary?.Recover()">
+                                    Try Again
+                                </MudButton>
+                            </MudContainer>
+                        </ErrorContent>
+                    </ErrorBoundary>
+                </div>
+            </MudMainContent>
+        </MudLayout>
+    </Authorized>
+
+    <Authorizing>
+        <div class="auth-loading-overlay">
+            <div class="auth-loading-content">
+                <MudProgressCircular Color="MudBlazor.Color.Primary" Indeterminate="true" Size="MudBlazor.Size.Large" />
+                <MudText Typo="Typo.h6" Class="mt-4" Style="color:#2a2f5b;">Verifying session…</MudText>
+            </div>
+        </div>
+    </Authorizing>
+
+    <NotAuthorized>
+        @* NavigationGuard handles redirect to /login *@
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .text-dark  { color: #2a2f5b !important; }
+    .text-muted { color: #8d9498 !important; }
+    .profile-activator-btn, .profile-menu-btn {
+        background: none; border: none; padding: 8px; cursor: pointer;
+        display: inline-flex; align-items: center; border-radius: 6px; color: #2a2f5b;
+        font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left;
+        transition: background 0.15s;
+    }
+    .profile-activator-btn:hover, .profile-menu-btn:hover { background-color: rgba(0,0,0,0.06); }
+    .profile-activator-btn:focus-visible, .profile-menu-btn:focus-visible { outline: 2px solid #1b4a98; outline-offset: 2px; }
+    .auth-loading-overlay { position:fixed; inset:0; background:#f5f7fd; display:flex; align-items:center; justify-content:center; z-index:9999; }
+    .auth-loading-content { display:flex; flex-direction:column; align-items:center; }
+    .inline-popover-panel { animation: popoverIn 0.15s ease-out; }
+    @@keyframes popoverIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+</style>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _profileOpen = false;
+    private ErrorBoundary? _errorBoundary;
+    private string _userName = "";
+    private string _userEmail = "";
+
+    private static readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary    = "#1b4a98",
+            Secondary  = "#0d7377",
+            AppbarBackground = "#ffffff",
+            Background = "#f5f7fd",
+        }
+    };
+
+    private static readonly string[] _palette =
+        ["#1b4a98", "#0d7377", "#6a1b9a", "#c62828", "#2e7d32", "#e65100", "#283593", "#00695c"];
+
+    private string _initials => GetInitials(_userName);
+    private string _avatarBg => _palette[Math.Abs((_userName ?? "").GetHashCode()) % _palette.Length];
+
+    private static string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{char.ToUpper(parts[0][0])}{char.ToUpper(parts[^1][0])}"
+            : char.ToUpper(parts[0][0]).ToString();
+    }
+
+    private void CloseOverlays()
+    {
+        if (_profileOpen) _profileOpen = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userName  = user.FindFirst("employee_name")?.Value
+                      ?? user.FindFirst(ClaimTypes.Name)?.Value
+                      ?? "User";
+            _userEmail = user.FindFirst("email")?.Value ?? "";
+        }
+    }
+
+    private async Task LogoutAsync()
+    {
+        try
+        {
+            var userId = await SessionStorage.GetAsync<string>("UserId");
+            if (!string.IsNullOrWhiteSpace(userId))
+                await SessionRepo.RemoveSessionAsync(userId);
+
+            await ((CustomAuthenticationStateProvider)AuthStateProvider).MarkLoggedOutAsync();
+        }
+        catch (Exception ex)
+        {
+            // Log but don't block logout
+            _ = ex;
+        }
+        finally
+        {
+            Nav.NavigateTo("login", forceLoad: true);
+        }
+    }
+}

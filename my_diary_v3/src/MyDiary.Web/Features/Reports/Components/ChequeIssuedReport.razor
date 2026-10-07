@@ -1,0 +1,318 @@
+﻿@page "/reports/cheque-issued"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Reports.Services
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject ChequeIssuedReportService DataService
+@inject DynamicReportService ReportService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@inject IJSRuntime JS
+
+@* --- MUDBLAZOR STYLES --- *@
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Cheque Book Issued Not Acknowledged — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+
+    .mud-table-sort-label .mud-button-root .mud-icon-root {
+        opacity: 1 !important;
+        color: rgba(255, 255, 255, 0.7) !important;
+    }
+
+    .mud-table-sort-label.mud-table-sort-label-active .mud-button-root .mud-icon-root {
+        color: white !important;
+    }
+
+    .auto-index-table {
+        counter-reset: rowNumber;
+    }
+
+        .auto-index-table tbody tr:has(td:nth-child(2)) {
+            counter-increment: rowNumber;
+        }
+
+            .auto-index-table tbody tr:has(td:nth-child(2)) td:first-child::before {
+                content: counter(rowNumber);
+            }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <div id="report-page-root" class="mb-4">
+            <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string" Label="Zone" Value="@_selectedZone" ValueChanged="OnZoneChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(!IsCo)">
+                            <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                            <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                            @foreach (var z in _zones)
+                            {
+                                <MudSelectItem Value="@z.Value">@z.Text</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string" Label="Region" Value="@_selectedRegion" ValueChanged="OnRegionChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(_userPrivilege == "REGION" || _userPrivilege == "BRANCH" || _selectedZone == "1" || _selectedZone == "all")">
+                            <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                            <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                            @foreach (var r in _regions)
+                            {
+                                <MudSelectItem Value="@r.Value">@r.Text</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="string" Label="Branch" Value="@_selectedBranch" ValueChanged="OnBranchChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="@(_userPrivilege == "BRANCH" || _selectedRegion == "1" || _selectedRegion == "all")">
+                            <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                            <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                            @foreach (var b in _branches)
+                            {
+                                <MudSelectItem Value="@b.Value">@b.Text</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudSpacer />
+
+                    <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                        <MudButton Variant="Variant.Filled" StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                                   Style="background-color: #000066; color: white; font-size: 11px;"
+                                   OnClick="HandleExport">Export Excel</MudButton>
+                    </MudItem>
+                </MudGrid>
+
+                <div class="px-4 d-flex justify-end">
+                    <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">Data last updated on: @_asOnDate</MudText>
+                </div>
+
+                <MudItem xs="12" Class="pa-4">
+                    <MudTable Items="_data" Loading="_loading" Dense="true" Striped="true" Bordered="true" FixedHeader="true"
+                              Height="650px" Elevation="2" Class="fixed-table auto-index-table" Style="font-size:12px;" RowsPerPage="25">
+                        <HeaderContent>
+                            <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                            @foreach (var col in _currentColumns)
+                            {
+                                <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width ?? "10%"}; text-align: center;")">
+                                    <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                        @col.Header
+                                    </MudTableSortLabel>
+                                </MudTh>
+                            }
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd Style="text-align: center;"></MudTd>
+                            @foreach (var col in _currentColumns)
+                            {
+                                <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                    @FormatValue(context, col)
+                                </MudTd>
+                            }
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <td colspan="@(_currentColumns.Count + 1)" style="text-align:center; padding: 40px;">
+                                <MudText Typo="Typo.subtitle1" Color="Color.Error">No data found!</MudText>
+                            </td>
+                        </NoRecordsContent>
+                        <PagerContent>
+                            <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                        </PagerContent>
+                    </MudTable>
+                </MudItem>
+            </MudPaper>
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; } = "Cheque Book Issued Not Acknowledged";
+
+    private List<Dictionary<string, object>> _data = new();
+    private bool _loading = true;
+    private string _asOnDate = "Loading...";
+
+    private List<DropdownItem> _zones = new(), _regions = new(), _branches = new();
+
+    // Equivalent to old ASP.NET Dropdown default indices (1 = Summary)
+    private string _selectedZone = "1";
+    private string _selectedRegion = "1";
+    private string _selectedBranch = "1";
+
+    // RBAC scope resolved from the logged-in user's claims. Non-CO users are clamped to their own
+    // zone/region/branch in LoadReportData regardless of what the dropdowns show.
+    private string _userPrivilege = "BRANCH";
+    private string _userZoneSolid = "", _userRegionSolid = "", _userBranchSolid = "";
+    private bool IsCo => _userPrivilege == "CO";
+
+    // ---------------- DYNAMIC COLUMNS ----------------
+    private List<ColumnConfig> _currentColumns = new();
+
+    private List<ColumnConfig> _summaryColumns = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "Zone", Width = "25%" },
+        new ColumnConfig { Header = "Region", PropertyName = "Region", Width = "25%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch", Width = "25%" },
+        new ColumnConfig { Header = "Pending Acknowledgement", PropertyName = "Total", IsNumeric = true, Width = "25%" }
+    };
+
+    private List<ColumnConfig> _detailColumns = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "Zone", Width = "8%" },
+        new ColumnConfig { Header = "Region", PropertyName = "Region", Width = "8%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch", Width = "12%" },
+        new ColumnConfig { Header = "Account Number", PropertyName = "ACCOUNT_NUMBER", Width = "10%" },
+        new ColumnConfig { Header = "CIF ID", PropertyName = "CIF_ID", Width = "8%" },
+        new ColumnConfig { Header = "Customer Id", PropertyName = "Customer_Id", Width = "8%" },
+        new ColumnConfig { Header = "Account Name", PropertyName = "Account_Name", Width = "15%" },
+        new ColumnConfig { Header = "Scheme Type", PropertyName = "Scheme_Type", Width = "8%" },
+        new ColumnConfig { Header = "Scheme Code", PropertyName = "Scheme_Code", Width = "8%" },
+        new ColumnConfig { Header = "Cheque Begin Number", PropertyName = "Cheque_Begin_Number", Width = "10%" },
+        new ColumnConfig { Header = "Issue Date", PropertyName = "Cheque_Issue_Date", Width = "8%" },
+        new ColumnConfig { Header = "No. Of Leaves", PropertyName = "Cheque_Number_Of_Leaves", Width = "8%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: resolve the user's scope. Default to BRANCH (most restrictive) for an
+        // unknown/missing privilege so a bad claim can never widen access.
+        _userPrivilege = (CurrentUser.Privilege ?? "").ToUpperInvariant() switch
+        {
+            "CO" => "CO",
+            "ZONE" => "ZONE",
+            "REGION" => "REGION",
+            _ => "BRANCH"
+        };
+        _userZoneSolid = CurrentUser.ZoneSolid ?? "";
+        _userRegionSolid = CurrentUser.RegionSolid ?? "";
+        _userBranchSolid = CurrentUser.BranchSolid ?? "";
+
+        // Upload date, zones, and report data are independent — load in parallel
+        var dateTask = DataService.GetLatestUploadDateAsync();
+        var zonesTask = DataService.GetZonesAsync();
+        var dataTask = LoadReportData();
+
+        await Task.WhenAll(dateTask, zonesTask, dataTask);
+        _asOnDate = dateTask.Result;
+        _zones = zonesTask.Result;
+    }
+
+    private async Task OnZoneChanged(string value)
+    {
+        _selectedZone = value ?? "1";
+        _selectedRegion = "1";
+        _selectedBranch = "1";
+        _branches.Clear();
+
+        if (_selectedZone != "1" && _selectedZone != "all")
+            _regions = await DataService.GetRegionsAsync(_selectedZone);
+        else
+            _regions.Clear();
+
+        await LoadReportData();
+    }
+
+    private async Task OnRegionChanged(string value)
+    {
+        _selectedRegion = value ?? "1";
+        _selectedBranch = "1";
+
+        if (_selectedRegion != "1" && _selectedRegion != "all")
+            _branches = await DataService.GetBranchesAsync(_selectedRegion);
+        else
+            _branches.Clear();
+
+        await LoadReportData();
+    }
+
+    private async Task OnBranchChanged(string value)
+    {
+        _selectedBranch = value ?? "1";
+        await LoadReportData();
+    }
+
+    private async Task LoadReportData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Resolve Modes exactly like the legacy C# code
+            string zoneMode = _selectedZone == "1" ? "ALL_SUMMARY" : _selectedZone == "all" ? "ALL_ZONE_WISE" : "SELECTED";
+            string regionMode = _selectedRegion == "1" ? "ALL_SUMMARY" : _selectedRegion == "all" ? "ALL_REGION_WISE" : "SELECTED";
+            string branchMode = _selectedBranch == "1" ? "ALL_SUMMARY" : _selectedBranch == "all" ? "ALL_BRANCH_WISE" : "SELECTED";
+
+            string? zoneSolid = zoneMode == "SELECTED" ? _selectedZone : null;
+            string? regionSolid = regionMode == "SELECTED" ? _selectedRegion : null;
+            string? branchSolid = branchMode == "SELECTED" ? _selectedBranch : null;
+
+            // RBAC enforcement — This overrides the mode/solid computed above so the SP can never be asked
+            // for data outside the user's scope.
+            if (_userPrivilege == "ZONE")
+            {
+                zoneMode = "SELECTED";
+                zoneSolid = _userZoneSolid;
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                zoneMode = "SELECTED"; zoneSolid = _userZoneSolid;
+                regionMode = "SELECTED"; regionSolid = _userRegionSolid;
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                zoneMode = "SELECTED"; zoneSolid = _userZoneSolid;
+                regionMode = "SELECTED"; regionSolid = _userRegionSolid;
+                branchMode = "SELECTED"; branchSolid = _userBranchSolid;
+            }
+
+            // Determine if we need to show Summary columns or Detail columns
+            bool isDetail = branchMode == "SELECTED" || branchMode == "ALL_BRANCH_WISE";
+            _currentColumns = isDetail ? _detailColumns : _summaryColumns;
+
+            // Fetch Data
+            _data = await DataService.GetChequeIssuedReportDataAsync(zoneMode, regionMode, branchMode, zoneSolid, regionSolid, branchSolid);
+        }
+        catch (Exception ex)
+        {
+            // Simple fallback, real apps might use ILogger
+            AppLogger.LogError(ex, ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        return val.ToString() ?? "";
+    }
+
+    private async Task HandleExport()
+    {
+        if (!_data.Any()) return;
+        var bytes = ReportService.ExportToExcel(_data, _currentColumns, "ChequeIssuedNotAck");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", $"Cheque_Issued_Report_{AppTime.Now:yyyyMMdd}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

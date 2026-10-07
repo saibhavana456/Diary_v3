@@ -1,0 +1,274 @@
+@page "/reports/TPPDIncome"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Third Party Products Commission — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Column configurations with fixed widths
+    private List<ColumnConfig> _summaryCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "10%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "10%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name", Width = "10%" },
+        new ColumnConfig { Header = "Life Insurance Income", PropertyName = "Life", IsNumeric = true, Format = "N0", Width = "20%" },
+        new ColumnConfig { Header = "General Insurance Income", PropertyName = "NonLife", IsNumeric = true, Width = "20%" },
+        new ColumnConfig { Header = "Health Insurance Income", PropertyName = "Health", IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Mutual Fund Income", PropertyName = "MF", IsNumeric = true, Width = "15%" }
+    };
+
+    private List<ColumnConfig> _detailedCols = new() {
+        new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng", Width = "12%" },
+        new ColumnConfig { Header = "Region", PropertyName = "region_name", Width = "12%" },
+        new ColumnConfig { Header = "Branch", PropertyName = "Branch_Name", Width = "11%" },
+        new ColumnConfig { Header = "Solid", PropertyName = "SolId", Width = "5%" },
+        new ColumnConfig { Header = "Life Insurance Income", PropertyName = "Life", IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "General Insurance Income", PropertyName = "NonLife", IsNumeric = true, Width = "15%" },
+        new ColumnConfig { Header = "Health Insurance Income", PropertyName = "Health", IsNumeric = true, Format = "N0", Width = "15%" },
+        new ColumnConfig { Header = "Mutual Fund Income", PropertyName = "MF", IsNumeric = true, Width = "15%" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Third Party Commission";
+
+        // Load User Context
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        string columns = "";
+        string where = "region_solid <> '' ";
+        string groupBy = "";
+        string orderBy = " Order By Zone_Name_Eng,Region_Name,Branch_Name";
+        bool isSummary = true;
+
+        // EXACT Logic from SundrySuspenseDashboard.aspx.cs
+        if (_userPrivilege == "CO")
+        {
+            if (_selectedZone == "1") // All(Summary)
+            {
+                columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF,'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As SolId";
+            }
+            else if (_selectedZone == "all") // All(Zonewise)
+            {
+                if (_selectedRegion == "1")
+                {
+                    columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF, 'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else // Branchwise Detailed
+                    {
+                        isSummary = false;
+                        columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name, region_name,zone_name_eng,Sol_Id As SolId";
+                    }
+                }
+                else // Specific Region Selected
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name, region_name,zone_name_eng,Sol_Id As SolId";
+                    }
+                }
+            }
+            else // Specific Zone Selected
+            {
+                where += $" and zone_solid = '{_selectedZone}'";
+                if (_selectedRegion == "1")
+                {
+                    columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF, 'All' As Branch_Name,'All' As region_name,zone_name_eng,Zone_SolId As SolId";
+                    groupBy = " Group By Zone_SolId, zone_name_eng";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name, region_name,zone_name_eng,Sol_Id As SolId";
+                    }
+                }
+                else // Particular Region selected in Particular Zone
+                {
+                    where += $" and region_solid = '{_selectedRegion}'";
+                    if (_selectedBranch == "1")
+                    {
+                        columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF, 'All' As Branch_Name,region_name,zone_name_eng,region_SolId As SolId";
+                        groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                    }
+                    else
+                    {
+                        isSummary = false;
+                        if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                        columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name, region_name,zone_name_eng,Sol_Id As SolId";
+                    }
+                }
+            }
+        }
+        else if (_userPrivilege == "ZONE")
+        {
+            where += $" and Zone_solid = '{_userZoneSolid}'";
+            if (_selectedRegion == "1")
+            {
+                columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF,'All' As Branch_Name,'All' As region_name,'All' As zone_name_eng,'All' As SolId";
+                groupBy = " Group By zone_name_eng, Zone_SolId";
+            }
+            else if (_selectedRegion == "all")
+            {
+                if (_selectedBranch == "1")
+                {
+                    columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF,'All' As Branch_Name, region_name,zone_name_eng, region_solid As SolId";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name, region_name,zone_name_eng,Sol_Id As SolId";
+                }
+            }
+            else // Specific Region
+            {
+                where += $" and region_solid = '{_selectedRegion}'";
+                if (_selectedBranch == "1")
+                {
+                    columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF,'All' As Branch_Name, region_name,zone_name_eng, region_solid As SolId";
+                    groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+                }
+                else
+                {
+                    isSummary = false;
+                    if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                    columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name, region_name,zone_name_eng,Sol_Id As SolId";
+                }
+            }
+        }
+        else if (_userPrivilege == "REGION")
+        {
+            where += $" and region_solid = '{_userRegionSolid}'";
+            if (_selectedBranch == "1")
+            {
+                columns = "Sum(Life)/100000 Life, Sum(NonLife)/100000 NonLife,Sum(Health)/100000 Health,Sum(MF)/100000 MF,'All' As Branch_Name, region_name,zone_name_eng, region_solid As SolId";
+                groupBy = " Group By b.region_name, region_SolId, zone_name_eng";
+            }
+            else
+            {
+                isSummary = false;
+                if (_selectedBranch != "all") where += $" and b.sol_id = '{_selectedBranch}'";
+                columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name, region_name,zone_name_eng,Sol_Id As SolId";
+            }
+        }
+        else if (_userPrivilege == "BRANCH")
+        {
+            isSummary = false;
+            where += $" and b.sol_id = '{_userBranchSolid}'";
+            columns = "Life/100000 Life, NonLife/100000 NonLife,Health/100000 Health,MF/100000 MF, Branch_Name,region_name,zone_name_eng,Sol_Id As SolId";
+        }
+
+        // Execute Query
+        string finalQuery = $"SELECT {columns} FROM TPPD_Income A JOIN Branch_Master B On A.SolID = B.SOL_ID WHERE {where} {groupBy} {orderBy}";
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(finalQuery);
+        var dateTask = ReportService.GetAsOnDateAsync("TPPD_Income");
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+        string date = dateTask.Result;
+        
+        if (isSummary)
+        {
+            _activeConfig.Columns = _summaryCols;            
+        }
+        else
+        {
+            _activeConfig.Columns = _detailedCols;            
+        }
+        _asOnDateLabel = $"Data As On - {date} (Rs. in Lakhs)";
+        
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "TPPD_Income");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "TPPD_Income.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

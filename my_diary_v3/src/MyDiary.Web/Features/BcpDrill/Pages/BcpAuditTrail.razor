@@ -1,0 +1,75 @@
+@page "/bcp-drill/audit"
+@using System.Security.Claims
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Audit Trail - BCP / DR Drill - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="Audit trail" Subtitle="Every submission, review, certificate and mapping change, with who did it and when."
+                Crumbs="_crumbs" PageKey="bcp-drill-audit" />
+
+    @if (_scope is not null && !_scope.CanViewAudit)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">The full audit trail is available to Central Office and App Admins. Open a submission's History from the main page for its own trail.</MudAlert>
+    }
+    else
+    {
+        <div class="d-flex gap-2 align-center flex-wrap mb-3">
+            <MudSelect T="string" Label="Record type" Value="@_entity" ValueChanged="@(v => { _entity = v ?? ""; return LoadAsync(); })" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:220px">
+                <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
+                <MudSelectItem T="string" Value="@("DRILL")">Drill submissions</MudSelectItem>
+                <MudSelectItem T="string" Value="@("CERT")">RO certificates</MudSelectItem>
+                <MudSelectItem T="string" Value="@("MAPPING")">Branch mapping</MudSelectItem>
+            </MudSelect>
+            <MudButton Variant="Variant.Text" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Back</MudButton>
+        </div>
+
+        @if (_loading) { <MudProgressCircular Indeterminate="true" /> }
+        else
+        {
+            <MudTable Items="_rows" Dense="true" Hover="true" Bordered="true" Striped="true" T="BcpAuditRow" RowsPerPage="50">
+                <HeaderContent><MudTh>When</MudTh><MudTh>Record</MudTh><MudTh>Action</MudTh><MudTh>By</MudTh><MudTh>Detail</MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.At.ToString("dd-MMM-yyyy HH:mm:ss")</MudTd>
+                    <MudTd>@context.Entity @context.EntityId</MudTd>
+                    <MudTd>@context.Action</MudTd>
+                    <MudTd>@context.Actor <span style="opacity:.6">(@context.ActorLevel)</span></MudTd>
+                    <MudTd>@context.Detail</MudTd>
+                </RowTemplate>
+                <PagerContent><MudTablePager PageSizeOptions="new[] { 50, 100 }" /></PagerContent>
+            </MudTable>
+        }
+    }
+</AuthenticatedOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("BCP / DR Drill Compliance", "bcp-drill"), new("Audit trail") };
+
+    private ClaimsPrincipal _user = new();
+    private BcpScope? _scope;
+    private bool _loading = true;
+    private string _entity = "";
+    private List<BcpAuditRow> _rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _scope = Svc.GetScope(_user);
+        if (_scope.CanViewAudit) await LoadAsync(); else _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _rows = await Svc.ListAuditAsync(_user, string.IsNullOrEmpty(_entity) ? null : _entity, null, 500); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        _loading = false;
+    }
+}

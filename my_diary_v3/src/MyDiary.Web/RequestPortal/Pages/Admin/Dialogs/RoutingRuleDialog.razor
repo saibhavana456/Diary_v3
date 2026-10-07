@@ -1,0 +1,87 @@
+@namespace RequestPortal.Web.Pages.Admin.Dialogs
+@* Routing rule \u2014 RequestType (required) + optional UnitType/Vertical/Department/Activity + Priority *@
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudSelect T="long?" Label="Request type" @bind-Value="RequestTypeId" Required="true">
+                    @foreach (var m in RequestTypes)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)m.Id)">@m.Name (@m.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="long?" Label="Unit type (optional)" @bind-Value="UnitTypeId" Clearable="true">
+                    @foreach (var m in UnitTypes)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)m.Id)">@m.Name (@m.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="long?" Label="Vertical (optional)" @bind-Value="VerticalId" Clearable="true">
+                    @foreach (var m in Verticals)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)m.Id)">@m.Name (@m.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="long?" Label="Department (optional)" @bind-Value="DepartmentId" Clearable="true">
+                    @foreach (var m in Departments.Where(d => !VerticalId.HasValue || d.VerticalId == VerticalId.Value))
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)m.Id)">@m.Name (@m.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="long?" Label="Activity (optional)" @bind-Value="ActivityId" Clearable="true">
+                    @foreach (var m in Activities.Where(a => !DepartmentId.HasValue || a.DepartmentId == DepartmentId.Value))
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)m.Id)">@m.Name (@m.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudNumericField T="int" @bind-Value="Priority" Label="Priority (lower = higher precedence)" Min="0" Max="9999" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSwitch T="bool" @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(!IsValid)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<RequestType> RequestTypes { get; set; } = Array.Empty<RequestType>();
+    [Parameter] public IReadOnlyList<UnitType> UnitTypes { get; set; } = Array.Empty<UnitType>();
+    [Parameter] public IReadOnlyList<Vertical> Verticals { get; set; } = Array.Empty<Vertical>();
+    [Parameter] public IReadOnlyList<Department> Departments { get; set; } = Array.Empty<Department>();
+    [Parameter] public IReadOnlyList<Activity> Activities { get; set; } = Array.Empty<Activity>();
+
+    [Parameter] public long? RequestTypeId { get; set; }
+    [Parameter] public long? UnitTypeId { get; set; }
+    [Parameter] public long? VerticalId { get; set; }
+    [Parameter] public long? DepartmentId { get; set; }
+    [Parameter] public long? ActivityId { get; set; }
+    [Parameter] public int Priority { get; set; } = 100;
+    [Parameter] public bool IsActive { get; set; } = true;
+
+    private bool IsValid => RequestTypeId.HasValue;
+
+    private void Save() => Dialog.Close(DialogResult.Ok(new RuleFormResult(
+        RequestTypeId!.Value, UnitTypeId, VerticalId, DepartmentId, ActivityId, Priority, IsActive)));
+    private void Cancel() => Dialog.Cancel();
+
+    public sealed record RuleFormResult(
+        long RequestTypeId, long? UnitTypeId, long? VerticalId, long? DepartmentId, long? ActivityId,
+        int Priority, bool IsActive);
+}

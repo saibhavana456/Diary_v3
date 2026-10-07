@@ -1,0 +1,406 @@
+@page "/reports/NegativeGrowthAccounts"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+
+    .group-header th {
+        background-color: #2a2f5b;
+        color: white;
+        text-align: center;
+        font-weight: bold;
+        border: 1px solid #ddd;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+            <!-- Filters + Export -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+                <!-- Zone -->
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Zone"
+                               Value="SelectedZone"
+                               ValueChanged="HandleZoneChanged"
+                               Disabled="@IsZoneDisabled"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">
+                                @z["zone_name_eng"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Region -->
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Disabled="@IsRegionDisabled"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">
+                                @r["region_name"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 11px;"
+                               OnClick="OnExportInternal">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- As On Label -->
+            <div class="px-4 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                    @_asOnDateLabel
+                </MudText>
+            </div>
+
+            <!-- Data Table -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50">
+                    <HeaderContent>
+                        <!-- Actual Column Header Row -->
+                        <MudTh Style="background-color:#2a2f5b; color:white; width:60px; text-align:center;">
+                            S.No
+                        </MudTh>
+
+                        @foreach (var col in _cols)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width:{col.Width}; text-align:center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@(_data.IndexOf(context) + 1)</MudTd>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_cols.Count + 1)" style="text-align:center; padding: 40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // ---- UI / State ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private string _title => string.IsNullOrWhiteSpace(Title) ? "Negative Growth Accounts" : Title!;
+    private string _asOnDateLabel = "";
+    private bool _loading = true;
+
+    private string SelectedZone { get; set; } = "All";
+    private string SelectedRegion { get; set; } = "All";
+
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _data = new();
+
+    private string _secondLastFyHeader = "";
+    private string _lastFyHeader = "";
+    private string _currentDateHeader = "";
+
+    private string UserRole = "BRANCH";
+    private string UserZoneSolId = "";
+    private string UserRegionSolId = "";
+
+    private bool IsZoneDisabled = false;
+    private bool IsRegionDisabled = false;
+
+    // ---- Columns (match SELECT aliases) ----
+    private List<ColumnConfig> _cols = new();
+
+    private void BuildDynamicHeaders()
+    {
+        var now = AppTime.Now;
+
+        var lastFY = new DateTime(
+            now.Month > 3 ? now.Year : now.Year - 1,
+            3,
+            31);
+
+        var secondLastFY = lastFY.AddYears(-1);
+
+        _secondLastFyHeader = secondLastFY.ToString("dd-MM-yyyy");
+        _lastFyHeader = lastFY.ToString("dd-MM-yyyy");
+        _currentDateHeader = now.ToString("dd-MM-yyyy");
+
+        _cols = new()
+        {
+            new ColumnConfig { Header = "Zone Sol Id", PropertyName = "Zone_Sol_id", Width="12%" },
+            new ColumnConfig { Header = "Zone Name", PropertyName = "Zone_Name", Width="12%" },
+            new ColumnConfig { Header = "Region Sol Id", PropertyName = "Region_Sol_id", Width="12%" },
+            new ColumnConfig { Header = "Region Name", PropertyName = "Region_Name", Width="12%" },
+            new ColumnConfig { Header = "Account Number", PropertyName = "Account_Number", Width="12%" },
+            new ColumnConfig { Header = "Account Name", PropertyName = "Account_Name", Width="12%" },
+            new ColumnConfig { Header = "Account Type", PropertyName = "Type", Width="12%" },
+
+            new ColumnConfig { Header = "Balance As On: " + _secondLastFyHeader, PropertyName = "Second_Last_FY_End_Date", Width="12%" },
+            new ColumnConfig { Header = "Balance As On: " + _lastFyHeader, PropertyName = "Last_FY_End_Date", Width="12%" },
+            new ColumnConfig { Header = "Balance As On: " + _currentDateHeader, PropertyName = "Current_Dt", Width="12%" },
+
+            new ColumnConfig { Header = "Variance: Current FY", PropertyName = "Current_FY", Width="12%" },
+            new ColumnConfig { Header = "Variance: YTD", PropertyName = "YTD", Width="12%" }
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        UserRole =
+            user.FindFirst(ClaimTypes.Role)?.Value?.ToUpper()
+            ?? user.FindFirst("Role")?.Value?.ToUpper()
+            ?? "BRANCH";
+
+        UserZoneSolId =
+            user.FindFirst("zone_solid")?.Value ?? "";
+
+        UserRegionSolId =
+            user.FindFirst("region_solid")?.Value ?? "";
+
+        // Block Branch users
+        if (UserRole != "CO" &&
+            UserRole != "ZONE" &&
+            UserRole != "REGION")
+        {
+            Navigation.NavigateTo("reports/top-depositors-selector");
+            return;
+        }
+
+        // Zones lookup is always needed — start it immediately
+        var zonesTask = ReportService.GetLookupDataAsync(
+            "zone_master",
+            "zone_name_eng, zone_solid",
+            "status='A'",
+            "zone_name_eng"
+        );
+
+        if (UserRole == "CO")
+        {
+            // CO: zones and regions are independent — run in parallel with data
+            var regionsTask = ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                "1=1",
+                "region_name"
+            );
+            var dataTask = LoadData();
+            await Task.WhenAll(zonesTask, regionsTask, dataTask);
+            _zones = zonesTask.Result;
+            _regions = regionsTask.Result;
+        }
+        else if (UserRole == "ZONE")
+        {
+            IsZoneDisabled = true;
+            SelectedZone = UserZoneSolId;
+
+            var regionsTask = ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"zone_solid='{UserZoneSolId}'",
+                "region_name"
+            );
+            var dataTask = LoadData();
+            await Task.WhenAll(zonesTask, regionsTask, dataTask);
+            _zones = zonesTask.Result;
+            _regions = regionsTask.Result;
+        }
+        else if (UserRole == "REGION")
+        {
+            IsZoneDisabled = true;
+            IsRegionDisabled = true;
+            SelectedZone = UserZoneSolId;
+            SelectedRegion = UserRegionSolId;
+
+            var regionsTask = ReportService.GetLookupDataAsync(
+                "region_master",
+                "region_name, region_solid",
+                $"zone_solid='{UserZoneSolId}'",
+                "region_name"
+            );
+            var dataTask = LoadData();
+            await Task.WhenAll(zonesTask, regionsTask, dataTask);
+            _zones = zonesTask.Result;
+            _regions = regionsTask.Result;
+        }
+        else
+        {
+            _zones = await zonesTask;
+            await LoadData();
+        }
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        SelectedZone = value ?? "All";
+        SelectedRegion = "All";
+
+        var regionWhere = SelectedZone.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"zone_solid = '{SelectedZone}'";
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            regionWhere,
+            "region_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        SelectedRegion = value ?? "All";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        BuildDynamicHeaders();
+        _loading = true;
+        StateHasChanged();
+
+        string privilege;
+        string? solId = null;
+
+        if (UserRole == "CO")
+        {
+            if (SelectedZone == "All")
+            {
+                privilege = "CO";
+            }
+            else if (SelectedRegion == "All")
+            {
+                privilege = "Zone";
+                solId = SelectedZone;
+            }
+            else
+            {
+                privilege = "Region";
+                solId = SelectedRegion;
+            }
+        }
+        else if (UserRole == "ZONE")
+        {
+            if (SelectedRegion == "All")
+            {
+                privilege = "Zone";
+                solId = UserZoneSolId;
+            }
+            else
+            {
+                privilege = "Region";
+                solId = SelectedRegion;
+            }
+        }
+        else // REGION
+        {
+            privilege = "Region";
+            solId = UserRegionSolId;
+        }
+
+        _data = await ReportService.ExecuteStoredProcAsync(
+            "Get_Negative_Growth_Accounts", new Dictionary<string, object>
+                {
+                    { "@Privilege", privilege },
+                    { "@SolId", solId ?? "" }
+                });
+
+        // As On label
+        //string date = await ReportService.GetAsOnDateAsync("TopDepositorsCASA");
+        string date = AppTime.Now.ToString("dd-MM-yyyy");
+        _asOnDateLabel = _data.Count > 0 ? $"Data As On -  {date} (Rs. in Lacs)" : "";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnExportInternal()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _cols, "NegativeGrowthAccounts");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "NegativeGrowthAccounts.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+        return val.ToString();
+    }
+}

@@ -1,0 +1,284 @@
+@namespace RequestPortal.Web.Pages
+@page "/notifications"
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Core.Extensions
+@using RequestPortal.Web.Hubs
+@implements IDisposable
+@inject INotificationApi NotificationApi
+@inject ICurrentUser CurrentUser
+@inject NotificationStream Stream
+@inject NavigationManager Nav
+
+<PageHeader PageKey="notifications" Title="Notifications" Crumbs="_crumbs">
+    <Actions>
+        <MudSwitch T="bool" Value="_unreadOnly" ValueChanged="OnToggleUnread" Color="Color.Default"
+                   Label="Unread only" Style="color:#fff;" />
+        <MudButton OnClick="MarkAllRead" StartIcon="@Icons.Material.Filled.DoneAll" Disabled="_unread == 0"
+                   Variant="Variant.Filled" Style="background:rgba(255,255,255,.18); color:#fff;">
+            Mark all read
+        </MudButton>
+    </Actions>
+</PageHeader>
+
+<MudTabs Outlined="true" Position="Position.Top" KeepPanelsAlive="true" @bind-ActivePanelIndex="_tab">
+    <MudTabPanel Text="@($"All ({_items.Count})")" />
+    <MudTabPanel Text="@($"Request updates ({_items.Count(n => n.EventCode != "Broadcast")})")" />
+    <MudTabPanel Text="@($"Push notifications ({_items.Count(n => n.EventCode == "Broadcast")})")" />
+</MudTabs>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center" Style="border:1px solid #d0d7de;border-radius:6px;">
+        <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Large" Color="Color.Error" />
+        <MudText Typo="Typo.body1" Class="mt-2" Color="Color.Error">@_loadError</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4" OnClick="RetryLoad">Retry</MudButton>
+    </MudPaper>
+}
+else if (Filtered.Count == 0)
+{
+    <MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center" Style="border:1px solid #d0d7de;border-radius:6px;">
+        <MudIcon Icon="@Icons.Material.Filled.NotificationsNone" Size="Size.Large" Color="Color.Default" />
+        <MudText Typo="Typo.body1" Class="mt-2">You're all caught up.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudPaper Elevation="0" Style="border:1px solid #d0d7de;border-radius:6px;">
+        <MudList T="NotificationView" Dense="true">
+            @foreach (var n in Filtered)
+            {
+                <MudListItem T="NotificationView" OnClick="@(() => Open(n))" Class="@(n.IsRead ? "" : "rp-notif-unread-row")">
+                    <div class="d-flex align-center" style="gap:12px;">
+                        <span class="rp-notif-iconwrap" style="@($"background:{EventIconBg(n.EventCode)};")">
+                            <MudIcon Icon="@EventIcon(n.EventCode)" Size="Size.Small" Style="color:#fff;" />
+                            <span class="rp-notif-rpdot">RP</span>
+                        </span>
+                        <div style="flex:1;">
+                            <div style="font-weight:@(n.IsRead ? "400" : "600");">@n.Title</div>
+                            @if (!string.IsNullOrEmpty(n.Message))
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Tertiary">@n.Message</MudText>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(n.Category))
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@n.Category</MudChip>
+                        }
+                        <MudText Typo="Typo.caption" Style="min-width:90px;text-align:right;color:#59636e;">
+                            @RelativeTime(n.CreatedAt)
+                        </MudText>
+                    </div>
+                </MudListItem>
+                <MudDivider />
+            }
+        </MudList>
+    </MudPaper>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Notifications") };
+
+    private List<NotificationView> _items = new();
+    private int _unread;
+    private bool _loading = true;
+    private bool _unreadOnly;
+    private int _tab;
+    private string? _loadError;
+    private IDisposable? _subscription;
+
+    [SupplyParameterFromQuery] private string? Tab { get; set; }
+
+    private List<NotificationView> Filtered => _tab switch
+    {
+        1 => _items.Where(n => n.EventCode != "Broadcast").ToList(),
+        2 => _items.Where(n => n.EventCode == "Broadcast").ToList(),
+        _ => _items.ToList()
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _tab = Tab switch { "tickets" => 1, "broadcast" => 2, _ => 0 };
+            _subscription = Stream.Subscribe(OnPushed);
+
+            // Ensure CurrentUser is resolved in an async context first to avoid
+            // sync-over-async deadlock when accessing EmpCode during Reload.
+            await CurrentUser.RefreshAsync();
+
+            await Reload();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Notifications: failed to initialize");
+            _loadError = "Failed to load notifications. Please try again.";
+            _loading = false;
+        }
+    }
+
+    private async Task RetryLoad()
+    {
+        _loadError = null;
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        if (CurrentUser.EmpCode is not { } empCode)
+        {
+            AppLogger.LogWarning("Notifications: EmpCode is null — user may not be fully authenticated");
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var uid = Convert.ToInt64(empCode);
+            // Independent reads — run in parallel with a timeout to prevent indefinite hangs
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var listTask = NotificationApi.ListForUserAsync(uid, 100, _unreadOnly);
+            var countTask = NotificationApi.GetUnreadCountAsync(uid);
+
+            await Task.WhenAll(listTask, countTask).WaitAsync(cts.Token);
+
+            _items = listTask.Result.ToList();
+            _unread = countTask.Result;
+        }
+        catch (OperationCanceledException)
+        {
+            AppLogger.LogWarning("Notifications: data load timed out after 15 seconds");
+            _loadError = "Loading timed out. The server may be under heavy load. Please try again.";
+        }
+        catch (FormatException ex)
+        {
+            AppLogger.LogError(ex, $"Notifications: invalid EmpCode format '{CurrentUser.EmpCode}' — cannot convert to long");
+            _loadError = "Unable to load notifications due to a user identity issue.";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Notifications: failed to load notification data");
+            _loadError = "Failed to load notifications. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnToggleUnread(bool v)
+    {
+        _unreadOnly = v;
+        await Reload();
+    }
+
+    private async void OnPushed(NotificationView n)
+    {
+        try
+        {
+            if (CurrentUser.EmpCode is not { } empCode || n.UserId.ToString() != empCode) return;
+            await InvokeAsync(() =>
+            {
+                if (!_unreadOnly || !n.IsRead) _items.Insert(0, n);
+                if (!n.IsRead) _unread++;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            // Component disposed during push — safe to ignore
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Notifications: OnPushed failed — {ex.Message}");
+        }
+    }
+
+    private async Task Open(NotificationView n)
+    {
+        try
+        {
+            if (!n.IsRead && CurrentUser.EmpCode is { } empCode)
+            {
+                await NotificationApi.MarkReadAsync(Convert.ToInt64(empCode), n.Id);
+                n.ReadAt = DateTime.UtcNow;
+                _unread = Math.Max(0, _unread - 1);
+            }
+            if (!string.IsNullOrEmpty(n.RedirectUrl))
+                Nav.NavigateTo(n.RedirectUrl);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"Notifications: failed to open/mark-read notification Id={n.Id}");
+        }
+    }
+
+    private async Task MarkAllRead()
+    {
+        try
+        {
+            if (CurrentUser.EmpCode is not { } empCode) return;
+            await NotificationApi.MarkAllReadAsync(Convert.ToInt64(empCode));
+            foreach (var n in _items) n.ReadAt ??= DateTime.UtcNow;
+            _unread = 0;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Notifications: failed to mark all as read");
+        }
+    }
+
+    private static string EventIcon(string? eventCode) => eventCode switch
+    {
+        "Created"               => Icons.Material.Filled.AddCircle,
+        "Assigned"              => Icons.Material.Filled.AssignmentInd,
+        "Forwarded"             => Icons.Material.Filled.ArrowUpward,
+        "Escalated"             => Icons.Material.Filled.PriorityHigh,
+        "ClarificationSought"   => Icons.Material.Filled.HelpOutline,
+        "ClarificationProvided" => Icons.Material.Filled.QuestionAnswer,
+        "Resolved"              => Icons.Material.Filled.CheckCircle,
+        "Reopened"              => Icons.Material.Filled.RestartAlt,
+        "Closed"                => Icons.Material.Outlined.Lock,
+        "Cancelled"             => Icons.Material.Filled.Block,
+        "FeedbackRequested"     => Icons.Material.Filled.StarRate,
+        "Broadcast"             => Icons.Material.Filled.Campaign,
+        _                       => Icons.Material.Filled.Info
+    };
+
+    private static string EventIconBg(string? eventCode) => eventCode switch
+    {
+        "Created"               => "#1E3A8A",
+        "Assigned"              => "#1E3A8A",
+        "Forwarded"             => "#6f42c1",
+        "Escalated"             => "#EF4444",
+        "ClarificationSought"   => "#d97706",
+        "ClarificationProvided" => "#0891b2",
+        "Resolved"              => "#16a34a",
+        "Reopened"              => "#9333ea",
+        "Closed"                => "#475569",
+        "Cancelled"             => "#94a3b8",
+        "FeedbackRequested"     => "#ca8a04",
+        "Broadcast"             => "linear-gradient(135deg,#1E3A8A 0%,#EF4444 100%)",
+        _                       => "#1E3A8A"
+    };
+
+    private static string RelativeTime(DateTime utc)
+    {
+        var d = DateTime.UtcNow - utc;
+        if (d.TotalSeconds < 60) return "just now";
+        if (d.TotalMinutes < 60) return $"{(int)d.TotalMinutes}m ago";
+        if (d.TotalHours < 24) return $"{(int)d.TotalHours}h ago";
+        if (d.TotalDays < 7) return $"{(int)d.TotalDays}d ago";
+        return AppTime.ToIndia(utc).ToString("MMM d");
+    }
+
+    public void Dispose() => _subscription?.Dispose();
+}

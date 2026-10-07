@@ -1,0 +1,247 @@
+@page "/feedback-admin/{Id:long}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "FeedbackAdmin")]
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IFeedbackRepo FeedbackRepo
+@inject IEscalationMatrixRepo EscalationMatrix
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_ticket?.TicketNo ?? "Feedback")</PageTitle>
+
+@if (_ticket is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <PageHeader PageKey="feedback-admin-detail" Title="@($"#{_ticket.TicketNo} — {CategoryLabel(_ticket.Category)}")" Crumbs="_crumbs" />
+
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-6" Elevation="1">
+                <MudChip T="string" Color="@StatusColor(_ticket.Status)">@_ticket.Status</MudChip>
+                @if (_ticket.Severity is not null)
+                {
+                    <MudChip T="string" Color="@SeverityColor(_ticket.Severity.Value)" Class="ml-1">@_ticket.Severity</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Class="ml-1">Not triaged</MudChip>
+                }
+                <MudChip T="string" Class="ml-1" Color="Color.Dark">L@(_ticket.CurrentLevel) @LevelOwnerLabel(_ticket.CurrentLevel)</MudChip>
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.body2"><b>Category:</b> @CategoryLabel(_ticket.Category)</MudText>
+                <MudText Typo="Typo.body2"><b>Submitted by:</b> @_ticket.EmpName (@_ticket.EmpCode)</MudText>
+                <MudText Typo="Typo.body2"><b>PF Number:</b> @_ticket.PfNumber</MudText>
+                <MudText Typo="Typo.body2"><b>Zone / Region / Branch:</b> @_ticket.Zone / @_ticket.Region / @_ticket.Branch</MudText>
+                <MudText Typo="Typo.body2"><b>Mobile:</b> @_ticket.MobileNumber &nbsp;&nbsp; <b>IP-Phone:</b> @_ticket.IpPhoneNumber</MudText>
+                <MudText Typo="Typo.body2"><b>Submitted:</b> @_ticket.CreatedAt.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                @if (_ticket.Rating is not null)
+                {
+                    <MudText Typo="Typo.body2"><b>Submitter rating:</b> <MudRating SelectedValue="_ticket.Rating.Value" ReadOnly="true" /></MudText>
+                    @if (!string.IsNullOrWhiteSpace(_ticket.RatingComments))
+                    {
+                        <MudText Typo="Typo.body2">"@_ticket.RatingComments"</MudText>
+                    }
+                }
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.h6">Description</MudText>
+                <MudText Style="white-space: pre-wrap;">@_ticket.Description</MudText>
+
+                @if (_ticket.Attachments.Count > 0)
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.h6" Class="mb-2">Attachments</MudText>
+                    @foreach (var att in _ticket.Attachments)
+                    {
+                        <div class="d-flex align-center gap-2 mb-1">
+                            <MudIcon Icon="@AttIcon(att.Mime)" Size="Size.Small" />
+                            <MudLink Href="@("/" + att.FilePath)" Target="_blank">@att.FileName</MudLink>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@att.UploadedAt.ToString("dd-MMM-yyyy")</MudText>
+                        </div>
+                    }
+                }
+            </MudPaper>
+
+            @if (CanAct)
+            {
+                <MudPaper Class="pa-6 mt-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Take action</MudText>
+                    <MudText Typo="Typo.caption" Style="color:#59636e;">
+                        Set a severity/status/level if this update changes them, add a note, then submit. Leave a field blank to leave it unchanged.
+                        Levels come from the Escalation Matrix for this Feedback activity (L1 Admin, L2 Development Team, ...).
+                    </MudText>
+
+                    <MudSelect T="FeedbackSeverity?" Label="Set Severity" @bind-Value="_newSeverity" Variant="Variant.Outlined" Clearable="true" Class="mt-3">
+                        @foreach (FeedbackSeverity sv in Enum.GetValues<FeedbackSeverity>()) { <MudSelectItem T="FeedbackSeverity?" Value="@((FeedbackSeverity?)sv)">@sv</MudSelectItem> }
+                    </MudSelect>
+                    <MudSelect T="FeedbackStatus?" Label="Set Status" @bind-Value="_newStatus" Variant="Variant.Outlined" Clearable="true" Class="mt-3">
+                        @foreach (FeedbackStatus st in Enum.GetValues<FeedbackStatus>()) { <MudSelectItem T="FeedbackStatus?" Value="@((FeedbackStatus?)st)">@st</MudSelectItem> }
+                    </MudSelect>
+                    <MudSelect T="int?" Label="Reassign to Level" @bind-Value="_newLevel" Variant="Variant.Outlined" Clearable="true" Class="mt-3">
+                        @foreach (var m in _matrix)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)m.LevelNo)">L@(m.LevelNo) — @(m.EmpName ?? m.PfNumber) (@m.PfNumber)</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField @bind-Value="_updateText" Label="Update note" Lines="3" Class="mt-3" Placeholder="What did you find / do about this?" />
+
+                    <div class="mt-3">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="PostUpdateAsync" Disabled="@_busy">
+                            @(_busy ? "Posting…" : "Post Update")
+                        </MudButton>
+                    </div>
+                </MudPaper>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Update history</MudText>
+                <MudTimeline TimelinePosition="TimelinePosition.Start" @key="_timelineKey">
+                    <MudTimelineItem Color="Color.Info" Variant="Variant.Filled">
+                        <ItemContent>
+                            <MudText Typo="Typo.body1"><b>Submitted</b></MudText>
+                            <MudText Typo="Typo.body2">Ticket created — Status: Open, L1</MudText>
+                            <MudText Class="timeline-actor">@_ticket.EmpCode · @_ticket.CreatedAt.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                        </ItemContent>
+                    </MudTimelineItem>
+                    @foreach (var u in _ticket.Updates)
+                    {
+                        <MudTimelineItem Color="@(u.NewStatus is not null ? StatusColor(u.NewStatus.Value) : Color.Default)" Variant="Variant.Filled">
+                            <ItemContent>
+                                <MudText Typo="Typo.body1">
+                                    <b>
+                                        @if (u.NewStatus is not null) { @($"Status → {u.NewStatus}") }
+                                        @if (u.NewStatus is not null && (u.NewSeverity is not null || u.NewLevel is not null)) { @(" · ") }
+                                        @if (u.NewSeverity is not null) { @($"Severity → {u.NewSeverity}") }
+                                        @if (u.NewSeverity is not null && u.NewLevel is not null) { @(" · ") }
+                                        @if (u.NewLevel is not null) { @($"Level → L{u.NewLevel}") }
+                                        @if (u.NewStatus is null && u.NewSeverity is null && u.NewLevel is null) { @("Update") }
+                                    </b>
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(u.UpdateText))
+                                {
+                                    <MudText Typo="Typo.body2">@u.UpdateText</MudText>
+                                }
+                                <MudText Class="timeline-actor">@u.UpdatedByEmp · @u.UpdatedAt.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                            </ItemContent>
+                        </MudTimelineItem>
+                    }
+                </MudTimeline>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+<style>
+    .timeline-actor { font-size: .78rem; opacity: .65; }
+</style>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private FeedbackTicket? _ticket;
+    private IReadOnlyList<EscalationMatrixEntry> _matrix = Array.Empty<EscalationMatrixEntry>();
+    private FeedbackSeverity? _newSeverity;
+    private FeedbackStatus? _newStatus;
+    private int? _newLevel;
+    private string? _updateText;
+    private bool _busy;
+    private int _timelineKey;
+
+    private List<PageHeader.Crumb> _crumbs = new();
+
+    private bool CanAct => _ticket is not null && _ticket.Status != FeedbackStatus.Closed;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _ticket = await FeedbackRepo.GetTicketAsync(Id);
+        _matrix = await EscalationMatrix.GetByActivityAsync(FeedbackConstants.ActivityId, null);
+        _crumbs = new()
+        {
+            new("MIS", "MIS"), new("Feedback", "feedback-admin"), new($"#{_ticket?.TicketNo ?? "?"}")
+        };
+        // Deliberately NOT pre-filled from the ticket's current severity/status/level —
+        // these fields represent "what changes with this update", not "what it
+        // currently is" (that's already shown in the chips above).
+        _newSeverity = null;
+        _newStatus = null;
+        _newLevel = null;
+        _updateText = null;
+    }
+
+    private async Task PostUpdateAsync()
+    {
+        if (_ticket is null) return;
+        if (_newSeverity is null && _newStatus is null && _newLevel is null && string.IsNullOrWhiteSpace(_updateText))
+        {
+            Snackbar.Add("Set a severity, status, or level, or add a note before posting.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await FeedbackRepo.AddUpdateAsync(_ticket.Id, _updateText ?? "", _newStatus, _newSeverity, _newLevel, CurrentUser.EmpCode ?? "");
+            Snackbar.Add("Update posted.", Severity.Success);
+            _ticket = await FeedbackRepo.GetTicketAsync(_ticket.Id);
+            _newSeverity = null;
+            _newStatus = null;
+            _newLevel = null;
+            _updateText = null;
+            _timelineKey++;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "FeedbackDetail: action failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string LevelOwnerLabel(int level)
+    {
+        var m = _matrix.FirstOrDefault(x => x.LevelNo == level);
+        return m is null ? "" : $"({m.EmpName ?? m.PfNumber})";
+    }
+
+    private static string AttIcon(string? mime) => mime switch
+    {
+        "application/pdf" => Icons.Material.Filled.PictureAsPdf,
+        "image/png" or "image/jpeg" => Icons.Material.Filled.Image,
+        _ => Icons.Material.Filled.AttachFile
+    };
+
+    private static string CategoryLabel(FeedbackCategory c) => c switch
+    {
+        FeedbackCategory.FunctionalDefects => "Functional Defects",
+        FeedbackCategory.PerformanceIssues => "Performance Issues",
+        FeedbackCategory.UiUxImprovements => "UI/UX Improvements",
+        FeedbackCategory.NewFeatureRequests => "New Feature Requests",
+        FeedbackCategory.DataIssues => "Data Issues",
+        _ => c.ToString()
+    };
+
+    private static Color SeverityColor(FeedbackSeverity s) => s switch
+    {
+        FeedbackSeverity.Critical => Color.Error,
+        FeedbackSeverity.High => Color.Warning,
+        FeedbackSeverity.Medium => Color.Info,
+        _ => Color.Default
+    };
+
+    private static Color StatusColor(FeedbackStatus s) => s switch
+    {
+        FeedbackStatus.Closed => Color.Success,
+        FeedbackStatus.InProgress => Color.Warning,
+        _ => Color.Primary
+    };
+}

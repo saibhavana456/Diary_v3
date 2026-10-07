@@ -1,0 +1,177 @@
+@page "/bcp-drill/ro-certificate"
+@using System.Security.Claims
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IWebHostEnvironment Env
+
+<PageTitle>RO Certificate - BCP / DR Drill - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="Regional Office certificate"
+                Subtitle="Annexure-II - certificate of BCP drill and linking / mapping of all branches."
+                Crumbs="_crumbs" PageKey="bcp-drill-ro-cert" />
+
+    @if (_loading) { <MudProgressCircular Indeterminate="true" /> }
+    else if (_scope is null || !_scope.CanCertifyRegion)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">The Annexure-II certificate is recorded by the Regional Office.</MudAlert>
+        <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Back</MudButton>
+    }
+    else if (_savedId.HasValue)
+    {
+        <MudPaper Elevation="1" Class="pa-6">
+            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">Certificate recorded (no. <b>RO/@_cert!.RegionCode/@_savedId</b>). The linking below is now the standing branch mapping.</MudAlert>
+            <div class="d-flex gap-2 flex-wrap">
+                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="DownloadPdfAsync">Download certificate (PDF)</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Back to submissions</MudButton>
+            </div>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-3">Take a printout and obtain the signature of the Regional Head / Regional Assurance Head / Vertical Head.</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        @if (_scope.IsAdmin)
+        {
+            <MudSelect T="string" Label="Region (RO)" Value="@_region" ValueChanged="OnRegionAsync" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Style="max-width:360px">
+                @foreach (var r in _regions) { <MudSelectItem T="string" Value="@r.Code">@r.Name</MudSelectItem> }
+            </MudSelect>
+        }
+
+        @if (_cert is null)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">@(_scope.IsAdmin ? "Select a region to load its branches." : "No branches are mapped to your region yet. Ask an App Admin to load the branch mapping.")</MudAlert>
+        }
+        else
+        {
+            <MudPaper Elevation="1" Class="pa-4 mb-3">
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="4"><MudTextField T="string" Label="Regional Office / Department" Value="@(_cert.RegionName ?? _cert.RegionCode)" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField T="string" Label="Zonal Office" Value="@(_cert.ZoneName ?? _cert.ZoneCode)" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudDatePicker Date="@_cert.CertDate" DateChanged="@(d => _cert.CertDate = d ?? DateTime.Today)" Label="Date" Variant="Variant.Outlined" Margin="Margin.Dense" MaxDate="DateTime.Today" DateFormat="dd-MMM-yyyy" /></MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                Pre-filled from each branch's latest BCP drill and the current mapping. Enter the disaster scenario and confirm the two mapped / linked branches for every branch.
+            </MudText>
+
+            <div style="overflow-x:auto">
+                <MudSimpleTable Dense="true" Bordered="true" Striped="true" Style="min-width:1100px">
+                    <thead>
+                        <tr><th>S. No.</th><th>Name of identified Branch</th><th style="min-width:180px">Name of Disaster</th><th style="min-width:150px">BCP Drill Date</th>
+                            <th style="min-width:200px">Mapped / Linked Branch 1</th><th style="min-width:200px">Mapped / Linked Branch 2</th><th style="min-width:180px">Remarks</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var l in _cert.Lines)
+                        {
+                            var line = l;
+                            <tr>
+                                <td>@line.SrNo</td>
+                                <td>@line.BranchName<div style="font-size:.75rem;opacity:.7">@line.SolId</div></td>
+                                <td><MudTextField T="string" @bind-Value="line.DisasterName" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" /></td>
+                                <td><MudDatePicker Date="@line.DrillDate" DateChanged="@(d => line.DrillDate = d)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxDate="DateTime.Today" DateFormat="dd-MMM-yyyy" Clearable="true" /></td>
+                                <td>
+                                    <MudSelect T="string" Value="@line.Map1SolId" ValueChanged="@(v => SetMap(line, 1, v))" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                                        @foreach (var b in Others(line)) { <MudSelectItem T="string" Value="@b.SolId">@b.BranchName (@b.SolId)</MudSelectItem> }
+                                    </MudSelect>
+                                </td>
+                                <td>
+                                    <MudSelect T="string" Value="@line.Map2SolId" ValueChanged="@(v => SetMap(line, 2, v))" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                                        @foreach (var b in Others(line)) { <MudSelectItem T="string" Value="@b.SolId">@b.BranchName (@b.SolId)</MudSelectItem> }
+                                    </MudSelect>
+                                </td>
+                                <td><MudTextField T="string" @bind-Value="line.Remarks" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="1000" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+
+            <MudPaper Elevation="1" Class="pa-4 mt-3">
+                <MudText Class="mb-3">We confirm that all above mentioned Branches have carried out BCP Drill as per checklist and have been Mapped / Linked to nearby two Branches. All the precautions have been taken for Business continuation during BCP Drill. In case of disaster occurrence, Branch operations will be carried out from Linked / Mapped Branch.</MudText>
+                <MudTextField T="string" @bind-Value="_cert.SignatoryName" Label="Name of Regional Head / Regional Assurance Head / Vertical Head" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" Style="max-width:520px" />
+                <MudButton Class="mt-4" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveAsync" Disabled="@_saving">@(_saving ? "Saving..." : "Record certificate")</MudButton>
+                <MudButton Class="mt-4 ml-2" Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Cancel</MudButton>
+            </MudPaper>
+        }
+    }
+</AuthenticatedOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("BCP / DR Drill Compliance", "bcp-drill"), new("RO certificate") };
+
+    private ClaimsPrincipal _user = new();
+    private BcpScope? _scope;
+    private bool _loading = true, _saving;
+    private BcpRoCert? _cert;
+    private List<BcpBranch> _branches = new();
+    private List<OrgOption> _regions = new();
+    private string _region = "";
+    private long? _savedId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _scope = Svc.GetScope(_user);
+        if (_scope.CanCertifyRegion)
+        {
+            _regions = await Svc.GetRegionsAsync(_user, null);
+            if (!_scope.IsAdmin && _regions.Count >= 1) await OnRegionAsync(_regions[0].Code);
+        }
+        _loading = false;
+    }
+
+    private async Task OnRegionAsync(string? v)
+    {
+        _region = v ?? "";
+        _cert = null;
+        if (string.IsNullOrEmpty(_region)) return;
+        try
+        {
+            _branches = await Svc.ListBranchMapAsync(_user, _region);
+            _cert = await Svc.BuildCertDraftAsync(_user, _region);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+
+    private IEnumerable<BcpBranch> Others(BcpCertLine l) => _branches.Where(b => b.SolId != l.SolId);
+
+    private void SetMap(BcpCertLine l, int slot, string? sol)
+    {
+        var name = sol is null ? null : _branches.FirstOrDefault(b => b.SolId == sol)?.BranchName;
+        if (slot == 1) { l.Map1SolId = sol; l.Map1Name = name; } else { l.Map2SolId = sol; l.Map2Name = name; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_cert is null) return;
+        _saving = true;
+        try
+        {
+            _savedId = await Svc.SaveCertAsync(_user, _cert);
+            _cert.Id = _savedId.Value;
+            Snackbar.Add("Certificate recorded.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        _saving = false;
+    }
+
+    private async Task DownloadPdfAsync()
+    {
+        try
+        {
+            var c = _savedId.HasValue ? await Svc.GetCertAsync(_user, _savedId.Value) : null;
+            if (c is null) return;
+            var pdf = BcpDocuments.CertPdf(c, BcpDocuments.LoadLogo(Env.WebRootPath, "UBI_Logo.png"), BcpDocuments.LoadLogo(Env.WebRootPath, "My_Diary_Log-transparent_small.png"));
+            await JS.InvokeVoidAsync("BlazorDownloadFile", $"BCP_Annexure-II_{c.RegionCode}_{c.CertDate:yyyyMMdd}.pdf", "application/pdf", Convert.ToBase64String(pdf));
+        }
+        catch (Exception ex) { Snackbar.Add("Could not generate the PDF: " + ex.Message, Severity.Error); }
+    }
+}

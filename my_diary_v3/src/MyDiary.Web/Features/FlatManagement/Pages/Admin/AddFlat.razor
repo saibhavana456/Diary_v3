@@ -1,0 +1,337 @@
+@page "/flatmgmt/admin/flats"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminFlatMasterService FlatMasterService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Flat Master - Flat Management System</PageTitle>
+
+<div class="af-page">
+    <PageHeader Title="Add Flat" Crumbs="_crumbs" PageKey="flatmgmt-admin-add-flat" />
+
+    <MudCard Class="af-card mt-4" Elevation="2">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" @bind-Value="locationId" Label="Choose Location*" Variant="Variant.Outlined"
+                               Required="true" @bind-Value:after="OnLocationChanged">
+                        @foreach (var loc in locations)
+                        {
+                            <MudSelectItem Value="@loc.Id">@loc.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" @bind-Value="societyId" Label="Building Name*" Variant="Variant.Outlined"
+                               Required="true" @bind-Value:after="OnSocietyChanged">
+                        @foreach (var soc in societies)
+                        {
+                            <MudSelectItem Value="@soc.Id">@soc.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="flatNo" Label="Flat No.*" Variant="Variant.Outlined" MaxLength="10" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="purchaseDate" Label="Purchase Date*" Variant="Variant.Outlined" DateFormat="dd/MM/yyyy" Required="true" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="address" Label="Address*" Variant="Variant.Outlined" Lines="3" MaxLength="900" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" @bind-Value="managedByCode" Label="Managed By (CO/ZO/RO)*" Variant="Variant.Outlined" Required="true">
+                        @foreach (var j in jurisdictions)
+                        {
+                            <MudSelectItem Value="@j.Code">@j.DisplayName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudSelect T="string" @bind-Value="bhkDetails" Label="Flat Type*" Variant="Variant.Outlined" Required="true">
+                        <MudSelectItem Value="@("1BHK")">1BHK</MudSelectItem>
+                        <MudSelectItem Value="@("2BHK")">2BHK</MudSelectItem>
+                        <MudSelectItem Value="@("3BHK")">3BHK</MudSelectItem>
+                        <MudSelectItem Value="@("Other")">Other</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="string" @bind-Value="familyDetails" Label="Flat Category*" Variant="Variant.Outlined" Required="true">
+                        <MudSelectItem Value="@("Bachelor")">Bachelor</MudSelectItem>
+                        <MudSelectItem Value="@("Family")">Family</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField @bind-Value="flatArea" Label="Area* (in Sq Feet)" Variant="Variant.Outlined" MaxLength="4" Required="true" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" @bind-Value="usability" Label="Usability*" Variant="Variant.Outlined" Required="true">
+                        <MudSelectItem Value="@("Residential")">Residential</MudSelectItem>
+                        <MudSelectItem Value="@("Transit Quarter")">Transit Quarter</MudSelectItem>
+                        <MudSelectItem Value="@("Guest House")">Guest House</MudSelectItem>
+                        <MudSelectItem Value="@("Other")">Other</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string" @bind-Value="ownedStatus" Label="Owned/Rented*" Variant="Variant.Outlined" Required="true">
+                        <MudSelectItem Value="@("Owned")">Owned</MudSelectItem>
+                        <MudSelectItem Value="@("Rented")">Rented</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <div class="af-actions">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isSaving" OnClick="HandleSave">
+                    @(isSaving ? "Saving..." : "Add Flat")
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Class="ml-2" Disabled="@isSaving" OnClick="ResetForm">
+                    Cancel
+                </MudButton>
+            </div>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Class="af-card mt-4" Elevation="2">
+        <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Modify Existing Flat Details</MudText></CardHeaderContent></MudCardHeader>
+        <MudCardContent>
+            <MudGrid Class="mb-2">
+                <MudItem xs="12" sm="8" md="6">
+                    <MudTextField @bind-Value="searchText" Label="Search By Location" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="4" md="3" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="HandleSearch">Search</MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <MudTable @ref="table" ServerData="@ServerReload" Hover="true" Bordered="true" Dense="true" Class="af-table" Loading="@isListLoading">
+                <HeaderContent>
+                    <MudTh>S.No.</MudTh>
+                    <MudTh>Modify</MudTh>
+                    <MudTh>Location</MudTh>
+                    <MudTh>Society Name</MudTh>
+                    <MudTh>Flat No</MudTh>
+                    <MudTh>Category</MudTh>
+                    <MudTh>Flat Details/Area</MudTh>
+                    <MudTh>Purchase Date</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Managed By</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="row">
+                    <MudTd DataLabel="S.No.">@(pageStartIndex + rows.IndexOf(row) + 1)</MudTd>
+                    <MudTd DataLabel="Modify">
+                        <MudLink Href="@($"flatmgmt/admin/edit-flat?flatId={row.FlatId}")">Modify</MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Location">@row.LocationName</MudTd>
+                    <MudTd DataLabel="Society Name">@row.SocietyName</MudTd>
+                    <MudTd DataLabel="Flat No">@row.FlatNo</MudTd>
+                    <MudTd DataLabel="Category">@row.FamilyDetails</MudTd>
+                    <MudTd DataLabel="Flat Details/Area">@row.BhkDetails</MudTd>
+                    <MudTd DataLabel="Purchase Date">@row.PurchaseDate</MudTd>
+                    <MudTd DataLabel="Status">@row.OccupancyStatus</MudTd>
+                    <MudTd DataLabel="Managed By">@row.ManagedByName</MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>No flats found.</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new[] { 20, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="af-modal-overlay" @onclick="() => message = null">
+            <div class="af-modal @(isError ? "af-modal-error" : "af-modal-success")" @onclick:stopPropagation="true">
+                <div class="af-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="af-modal-text">@message</p>
+                <button type="button" class="af-btn @(isError ? "af-btn-secondary" : "af-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Add Flat") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private string pfNo = string.Empty;
+
+    private List<FlatLocationOption> locations = new();
+    private List<FlatSocietyOption> societies = new();
+    private List<JurisdictionOption> jurisdictions = new();
+
+    private string locationId = "";
+    private string societyId = "";
+    private string flatNo = "";
+    private DateTime? purchaseDate;
+    private string address = "";
+    private string managedByCode = "";
+    private string bhkDetails = "";
+    private string familyDetails = "";
+    private string flatArea = "";
+    private string usability = "";
+    private string ownedStatus = "";
+
+    private bool isSaving;
+    private string? message;
+    private bool isError;
+
+    private string searchText = "";
+    private bool isListLoading = true;
+    private List<FlatMasterRow> rows = new();
+    private int pageStartIndex;
+    private MudTable<FlatMasterRow> table = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            pfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        var locationsTask = FlatMasterService.GetLocationsAsync();
+        var jurisdictionsTask = FlatMasterService.GetJurisdictionOptionsAsync();
+        await Task.WhenAll(locationsTask, jurisdictionsTask);
+
+        locations = locationsTask.Result;
+        jurisdictions = jurisdictionsTask.Result;
+    }
+
+    private async Task OnLocationChanged()
+    {
+        societyId = "";
+        societies = string.IsNullOrEmpty(locationId)
+            ? new List<FlatSocietyOption>()
+            : await FlatMasterService.GetSocietiesAsync(locationId);
+    }
+
+    private async Task OnSocietyChanged()
+    {
+        if (string.IsNullOrEmpty(societyId)) return;
+
+        var defaults = await FlatMasterService.GetOwnedUsageDefaultsAsync(societyId);
+        if (defaults is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(defaults.OwnedStatus)) ownedStatus = defaults.OwnedStatus;
+            if (!string.IsNullOrWhiteSpace(defaults.UsabilityStatus)) usability = defaults.UsabilityStatus;
+        }
+    }
+
+    private async Task<TableData<FlatMasterRow>> ServerReload(TableState state, CancellationToken ct)
+    {
+        isListLoading = true;
+        var result = await FlatMasterService.GetFlatsAsync(pfNo, searchText, state.Page, state.PageSize);
+        rows = result.Rows.ToList();
+        pageStartIndex = state.Page * state.PageSize;
+        isListLoading = false;
+        return new TableData<FlatMasterRow> { TotalItems = result.TotalCount, Items = rows };
+    }
+
+    private async Task HandleSearch() => await table.ReloadServerData();
+
+    private string? ValidateForm()
+    {
+        if (string.IsNullOrEmpty(locationId)) return "Choose Location.";
+        if (string.IsNullOrEmpty(societyId)) return "Choose Building Name.";
+        if (string.IsNullOrWhiteSpace(flatNo)) return "Fill Flat No.";
+        if (purchaseDate is null) return "Enter purchase Date.";
+        if (string.IsNullOrWhiteSpace(address)) return "Fill Address.";
+        if (string.IsNullOrEmpty(managedByCode)) return "Please select Managed By (CO/ZO/RO).";
+        if (string.IsNullOrEmpty(bhkDetails)) return "Select Flat Type.";
+        if (string.IsNullOrEmpty(familyDetails)) return "Select Flat Category.";
+        if (string.IsNullOrWhiteSpace(flatArea)) return "Fill Area.";
+        if (string.IsNullOrEmpty(usability)) return "Select Usability.";
+        if (string.IsNullOrEmpty(ownedStatus)) return "Select Owned Status.";
+        return null;
+    }
+
+    private async Task HandleSave()
+    {
+        message = null;
+
+        var validationError = ValidateForm();
+        if (validationError is not null)
+        {
+            ShowError(validationError);
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            if (await FlatMasterService.FlatExistsAsync(flatNo.Trim(), societyId, locationId))
+            {
+                ShowError("Flat with this Flat No. already exist..");
+                return;
+            }
+
+            var locationName = locations.FirstOrDefault(l => l.Id == locationId)?.Name ?? "";
+            var societyName = societies.FirstOrDefault(s => s.Id == societyId)?.Name ?? "";
+            var managedByName = jurisdictions.FirstOrDefault(j => j.Code == managedByCode)?.DisplayName ?? "";
+
+            var request = new AddFlatRequest(
+                LocationId: locationId,
+                LocationName: locationName,
+                SocietyId: societyId,
+                SocietyName: societyName,
+                SocietyAddress: address.Trim(),
+                FlatNo: flatNo.Trim(),
+                FlatArea: flatArea.Trim(),
+                BhkDetails: bhkDetails,
+                FamilyDetails: familyDetails,
+                OwnedStatus: ownedStatus,
+                Usability: usability,
+                PurchaseDate: purchaseDate!.Value.ToString("dd/MM/yyyy"),
+                ManagedByCode: managedByCode,
+                ManagedByName: managedByName,
+                CreatedBy: pfNo);
+
+            var result = await FlatMasterService.AddFlatAsync(request);
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Some error occurred. Please try later...");
+                return;
+            }
+
+            ShowSuccess("Flat Details Added SuccessFully...");
+            ResetForm();
+            await table.ReloadServerData();
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        locationId = "";
+        societyId = "";
+        societies = new();
+        flatNo = "";
+        purchaseDate = null;
+        address = "";
+        managedByCode = "";
+        bhkDetails = "";
+        familyDetails = "";
+        flatArea = "";
+        usability = "";
+        ownedStatus = "";
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

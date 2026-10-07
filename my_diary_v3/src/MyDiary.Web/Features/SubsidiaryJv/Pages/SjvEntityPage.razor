@@ -1,0 +1,302 @@
+@page "/sjv/entity/{Code}"
+@using global::RequestPortal.Web.Shared
+@using MyDiary.Web.Features.SubsidiaryJv.Components
+@using MyDiary.Web.Features.SubsidiaryJv.Models
+@using MyDiary.Web.Features.SubsidiaryJv.Services
+@inject ISubsidiaryJvService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_d?.Entity.EntityName ?? "Entity") - Subsidiaries and JV Corner</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="@(_d?.Entity.EntityName ?? "Subsidiaries and JV Corner")" Subtitle="@(_d?.Entity.Tagline ?? "")" Crumbs="_crumbs" PageKey="sjv-entity" />
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else if (_d is null)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">Entity '@Code' was not found. <MudLink Href="sjv">Back to the landing page</MudLink></MudAlert>
+    }
+    else
+    {
+        var e = _d.Entity;
+        <MudPaper Elevation="1" Class="pa-3 mb-3">
+            <MudGrid Class="align-center" Spacing="2">
+                @if (e.HasLogo)
+                {
+                    <MudItem xs="12" sm="2" md="1"><img src="@($"{Nav.BaseUri}sjv/logo/{e.EntityCode}")" alt="@e.EntityName logo" style="max-height:48px;max-width:100%;object-fit:contain;display:block" /></MudItem>
+                }
+                <MudItem xs="12" sm="7" md="6">
+                    <MudSelect T="string" Label="Select Subsidiary / JV" Variant="Variant.Outlined" Dense="true" Value="@e.EntityCode" ValueChanged="@((string c) => Nav.NavigateTo($"sjv/entity/{c}"))">
+                        @foreach (var x in _all)
+                        {
+                            <MudSelectItem T="string" Value="@x.EntityCode">@x.EntityName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="5" md="6" Class="d-flex flex-wrap gap-2 justify-end">
+                    <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("sjv"))">All entities</MudButton>
+                    @if (_isAdmin)
+                    {
+                        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="@(() => Nav.NavigateTo($"sjv/admin?entity={e.EntityCode}"))">Edit</MudButton>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="SavePdfAsync" Disabled="_pdfBusy">@(_pdfBusy ? "Preparing..." : "Save PDF")</MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12">
+                <div class="sjv-kpis mb-3">
+                    @Kpi(Icons.Material.Filled.CalendarMonth, "Year of Incorporation", e.YearOfIncorp?.ToString() ?? "-", null)
+                    @Kpi(Icons.Material.Filled.Groups, "Ownership", e.OwnershipPct.HasValue ? e.OwnershipPct.Value.ToString("0.##") + "%" : "-", e.OwnershipNote)
+                    @Kpi(Icons.Material.Filled.CurrencyRupee, "Paid-up Capital", e.PaidupCapitalCr.HasValue ? "₹ " + e.PaidupCapitalCr.Value.ToString("N0") + " Cr" : "-", AsOn(e.PaidupAsOn))
+                    @Kpi(Icons.Material.Filled.Apartment, "Branches", e.Branches?.ToString("N0") ?? "-", e.BranchesNote)
+                    @Kpi(Icons.Material.Filled.People, "Employees", e.Employees.HasValue ? e.Employees.Value.ToString("N0") + "+" : "-", AsOn(e.EmployeesAsOn))
+                    @Kpi(Icons.Material.Filled.TrendingUp, latest is null ? "Total Income" : $"Total Income ({latest.FinYear})", latest?.TotalIncome is decimal ti ? "₹ " + ti.ToString("N0") + " Cr" : "-", null)
+                </div>
+
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="5">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Company Profile</div>
+                            <p class="sjv-desc">@(e.Description ?? "-")</p>
+                            @Row("Registered Office", e.RegisteredOffice)
+                            @Row("CIN", e.Cin)
+                            @Row("Website", e.Website)
+                            @Row("Email", e.Email)
+                            @Row("Phone", e.Phone)
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Office Presence</div>
+                            @if (_d.Offices.Count == 0) { <MudText Typo="Typo.body2">-</MudText> }
+                            else
+                            {
+                                <table class="sjv-tbl">
+                                    <thead><tr><th>Location Type</th><th>Number</th></tr></thead>
+                                    <tbody>@foreach (var o in _d.Offices) { <tr><td>@o.LocationType</td><td>@o.Number.ToString("N0")</td></tr> }</tbody>
+                                </table>
+                            }
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Shareholding Pattern</div>
+                            <SjvDonut Data="_d.Shareholding" />
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Key Activities Undertaken</div>
+                            @if (_d.Activities.Count == 0) { <MudText Typo="Typo.body2">-</MudText> }
+                            @foreach (var a in _d.Activities) { <div class="sjv-act"><MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Size="Size.Small" Color="Color.Error" />@a</div> }
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" md="8">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Board of Directors</div>
+                            <div style="overflow-x:auto">
+                                <table class="sjv-tbl">
+                                    <thead><tr><th>#</th><th>Name</th><th>Designation</th><th>Director Category</th><th>Representing Partner / Bank</th><th>Date of Appointment</th><th>Tenure</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var (b, i) in _d.Board.Select((b, i) => (b, i + 1)))
+                                        {
+                                            <tr><td>@i</td><td>@b.Name</td><td>@b.Designation</td><td>@b.Category</td><td>@(b.Representing ?? "-")</td><td>@(b.AppointedOn?.ToString("dd MMM yyyy") ?? "-")</td><td>@b.Tenure</td></tr>
+                                        }
+                                        @if (_d.Board.Count == 0) { <tr><td colspan="7">-</td></tr> }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Key Managerial Personnel</div>
+                            <div style="overflow-x:auto">
+                                <table class="sjv-tbl">
+                                    <thead><tr><th>#</th><th>Name</th><th>Designation</th><th>Email</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var (k, i) in _d.Kmp.Select((k, i) => (k, i + 1))) { <tr><td>@i</td><td>@k.Name</td><td>@k.Designation</td><td>@k.Email</td></tr> }
+                                        @if (_d.Kmp.Count == 0) { <tr><td colspan="4">-</td></tr> }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Key Financials (₹ Cr) <span class="sjv-fy">@(latest?.FinYear)</span></div>
+                            @FinCard("Total Income", latest?.TotalIncome, prev?.TotalIncome)
+                            @FinCard("Net Profit", latest?.NetProfit, prev?.NetProfit)
+                            @FinCard("Net Worth", latest?.NetWorth, prev?.NetWorth)
+                            @FinCard("Total Assets", latest?.TotalAssets, prev?.TotalAssets)
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" md="8">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Financial Trend (₹ Cr)</div>
+                            <SjvFinancialChart Data="_d.Financials" />
+                            @if (_d.Financials.Count > 0)
+                            {
+                                <div style="overflow-x:auto">
+                                    <table class="sjv-tbl">
+                                        <thead><tr><th>Particulars</th>@foreach (var f in _d.Financials) { <th>@f.FinYear.Replace("FY ", "FY ")</th> }<th>Growth vs previous year</th></tr></thead>
+                                        <tbody>
+                                            @TrendRow("Total Income", f => f.TotalIncome)
+                                            @TrendRow("Net Profit", f => f.NetProfit)
+                                            @TrendRow("Net Worth", f => f.NetWorth)
+                                            @TrendRow("Total Assets", f => f.TotalAssets)
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </MudPaper>
+                    </MudItem>
+
+                    @if (_d.Quarterly.Count > 0)
+                    {
+                        <MudItem xs="12">
+                            <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                                <div class="sjv-h">Quarterly Financials (₹ Cr) <span class="sjv-fy">Q1 Apr-Jun · Q2 Jul-Sep · Q3 Oct-Dec · Q4 Jan-Mar</span></div>
+                                <SjvFinancialChart Data="@(_d.Quarterly.Select(q => q.AsFinancial()).ToList())" />
+                                <div style="overflow-x:auto">
+                                    <table class="sjv-tbl">
+                                        <thead><tr><th>Particulars</th>@foreach (var q in _d.Quarterly) { <th>@q.Label</th> }<th>Change vs previous quarter</th></tr></thead>
+                                        <tbody>
+                                            @QuarterRow("Total Income", q => q.TotalIncome)
+                                            @QuarterRow("Net Profit", q => q.NetProfit)
+                                            @QuarterRow("Net Worth", q => q.NetWorth)
+                                            @QuarterRow("Total Assets", q => q.TotalAssets)
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </MudPaper>
+                        </MudItem>
+                    }
+
+                    <MudItem xs="12">
+                        <MudPaper Elevation="1" Class="pa-3 sjv-panel">
+                            <div class="sjv-h">Current Position / Strategic Updates</div>
+                            @if (_d.Updates.Count == 0) { <MudText Typo="Typo.body2">-</MudText> }
+                            @foreach (var u in _d.Updates)
+                            {
+                                <div class="sjv-act"><MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Small" Color="Color.Error" />
+                                    <span>@u.Text @if (u.Date.HasValue) { <span class="sjv-fy">(@u.Date.Value.ToString("dd MMM yyyy"))</span> }</span></div>
+                            }
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            </MudItem>
+        </MudGrid>
+    }
+</AuthenticatedOnly>
+
+<style>
+    .sjv-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+    .sjv-kpi { display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,.08); background: #fff; }
+    .sjv-kpi-t { font-size: .72rem; opacity: .75; } .sjv-kpi-v { font-size: 1.25rem; font-weight: 800; line-height: 1.1; } .sjv-kpi-n { font-size: .68rem; opacity: .6; }
+    .sjv-panel { height: 100%; }
+    .sjv-h { font-weight: 700; color: #1e3a8a; margin-bottom: 8px; font-size: 1.02rem; }
+    .sjv-fy { color: #1e40af; font-size: .8rem; font-weight: 600; }
+    .sjv-desc { font-size: .85rem; margin: 0 0 8px; }
+    .sjv-row { display: flex; gap: 8px; font-size: .82rem; padding: 3px 0; } .sjv-row b { min-width: 110px; font-weight: 500; opacity: .7; }
+    .sjv-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .sjv-tbl th { background: #eaf0fb; text-align: left; padding: 6px 8px; border: 1px solid #d5deee; }
+    .sjv-tbl td { padding: 6px 8px; border: 1px solid #e5e9f2; }
+    .sjv-act { display: flex; gap: 8px; align-items: flex-start; font-size: .85rem; padding: 4px 0; }
+    .sjv-fin { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; background: #f8fafc; margin-bottom: 6px; }
+    .sjv-fin b { font-size: 1.1rem; } .sjv-up { color: #16a34a; font-weight: 600; } .sjv-dn { color: #dc2626; font-weight: 600; }
+    .mud-theme-dark .sjv-kpi, .cc-dark .sjv-kpi { background: #1c1f24; border-color: #2a2e35; }
+    .mud-theme-dark .sjv-fin, .cc-dark .sjv-fin { background: #1c1f24; }
+</style>
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Subsidiaries and JV Corner", "sjv"), new("Entity") };
+    private bool _loading = true, _isAdmin, _pdfBusy;
+    private SjvEntityDetail? _d;
+    private List<SjvEntity> _all = new();
+    private string? _loadedFor;
+    private SjvFinancial? latest => _d?.Financials.LastOrDefault();
+    private SjvFinancial? prev => _d is { Financials.Count: > 1 } ? _d.Financials[^2] : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Code == _loadedFor) return;
+        _loading = true;
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _all = await Svc.GetEntitiesAsync();
+        _d = await Svc.GetDetailAsync(Code);
+        _isAdmin = await Svc.IsAdminAsync(state.User);
+        _loadedFor = Code;
+        _loading = false;
+    }
+
+    private async Task SavePdfAsync()
+    {
+        if (_d is null) return;
+        _pdfBusy = true;
+        try
+        {
+            var logo = _d.Entity.HasLogo ? (await Svc.GetLogoAsync(_d.Entity.EntityCode))?.Bytes : null;
+            var bytes = SjvPdfExporter.Build(_d, logo);
+            var name = $"{_d.Entity.EntityCode}_{DateTime.Now:yyyyMMdd}.pdf";
+            await JS.InvokeVoidAsync("appDownloadFile", name, Convert.ToBase64String(bytes), "application/pdf");
+        }
+        catch (Exception ex) { Snackbar.Add("PDF could not be created: " + ex.Message, Severity.Error); }
+        finally { _pdfBusy = false; }
+    }
+
+    private static string? AsOn(string? s) => string.IsNullOrWhiteSpace(s) ? null : "As on " + s;
+
+    private RenderFragment Kpi(string icon, string title, string value, string? note) => __builder =>
+    {
+        <div class="sjv-kpi"><MudIcon Icon="@icon" Color="Color.Error" Size="Size.Large" />
+            <div><div class="sjv-kpi-t">@title</div><div class="sjv-kpi-v">@value</div>@if (note != null) { <div class="sjv-kpi-n">@note</div> }</div></div>
+    };
+
+    private RenderFragment Row(string label, string? value) => __builder =>
+    {
+        <div class="sjv-row"><b>@label</b><span>@(string.IsNullOrWhiteSpace(value) ? "-" : value)</span></div>
+    };
+
+    // Signed amount change, e.g. -600 -> 300 shows "+900".
+    private static string Signed(decimal? v) => v.HasValue ? (v.Value > 0 ? "+" : "") + v.Value.ToString("N0") : "";
+
+    private RenderFragment FinCard(string label, decimal? cur, decimal? prevV) => __builder =>
+    {
+        var g = SubsidiaryJvService.Growth(cur, prevV);
+        var ch = SubsidiaryJvService.Change(cur, prevV);
+        <div class="sjv-fin"><div><div style="font-size:.75rem;opacity:.7">@label</div><b>@(cur.HasValue ? cur.Value.ToString("N0") + " Cr" : "-")</b></div>
+            @if (ch.HasValue && (g.HasValue || ch.Value != 0)) { <span class="@(ch < 0 ? "sjv-dn" : "sjv-up")">@(ch < 0 ? "▼" : "▲") @(g.HasValue ? Math.Abs(g.Value).ToString("0.0") + "%" : "") <span style="font-size:.7rem">(@Signed(ch) Cr)</span></span> }</div>
+    };
+
+    private RenderFragment TrendRow(string label, Func<SjvFinancial, decimal?> sel) => __builder =>
+    {
+        var vals = _d!.Financials.Select(sel).ToList();
+        var g = vals.Count > 1 ? SubsidiaryJvService.Growth(vals[^1], vals[^2]) : null;
+        var ch = vals.Count > 1 ? SubsidiaryJvService.Change(vals[^1], vals[^2]) : null;
+        <tr><td>@label</td>@foreach (var v in vals) { <td>@(v.HasValue ? v.Value.ToString("N0") : "-")</td> }
+            <td>@if (ch.HasValue) { <span class="@(ch < 0 ? "sjv-dn" : "sjv-up")">@(g.HasValue ? Math.Abs(g.Value).ToString("0.0") + "% " : "")@(ch < 0 ? "▼" : "▲") (@Signed(ch))</span> } else { <span>-</span> }</td></tr>
+    };
+
+    private RenderFragment QuarterRow(string label, Func<SjvQuarterly, decimal?> sel) => __builder =>
+    {
+        var vals = _d!.Quarterly.Select(sel).ToList();
+        var g = vals.Count > 1 ? SubsidiaryJvService.Growth(vals[^1], vals[^2]) : null;
+        var ch = vals.Count > 1 ? SubsidiaryJvService.Change(vals[^1], vals[^2]) : null;
+        <tr><td>@label</td>@foreach (var v in vals) { <td>@(v.HasValue ? v.Value.ToString("N0") : "-")</td> }
+            <td>@if (ch.HasValue) { <span class="@(ch < 0 ? "sjv-dn" : "sjv-up")">@(g.HasValue ? Math.Abs(g.Value).ToString("0.0") + "% " : "")@(ch < 0 ? "▼" : "▲") (@Signed(ch))</span> } else { <span>-</span> }</td></tr>
+    };
+}

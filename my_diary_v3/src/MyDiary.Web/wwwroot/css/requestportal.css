@@ -1,0 +1,695 @@
+/* Request Portal (Project A) CSS variables — required by the .rp-* rules below.
+   Scoped to vars only; no global element/.mud overrides (keeps My Diary layout intact). */
+:root {
+    --gh-canvas:        #ffffff;
+    --gh-canvas-subtle: #f6f8fa;
+    --gh-canvas-inset:  #eaeef2;
+    --gh-border:        #d0d7de;
+    --gh-border-muted:  #d8dee4;
+    --gh-border-strong: #afb8c1;
+    --gh-fg:            #1f2328;
+    --gh-fg-muted:      #59636e;
+    --gh-fg-subtle:     #6e7781;
+    --gh-accent:        #0969da;
+    --gh-accent-hover:  #0860ca;
+    --gh-accent-subtle: #ddf4ff;
+    --gh-success:       #1f883d;
+    --gh-success-fg:    #1a7f37;
+    --gh-success-bg:    #dafbe1;
+    --gh-danger:        #cf222e;
+    --gh-danger-bg:     #ffebe9;
+    --gh-attention:     #9a6700;
+    --gh-attention-bg:  #fff8c5;
+    --gh-done:          #8250df;
+    --gh-done-bg:       #fbefff;
+    --gh-radius:        6px;
+    --gh-radius-sm:     4px;
+    --gh-shadow-sm:     0 1px 0 rgba(31,35,40,.04);
+    --gh-shadow:        0 3px 6px rgba(140,149,159,.15);
+    --rp-navy:        #1E3A8A;
+    --rp-navy-deep:   #15296b;
+    --rp-red:         #EF4444;
+    --rp-grad:        linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    --rp-sidebar-bg:  #16243a;
+    --rp-sidebar-bg2: #0f1a2e;
+    --rp-sidebar-fg:  #ffffff;
+}
+/* Request Portal (Project A) component styles — extracted .rp-* + :root vars. No global/.mud overrides (avoids clashing with My Diary layout). */
+/* Notification bell */
+.rp-notif-popover { width: 380px; max-width: 90vw;}
+.rp-notif-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px;}
+.rp-notif-empty { padding: 18px; text-align: center; color: var(--gh-fg-muted);}
+.rp-notif-footer { display: flex; justify-content: center; padding: 6px;}
+.rp-notif-row { padding: 8px 14px !important;}
+.rp-notif-row.rp-notif-unread { background: var(--gh-accent-subtle) !important;}
+.rp-notif-line1 { display: flex; align-items: center; gap: 6px;}
+.rp-notif-line1 .rp-notif-title { flex: 1; font-weight: 600; font-size: 13px;}
+.rp-notif-line1 .rp-notif-time { color: var(--gh-fg-muted); font-size: 11px;}
+.rp-notif-line2 {
+    margin-left: 26px; margin-top: 2px;
+    color: var(--gh-fg-muted); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+/* Notifications page row highlight */
+.rp-notif-unread-row { background: var(--gh-accent-subtle) !important;}
+/* Per-event icon wrapper (used in bell + Notifications page) */
+.rp-notif-iconwrap {
+    position: relative;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,.18);}
+.rp-notif-iconwrap .rp-notif-rpdot {
+    position: absolute; right: -4px; bottom: -4px;
+    background: #fff; color: #1E3A8A;
+    font-size: 9px; font-weight: 700; line-height: 1;
+    padding: 2px 4px; border-radius: 8px;
+    border: 1px solid #1E3A8A;
+    letter-spacing: .2px;}
+.rp-notif-line1 { gap: 10px;}
+.rp-notif-line2 { margin-left: 42px;}
+/* ── Nav root container ─────────────────────────────────────── */
+.rp-nav {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0 16px;
+    gap: 2px;
+    overflow-y: auto;
+    overflow-x: hidden;}
+.rp-nav-section {
+    display: flex;
+    flex-direction: column;}
+/* small visual divider between the top standalone links and the groups */
+.rp-nav-section-top {
+    margin-bottom: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,.08);}
+/* ── Standalone nav link (Home, Notifications) ── */
+.rp-navlink {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px 9px 16px;
+    margin: 1px 8px;
+    border-radius: 7px;
+    color: rgba(255,255,255,.85);
+    font-size: 13.5px;
+    font-weight: 500;
+    text-decoration: none !important;
+    border-left: 3px solid transparent;
+    transition: background .14s, color .14s;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;}
+.rp-navlink:hover {
+    background: rgba(255,255,255,.07);
+    color: #fff;
+    text-decoration: none !important;}
+.rp-navlink.active {
+    background: rgba(255,255,255,.13);
+    color: #fff !important;
+    border-left-color: var(--rp-red);
+    font-weight: 600;}
+.rp-navlink.active .rp-navlink-icon .mud-icon-root { color: var(--rp-red) !important;}
+/* ── Sub-link (inside a group) ── */
+.rp-navlink-sub {
+    padding-left: 42px !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    color: rgba(255,255,255,.72) !important;
+    margin: 1px 8px;
+    border-radius: 6px;
+    border-left: 2px solid transparent;}
+.rp-navlink-sub:hover {
+    background: rgba(255,255,255,.06) !important;
+    color: rgba(255,255,255,.95) !important;}
+.rp-navlink-sub.active {
+    background: #ffffff !important;
+    color: #1f2328 !important;
+    border-left-color: var(--rp-red) !important;
+    font-weight: 600 !important;}
+.rp-navlink-sub.active .rp-navlink-icon .mud-icon-root { color: var(--rp-navy) !important;}
+/* ── Icon & label inside any navlink ── */
+.rp-navlink-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;}
+.rp-navlink-icon .mud-icon-root {
+    font-size: 18px !important;
+    color: rgba(255,255,255,.70);
+    transition: color .14s;}
+.rp-navlink:hover .rp-navlink-icon .mud-icon-root { color: rgba(255,255,255,.92);}
+.rp-navlink-label { flex: 1; line-height: 1.3;}
+/* ── Group header button ── */
+.rp-navgroup-header {
+    all: unset;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px 9px 16px;
+    margin: 1px 8px;
+    border-radius: 7px;
+    color: rgba(255,255,255,.90);
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    width: calc(100% - 16px);
+    box-sizing: border-box;
+    letter-spacing: .01em;
+    transition: background .14s, color .14s;
+    border-left: 3px solid transparent;
+    white-space: nowrap;
+    overflow: hidden;}
+.rp-navgroup-header:hover {
+    background: rgba(255,255,255,.07);
+    color: #fff;}
+.rp-navgroup-header.open {
+    background: rgba(255,255,255,.10);
+    color: #fff;
+    border-left-color: rgba(255,255,255,.30);}
+.rp-navgroup-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;}
+.rp-navgroup-icon .mud-icon-root {
+    font-size: 18px !important;
+    color: rgba(255,255,255,.70);}
+.rp-navgroup-header.open .rp-navgroup-icon .mud-icon-root { color: rgba(255,255,255,.95);}
+.rp-navgroup-label { flex: 1;}
+.rp-navgroup-chevron {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: transform .2s ease;}
+.rp-navgroup-chevron .mud-icon-root {
+    font-size: 16px !important;
+    color: rgba(255,255,255,.45);}
+.rp-navgroup-header.open .rp-navgroup-chevron {
+    transform: rotate(180deg);}
+.rp-navgroup-header.open .rp-navgroup-chevron .mud-icon-root { color: rgba(255,255,255,.70);}
+/* ── Collapsible sub-items wrapper ── */
+.rp-navgroup-items {
+    display: none;
+    flex-direction: column;
+    padding: 2px 0 4px;
+    /* subtle left accent track behind sub-items */
+    margin-left: 27px;
+    border-left: 1px solid rgba(255,255,255,.10);
+    margin-right: 0;}
+.rp-navgroup-items.open {
+    display: flex;}
+/* reset sub-link margin to line up with the track */
+.rp-navgroup-items .rp-navlink-sub {
+    margin-left: 0;
+    margin-right: 8px;
+    border-radius: 0 6px 6px 0;
+    padding-left: 18px !important;}
+/* ── Always-visible App Home section ─────────────────────────── */
+.rp-nav-always {
+    padding: 8px 8px 6px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    margin-bottom: 4px;}
+/* ── App Home link — always visible ──────────────────────────── */
+.rp-app-home-link {
+    background: rgba(255,255,255,.06) !important;
+    border: 1px solid rgba(255,255,255,.10) !important;}
+.rp-app-home-link:hover  { background: rgba(255,255,255,.10) !important;}
+.rp-app-home-link.active { background: rgba(255,255,255,.14) !important; border-color: rgba(255,255,255,.22) !important;}
+/* ── Module label (shown at top of each module sidebar) ──────── */
+.rp-module-label {
+    display: flex;
+    align-items: center;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: rgba(255,255,255,.45);
+    padding: 10px 19px 5px;
+    user-select: none;}
+.rp-module-label .mud-icon-root { font-size: 14px !important;}
+/* ── "Modules" divider label above the switch buttons ────────── */
+.rp-module-divider {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: rgba(255,255,255,.30);
+    padding: 10px 19px 4px;
+    user-select: none;}
+/* ── Section group label (e.g. "People & Org", "Request Config") */
+.rp-nav-group-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: rgba(255,255,255,.30);
+    padding: 8px 19px 3px;
+    user-select: none;}
+/* ── Module switch buttons ───────────────────────────────────── */
+.rp-module-btn {
+    all: unset;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 8px 16px;
+    margin: 1px 8px;
+    border-radius: 7px;
+    color: rgba(255,255,255,.82);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    width: calc(100% - 16px);
+    box-sizing: border-box;
+    border-left: 3px solid transparent;
+    transition: background .13s, color .13s;
+    white-space: nowrap;
+    overflow: hidden;}
+.rp-module-btn:hover { background: rgba(255,255,255,.07); color: #fff;}
+.rp-module-btn.active {
+    background: rgba(255,255,255,.12);
+    color: #fff;
+    border-left-color: var(--rp-red);
+    font-weight: 600;}
+.rp-module-btn-icon  { display:flex; align-items:center; flex-shrink:0;}
+.rp-module-btn-icon .mud-icon-root { font-size: 18px !important; color: rgba(255,255,255,.65);}
+.rp-module-btn:hover .rp-module-btn-icon .mud-icon-root { color: rgba(255,255,255,.90);}
+.rp-module-btn.active .rp-module-btn-icon .mud-icon-root { color: #fff;}
+.rp-module-btn-label { flex: 1;}
+.rp-module-btn-arrow { margin-left: auto; color: rgba(255,255,255,.30); font-size: 16px;}
+/* ── Module chip in app bar ───────────────────────────────────────────────── */
+.rp-module-chip {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    height: 22px !important;}
+/* ── Admin dropdown in appbar ────────────────────────────────────────────── */
+.rp-appbar-greet-btn {
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    transition: background .12s;}
+.rp-appbar-greet-btn:hover { background: rgba(0,0,0,.05);}
+.rp-greet-sub { color: #59636e; font-size: 11px;}
+.rp-greet-roles { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px;}
+.rp-role-mini-chip { height: 16px !important; font-size: 10px !important; padding: 0 6px !important;}
+/* ── Module navigation cards (AppHome) ───────────────────────────────────── */
+.rp-module-card {
+    transition: transform .12s, box-shadow .12s;
+    border-radius: 10px !important;}
+.rp-module-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(30,58,138,.12) !important;}
+.rp-module-card-icon {
+    width: 48px; height: 48px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;}
+/* Brand block at top of sidebar */
+.rp-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 64px;
+    padding: 0 18px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: .01em;
+    background: rgba(0,0,0,.18);
+    border-bottom: 1px solid rgba(255,255,255,.06);}
+.rp-brand .mud-icon-root { color: var(--rp-red) !important; font-size: 26px !important;}
+.rp-brand-mark {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: var(--rp-grad);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 800; color: #fff; font-size: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);}
+/* ---------- PageInfoIcon ⓘ button ---------- */
+/* Rendered as a direct flex child of .rp-page-header-row or .f360-page-hero.
+   No JS, no absolute positioning, no transform conflicts. */
+.pi-btn {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.6);
+    cursor: pointer;
+    background: rgba(255,255,255,0.18);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    flex-shrink: 0;
+    margin-left: auto;            /* push to right edge of the flex row */
+    transition: background 0.15s, box-shadow 0.15s, transform 0.15s;}
+/* ---------- Gradient page header (breadcrumbs + title) ---------- */
+.rp-page-header {
+    background: var(--rp-grad);
+    border-radius: 10px;
+    padding: 16px 22px;
+    margin-bottom: 22px;
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(30,58,138,.20);
+    position: relative; /* allows PageInfoIcon button to be absolutely positioned inside */}
+.rp-page-header .rp-breadcrumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: rgba(255,255,255,.95);
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;}
+.rp-page-header .rp-breadcrumbs a {
+    color: rgba(255,255,255,.95) !important;
+    text-decoration: none;}
+.rp-page-header .rp-breadcrumbs a:hover { text-decoration: underline;}
+.rp-page-header .rp-breadcrumbs .rp-sep { opacity: .65; margin: 0 2px;}
+.rp-page-header .rp-breadcrumbs .rp-current { color: #fff; font-weight: 600;}
+.rp-page-header .rp-breadcrumbs .mud-icon-root { font-size: 16px !important;}
+.rp-page-header .rp-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+    letter-spacing: -.005em;
+    line-height: 1.2;}
+.rp-page-header .rp-subtitle {
+    font-size: 13px;
+    color: rgba(255,255,255,.85);
+    margin-top: 4px;}
+.rp-page-header .rp-actions { margin-left: auto;}
+.rp-page-header-row {
+    display: flex; align-items: center; gap: 12px;}
+/* Compact centered banner — for dashboard-style title strip */
+.rp-page-banner {
+    background: var(--rp-grad);
+    border-radius: 8px;
+    padding: 12px 24px;
+    text-align: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 22px;
+    letter-spacing: .01em;
+    box-shadow: 0 4px 14px rgba(30,58,138,.20);}
+/* ---------- Tables: navy header variant ---------- */
+.mud-table.rp-data-table .mud-table-head .mud-table-cell,
+.rp-data-table .mud-table-head .mud-table-cell {
+    background: var(--rp-navy) !important;
+    color: #fff !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    border-bottom: none !important;
+    padding: 12px !important;}
+.mud-data-grid.rp-data-table .mud-table-head .mud-table-cell {
+    background: var(--rp-navy) !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;}
+.mud-data-grid.rp-data-table .mud-table-head .mud-table-sort-label,
+.mud-data-grid.rp-data-table .mud-table-head .mud-table-sort-label-icon { color: rgba(255,255,255,.85) !important;}
+/* ---------- Profile / role card ---------- */
+.rp-profile-card {
+    background: var(--rp-grad);
+    border-radius: 12px;
+    padding: 18px 14px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(30,58,138,.20);}
+.rp-profile-avatar {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(255,255,255,.18);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #fff; font-size: 22px;
+    margin-bottom: 8px;}
+.rp-profile-name { font-weight: 700; font-size: 15px;}
+.rp-profile-role { font-size: 12px; opacity: .9; margin-top: 4px;}
+/* ---------- Side card with colored header (navy/red) ---------- */
+.rp-side-card { border: 1px solid var(--gh-border) !important; border-radius: 10px !important; overflow: hidden; box-shadow: var(--gh-shadow-sm) !important;}
+.rp-side-card .rp-side-card-header {
+    padding: 10px 14px; color: #fff; font-weight: 700; font-size: 14px;
+    letter-spacing: .02em;}
+.rp-side-card .rp-side-card-header.navy { background: var(--rp-navy);}
+.rp-side-card .rp-side-card-header.red  { background: var(--rp-red);}
+.rp-side-card .rp-side-card-body { padding: 8px 14px;}
+/* User list avatar (Masters > Users page) */
+.rp-user-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #1E3A8A, #EF4444);
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px;
+    flex-shrink: 0;}
+/* App-bar avatar */
+.rp-avatar-circle {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: #10b981; color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px;}
+.rp-appbar-greet {
+    line-height: 1.1;
+    margin-left: 6px; margin-right: 6px;
+    color: var(--gh-fg);}
+.rp-appbar-greet .rp-greet-hi { color: var(--gh-fg-muted); font-size: 11px;}
+.rp-appbar-greet .rp-greet-name { font-weight: 700; font-size: 13px;}
+/* ================================================================
+   ATTACHMENT STYLES
+   ================================================================ */
+.rp-attachment-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--gh-border-muted);}
+.rp-attachment-row:last-child { border-bottom: none;}
+.rp-att-info   { flex: 1; min-width: 0;}
+.rp-att-name   { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.rp-att-meta   { font-size: 11px; color: var(--gh-fg-muted);}
+.rp-att-actions{ display: flex; gap: 2px; flex-shrink: 0;}
+/* ── File chip in new request form ───── */
+.rp-file-chip  {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--gh-canvas-subtle);
+    border: 1px solid var(--gh-border);
+    border-radius: 20px; padding: 4px 12px 4px 10px;
+    font-size: 12px; color: var(--gh-fg);}
+.rp-file-name  { font-weight: 600; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.rp-file-size  { color: var(--gh-fg-muted);}
+/* ================================================================
+   KPI CARDS (Handler Dashboard)
+   ================================================================ */
+.rp-kpi-card {
+    padding: 16px 20px;
+    text-align: left;
+    border-radius: 10px !important;
+    transition: box-shadow .15s;}
+.rp-kpi-card:hover { box-shadow: 0 6px 18px rgba(30,58,138,.10) !important;}
+.rp-kpi-icon {
+    width: 40px; height: 40px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 8px;}
+/* ================================================================
+   ACCESSIBILITY — WCAG 2.1 AA compliance
+   Covers: focus, touch targets, skip-link, contrast, motion,
+           high-contrast OS mode, screen-reader utilities.
+   ================================================================ */
+
+/* ── 1. Skip-to-content link (WCAG 2.4.1) ───────────────────── */
+.rp-skip-link {
+    position: fixed;
+    top: -56px;
+    left: 12px;
+    z-index: 10000;
+    background: var(--rp-navy);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 0 0 8px 8px;
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    transition: top 0.15s ease;}
+.rp-skip-link:focus,
+.rp-skip-link:focus-visible {
+    top: 0;
+    outline: 3px solid #fff;
+    outline-offset: 2px;}
+/* Override for elements on the dark sidebar (white ring) */
+.mud-drawer *:focus-visible,
+.rp-nav *:focus-visible,
+.rp-navlink:focus-visible,
+.rp-module-btn:focus-visible,
+.rp-navgroup-header:focus-visible {
+    outline: 3px solid #ffffff !important;
+    outline-offset: 2px !important;}
+/* Override for elements on gradient headers (white ring) */
+.rp-page-header *:focus-visible,
+.f360-page-hero *:focus-visible,
+.pi-btn:focus-visible {
+    outline: 3px solid #ffffff !important;
+    outline-offset: 3px !important;}
+/* Nav links */
+.rp-navlink            { min-height: 44px !important;}
+.rp-module-btn         { min-height: 44px !important;}
+.rp-navgroup-header    { min-height: 44px !important;}
+/* ── 4. Breadcrumb nav — screen-reader friendly (WCAG 1.3.1) ─── */
+.rp-breadcrumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px;}
+.rp-breadcrumbs a { text-decoration: underline;}
+/* underline = link affordance */
+.rp-breadcrumbs a:hover { opacity: 0.85;}
+.rp-breadcrumbs [aria-current="page"] { font-weight: 700; text-decoration: none;}
+.rp-sep { user-select: none; padding: 0 2px; opacity: .65;}
+/* ≥ 4.5:1 on white */
+/* Breadcrumb on gradient header — force full white */
+.rp-page-header .rp-breadcrumbs,
+.rp-page-header .rp-breadcrumbs a,
+.rp-page-header .rp-breadcrumbs span { color: #fff !important;}
+/* Sidebar text — force sufficient contrast on dark bg */
+.mud-drawer .rp-navlink,
+.mud-drawer .rp-module-btn { color: rgba(255,255,255,0.92) !important;}
+/* ── 9. Link visibility (WCAG 1.4.1 — underline distinguishes links) */
+main a:not(.mud-button-root):not(.rp-navlink):not(.rp-skip-link) {
+    text-decoration: underline;
+    text-underline-offset: 2px;}
+/* ── 11. High-contrast OS mode (WCAG 1.4.11) ─────────────────── */
+
+
+/* ── 12. Reduced motion (WCAG 2.3.3) ─────────────────────────── */
+
+
+/* ── 13. Responsive / touch (WCAG 1.3.4, 2.5.5) ─────────────── */
+/* Tablet (≤ 960px) */
+
+/* Mobile (≤ 600px) */
+
+
+/* ================================================================
+   KPI DASHBOARD — horizontal bar chart rows
+   ================================================================ */
+.rp-kpi-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;}
+.rp-kpi-bar-label {
+    width: 36px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    flex-shrink: 0;
+    text-align: right;}
+.rp-kpi-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;}
+.rp-kpi-bar {
+    height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    min-width: 30px;
+    transition: width .3s ease;}
+.rp-kpi-bar-open    { background: #1E3A8A;}
+.rp-kpi-bar-breach  { background: #cf222e;}
+.rp-kpi-bar-val {
+    width: 28px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1f2328;
+    flex-shrink: 0;}
+/* ================================================================
+   ALL DASHBOARDS — dashboard tile cards
+   ================================================================ */
+.rp-dash-tile {
+    border-radius: 10px !important;
+    transition: transform .14s, box-shadow .14s;}
+.rp-dash-tile:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(30,58,138,.12) !important;}
+.rp-dash-tile-icon {
+    width: 52px; height: 52px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;}
+.rp-dash-tile-roles { display: flex; flex-wrap: wrap; gap: 4px;}
+/* ================================================================
+   KPI DASHBOARD — 3-column type grid
+   ================================================================ */
+.rp-kpi-type-header {
+    display: flex;
+    border-bottom: 2px solid #d0d7de;}
+.rp-kpi-type-row {
+    display: flex;
+    border-bottom: 1px solid #eaecef;
+    transition: background .1s;}
+.rp-kpi-type-row:hover { background: #f6f8fa !important;}
+.rp-kpi-type-row:last-child { border-bottom: none;}
+.rp-kpi-row-bold { background: #f6f8fa;}
+.rp-kpi-type-cell {
+    flex: 1;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;}
+.rp-kpi-row-label-cell {
+    flex: 1.2;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #475569;
+    border-right: 1px solid #d0d7de;
+    background: #f8fafc;}
+.rp-kpi-type-col-header {
+    flex: 1;
+    justify-content: center;
+    padding: 14px 10px;
+    border-right: 1px solid rgba(0,0,0,.06);}
+.rp-kpi-type-col-header:last-child { border-right: none;}
+.rp-kpi-data-cell {
+    flex: 1;
+    justify-content: center;
+    border-right: 1px solid #eaecef;}
+.rp-kpi-data-cell:last-child { border-right: none;}
+.rp-kpi-val      { font-size: 16px; font-weight: 600; color: #1f2328;}
+.rp-kpi-bold-val { font-size: 18px; font-weight: 800; color: #1E3A8A;}
+/* Bar stats column (right of bar) */
+.rp-kpi-bar-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 32px;
+    gap: 4px;}
+.rp-kpi-bar-open-num   { font-size: 12px; font-weight: 700; color: #1E3A8A;}
+.rp-kpi-bar-breach-num { font-size: 11px; font-weight: 600; color: #cf222e;}
+/* Sidebar Focus 360 link — subtle highlight to distinguish it */
+.rp-navlink-focus360 {
+    background: linear-gradient(90deg, rgba(30,58,138,.06), transparent) !important;
+    border-left: 2px solid #1E3A8A !important;
+    margin-left: 6px !important;}
+.rp-navlink-focus360.active,
+.rp-navlink-focus360:hover {
+    background: linear-gradient(90deg, rgba(30,58,138,.12), transparent) !important;}
+.rp-navlink-focus360 .mud-icon-root { color: #1E3A8A !important;}
+
+/* ── Qlik brand-icon nav link — align custom <img> icon + label with the
+   standard MudNavLink items (which use a 24px icon + 12px text margin).
+   MudNavLink drops our child content into .mud-nav-link-text, which carries a
+   12px left margin; cancel it and rebuild the icon→text row so the Qlik icon
+   lines up with the MIS / Qlik Dashboard icons above it. ── */
+.qlik-nav-link .mud-nav-link-text {
+    margin-left: 0 !important;
+    margin-inline-start: 0 !important;
+    display: flex;
+    align-items: center;
+    gap: 12px;}
+.qlik-nav-icon {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    flex: 0 0 auto;}

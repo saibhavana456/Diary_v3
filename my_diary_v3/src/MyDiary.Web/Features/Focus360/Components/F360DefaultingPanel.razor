@@ -1,0 +1,177 @@
+@using System.Data
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Focus360.Models
+
+<div class="f360-ops-panel" role="region" aria-label="Defaulting Accounts and UCIC Pendency">
+    <div class="f360-ops-subheader" style="background:#204060;color:#fff;font-weight:700;">
+        Defaulting Accounts &amp; UCIC Pendency
+    </div>
+
+    @if (_error)
+    {
+        <div class="pa-2" role="alert"><small class="text-warning">Data unavailable for this panel.</small></div>
+    }
+    else if (_data == null)
+    {
+        <div class="text-center pa-2"><small class="text-muted">No data available</small></div>
+    }
+    else
+    {
+        <table class="f360-ops-table" aria-label="Defaulting Accounts and UCIC Pendency data">
+            <thead>
+                <tr style="background:#c6e0b4;">
+                    <th></th>
+                    <th>Previous Month<br/><small>(@_data.PrevMonthDt)</small></th>
+                    <th>Previous Day<br/><small>(@_data.PrevDayDt)</small></th>
+                    <th class="today-col">Present Day<br/><small>(@_data.TodayDt)</small></th>
+                </tr>
+            </thead>
+            <tbody>
+                @* Defaulting Accounts *@
+                <tr class="section-header-row"><td colspan="4" style="background:#9bc2e6;color:#fff;font-weight:700;text-align:left;">Defaulting Accounts</td></tr>
+                <tr>
+                    <td class="lbl">Dormant</td>
+                    <td>@FmtI(_data.DefDormantPrevMonth)</td>
+                    <td>@FmtI(_data.DefDormantPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtI(_data.DefDormantToday)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Inactive</td>
+                    <td>@FmtI(_data.DefInactivePrevMonth)</td>
+                    <td>@FmtI(_data.DefInactivePrevDay)</td>
+                    <td class="today-col fw-bold">@FmtI(_data.DefInactiveToday)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">No Nomination</td>
+                    <td>@FmtI(_data.DefNoNomPrevMonth)</td>
+                    <td>@FmtI(_data.DefNoNomPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtI(_data.DefNoNomToday)</td>
+                </tr>
+
+                @* Lean Marked *@
+                <tr class="section-header-row"><td colspan="4" style="background:#548235;color:#ffffc1;font-weight:700;text-align:left;">Lien Marked</td></tr>
+                <tr>
+                    <td class="lbl">No. of Accounts</td>
+                    <td>@FmtI(_data.LienCountPrevMonth)</td>
+                    <td>@FmtI(_data.LienCountPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtI(_data.LienCountToday)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Amount</td>
+                    <td>@FmtN(_data.LienAmtPrevMonth)</td>
+                    <td>@FmtN(_data.LienAmtPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtN(_data.LienAmtToday)</td>
+                </tr>
+
+                @* DEAF *@
+                <tr class="section-header-row"><td colspan="4" style="background:#00b0f0;color:#fff;font-weight:700;text-align:left;">DEAF</td></tr>
+                <tr>
+                    <td class="lbl">No. of Accounts</td>
+                    <td>@FmtI(_data.DeafCountPrevMonth)</td>
+                    <td>@FmtI(_data.DeafCountPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtI(_data.DeafCountToday)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Amount</td>
+                    <td>@FmtN(_data.DeafAmtPrevMonth)</td>
+                    <td>@FmtN(_data.DeafAmtPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtN(_data.DeafAmtToday)</td>
+                </tr>
+
+                @* UCIC Pendency *@
+                <tr class="section-header-row"><td colspan="4" style="background:#f4b084;color:#fff;font-weight:700;text-align:left;">UCIC Pendency</td></tr>
+                <tr>
+                    <td class="lbl">Aadhaar</td>
+                    <td>@FmtI(_data.UcicAadhaarPrevMonth)</td>
+                    <td>@FmtI(_data.UcicAadhaarPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtI(_data.UcicAadhaarToday)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">PAN</td>
+                    <td>@FmtI(_data.UcicPanPrevMonth)</td>
+                    <td>@FmtI(_data.UcicPanPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtI(_data.UcicPanToday)</td>
+                </tr>
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public DataSet? DashboardData { get; set; }
+    private F360DefaultingPanelModel? _data;
+    private bool _error;
+
+    protected override void OnParametersSet()
+    {
+        if (DashboardData == null) return;
+        try { _data = Extract(DashboardData); _error = false; }
+        catch (Exception ex) { AppLogger.LogError(ex, "[F360DefaultingPanel] Extract failed"); _error = true; }
+    }
+
+    private F360DefaultingPanelModel? Extract(DataSet ds)
+    {
+        var m = new F360DefaultingPanelModel();
+        foreach (DataTable table in ds.Tables)
+        {
+            if (table.Rows.Count == 0 || !table.Columns.Contains("TableName")) continue;
+            var name = table.Rows[0]["TableName"]?.ToString();
+            var r = table.Rows[0];
+
+            switch (name)
+            {
+                case "AccountStatusReport":
+                    m.PrevMonthDt = SafeDate(r, "PrevMonthDt");
+                    m.PrevDayDt = SafeDate(r, "PrevDay2Dt");
+                    m.TodayDt = SafeDate(r, "PrevDayDt");
+                    m.DefDormantPrevMonth = SafeDec(r, "PrevMonthNoOfDormant");
+                    m.DefDormantPrevDay = SafeDec(r, "PrevDay2NoOfDormant");
+                    m.DefDormantToday = SafeDec(r, "PrevDayNoOfDormant");
+                    m.DefInactivePrevMonth = SafeDec(r, "PrevMonthNoOfInactive");
+                    m.DefInactivePrevDay = SafeDec(r, "PrevDay2NoOfInactive");
+                    m.DefInactiveToday = SafeDec(r, "PrevDayNoOfInactive");
+                    m.DefNoNomPrevMonth = SafeDec(r, "PrevMonthNoOfNoNomination");
+                    m.DefNoNomPrevDay = SafeDec(r, "PrevDay2NoOfNoNomination");
+                    m.DefNoNomToday = SafeDec(r, "PrevDayNoOfNoNomination");
+                    // Lien Marked
+                    m.LienCountPrevMonth = SafeDec(r, "PrevMonthLienMarked");
+                    m.LienCountPrevDay = SafeDec(r, "PrevDay2LienMarked");
+                    m.LienCountToday = SafeDec(r, "PrevDayLienMarked");
+                    m.LienAmtPrevMonth = SafeDec(r, "PrevMonthAmountLienMarked");
+                    m.LienAmtPrevDay = SafeDec(r, "PrevDay2AmountLienMarked");
+                    m.LienAmtToday = SafeDec(r, "PrevDayAmountLienMarked");
+                    // DEAF
+                    m.DeafCountPrevMonth = SafeDec(r, "PrevMonthNoOfDeaf");
+                    m.DeafCountPrevDay = SafeDec(r, "PrevDay2NoOfDeaf");
+                    m.DeafCountToday = SafeDec(r, "PrevDayNoOfDeaf");
+                    m.DeafAmtPrevMonth = SafeDec(r, "PrevMonthAmountDeaf");
+                    m.DeafAmtPrevDay = SafeDec(r, "PrevDay2AmountDeaf");
+                    m.DeafAmtToday = SafeDec(r, "PrevDayAmountDeaf");
+                    break;
+                case "UCICAadhaarReport":
+                    m.UcicAadhaarPrevMonth = SafeDec(r, "PrevMonthTotal");
+                    m.UcicAadhaarPrevDay = SafeDec(r, "PrevDay2Total");
+                    m.UcicAadhaarToday = SafeDec(r, "PrevDayTotal");
+                    break;
+                case "UCIC_PAN_Report":
+                    m.UcicPanPrevMonth = SafeDec(r, "PrevMonthTotal");
+                    m.UcicPanPrevDay = SafeDec(r, "PrevDay2Total");
+                    m.UcicPanToday = SafeDec(r, "PrevDayTotal");
+                    break;
+                case "BOComplaintReport":
+                    m.ComplaintsPrevMonth = SafeDec(r, "PrevMonthNoOfComplaints");
+                    m.ComplaintsPrevDay = SafeDec(r, "PrevDay2NoOfComplaints");
+                    m.ComplaintsToday = SafeDec(r, "PrevDayNoOfComplaints");
+                    break;
+            }
+        }
+        return m;
+    }
+
+    private static string SafeDate(DataRow r, string col) { try { return r.Table.Columns.Contains(col) && r[col] != DBNull.Value ? Convert.ToDateTime(r[col]).ToString("dd/MM/yyyy") : "—"; } catch { return "—"; } }
+    private static decimal SafeDec(DataRow r, string col) { try { return r.Table.Columns.Contains(col) && r[col] != DBNull.Value ? Convert.ToDecimal(r[col]) : 0m; } catch { return 0m; } }
+    private static string FmtN(decimal v) => v.ToString("N2");
+    // Count-based fields (Dormant/Inactive/No Nomination, No. of Accounts, UCIC
+    // Aadhaar/PAN) are whole numbers; only Amount fields keep 2 decimals (FmtN).
+    private static string FmtI(decimal v) => v.ToString("N0");
+}

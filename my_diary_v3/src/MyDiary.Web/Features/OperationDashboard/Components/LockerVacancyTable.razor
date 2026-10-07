@@ -1,0 +1,194 @@
+﻿@using System.Data
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.OperationDashboard.Models
+@using MyDiary.Web.Features.OperationDashboard.Services
+
+<div class="card mb-2 shadow-sm">
+    <div class="card-header text-white py-1 px-2"
+         style="min-height:28px;
+            background: #1E3A8A;">
+        <h6 class="mb-0" style="font-size:13px;">Locker Vacancy & Overdue</h6>
+    </div>
+
+    <div class="card-body p-1" style="padding:2px !important;">
+        @if (isLoading)
+        {
+            <div class="p-2 text-center">
+                <div class="spinner-border text-primary" style="width:18px;height:18px;"></div>
+            </div>
+        }
+        else if (data == null || hasError)
+        {
+            <div class="p-3 text-center text-muted small">
+                <i class="fa-solid fa-folder-open mb-1"></i><br />
+                <strong>No record present currently.</strong>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm mb-0 text-center compact-table">
+
+                    <thead>
+                        <tr>
+                            <th colspan="4">Prev Month</th>
+                            <th colspan="4">Prev Day</th>
+                            <th colspan="4" class="text-primary">Today</th>
+                        </tr>
+
+                        <tr>
+                            <th colspan="4"><small>(@data.PrevMonthDt.ToString("dd/MM/yyyy"))</small></th>
+                            <th colspan="4"><small>(@data.PrevDay2Dt.ToString("dd/MM/yyyy"))</small></th>
+                            <th colspan="4" class="text-primary"><small>(@data.PrevDayDt.ToString("dd/MM/yyyy"))</small></th>
+                        </tr>
+
+                        <tr>
+                            <th>Total</th>
+                            <th>Vacant</th>
+                            <th>Overdue</th>
+                            <th>Amt</th>
+
+                            <th>Total</th>
+                            <th>Vacant</th>
+                            <th>Overdue</th>
+                            <th>Amt</th>
+
+                            <th>Total</th>
+                            <th>Vacant</th>
+                            <th>Overdue</th>
+                            <th>Amt</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        <tr>
+                            <td>@data.PrevMonthNoOfLockers.ToString("N0")</td>
+                            <td>@data.PrevMonthNoOfVacantLockers.ToString("N0")</td>
+                            <td class="text-danger">@data.PrevMonthNoOfLockersWithDueRent.ToString("N0")</td>
+                            <td class="text-danger">@data.PrevMonthTotal.ToString("N2")</td>
+
+                            <td>@data.PrevDay2NoOfLockers.ToString("N0")</td>
+                            <td>@data.PrevDay2NoOfVacantLockers.ToString("N0")</td>
+                            <td class="text-danger">@data.PrevDay2NoOfLockersWithDueRent.ToString("N0")</td>
+                            <td class="text-danger">@data.PrevDay2Total.ToString("N2")</td>
+
+                            <td class="bg-light fw-bold">@data.PrevDayNoOfLockers.ToString("N0")</td>
+                            <td class="bg-light fw-bold text-success">@data.PrevDayNoOfVacantLockers.ToString("N0")</td>
+                            <td class="bg-light fw-bold text-danger">@data.PrevDayNoOfLockersWithDueRent.ToString("N0")</td>
+                            <td class="bg-light fw-bold text-danger">@data.PrevDayTotal.ToString("N2")</td>
+                        </tr>
+
+                        <tr class="table-warning">
+                            <td colspan="8" class="text-end fw-bold small">Var:</td>
+                            <td>@RenderVariation(data.PrevDayNoOfLockers, data.PrevDay2NoOfLockers, "N0")</td>
+                            <td>@RenderVariation(data.PrevDayNoOfVacantLockers, data.PrevDay2NoOfVacantLockers, "N0")</td>
+                            <td>@RenderVariation(data.PrevDayNoOfLockersWithDueRent, data.PrevDay2NoOfLockersWithDueRent, "N0")</td>
+                            <td>@RenderVariation(data.PrevDayTotal, data.PrevDay2Total, "N2")</td>
+                        </tr>
+                    </tbody>
+
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .compact-table {
+        font-size: 10.5px;
+        border-collapse: collapse;
+    }
+
+        .compact-table th,
+        .compact-table td {
+            padding: 2px 4px !important;
+            line-height: 1 !important;
+            height: 18px !important;
+        }
+
+        .compact-table thead th {
+            font-size: 10px;
+        }
+</style>
+
+@code {
+    [Parameter] public DataSet DashboardData { get; set; }
+
+    private bool isLoading = true;
+    private bool hasError = false;
+    private LockerReportDto data;
+
+    protected override void OnParametersSet()
+    {
+        isLoading = true;
+        hasError = false;
+
+        try
+        {
+            if (DashboardData != null)
+            {
+                data = ExtractLocker(DashboardData);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[LockerVacancyTable] Error: " + ex.Message);
+            hasError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private LockerReportDto ExtractLocker(DataSet ds)
+    {
+        foreach (DataTable table in ds.Tables)
+        {
+            if (table.Rows.Count > 0 && table.Columns.Contains("TableName"))
+            {
+                var row = table.Rows[0];
+
+                if (row["TableName"]?.ToString() == "LockerReport")
+                {
+                    return new LockerReportDto
+                        {
+                            PrevDayDt = Convert.ToDateTime(row["PrevDayDt"]),
+                            PrevDayNoOfLockers = Convert.ToInt32(row["PrevDayNoOfLockers"]),
+                            PrevDayNoOfVacantLockers = Convert.ToInt32(row["PrevDayNoOfVacantLockers"]),
+                            PrevDayNoOfLockersWithDueRent = Convert.ToInt32(row["PrevDayNoOfLockersWithDueRent"]),
+                            PrevDayTotal = Convert.ToDecimal(row["PrevDayTotal"]),
+
+                            PrevDay2Dt = Convert.ToDateTime(row["PrevDay2Dt"]),
+                            PrevDay2NoOfLockers = Convert.ToInt32(row["PrevDay2NoOfLockers"]),
+                            PrevDay2NoOfVacantLockers = Convert.ToInt32(row["PrevDay2NoOfVacantLockers"]),
+                            PrevDay2NoOfLockersWithDueRent = Convert.ToInt32(row["PrevDay2NoOfLockersWithDueRent"]),
+                            PrevDay2Total = Convert.ToDecimal(row["PrevDay2Total"]),
+
+                            PrevMonthDt = Convert.ToDateTime(row["PrevMonthDt"]),
+                            PrevMonthNoOfLockers = Convert.ToInt32(row["PrevMonthNoOfLockers"]),
+                            PrevMonthNoOfVacantLockers = Convert.ToInt32(row["PrevMonthNoOfVacantLockers"]),
+                            PrevMonthNoOfLockersWithDueRent = Convert.ToInt32(row["PrevMonthNoOfLockersWithDueRent"]),
+                            PrevMonthTotal = Convert.ToDecimal(row["PrevMonthTotal"]),
+
+                            TableName = "LockerReport"
+                        };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private RenderFragment RenderVariation(decimal current, decimal previous, string format) => __builder =>
+    {
+        var metrics = VariationMetrics.Calculate(current, previous);
+        string colorClass = metrics.AbsoluteChange <= 0 ? "text-success" : "text-danger";
+        string sign = metrics.AbsoluteChange > 0 ? "+" : "";
+
+        <span class="@colorClass fw-bold small">
+            @sign@metrics.AbsoluteChange.ToString(format)
+        </span>
+        ;
+    };
+}

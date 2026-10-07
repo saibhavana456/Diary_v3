@@ -1,0 +1,170 @@
+@namespace RequestPortal.Web.Pages.Reports
+@page "/reports/sla"
+@inject IRequestRepo RequestRepo
+
+<PageTitle>SLA Report</PageTitle>
+<PageHeader PageKey="reports-sla" Title="SLA Breach Report" Subtitle="Requests that have breached or are approaching their SLA deadline."
+            Crumbs="@(new List<PageHeader.Crumb>{ new("Reports"), new("SLA Report") })" />
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+}
+else
+{
+    @* ── Summary cards ── *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="1" Style="border-top:4px solid #cf222e">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Breached</MudText>
+                <MudText Typo="Typo.h3" Style="font-weight:700;color:#cf222e">@_breached.Count</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="1" Style="border-top:4px solid #9a6700">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Due within 24 h</MudText>
+                <MudText Typo="Typo.h3" Style="font-weight:700;color:#9a6700">@_atRisk.Count</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="1" Style="border-top:4px solid #1a7f37">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Within SLA</MudText>
+                <MudText Typo="Typo.h3" Style="font-weight:700;color:#1a7f37">@_healthy.Count</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Class="pa-4 text-center" Elevation="1" Style="border-top:4px solid #59636e">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">No SLA set</MudText>
+                <MudText Typo="Typo.h3" Style="font-weight:700;color:#59636e">@_noSla.Count</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ── By level breakdown ── *@
+    <MudGrid Class="mb-4">
+        @foreach (var lv in _byLevel)
+        {
+            <MudItem xs="6" sm="3">
+                <MudPaper Class="pa-3" Elevation="1">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Level @lv.Level</MudText>
+                    <div class="d-flex justify-space-between mt-1">
+                        <span style="color:#cf222e;font-weight:600">@lv.Breached breached</span>
+                        <span style="color:#59636e">@lv.Total open</span>
+                    </div>
+                    <MudProgressLinear Value="@(lv.Total == 0 ? 0 : lv.Breached * 100.0 / lv.Total)"
+                                       Color="Color.Error" Rounded="true" Class="mt-1" />
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+
+    @* ── Breached requests table ── *@
+    @if (_breached.Any())
+    {
+        <MudText Typo="Typo.h6" Class="mb-2" Style="color:#cf222e">
+            <MudIcon Icon="@Icons.Material.Filled.Error" Size="Size.Small" Class="mr-1" />Breached Requests
+        </MudText>
+        <MudPaper Elevation="1" Class="mb-4">
+            <MudTable T="SlaItem" Items="@_breached" Dense="true" Hover="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Ref #</MudTh><MudTh>Type</MudTh><MudTh>Subject</MudTh>
+                    <MudTh>Raised By</MudTh><MudTh>Unit</MudTh><MudTh>Level</MudTh>
+                    <MudTh>SLA Due</MudTh><MudTh>Overdue By</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @SlaTableRow(context)
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
+    @* ── At-risk table ── *@
+    @if (_atRisk.Any())
+    {
+        <MudText Typo="Typo.h6" Class="mb-2" Style="color:#9a6700">
+            <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="mr-1" />At Risk — due within 24 hours
+        </MudText>
+        <MudPaper Elevation="1">
+            <MudTable T="SlaItem" Items="@_atRisk" Dense="true" Hover="true" Class="rp-data-table">
+                <HeaderContent>
+                    <MudTh>Ref #</MudTh><MudTh>Type</MudTh><MudTh>Subject</MudTh>
+                    <MudTh>Raised By</MudTh><MudTh>Unit</MudTh><MudTh>Level</MudTh>
+                    <MudTh>SLA Due</MudTh><MudTh>Remaining</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @SlaTableRow(context)
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+}
+
+@code {
+    private List<SlaItem> _breached = new(), _atRisk = new(), _healthy = new(), _noSla = new();
+    private List<LvBreakdown> _byLevel = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var (all, _) = await RequestRepo.ListAsync(new FilterDto(PageSize: 500), null, null);
+            var open     = all.Where(r => r.Status is not ("Closed" or "Cancelled")).ToList();
+            var now      = DateTime.UtcNow;
+
+            SlaItem ToItem(RequestListItem r)
+            {
+                var diff = r.SlaDueUtc.HasValue ? (r.SlaDueUtc.Value - now) : (TimeSpan?)null;
+                return new SlaItem(r.Id, r.ReqNo, r.RequestTypeName, r.Subject, r.RaisedByName, r.UnitName, r.CurrentLevel, r.SlaDueUtc, diff);
+            }
+
+            _breached = open.Where(r => r.SlaDueUtc.HasValue && r.SlaDueUtc < now)
+                           .OrderBy(r => r.SlaDueUtc).Select(ToItem).ToList();
+            _atRisk   = open.Where(r => r.SlaDueUtc.HasValue && r.SlaDueUtc >= now && r.SlaDueUtc < now.AddDays(1))
+                           .OrderBy(r => r.SlaDueUtc).Select(ToItem).ToList();
+            _healthy  = open.Where(r => r.SlaDueUtc.HasValue && r.SlaDueUtc >= now.AddDays(1)).Select(ToItem).ToList();
+            _noSla    = open.Where(r => !r.SlaDueUtc.HasValue).Select(ToItem).ToList();
+
+            _byLevel  = open.GroupBy(r => r.CurrentLevel)
+                           .OrderBy(g => g.Key)
+                           .Select(g => new LvBreakdown(g.Key, g.Count(),
+                               g.Count(r => r.SlaDueUtc.HasValue && r.SlaDueUtc < now)))
+                           .ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "SlaReport: failed to load request data");
+        }
+        _loading = false;
+    }
+
+    private string DueLabel(SlaItem r)
+    {
+        if (!r.Diff.HasValue) return "—";
+        var d = r.Diff.Value;
+        return d.TotalHours < 0
+            ? $"{(int)(-d).TotalHours}h {(-d).Minutes}m overdue"
+            : $"{(int)d.TotalHours}h {d.Minutes}m remaining";
+    }
+
+    private string DueStyle(SlaItem r) =>
+        r.Diff.HasValue && r.Diff.Value.TotalHours < 0
+            ? "color:#cf222e;font-weight:600"
+            : r.Diff.HasValue && r.Diff.Value.TotalHours < 24
+                ? "color:#9a6700;font-weight:600"
+                : "";
+
+    private RenderFragment SlaTableRow(SlaItem r) =>@<text>
+        <MudTd><MudLink Href="@($"requests/{r.Id}")" Color="Color.Primary">@r.ReqNo</MudLink></MudTd>
+        <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@r.TypeName</MudChip></MudTd>
+        <MudTd Style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@r.Subject</MudTd>
+        <MudTd>@r.RaisedByName</MudTd>
+        <MudTd>@r.UnitName</MudTd>
+        <MudTd><MudChip T="string" Size="Size.Small">L@r.Level</MudChip></MudTd>
+        <MudTd><MudText Typo="Typo.caption">@(r.SlaDue.HasValue ? AppTime.ToIndia(r.SlaDue.Value).ToString("dd-MMM HH:mm") : "—")</MudText></MudTd>
+        <MudTd><span style="@DueStyle(r)">@DueLabel(r)</span></MudTd>
+    </text>;
+
+    private sealed record SlaItem(long Id, string ReqNo, string TypeName, string Subject, string RaisedByName, string UnitName, int Level, DateTime? SlaDue, TimeSpan? Diff);
+    private sealed record LvBreakdown(int Level, int Total, int Breached);
+}

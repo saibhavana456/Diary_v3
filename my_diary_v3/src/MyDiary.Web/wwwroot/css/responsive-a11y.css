@@ -1,0 +1,169 @@
+/* ============================================================================
+   responsive-a11y.css — global responsiveness + WCAG 2.2 (AA) baseline
+   Applies to ALL pages via the shared layout + MudBlazor component classes.
+   ============================================================================ */
+
+/* ---------- 1.4.4 Resize text / 1.4.10 Reflow : never force horizontal scroll ---------- */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+*, *::before, *::after { box-sizing: border-box; }
+img, svg, video, canvas, table { max-width: 100%; }
+body { overflow-x: hidden; }
+
+/* ---------- WCAG 2.4.1 Bypass Blocks : skip-to-content link ---------- */
+.skip-to-content {
+    position: absolute; left: 8px; top: -48px; z-index: 11000;
+    background: #1b4a98; color: #fff; padding: 10px 16px; border-radius: 0 0 8px 8px;
+    font-weight: 600; text-decoration: none; transition: top .15s ease-in;
+}
+.skip-to-content:focus { top: 0; outline: 3px solid #ffd400; outline-offset: 2px; }
+
+/* ---------- WCAG 2.4.7 + 2.4.13 Focus Visible / Focus Appearance ----------
+   A consistent, high-contrast focus indicator (>=2px, offset) on everything
+   interactive, including MudBlazor elements. */
+/* Note: text inputs, textareas and <select> are intentionally EXCLUDED here.
+   Browsers treat a mouse click into a text field / dropdown as :focus-visible,
+   so applying this heavy ring to them shows the blue border for ALL users on
+   every click. Those controls already indicate focus (caret / native styling)
+   and are announced by screen readers, so accessibility is preserved without
+   the ring. The ring is kept on buttons, links, nav and other controls where a
+   mouse click does NOT trigger :focus-visible. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+.mud-button-root:focus-visible,
+.mud-icon-button:focus-visible,
+.mud-nav-link:focus-visible,
+.mud-table-row:focus-visible {
+    outline: 3px solid #1b4a98 !important;
+    outline-offset: 2px !important;
+    border-radius: 4px;
+}
+/* On dark sidebar use a light focus ring for contrast */
+.md-sidebar a:focus-visible,
+.md-sidebar button:focus-visible,
+.md-sidebar .mud-nav-link:focus-visible,
+.md-module-btn:focus-visible,
+.md-back-btn:focus-visible {
+    outline: 3px solid #ffd400 !important;
+    outline-offset: 2px !important;
+}
+
+/* ---------- WCAG 2.5.8 Target Size (Minimum 24×24); 44px on touch ---------- */
+button, [role="button"], a.mud-nav-link, .mud-icon-button, .appbar-icon-btn,
+.md-module-btn, .md-back-btn {
+    min-height: 24px;
+    min-width: 24px;
+}
+@media (pointer: coarse) {
+    button, [role="button"], a.mud-nav-link, .mud-icon-button, .appbar-icon-btn,
+    .md-module-btn, .md-back-btn, .mud-button-root {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+/* ---------- WCAG 2.4.11 Focus Not Obscured : keep focus clear of sticky appbar ---------- */
+:target, [tabindex="-1"]:focus { scroll-margin-top: 84px; }
+.mud-table-row, .mud-nav-link, a, button { scroll-margin-top: 84px; }
+
+/* ---------- WCAG 2.3.3 / 2.2.2 prefers-reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ---------- 1.4.12 Text spacing tolerance ---------- */
+p, li, .mud-typography { overflow-wrap: break-word; }
+
+/* ---------- WCAG 1.4.11 / forced-colors (Windows High Contrast) ---------- */
+@media (forced-colors: active) {
+    a:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: 3px solid Highlight !important; }
+    .mud-paper, .mud-card, .rp-page-header { border: 1px solid CanvasText; }
+}
+
+/* ---------- sr-only utility (accessible names without visual clutter) ---------- */
+.sr-only, .visually-hidden {
+    position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* ============================================================================
+   RESPONSIVE LAYOUT — data tables, dialogs, content, topbar, grids
+   ============================================================================ */
+
+/* Data tables scroll horizontally instead of breaking the layout (1.4.10 Reflow) */
+.mud-table-container, .mud-data-grid, .rp-data-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.mud-table { min-width: 0; }
+
+/* Content padding scales down on small screens */
+@media (max-width: 960px) {
+    .mud-main-content .pa-5 { padding: 16px !important; }
+    .rp-page-header { padding: 12px 16px !important; }
+}
+@media (max-width: 600px) {
+    .mud-main-content .pa-5 { padding: 10px !important; }
+    .rp-page-header { padding: 10px 12px !important; border-radius: 8px; }
+    .mud-typography-h4, .mud-typography-h5 { font-size: 1.15rem !important; }
+}
+
+/* Dialogs go (near) full-screen on phones so content isn't clipped */
+@media (max-width: 600px) {
+    .mud-dialog { width: 96vw !important; max-width: 96vw !important; margin: 8px !important; }
+    .mud-dialog-content { max-height: 70vh; overflow-y: auto; }
+}
+
+/* Topbar: allow the brand/controls to wrap and shrink on small screens */
+@media (max-width: 600px) {
+    .mud-appbar .mud-image { max-height: 34px; }
+    .mud-appbar .mud-input-control { width: 150px !important; }
+}
+
+/* MudGrid items stack naturally; ensure cards don't overflow */
+.mud-card, .mud-paper { max-width: 100%; }
+
+/* ============================================================================
+   RESPONSIVE SIDEBAR — overlay drawer on tablet/phone, push on desktop
+   ============================================================================ */
+
+/* MudBlazor's MudDrawer with ClipMode.Never uses position:fixed and sets
+   margin-left on MudMainContent via inline styles to offset the content.
+   Do NOT override this margin on desktop — that causes the body to slide under
+   the sidebar. Only override on actual mobile/tablet where we want overlay mode. */
+.mud-main-content {
+    position: relative;
+    isolation: isolate;
+    min-width: 0;
+}
+
+@media (max-width: 960px) {
+    /* Mobile/tablet: Drawer floats over content as an overlay */
+    .md-sidebar {
+        position: fixed !important;
+        z-index: 1300 !important;
+        height: 100vh !important;
+        box-shadow: 0 0 24px rgba(0,0,0,.35);
+    }
+    /* Only on mobile: content uses full width when drawer overlays */
+    .mud-main-content { margin-left: 0 !important; }
+}
+
+/* Smooth collapse/expand animation */
+.md-sidebar { transition: width 0.2s ease; }
+
+/* Ensure the drawer itself scrolls if its content is tall */
+.md-sidebar .sidebar-content { overflow-y: auto; }
+
+/* ---------- Topbar search: hide the autocomplete dropdown chevron ----------
+   The magnifying-glass toggle already represents "search"; the combobox arrow is
+   redundant and reads as a second box. Keep the Clear (×) button. */
+.appbar-search .mud-input-adornment-end .mud-icon-button:not([aria-label="Clear"]):not([title="Clear"]) {
+    display: none !important;
+}
+.appbar-search.mud-autocomplete .mud-select-input + .mud-input-adornment .mud-icon-button[aria-label*="oggle"],
+.appbar-search .mud-autocomplete-toggle { display: none !important; }

@@ -1,0 +1,169 @@
+@page "/executive-branch-visit-dashboard"
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IExecBranchVisitRepo VisitRepo
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Executive Branch Visit Dashboard</PageTitle>
+<PageHeader PageKey="executive-branch-visit-dashboard" Title="Executive Branch Visit Dashboard"
+            Subtitle="Branch-wise visibility of Executive Branch Visits — draft vs submitted."
+            Crumbs="_crumbs" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="3">
+            <MudTextField T="string" Label="Branch Code" @bind-Value="_filter.BranchCode" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudTextField T="string" Label="Region" @bind-Value="_filter.RegionName" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudDatePicker Label="From (Date of Visit)" @bind-Date="_filter.FromDate" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudDatePicker Label="To (Date of Visit)" @bind-Date="_filter.ToDate" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+        <MudItem xs="12" Class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="ApplyFilterAsync">Apply</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="ClearFilterAsync">Clear</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6">
+        <MudPaper Class="pa-4 execbv-stat" Style="cursor:pointer;" @onclick="@(() => ShowList(false))" Elevation="@(_showSubmitted == false ? 4 : 1)">
+            <MudText Typo="Typo.h4" Color="Color.Warning">@_counts.TotalDraft</MudText>
+            <MudText Typo="Typo.body2">Draft Visits</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudPaper Class="pa-4 execbv-stat" Style="cursor:pointer;" @onclick="@(() => ShowList(true))" Elevation="@(_showSubmitted == true ? 4 : 1)">
+            <MudText Typo="Typo.h4" Color="Color.Success">@_counts.TotalSubmitted</MudText>
+            <MudText Typo="Typo.body2">Submitted Visits</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Class="mb-4">
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2">Draft vs Submitted</MudText>
+            @if (_counts.TotalDraft == 0 && _counts.TotalSubmitted == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">No visits recorded yet for this filter.</MudAlert>
+            }
+            else
+            {
+                <MudChart ChartType="ChartType.Donut"
+                          InputData="@(new double[] { _counts.TotalDraft, _counts.TotalSubmitted })"
+                          InputLabels="@(new[] { "Draft", "Submitted" })"
+                          Width="100%" Height="260px" />
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2">Submitted Visits by Region</MudText>
+            @if (_counts.ByRegion.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">No submitted visits yet — Region (as typed on the form's Tab 1) has nothing to chart.</MudAlert>
+            }
+            else
+            {
+                <MudChart ChartType="ChartType.Bar"
+                          ChartSeries="@_regionSeries"
+                          XAxisLabels="@_regionLabels"
+                          Width="100%" Height="260px" />
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (_showSubmitted.HasValue)
+{
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudText Typo="Typo.subtitle1" Class="fw-bold mb-2">@(_showSubmitted == true ? "Submitted" : "Draft") Visits</MudText>
+        @if (_list.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No visits match this filter.</MudAlert>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <MudTable Items="_list" Dense="true" Hover="true" Bordered="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Branch</MudTh><MudTh>Region</MudTh><MudTh>Zone</MudTh><MudTh>Visiting Official</MudTh>
+                        <MudTh>Date of Visit</MudTh><MudTh>Status</MudTh><MudTh>@(_showSubmitted == true ? "Submitted At" : "Last Saved")</MudTh><MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.BranchCode @(string.IsNullOrWhiteSpace(context.BranchName) ? "" : $"({context.BranchName})")</MudTd>
+                        <MudTd>@context.RegionName</MudTd>
+                        <MudTd>@context.ZoneName</MudTd>
+                        <MudTd>@context.VisitingOfficialName</MudTd>
+                        <MudTd>@(context.DateOfVisit?.ToString("dd-MMM-yyyy"))</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small" Color="@(context.Status == "SUBMITTED" ? Color.Success : Color.Warning)">
+                                @context.Status
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>@((context.Status == "SUBMITTED" ? context.SubmittedAt : context.SavedAt)?.ToString("dd-MMM-yyyy HH:mm"))</MudTd>
+                        <MudTd>
+                            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.OpenInNew"
+                                       OnClick="@(() => OpenVisit(context.Id))">Open</MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        }
+    </MudPaper>
+}
+
+<style>
+    .execbv-stat { text-align: center; transition: box-shadow .15s; }
+</style>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Executive Branch Visit Dashboard") };
+
+    private ExecBranchVisitFilter _filter = new();
+    private ExecBranchVisitCounts _counts = new();
+    private List<ExecBranchVisitSummary> _list = new();
+    private bool? _showSubmitted;
+
+    private List<ChartSeries> _regionSeries = new();
+    private string[] _regionLabels = Array.Empty<string>();
+
+    protected override async Task OnInitializedAsync() => await ApplyFilterAsync();
+
+    private async Task ApplyFilterAsync()
+    {
+        _counts = await VisitRepo.GetCountsAsync(_filter);
+        _regionLabels = _counts.ByRegion.Keys.ToArray();
+        _regionSeries = new List<ChartSeries>
+        {
+            new() { Name = "Submitted", Data = _counts.ByRegion.Values.Select(v => (double)v).ToArray() }
+        };
+        if (_showSubmitted.HasValue) await ReloadListAsync();
+    }
+
+    private async Task ClearFilterAsync()
+    {
+        _filter = new ExecBranchVisitFilter();
+        await ApplyFilterAsync();
+    }
+
+    private async Task ShowList(bool submitted)
+    {
+        _showSubmitted = submitted;
+        await ReloadListAsync();
+    }
+
+    private async Task ReloadListAsync()
+        => _list = (await VisitRepo.ListAsync(_filter, _showSubmitted == true ? "SUBMITTED" : "DRAFT")).ToList();
+
+    private void OpenVisit(long id) => Nav.NavigateTo($"executive-branch-visit/{id}");
+}

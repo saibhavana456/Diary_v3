@@ -1,0 +1,107 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@* Add / edit a module or sub-module. *@
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_code" Label="Code" Required="true" HelperText="UPPERCASE, dotted path e.g. MASTERS.USERS" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_name" Label="Name" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="long?" @bind-Value="_parentId" Label="Parent module" Clearable="true">
+                    <MudSelectItem T="long?" Value="@((long?)null)">— (top-level)</MudSelectItem>
+                    @foreach (var p in Roots.OrderBy(x => x.Name))
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)p.Id)">@p.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="ModuleKind" @bind-Value="_kind" Label="Kind">
+                    @foreach (var k in Enum.GetValues<ModuleKind>())
+                    {
+                        <MudSelectItem T="ModuleKind" Value="@k">@k.ToString()</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_icon" Label="Icon (Material name)" HelperText="e.g. Settings, AccountTree" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField T="int" @bind-Value="_sort" Label="Sort order" Min="0" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudCheckBox T="bool" @bind-Value="_active" Label="Active" />
+            </MudItem>
+        </MudGrid>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dlg { get; set; } = null!;
+    [Parameter] public AppModule? Editing { get; set; }
+    [Parameter] public AppModule? Parent { get; set; }
+    [Parameter] public List<AppModule> Roots { get; set; } = new();
+
+    private string _code = "";
+    private string _name = "";
+    private long? _parentId;
+    private ModuleKind _kind = ModuleKind.Transactional;
+    private string? _icon;
+    private int _sort;
+    private bool _active = true;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Editing is not null)
+        {
+            _code = Editing.Code;
+            _name = Editing.Name;
+            _parentId = Editing.ParentId;
+            _kind = Editing.Kind;
+            _icon = Editing.Icon;
+            _sort = Editing.SortOrder;
+            _active = Editing.IsActive;
+        }
+        else if (Parent is not null)
+        {
+            _parentId = Parent.Id;
+            _kind = Parent.Kind;            // default sub-module to same kind as parent
+            _code = Parent.Code + ".";
+            _sort = 10;
+        }
+    }
+
+    private void Cancel() => Dlg.Cancel();
+
+    private void Submit()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_code) || string.IsNullOrWhiteSpace(_name))
+        {
+            _error = "Code and Name are required.";
+            return;
+        }
+        var m = Editing ?? new AppModule();
+        m.Code = _code.Trim().ToUpperInvariant();
+        m.Name = _name.Trim();
+        m.ParentId = _parentId;
+        m.Kind = _kind;
+        m.Icon = _icon;
+        m.SortOrder = _sort;
+        m.IsActive = _active;
+        Dlg.Close(DialogResult.Ok(m));
+    }
+}

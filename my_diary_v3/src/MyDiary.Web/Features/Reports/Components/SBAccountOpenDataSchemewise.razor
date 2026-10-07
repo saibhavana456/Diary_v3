@@ -1,0 +1,406 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/SBAccountOpenDataSchemewise"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>SB Accounts Opened Schemewise — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Default: Summary columns (same as gvZoneRegionwise BoundFields)
+    private List<ColumnConfig> _detailedCols = new()
+{
+    new ColumnConfig { Header = "Zone",     PropertyName = "zone_name_eng", Width = "14%" },
+    new ColumnConfig { Header = "Region",   PropertyName = "region_name",   Width = "14%" },
+    new ColumnConfig { Header = "Branch",   PropertyName = "branch_name",   Width = "18%" },
+    new ColumnConfig { Header = "Sol ID",   PropertyName = "SolID",         Width = "8%"  },
+
+    // SBGEN
+    new ColumnConfig { Header = "SBGEN No",     PropertyName = "SBGenCount", Width = "7%"  },
+    new ColumnConfig { Header = "SBGEN Amount", PropertyName = "SBGenAmt",   Width = "8%"  },
+
+    // BSBDA/BSBDS
+    new ColumnConfig { Header = "BSBD No",      PropertyName = "BSBDCount",  Width = "7%"  },
+    new ColumnConfig { Header = "BSBD Amount",  PropertyName = "BSBDAmt",    Width = "8%"  },
+
+    // USSA
+    new ColumnConfig { Header = "USSA No",      PropertyName = "USSACount",  Width = "7%"  },
+    new ColumnConfig { Header = "USSA Amount",  PropertyName = "USSAAmt",    Width = "8%"  },
+
+    // Others
+    new ColumnConfig { Header = "Others No",    PropertyName = "OthersCount", Width = "7%" },
+    new ColumnConfig { Header = "Others Amount",PropertyName = "OthersAmt",   Width = "8%" }
+};
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "branch important contact";
+
+        // Load User Context
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+{
+    _loading = true;
+    StateHasChanged();
+
+    _activeConfig.Title = "SB A/c Opened - Schemewise (Data for current F.Y)";
+
+    // Decide: Summary vs Detailed (Breakup)
+    // In ASPX, "View Breakup" is a button shown only when a *specific* branch is also selected.
+    // Here we mirror the most common expected behavior:
+    //  - If Branch is a specific SOL (not "1" / not "all") → Detailed account list (Breakup)
+    //  - Else → Summary (aggregated) view
+    bool isSpecificZone   = !string.Equals(_selectedZone,   "1",  StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(_selectedZone, "all", StringComparison.OrdinalIgnoreCase);
+    bool isSpecificRegion = !string.Equals(_selectedRegion, "1",  StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(_selectedRegion, "all", StringComparison.OrdinalIgnoreCase);
+    bool isSpecificBranch = !string.Equals(_selectedBranch, "1",  StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(_selectedBranch, "all", StringComparison.OrdinalIgnoreCase);
+
+    bool isDetailed = isSpecificBranch; // Detailed when a single branch is chosen
+
+    // --------------------------
+    // Column set (Summary vs Detailed)
+    // --------------------------
+    if (isDetailed)
+    {
+        // gvBranchwise columns (we include SNo using ROW_NUMBER like ASPX S.No)
+        _activeConfig.Columns = new List<ColumnConfig>
+        {
+            new ColumnConfig { Header = "S No.",         PropertyName = "SNo",          Width = "6%"  },
+            new ColumnConfig { Header = "Zone",          PropertyName = "zone_name_eng",Width = "12%" },
+            new ColumnConfig { Header = "Region",        PropertyName = "region_name",  Width = "12%" },
+            new ColumnConfig { Header = "Branch Name",   PropertyName = "Branch_Name",  Width = "18%" },
+            new ColumnConfig { Header = "Sol ID",        PropertyName = "Solid",        Width = "8%"  },
+            new ColumnConfig { Header = "Account Number",PropertyName = "AccountNo",    Width = "12%" },
+            new ColumnConfig { Header = "Name",          PropertyName = "AccountName",  Width = "14%" },
+            new ColumnConfig { Header = "CIF ID",        PropertyName = "CIFId",        Width = "10%" },
+            new ColumnConfig { Header = "SchemeCode",    PropertyName = "SchemeCode",   Width = "10%" },
+            new ColumnConfig { Header = "Balance",       PropertyName = "Balance",      Width = "10%" },
+            new ColumnConfig { Header = "Phone No",      PropertyName = "PhoneNo",      Width = "12%" },
+            new ColumnConfig { Header = "Email",         PropertyName = "EmailID",      Width = "16%" }
+        };
+    }
+    else
+    {
+        // Summary columns (already set as default in _detailedCols)
+        _activeConfig.Columns = _detailedCols;
+    }
+
+    // --------------------------
+    // Build the SQL (mirrors DisplayData() conditions & groupings)
+    // --------------------------
+    var sb = new System.Text.StringBuilder();
+
+    // Base FROM + WHERE (same as ASPX)
+    sb.AppendLine(@"
+WITH Base AS (
+    SELECT
+        -- join & base filters
+        A.*,
+        B.zone_name_eng,
+        B.region_name,
+        B.branch_name,
+        B.SOL_ID,
+        B.zone_solid,
+        B.region_solid
+    FROM SBCDAccountOpenData A
+    JOIN Branch_Master B
+      ON A.SolID = B.SOL_ID
+    WHERE
+        ISNULL(A.ExcludeFlg,'N') = 'N'
+        AND A.SchemeType = 'SBA'
+        AND B.region_solid <> '00000'
+        AND B.region_solid <> ' '
+)
+");
+
+    // Privilege-based scoping (CO/ZONE/REGION/BRANCH) — identical semantics
+    sb.AppendLine("SELECT * INTO #Work FROM Base WHERE 1=1");
+    switch ((_userPrivilege ?? "CO").ToUpperInvariant())
+    {
+        case "ZONE":
+            if (!string.IsNullOrWhiteSpace(_userZoneSolid) && _userZoneSolid != "00000")
+                sb.AppendLine($"  AND zone_solid = '{_userZoneSolid}'");
+            break;
+        case "REGION":
+            if (!string.IsNullOrWhiteSpace(_userRegionSolid) && _userRegionSolid != "00000")
+                sb.AppendLine($"  AND region_solid = '{_userRegionSolid}'");
+            break;
+        case "BRANCH":
+            if (!string.IsNullOrWhiteSpace(_userBranchSolid) && _userBranchSolid != "00000")
+                sb.AppendLine($"  AND SOL_ID = '{_userBranchSolid}'");
+            break;
+        default:
+            // CO → no restriction
+            break;
+    }
+
+    // UI filters (same semantics as ASPX: "1" = All(Summary), "all" = All(scope-wise), else = specific)
+    if (!string.Equals(_selectedZone, "1", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_selectedZone, "all", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(_selectedZone))
+    {
+        sb.AppendLine($"  AND zone_solid = '{_selectedZone}'");
+    }
+    if (!string.Equals(_selectedRegion, "1", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_selectedRegion, "all", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(_selectedRegion))
+    {
+        sb.AppendLine($"  AND region_solid = '{_selectedRegion}'");
+    }
+    if (!string.Equals(_selectedBranch, "1", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(_selectedBranch, "all", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(_selectedBranch))
+    {
+        sb.AppendLine($"  AND SOL_ID = '{_selectedBranch}'");
+    }
+
+    // Now compose final SELECT according to view (summary vs detailed),
+    // and according to the grouping implied by the "All(Summary)" / "All(...wise)" choices.
+    if (isDetailed)
+    {
+        // ---------- Detailed (Breakup) - same as gvBranchwise ----------
+        sb.AppendLine(@"
+SELECT
+    ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name, branch_name, AccountNo) AS SNo,
+    zone_name_eng,
+    region_name,
+    branch_name AS Branch_Name,
+    SOL_ID      AS Solid,
+    AccountNo,
+    AccountName,
+    CIFId,
+    SchemeCode,
+    Balance,
+    PhoneNo,
+    EmailID
+FROM #Work
+ORDER BY zone_name_eng, region_name, branch_name
+");
+    }
+    else
+    {
+        // ---------- Summary (same groupings as ASPX) ----------
+        // Helper flags for grouping based on "1" vs "all" vs specific
+        bool zoneAllSummary = string.Equals(_selectedZone, "1", StringComparison.OrdinalIgnoreCase);
+        bool zoneAllWise    = string.Equals(_selectedZone, "all", StringComparison.OrdinalIgnoreCase);
+
+        bool regionAllSummary = string.Equals(_selectedRegion, "1", StringComparison.OrdinalIgnoreCase);
+        bool regionAllWise    = string.Equals(_selectedRegion, "all", StringComparison.OrdinalIgnoreCase);
+
+        // SELECT projection for counts/amounts (note: OthersAmt mirrors ASPX expression)
+        string aggCols = @"
+    SUM(CASE WHEN SchemeCode = 'SBGEN' THEN 1 ELSE 0 END)                                  AS SBGenCount,
+    ROUND(SUM(CASE WHEN SchemeCode = 'SBGEN' THEN Balance ELSE 0 END) / 100000.0, 2)       AS SBGenAmt,
+    SUM(CASE WHEN SchemeCode IN ('BSBDA','BSBDS') THEN 1 ELSE 0 END)                       AS BSBDCount,
+    ROUND(SUM(CASE WHEN SchemeCode IN ('BSBDA','BSBDS') THEN Balance ELSE 0 END) / 100000.0, 2) AS BSBDAmt,
+    SUM(CASE WHEN SchemeCode IN ('USSA1','USSA2','USSA3') THEN 1 ELSE 0 END)               AS USSACount,
+    ROUND(SUM(CASE WHEN SchemeCode IN ('USSA1','USSA2','USSA3') THEN Balance ELSE 0 END) / 100000.0, 2) AS USSAAmt,
+    SUM(CASE WHEN SchemeCode NOT IN ('SBGEN','USSA1','USSA2','USSA3','BSBDA','BSBDS') THEN 1 ELSE 0 END) AS OthersCount,
+    ROUND(SUM(CASE WHEN SchemeCode IN ('SBGEN','USSA1','USSA2','USSA3','BSBDA','BSBDS') THEN Balance ELSE 0 END) / 100000.0, 2) AS OthersAmt
+";
+
+        if (zoneAllSummary)
+        {
+            // Total of All Zones (single row) — ASPX uses 'All' labels
+            sb.AppendLine($@"
+SELECT
+    'All' AS zone_name_eng,
+    'All' AS region_name,
+    'All' AS branch_name,
+    'All' AS SolID,
+{aggCols}
+FROM #Work
+ORDER BY zone_name_eng, region_name, branch_name
+");
+        }
+        else if (zoneAllWise)
+        {
+            // Zone-wise summary (group by Zone)
+            sb.AppendLine($@"
+SELECT
+    zone_name_eng,
+    'All' AS region_name,
+    'All' AS branch_name,
+    zone_solid AS SolID,
+{aggCols}
+FROM #Work
+GROUP BY zone_solid, zone_name_eng
+ORDER BY zone_name_eng
+");
+        }
+        else
+        {
+            // Zone is specific
+            if (regionAllSummary)
+            {
+                // Specific Zone → Region Summary (single row)
+                sb.AppendLine($@"
+SELECT
+    zone_name_eng,
+    'All' AS region_name,
+    'All' AS branch_name,
+    zone_solid AS SolID,
+{aggCols}
+FROM #Work
+GROUP BY zone_name_eng, zone_solid
+ORDER BY zone_name_eng
+");
+            }
+            else if (regionAllWise)
+            {
+                // Specific Zone → Region-wise summary (group by Region)
+                sb.AppendLine($@"
+SELECT
+    zone_name_eng,
+    region_name,
+    'All' AS branch_name,
+    region_solid AS SolID,
+{aggCols}
+FROM #Work
+GROUP BY zone_name_eng, region_name, region_solid
+ORDER BY zone_name_eng, region_name
+");
+            }
+            else
+            {
+                // Specific Region selected
+                if (!isSpecificBranch) // Branch = "1" or "all" → Region summary OR Branch-wise
+                {
+                    if (string.Equals(_selectedBranch, "1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Region Summary (single row)
+                        sb.AppendLine($@"
+SELECT
+    zone_name_eng,
+    region_name,
+    'All' AS branch_name,
+    region_solid AS SolID,
+{aggCols}
+FROM #Work
+GROUP BY zone_name_eng, region_name, region_solid
+ORDER BY zone_name_eng, region_name
+");
+                    }
+                    else // Branch "all" → Branch-wise summary
+                    {
+                        sb.AppendLine($@"
+SELECT
+    zone_name_eng,
+    region_name,
+    branch_name,
+    SOL_ID AS SolID,
+{aggCols}
+FROM #Work
+GROUP BY zone_name_eng, region_name, branch_name, SOL_ID
+ORDER BY zone_name_eng, region_name, branch_name
+");
+                    }
+                }
+                else
+                {
+                    // isDetailed already handled earlier (this else is redundant)
+                    sb.AppendLine("SELECT 1 WHERE 1=0"); // safety no-op
+                }
+            }
+        }
+    }
+
+    // Execute main query
+    string finalQuery = sb.ToString();
+    _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+    // --------------------------
+    // AsOn label (same as ASPX)
+    //  - Summary → Amount in Lakhs
+    //  - Detailed → Amount in Actuals
+    //  - Include "Data Last Updated On - dd-MM-yyyy" using MAX(AcOpenDate)
+    // --------------------------
+    string amountLabel = isDetailed ? "Amount In Actuals" : "Amount In Lakhs";
+    DateTime? lastUpdated = null;
+    try
+    {
+        var dateRows = await ReportService.ExecuteRawQueryAsync("SELECT MAX(AcOpenDate) AS LastUpdated FROM SBCDAccountOpenData");
+        if (dateRows?.Count > 0 && dateRows[0].TryGetValue("LastUpdated", out var v) && v is not null)
+        {
+            if (DateTime.TryParse(Convert.ToString(v), out var dt)) lastUpdated = dt;
+        }
+    }
+    catch (Exception ex)
+    {
+        AppLogger.LogError(ex, "[SBAccountOpenDataSchemewise] Unhandled error: " + ex.Message);
+        // ignore date issues; label will omit the date if unavailable
+    }
+    _asOnDateLabel = lastUpdated.HasValue
+        ? $"({amountLabel} , Data Last Updated On - {lastUpdated.Value:dd-MM-yyyy})"
+        : $"({amountLabel})";
+
+    _loading = false;
+    StateHasChanged();
+}
+
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "SBAccountSchemewise");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "SBAccountOpenDataSchemewise.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

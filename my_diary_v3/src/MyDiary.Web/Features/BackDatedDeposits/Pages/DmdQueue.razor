@@ -1,0 +1,120 @@
+@page "/deposits/dmd-queue"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Core.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IBackDatedDepositRepo DepositRepo
+@inject IBackDatedDepositWorkflowService WorkflowService
+@inject IDmdRbacService DmdRbacService
+@inject ISnackbar Snackbar
+
+<PageTitle>Pending at DMD - Back-Dated Deposit Approvals</PageTitle>
+<PageHeader Title="Pending at DMD CO" Subtitle="Final authority — Approve, Reject, Return, or Seek Clarification." Crumbs="_crumbs" PageKey="bdd-dmd" />
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (!_authorised)
+{
+    <MudAlert Severity="Severity.Error">You are not assigned the DMD Approver role. Ask a DMD Vertical Admin (or App Admin) to grant it.</MudAlert>
+}
+else if (_items.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No proposals pending at DMD.</MudAlert>
+}
+else
+{
+    <MudTable Items="_items" Hover="true" Dense="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>Ref No</MudTh><MudTh>Branch</MudTh><MudTh>Type</MudTh><MudTh>Purpose</MudTh>
+            <MudTh>Customer</MudTh><MudTh>Submitted</MudTh><MudTh>Action</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.RefNo</MudTd>
+            <MudTd>@context.BranchName</MudTd>
+            <MudTd>@context.DepositType</MudTd>
+            <MudTd>@context.Purpose</MudTd>
+            <MudTd>@context.CustomerName</MudTd>
+            <MudTd>@context.CreatedAt.ToString("dd-MMM-yyyy")</MudTd>
+            <MudTd>
+                <MudButton Size="Size.Small" Color="Color.Success" Variant="Variant.Filled" OnClick="@(() => OpenAction(context, "Approve"))">Approve</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Filled" OnClick="@(() => OpenAction(context, "Reject"))">Reject</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" OnClick="@(() => OpenAction(context, "Clarify"))">Seek Clarification</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined" OnClick="@(() => OpenAction(context, "Return"))">Return</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@if (_active is not null)
+{
+    <MudDialog Visible="true" Options="new DialogOptions{MaxWidth=MaxWidth.Small, FullWidth=true}" VisibleChanged="@((bool v) => { if (!v) _active = null; })">
+        <TitleContent>@_actionMode — @_active.RefNo</TitleContent>
+        <DialogContent>
+            <MudTextField @bind-Value="_remarks" Label="Remarks / Reason" Lines="3" Variant="Variant.Outlined" />
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _active = null)">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ConfirmAsync">Confirm</MudButton>
+        </DialogActions>
+    </MudDialog>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("Pending at DMD") };
+    private bool _loading = true;
+    private bool _authorised;
+    private List<BackDatedDepositProposal> _items = new();
+    private BackDatedDepositProposal? _active;
+    private string _actionMode = "";
+    private string _remarks = "", _empId = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        _empId = user.FindFirst("emplid")?.Value ?? "";
+        _authorised = await DmdRbacService.IsDmdApproverAsync(_empId);
+        if (_authorised) _items = (await DepositRepo.ListPendingAtDmdAsync()).ToList();
+        _loading = false;
+    }
+
+    private void OpenAction(BackDatedDepositProposal p, string mode)
+    {
+        _active = p; _actionMode = mode; _remarks = "";
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_active is null) return;
+        const string role = "DmdApprover";
+        try
+        {
+            switch (_actionMode)
+            {
+                case "Approve":
+                    await WorkflowService.DmdApproveAsync(_active.Id, _active.RowVersion, _empId, role, _remarks);
+                    break;
+                case "Reject":
+                    await WorkflowService.DmdRejectAsync(_active.Id, _active.RowVersion, _empId, role, _remarks);
+                    break;
+                case "Clarify":
+                    await WorkflowService.DmdSeekClarificationAsync(_active.Id, _active.RowVersion, _empId, role, _remarks);
+                    break;
+                case "Return":
+                    await WorkflowService.DmdReturnAsync(_active.Id, _active.RowVersion, _empId, role, _remarks);
+                    break;
+            }
+            Snackbar.Add("Action recorded.", Severity.Success);
+            _items.Remove(_active);
+            _active = null;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

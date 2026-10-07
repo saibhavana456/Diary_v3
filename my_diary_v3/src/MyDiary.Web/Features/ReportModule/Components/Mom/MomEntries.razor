@@ -1,0 +1,1174 @@
+﻿@page "/mom/{TypeCode}"
+@using MudBlazor
+@using Microsoft.AspNetCore.DataProtection
+@using Microsoft.AspNetCore.Components.Forms
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@using global::RequestPortal.Data.Repositories
+@using MyDiary.Web.Api
+@inject IMomRepo MomRepo
+@inject IMomAttachmentStore Store
+@inject IMasterRepo Masters
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@inject IDataProtectionProvider DataProtection
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@using MyDiary.Web.Features.Shared.Services
+@using OfficeOpenXml
+@inject DynamicReportService ReportService
+@inject AuthenticationStateProvider AuthStateProvider
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+<PageTitle>@(_type?.TypeName ?? "MoM")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_type is null)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">MoM type "@TypeCode" was not found or is disabled.</MudAlert>
+}
+else
+{
+    <PageHeader PageKey="@("mom-" + _type.TypeCode)" Title="@_type.TypeName" Crumbs="_crumbs" />
+
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">@_type.Description</MudText>
+
+    <MudPaper Elevation="1" Class="pa-3 mb-4">
+        <div class="d-flex flex-wrap align-end gap-3">
+            @if (_myOfficeLevel == "CO")
+            {
+                <MudSelect T="string"
+                           Label="Zone"
+                           Value="_selectedZone"
+                           ValueChanged="HandleZoneChanged"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Dense="true"
+                           Style="min-width:160px">
+
+                    <MudSelectItem Value="@("All")">
+                        All
+                    </MudSelectItem>
+
+                    @foreach (var z in _zones)
+                    {
+                        <MudSelectItem Value="@z["ZoneValue"]?.ToString()">
+                            @z["Zone"]?.ToString()
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="string"
+                           Label="Region"
+                           Value="_selectedRegion"
+                           ValueChanged="HandleRegionChanged"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Dense="true"
+                           Disabled="@(_selectedZone == "All")"
+                           Style="min-width:160px"
+                           >
+
+                    <MudSelectItem Value="@("All")">
+                        All
+                    </MudSelectItem>
+
+                    @foreach (var r in _regions)
+                    {
+                        <MudSelectItem Value="@r["RegionValue"]?.ToString()">
+                            @r["Region"]?.ToString()
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+    <MudCheckBox T="bool"
+                 Value="_showZoneOnly"
+                 Label="@($"ZO - {GetSelectedZoneName()}")"
+                 Dense="true"
+                 ValueChanged="OnZoneOnlyChanged"
+                 Color="Color.Primary" />
+
+                 <br />
+
+            }
+            @if (_type.EnableDateRange)
+            {
+                <MudDatePicker Label="From" @bind-Date="_filterFrom" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:160px" />
+                <MudDatePicker Label="To" @bind-Date="_filterTo" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:160px" />
+            }
+            @if (_type.EnableMeetingType)
+            {
+                <MudSelect T="long?" Label="@(_type.MeetingTypeLabel ?? "Meeting Type")" @bind-Value="_filterMeetingTypeId"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width:200px">
+                    @foreach (var mt in _meetingTypes)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)mt.Id)">@mt.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            @if (_type.EnableQuarter)
+            {
+                <MudSelect T="int?" Label="Quarter" @bind-Value="_filterQuarter" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width:120px">
+                    <MudSelectItem T="int?" Value="1">Q1</MudSelectItem>
+                    <MudSelectItem T="int?" Value="2">Q2</MudSelectItem>
+                    <MudSelectItem T="int?" Value="3">Q3</MudSelectItem>
+                    <MudSelectItem T="int?" Value="4">Q4</MudSelectItem>
+                </MudSelect>
+            }
+            @if (_type.EnableYear)
+            {
+                <MudNumericField T="int?" Label="Year" @bind-Value="_filterYear" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:120px" />
+            }
+            <MudButton Variant="Variant.Outlined" OnClick="ApplyFiltersAsync">
+                Apply
+            </MudButton>
+
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.Clear"
+                       OnClick="ClearFiltersAsync">
+                Clear Filters
+            </MudButton>
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.GridOn"
+                       OnClick="ExportToExcelAsync" Disabled="@_exporting">Export to Excel</MudButton>
+            @if (_type.TypeName == "ZLAC/RLAC Assurance Committee Minutes" && _userPrivilege != "CO")
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewEntry">New Entry</MudButton>
+            }
+            else if (_type.TypeName != "ZLAC/RLAC Assurance Committee Minutes")
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenNewEntry">New Entry</MudButton>
+            }
+            else
+            {
+
+            }
+
+        </div>
+    </MudPaper>
+
+    @if (_loadingEntries)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else if (_entries.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No entries found for the selected filters.</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="@_entries" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+            <HeaderContent>
+                <MudTh>Date</MudTh>
+                <MudTh>Office / Branch</MudTh>
+                @if (_type.EnableMeetingType)
+                {
+                    <MudTh>@(_type.MeetingTypeLabel ?? "Meeting Type")</MudTh>
+                }
+                @if (_type.EnableQuarter || _type.EnableYear)
+                {
+                    <MudTh>Quarter/Year</MudTh>
+                }
+                <MudTh>Sub-category</MudTh>
+                <MudTh>Remarks</MudTh>
+                <MudTh>Primary File</MudTh>
+                <MudTh>Supporting Documents</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Date">@context.MeetingDate.ToString("dd-MMM-yyyy")</MudTd>
+                <MudTd DataLabel="Office / Branch">
+                    @context.OfficeLevel
+                    @if (!string.IsNullOrWhiteSpace(context.BranchSolId))
+                    {
+                        <text> · @context.BranchSolId</text>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(context.RegionName))
+                    {
+                        <text> · @context.RegionName</text>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(context.ZoneName))
+                    {
+                        <text> · @context.ZoneName</text>
+                    }
+                </MudTd>
+                @if (_type.EnableMeetingType)
+                {
+                    <MudTd DataLabel="Meeting Type">@context.MeetingTypeName</MudTd>
+                }
+                @if (_type.EnableQuarter || _type.EnableYear)
+                {
+                    <MudTd>@(context.Quarter.HasValue ? $"Q{context.Quarter}/" : "")@context.MeetingYear</MudTd>
+                }
+                <MudTd DataLabel="Sub-category">@context.UnionName</MudTd>
+                <MudTd DataLabel="Remarks">@context.Remarks</MudTd>
+                <MudTd DataLabel="MOM File">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Title="View" Href="@PrimaryUrl(context, false)" Target="_blank" aria-label="View" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" Title="Download" Href="@PrimaryUrl(context, true)" Target="_blank" aria-label="Download" />
+                </MudTd>
+                <MudTd DataLabel="Attachments">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => ShowAttachmentsAsync(context))">
+                        @(_attachmentCounts.TryGetValue(context.Id, out var c) ? c : 0) file(s)
+                    </MudButton>
+                </MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Title="Edit" OnClick="@(() => OpenEditEntry(context))" aria-label="Edit" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" Title="Delete" OnClick="@(() => ConfirmDeleteEntry(context))" aria-label="Delete" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+}
+
+<MudDialog @bind-Visible="_newEntryOpen" Options="_dialogOptions">
+    <TitleContent>@(_editingEntryId.HasValue ? "Edit Entry" : "New Entry") — @_type?.TypeName</TitleContent>
+    <DialogContent>
+        <MudGrid>
+            @if (_type?.EnableZoneRegionScope == true)
+            {
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string"
+                               Label="Zone"
+                               Value="_entryZone"
+                               ValueChanged="HandleEntryZoneChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Disabled>
+
+                        @foreach (var z in _entryZones)
+                        {
+                            <MudSelectItem Value="@z["Zone"]?.ToString()">
+                                @z["Zone"]?.ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="_entryRegion"
+                               ValueChanged="HandleEntryRegionChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Disabled>
+
+                        @if (_myOfficeLevel == "ZO")
+                        {
+                            <MudSelectItem Value="@ZonalOfficeRegionValue">
+                                Zonal Office (@_entryZone)
+                            </MudSelectItem>
+                        }
+
+                        @foreach (var r in _entryRegions)
+                        {
+                            <MudSelectItem Value="@r["Region"]?.ToString()">
+                                @r["Region"]?.ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+            <MudItem xs="12" md="6">
+                <MudNumericField T="int" Label="Year" @bind-Value="_form.MeetingYear" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" Disabled="true" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudDatePicker Label="Meeting Date" @bind-Date="_formDate" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" MinDate="@(new DateTime(2026, 7, 31))" MaxDate="@AppTime.Today" />
+            </MudItem>
+
+            @if (_type?.EnableMeetingType == true)
+            {
+                <MudItem xs="12" md="6">
+                    <MudSelect T="long?" Label="@(_type.MeetingTypeLabel ?? "Meeting Type")" Value="_form.MeetingTypeId"
+                               ValueChanged="HandleFormMeetingTypeChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var mt in _formMeetingTypes)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)mt.Id)">@mt.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+            @if (_formUnions.Count > 0)
+            {
+                <MudItem xs="12" md="6">
+                    <MudSelect T="long?" Label="Sub-category" @bind-Value="_form.UnionId"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                        @foreach (var u in _formUnions)
+                        {
+                            <MudSelectItem T="long?" Value="@((long?)u.Id)">@u.UnionName @(string.IsNullOrWhiteSpace(u.Affiliation) ? "" : $"({u.Affiliation})")</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+            @if (_type?.EnableQuarter == true)
+            {
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int?" Label="Quarter" @bind-Value="_form.Quarter" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="int?" Value="1">Q1</MudSelectItem>
+                        <MudSelectItem T="int?" Value="2">Q2</MudSelectItem>
+                        <MudSelectItem T="int?" Value="3">Q3</MudSelectItem>
+                        <MudSelectItem T="int?" Value="4">Q4</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            }
+
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Remarks" @bind-Value="_form.Remarks" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Primary file @(_editingEntryId.HasValue ? "(leave blank to keep existing file)" : "(required)") · Allowed: @_type?.AllowedFileTypes
+                </MudText>
+                <MudFileUpload T="IBrowserFile" FilesChanged="OnPrimaryFilePicked" Accept="@_acceptAttr" MaximumFileCount="1">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                            @(_primaryFile is null ? "Attach primary file" : "Replace primary file")
+                        </MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+                @if (_primaryFile is not null)
+                {
+                    <div class="mt-1">@_primaryFile.Name</div>
+                }
+                @if (_primaryFileError is not null)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-1">@_primaryFileError</MudAlert>
+                }
+            </MudItem>
+
+            @if (_type is not null && (_type.MaxSupportingFiles is null || _type.MaxSupportingFiles > 0))
+            {
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Supporting documents @(_type.MaxSupportingFiles.HasValue ? $"(max {_type.MaxSupportingFiles})" : "")
+                    </MudText>
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnSupportingFilePicked" Accept="@_acceptAttr" MaximumFileCount="1">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AttachFile"
+                                       Disabled="@(_type.MaxSupportingFiles.HasValue && _supportingFiles.Count >= _type.MaxSupportingFiles)">
+                                Add supporting document
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                    @foreach (var f in _supportingFiles)
+                    {
+                        <div class="d-flex align-center gap-2 mt-1">
+                            <span>@f.Name</span>
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => _supportingFiles.Remove(f))" />
+                        </div>
+                    }
+                </MudItem>
+            }
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _newEntryOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SubmitEntryAsync" Disabled="@_saving">Submit</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_attachmentsOpen" Options="_dialogOptions">
+    <TitleContent>Attachments</TitleContent>
+    <DialogContent>
+        @if (_activeAttachments.Count == 0)
+        {
+            <MudText>No supporting documents.</MudText>
+        }
+        else
+        {
+            @foreach (var a in _activeAttachments)
+            {
+                <div class="d-flex align-center gap-2 mb-1">
+                    <span>@a.FileName</span>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Href="@AttachmentUrl(a, false)" Target="_blank" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" Href="@AttachmentUrl(a, true)" Target="_blank" />
+                </div>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _attachmentsOpen = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_deleteConfirmOpen" Options="_smallDialogOptions">
+    <TitleContent>Delete MoM Entry?</TitleContent>
+    <DialogContent>
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            This permanently deletes the meeting minute record@(_entryToDelete is not null ? $" dated {_entryToDelete.MeetingDate:dd-MMM-yyyy}" : "") and its supporting attachments. This cannot be undone.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _deleteConfirmOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="DeleteEntryAsync" Disabled="@_deleting">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public string TypeCode { get; set; } = "";
+
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+    private DialogOptions _smallDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+    private bool _showZoneOnly;
+    private bool _loading = true, _loadingEntries, _saving;
+    private MomType? _type;
+    private List<PageHeader.Crumb> _crumbs = new();
+
+    private List<MomMeetingType> _meetingTypes = new();
+    private List<MomMeetingType> _formMeetingTypes = new();
+    private List<MomEntry> _entries = new();
+    private Dictionary<long, int> _attachmentCounts = new();
+    private string _selectedZone = "All";
+    private string _selectedRegion = "All";
+    private string _userPrivilege = "CO";
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+
+    private string _entryZone = "All";
+    private string _entryRegion = "All";
+
+    private List<Dictionary<string, object>> _entryZones = new();
+    private List<Dictionary<string, object>> _entryRegions = new();
+
+    private string _myOfficeLevel = "CO";
+    private bool _canSeeAcrossOwnScope; 
+    private string? _coScope;
+
+    private string? _filterZone;
+    private string? _filterRegion;
+    private DateTime? _filterFrom;
+    private DateTime? _filterTo;
+    private long? _filterMeetingTypeId;
+    private int? _filterQuarter;
+    private int? _filterYear;
+
+    private bool _newEntryOpen;
+    private MomEntryForm _form = new();
+    private DateTime? _formDate = AppTime.Today;
+    private string _acceptAttr = ".pdf";
+    private IBrowserFile? _primaryFile;
+    private string? _primaryFileError;
+    private List<IBrowserFile> _supportingFiles = new();
+
+    private bool _attachmentsOpen;
+    private List<MomAttachment> _activeAttachments = new();
+    private long _activeEntryId;
+
+    private List<MomUnion> _allUnions = new();
+    private List<MomUnion> _formUnions = new();
+    private long? _editingEntryId;
+
+    private bool _exporting;
+
+    private bool _deleteConfirmOpen, _deleting;
+    private MomEntry? _entryToDelete;
+
+    private const long MaxFileBytes = 10 * 1024 * 1024; // 10 MB
+    private const string ZonalOfficeRegionValue = "__ZO__"; // sentinel: meeting held at the ZO itself, not a Region under it
+
+    private async Task OnZoneOnlyChanged(bool value)
+    {
+        _showZoneOnly = value;
+        await ReloadEntriesAsync();
+    }
+
+
+    private string GetSelectedZoneName()
+    {
+        if (_selectedZone == "All")
+            return "All Zones";
+
+        var zone = _zones.FirstOrDefault(z =>
+            string.Equals(
+                z["ZoneValue"]?.ToString(),
+                _selectedZone,
+                StringComparison.OrdinalIgnoreCase));
+
+        return zone?["Zone"]?.ToString() ?? _selectedZone;
+    }
+
+    private async Task LoadZoneRegionDropdowns()
+    {
+        _zones = await ReportService.ExecuteRawQueryAsync(@"
+SELECT DISTINCT
+    zone_name_eng AS Zone,
+    zone_solid AS ZoneValue
+FROM Branch_Master
+WHERE zone_name_eng IS NOT NULL
+AND zone_name_eng <> ''
+ORDER BY zone_name_eng");
+
+        string regionWhere =
+            _selectedZone == "All"
+            ? "1=1"
+            : $"zone_solid='{_selectedZone}'";
+
+        _regions = await ReportService.ExecuteRawQueryAsync($@"
+SELECT DISTINCT
+    region_name AS Region,
+    region_solid AS RegionValue
+FROM Branch_Master
+WHERE {regionWhere}
+AND region_name IS NOT NULL
+AND region_name <> ''
+ORDER BY region_name");
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        _selectedZone = value;
+
+        _selectedRegion = "All";
+
+        await LoadZoneRegionDropdowns();
+
+        await ReloadEntriesAsync();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        _selectedRegion = value;
+
+        await ReloadEntriesAsync();
+    }
+
+    private async Task LoadEntryZoneRegionDropdowns()
+    {
+        _entryZones = await ReportService.ExecuteRawQueryAsync(@"
+SELECT DISTINCT
+    zone_name_eng AS Zone,
+    zone_solid AS ZoneValue
+FROM Branch_Master
+WHERE zone_name_eng IS NOT NULL
+AND zone_name_eng <> ''
+ORDER BY zone_name_eng");
+
+        string where =
+            _entryZone == "All"
+            ? "1=1"
+            : $"zone_name_eng='{_entryZone}'";
+
+        _entryRegions = await ReportService.ExecuteRawQueryAsync($@"
+SELECT DISTINCT
+    region_name AS Region
+FROM Branch_Master
+WHERE {where}
+AND region_name IS NOT NULL
+AND region_name <> ''
+ORDER BY region_name");
+    }
+
+    private async Task HandleEntryZoneChanged(string value)
+    {
+        _entryZone = value;
+
+        _form.ZoneName = value;
+
+        _entryRegion = "All";
+        _form.RegionName = null;
+
+        await LoadEntryZoneRegionDropdowns();
+    }
+
+    private Task HandleEntryRegionChanged(string value)
+    {
+        _entryRegion = value;
+
+        if (value == ZonalOfficeRegionValue)
+        {
+            // Meeting held at the ZO itself, not at a Region under it.
+            _form.OfficeLevel = "ZO";
+            _form.RegionName = null;
+            _form.BranchSolId = null;
+        }
+        else
+        {
+            _form.OfficeLevel = _myOfficeLevel;
+            _form.RegionName = value;
+        }
+
+        return Task.CompletedTask;
+    }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        _userPrivilege = authState.User
+            .FindFirst("privilege")?.Value?
+            .ToUpper() ?? "CO";
+        DetermineOfficeLevel();
+
+        var all = await MomRepo.ListTypesAsync(null);
+        _type = all.FirstOrDefault(t => string.Equals(t.TypeCode, TypeCode, StringComparison.OrdinalIgnoreCase) && t.IsActive);
+        if (_type.EnableZoneRegionScope)
+        {
+            await LoadZoneRegionDropdowns();
+        }
+
+        if (_type is not null)
+        {
+            _crumbs = new() { new("Assurance 360°", "assurance-360"), new(_type.TypeName) };
+            _acceptAttr = "." + string.Join(",.", _type.AllowedFileTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            _filterYear = AppTime.Today.Year;
+
+
+            if (_type.EnableMeetingType)
+            {
+                _meetingTypes = (await MomRepo.ListMeetingTypesAsync(_type.Id)).Where(m => m.IsActive && AppliesAtMyLevel(m) && AppliesToMyCoScope(m)).ToList();
+                _allUnions = (await MomRepo.ListUnionsAsync(_type.Id)).Where(u => u.IsActive).ToList();
+            }
+
+            await ReloadEntriesAsync();
+        }
+
+        _loading = false;
+    }
+
+    private void DetermineOfficeLevel()
+    {
+        if (CurrentUser.IsSuperAdmin || CurrentUser.IsAppAdmin)
+        {
+            _myOfficeLevel = "CO";
+            _canSeeAcrossOwnScope = true;
+        }
+        else if (CurrentUser.BranchSolid == CurrentUser.RegionSolid)
+        {
+            _myOfficeLevel = "RO";
+            _canSeeAcrossOwnScope = false;
+        }
+        else if (CurrentUser.BranchSolid == CurrentUser.ZoneSolid)
+        {
+            _myOfficeLevel = "ZO";
+            _canSeeAcrossOwnScope = true;
+        }
+        else
+        {
+            // Fail-open: no scope claims present at all -> treat as CO (see comment above).
+            _myOfficeLevel = "CO";
+            _canSeeAcrossOwnScope = true;
+        }
+    }
+
+    private bool AppliesAtMyLevel(MomMeetingType m) => _myOfficeLevel switch
+    {
+        "RO" => m.AppliesAtRo,
+        "ZO" => m.AppliesAtZo,
+        _ => m.AppliesAtCo
+    };
+
+    private bool AppliesToMyCoScope(MomMeetingType m) =>
+        _coScope is null || string.Equals(m.CoScopeCode, _coScope, StringComparison.OrdinalIgnoreCase);
+    // unscoped CO (SuperAdmin/AppAdmin, or no explicit row, or this MoM type has no scope groups at all)
+    // sees every meeting type; a scoped CO only sees meeting types tagged with their own scope code.
+
+    private async Task ApplyFiltersAsync() => await ReloadEntriesAsync();
+
+    private async Task ClearFiltersAsync()
+    {
+        _selectedZone = "All";
+        _selectedRegion = "All";
+
+        _filterZone = null;
+        _filterRegion = null;
+
+        _filterFrom = null;
+        _filterTo = null;
+
+        _filterMeetingTypeId = null;
+        _filterQuarter = null;
+
+        _filterYear = null; // or null if you want all years
+
+        if (_type?.EnableZoneRegionScope == true)
+        {
+            await LoadZoneRegionDropdowns();
+        }
+
+        await ReloadEntriesAsync();
+    }
+
+
+    private async Task ReloadEntriesAsync()
+    {
+        if (_type is null) return;
+        _loadingEntries = true;
+
+        string? zone = _filterZone;
+        string? region = _filterRegion;
+
+        // Manual RO/ZO/CO scoping (mirrors the manual-filter pattern used in
+        // SqlGapService/CommandCenter — no shared org-scope service exists in
+        // this codebase to delegate to).
+        if (_myOfficeLevel == "RO")
+        {
+            // RO users only ever see their own branch's entries — force the branch filter.
+        }
+        else if (_myOfficeLevel == "ZO" && string.IsNullOrWhiteSpace(zone))
+        {
+            zone = CurrentUser.ZoneSolid ?? CurrentUser.ZoneSolid;
+        }
+        var zoneFilter =
+    _selectedZone == "All"
+        ? null
+        : _selectedZone;
+
+        var regionFilter =
+            _selectedRegion == "All"
+                ? null
+                : _selectedRegion;
+        var raw = await MomRepo.ListEntriesAsync(_type.Id, zoneFilter, regionFilter, _filterFrom, _filterTo,
+            _filterMeetingTypeId, _filterQuarter, _filterYear);
+
+        IEnumerable<MomEntry> scoped = raw;
+        if (_myOfficeLevel == "RO")
+        {
+            var myRegion = CurrentUser.RegionSolid ?? CurrentUser.RegionCode;
+
+            scoped = raw.Where(e =>
+                string.Equals(e.RegionName, myRegion,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+        else if (_myOfficeLevel == "ZO")
+        {
+            var myZone = CurrentUser.ZoneSolid ?? CurrentUser.ZoneCode;
+
+            scoped = raw.Where(e =>
+                string.Equals(e.ZoneName, myZone,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        else if (_myOfficeLevel == "CO" && _showZoneOnly)
+        {
+            scoped = scoped.Where(x => x.OfficeLevel == "ZO");
+        }
+        // CO/SuperAdmin: no additional scoping — sees everything the query returned,
+        // unless narrowed to an ERD/WELFARE MoM CO scope (item 6).
+        if (_myOfficeLevel == "CO" && _coScope is not null)
+        {
+            var matchedTypes = _meetingTypes.Where(m => string.Equals(m.CoScopeCode, _coScope, StringComparison.OrdinalIgnoreCase)).ToList();
+            var allowedIds = matchedTypes.Select(m => m.Id).ToHashSet();
+            scoped = scoped.Where(e => e.MeetingTypeId.HasValue && allowedIds.Contains(e.MeetingTypeId.Value)  );
+
+            // Generalized form of the original Welfare Cell CO role's "no RO" rule (migration 007): a scope
+            // group hides RO-level entries when every meeting type in it was built with CoScopeHidesRoLevel
+            // set — a builder-configured property per meeting type, not a hardcoded "WELFARE" special case.
+            if (matchedTypes.Count > 0 && matchedTypes.All(m => m.CoScopeHidesRoLevel))
+                scoped = scoped.Where(e => e.OfficeLevel != "RO");
+        }
+
+        _entries = scoped.OrderByDescending(e => e.MeetingDate).ToList();
+
+        _attachmentCounts.Clear();
+        foreach (var e in _entries)
+        {
+            var atts = await MomRepo.ListAttachmentsAsync(e.Id);
+            _attachmentCounts[e.Id] = atts.Count;
+        }
+
+        _loadingEntries = false; 
+    }
+
+    private void HandleFormMeetingTypeChanged(long? value)
+    {
+        _form.MeetingTypeId = value;
+        _form.UnionId = null;
+        RecomputeFormUnions();
+    }
+
+    private void RecomputeFormUnions()
+    {
+        var code = _formMeetingTypes.FirstOrDefault(m => m.Id == _form.MeetingTypeId)?.Code;
+        _formUnions = string.IsNullOrEmpty(code)
+            ? new List<MomUnion>()
+            : _allUnions.Where(u => string.Equals(u.Category, code, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private async Task OpenNewEntry()
+    {
+        _editingEntryId = null;
+        _form = new MomEntryForm
+            {
+                MomTypeId = _type!.Id,
+                OfficeLevel = _myOfficeLevel,
+                ZoneName = _myOfficeLevel != "RO" ? (CurrentUser.ZoneSolid ?? CurrentUser.ZoneSolid) : null,
+                RegionName = CurrentUser.RegionSolid ?? CurrentUser.RegionSolid,
+                BranchSolId = _myOfficeLevel == "RO" ? (CurrentUser.BranchSolid ?? CurrentUser.BranchCode) : null,
+                MeetingYear = AppTime.Today.Year
+            };
+        if (_myOfficeLevel == "RO")
+        {
+            _entryZone = CurrentUser.ZoneSolid ?? CurrentUser.ZoneSolid ?? "";
+            _entryRegion = CurrentUser.RegionSolid ?? CurrentUser.RegionSolid ?? "";
+
+            _form.ZoneName = _entryZone;
+            _form.RegionName = _entryRegion;
+        }
+        if (_myOfficeLevel == "ZO")
+        {
+            _entryZone = CurrentUser.ZoneSolid ?? CurrentUser.ZoneSolid ?? "";
+
+            _form.ZoneName = _entryZone;
+
+            await LoadEntryZoneRegionDropdowns();
+        }
+        _formDate = AppTime.Today;
+        _primaryFile = null;
+        _primaryFileError = null;
+        _supportingFiles.Clear();
+        _formMeetingTypes = _meetingTypes;
+        _formUnions = new List<MomUnion>();
+        _newEntryOpen = true;
+        await LoadEntryZoneRegionDropdowns();
+    }
+
+    private async Task OpenEditEntry(MomEntry entry)
+    {
+        _editingEntryId = entry.Id;
+        _form = new MomEntryForm
+            {
+                MomTypeId = entry.MomTypeId,
+                OfficeLevel = entry.OfficeLevel,
+                ZoneName = entry.ZoneName,
+                RegionName = entry.RegionName,
+                BranchSolId = entry.BranchSolId,
+                MeetingTypeId = entry.MeetingTypeId,
+                UnionId = entry.UnionId,
+                MeetingYear = entry.MeetingYear,
+                MeetingMonth = entry.MeetingMonth,
+                Quarter = entry.Quarter,
+                Remarks = entry.Remarks,
+                PrimaryFilePath = entry.PrimaryFilePath,
+                PrimaryFileName = entry.PrimaryFileName
+            };
+        _entryZone = entry.ZoneName ?? "All";
+        _entryRegion = string.IsNullOrWhiteSpace(entry.RegionName) ? (entry.OfficeLevel == "ZO" ? ZonalOfficeRegionValue : "All") : entry.RegionName;
+        _formDate = entry.MeetingDate;
+        _primaryFile = null;
+        _primaryFileError = null;
+        _supportingFiles.Clear();
+        _formMeetingTypes = _meetingTypes;
+        RecomputeFormUnions();
+        await LoadEntryZoneRegionDropdowns();
+        _newEntryOpen = true;
+    }
+
+    private void ConfirmDeleteEntry(MomEntry entry)
+    {
+        _entryToDelete = entry;
+        _deleteConfirmOpen = true;
+    }
+
+    private async Task DeleteEntryAsync()
+    {
+        if (_entryToDelete is null) return;
+        _deleting = true;
+        try
+        {
+            await MomRepo.DeleteEntryAsync(_entryToDelete.Id);
+            Snackbar.Add("MoM entry deleted.", Severity.Success);
+            _deleteConfirmOpen = false;
+            _entryToDelete = null;
+            await ReloadEntriesAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "MomEntries: delete failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    private void OnPrimaryFilePicked(IBrowserFile file)
+    {
+        _primaryFileError = null;
+        if (!IsAllowedExt(file.Name)) { _primaryFileError = $"File type not allowed. Allowed: {_type?.AllowedFileTypes}"; return; }
+        if (file.Size > MaxFileBytes) { _primaryFileError = "File exceeds 10 MB limit."; return; }
+        _primaryFile = file;
+    }
+
+    private void OnSupportingFilePicked(IBrowserFile file)
+    {
+        if (_type?.MaxSupportingFiles is int max && _supportingFiles.Count >= max)
+        {
+            Snackbar.Add($"Maximum {max} supporting file(s) allowed.", Severity.Warning);
+            return;
+        }
+        if (!IsAllowedExt(file.Name)) { Snackbar.Add($"File type not allowed. Allowed: {_type?.AllowedFileTypes}", Severity.Warning); return; }
+        if (file.Size > MaxFileBytes) { Snackbar.Add("File exceeds 10 MB limit.", Severity.Warning); return; }
+        _supportingFiles.Add(file);
+    }
+
+    private bool IsAllowedExt(string fileName)
+    {
+        if (_type is null) return false;
+        var ext = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+        var allowed = _type.AllowedFileTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(a => a.TrimStart('.').ToLowerInvariant());
+        return allowed.Contains(ext);
+    }
+
+    private async Task SubmitEntryAsync()
+    {
+        if (_type is null) return;
+
+        if (_formDate is null)
+        {
+            Snackbar.Add("Meeting date is required.", Severity.Warning);
+            return;
+        }
+
+        // Allow only 31-Jul-2026 and later
+        var minimumAllowedDate = new DateTime(2026, 7, 31);
+
+        if (_formDate < minimumAllowedDate)
+        {
+            Snackbar.Add(
+                "Meeting date cannot be earlier than 31-Jul-2026.",
+                Severity.Warning);
+
+            return;
+        }
+
+        // Do not allow future dates
+        if (_formDate > AppTime.Today)
+        {
+            Snackbar.Add(
+                "Future meeting date is not allowed.",
+                Severity.Warning);
+
+            return;
+        }
+        if (_type.RequirePrimaryFile && _primaryFile is null && !_editingEntryId.HasValue) { Snackbar.Add("Primary MoM file is required.", Severity.Warning); return; }
+        if (_type.EnableZoneRegionScope)
+        {
+            if (string.IsNullOrWhiteSpace(_form.ZoneName))
+            {
+                Snackbar.Add("Zone is required.", Severity.Warning);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_form.RegionName) && _form.OfficeLevel != "ZO")
+            {
+                Snackbar.Add("Region is required.", Severity.Warning);
+                return;
+            }
+        }
+        if (_type.EnableQuarter && !_form.Quarter.HasValue)
+        {
+            Snackbar.Add("Please select Quarter.", Severity.Warning);
+            return;
+        }
+        if (_formDate > AppTime.Today)
+        {
+            Snackbar.Add("Future meeting date is not allowed.", Severity.Warning);
+            return;
+        }
+        
+    //     if (_type.EnableQuarter && _form.Quarter.HasValue)
+    //     {
+    //         var existingEntries = await MomRepo.ListEntriesAsync(
+    //             _type.Id,
+    //             null,
+    //             null,
+    //             null,
+    //             null,
+    //             null,
+    //             _form.Quarter,
+    //             _form.MeetingYear);
+
+    //         var duplicateExists = existingEntries.Any(x =>
+    // x.MeetingTypeId == _form.MeetingTypeId &&
+    // x.UnionId == _form.UnionId &&
+    // x.Quarter == _form.Quarter &&
+    // x.MeetingYear == _form.MeetingYear &&
+    // x.OfficeLevel == _form.OfficeLevel &&
+    // string.Equals(x.ZoneName ?? "", _form.ZoneName ?? "", StringComparison.OrdinalIgnoreCase) &&
+    // string.Equals(x.RegionName ?? "", _form.RegionName ?? "", StringComparison.OrdinalIgnoreCase) &&
+    // (!_editingEntryId.HasValue || x.Id != _editingEntryId.Value));
+
+    //         if (duplicateExists)
+    //         {
+    //             Snackbar.Add(
+    //                 $"Meeting already exists for the selected sub-category in Q{_form.Quarter} {_form.MeetingYear}.",
+    //                 Severity.Warning);
+
+    //             return;
+    //         }
+    //     }
+        if (_type.EnableMeetingType && !_form.MeetingTypeId.HasValue)
+        {
+            Snackbar.Add("Please select Meeting Category.", Severity.Warning);
+            return;
+        }
+
+        if (_formUnions.Count > 0 && !_form.UnionId.HasValue)
+        {
+            Snackbar.Add("Please select Sub-category.", Severity.Warning);
+            return;
+        }
+        if (_type.EnableMeetingType && !_form.MeetingTypeId.HasValue)
+        {
+            Snackbar.Add("Please select Meeting Category.", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.Remarks))
+        {
+            Snackbar.Add("Remarks are mandatory.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var actor = CurrentUser.EmplId ?? "";
+            _form.MeetingDate = _formDate.Value;
+
+            if (_primaryFile is not null)
+            {
+                await using var stream = _primaryFile.OpenReadStream(MaxFileBytes);
+                var (relPath, fileName) = await SaveFileAsync(stream, _primaryFile.Name);
+                _form.PrimaryFilePath = relPath;
+                _form.PrimaryFileName = fileName;
+            }
+
+            long entryId;
+            if (_editingEntryId.HasValue)
+            {
+                entryId = _editingEntryId.Value;
+                await MomRepo.UpdateEntryAsync(entryId, _form);
+            }
+            else
+            {
+                entryId = await MomRepo.InsertEntryAsync(_form, actor);
+            }
+
+            foreach (var sf in _supportingFiles)
+            {
+                await using var stream = sf.OpenReadStream(MaxFileBytes);
+                var (relPath, fileName) = await SaveFileAsync(stream, sf.Name);
+                await MomRepo.InsertAttachmentAsync(entryId, fileName, relPath, actor);
+            }
+
+            Snackbar.Add(_editingEntryId.HasValue ? "MoM entry updated." : "MoM entry saved.", Severity.Success);
+            _newEntryOpen = false;
+            await ReloadEntriesAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "MomEntries: save failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private Task<(string RelativePath, string FileName)> SaveFileAsync(Stream content, string originalFileName) =>
+        Store.SaveAsync(_type!.Id, _type!.StorageRootPath, content, originalFileName);
+
+    private async Task ShowAttachmentsAsync(MomEntry entry)
+    {
+        _activeEntryId = entry.Id;
+        _activeAttachments = (await MomRepo.ListAttachmentsAsync(entry.Id)).ToList();
+        _attachmentsOpen = true;
+    }
+
+    // ── Consolidated Excel export (Task 1) ──────────────────────────────────
+    // Exports whatever the current filters + RO/ZO/CO/CoScope visibility already
+    // narrowed _entries down to (same rows the user sees on screen) — a Welfare
+    // Cell CO user, an RO user, etc. never gets rows in the file they couldn't
+    // already see in the list. One "All Entries" sheet plus one sheet per
+    // meeting category present in the result set (Award Staff Union, Officers
+    // Union, Welfare Association sub-types, ...).
+    private async Task ExportToExcelAsync()
+    {
+        if (_type is null) return;
+        _exporting = true;
+        try
+        {
+            if (_entries.Count == 0)
+            {
+                Snackbar.Add("No entries to export for the current filters.", Severity.Warning);
+                return;
+            }
+
+            using var package = new ExcelPackage();
+            WriteEntriesSheet(package, "All Entries", _entries);
+
+            foreach (var group in _entries.GroupBy(e => string.IsNullOrWhiteSpace(e.MeetingTypeName) ? "Uncategorized" : e.MeetingTypeName))
+            {
+                WriteEntriesSheet(package, SafeSheetName(group.Key), group.ToList());
+            }
+
+            var bytes = await package.GetAsByteArrayAsync();
+            var fileName = $"{_type.TypeCode}_MoM_Export_{AppTime.Now:yyyyMMdd_HHmm}.xlsx";
+            await JS.InvokeVoidAsync("BlazorDownloadFile", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "MomEntries: export failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
+
+    private static void WriteEntriesSheet(ExcelPackage package, string sheetName, List<MomEntry> rows)
+    {
+        var ws = package.Workbook.Worksheets.Add(sheetName);
+        string[] headers = { "Meeting Date", "Office Level", "Zone", "Region", "Branch/SOL ID",
+            "Meeting Category", "Sub-category", "Quarter", "Year", "Remarks", "Primary File", "Created By", "Created At" };
+        for (int c = 0; c < headers.Length; c++)
+        {
+            ws.Cells[1, c + 1].Value = headers[c];
+            ws.Cells[1, c + 1].Style.Font.Bold = true;
+        }
+        for (int r = 0; r < rows.Count; r++)
+        {
+            var e = rows[r];
+            var row = r + 2;
+            ws.Cells[row, 1].Value = e.MeetingDate.ToString("dd-MMM-yyyy");
+            ws.Cells[row, 2].Value = e.OfficeLevel;
+            ws.Cells[row, 3].Value = e.ZoneName;
+            ws.Cells[row, 4].Value = e.RegionName;
+            ws.Cells[row, 5].Value = e.BranchSolId;
+            ws.Cells[row, 6].Value = e.MeetingTypeName;
+            ws.Cells[row, 7].Value = e.UnionName;
+            ws.Cells[row, 8].Value = e.Quarter;
+            ws.Cells[row, 9].Value = e.MeetingYear;
+            ws.Cells[row, 10].Value = e.Remarks;
+            ws.Cells[row, 11].Value = e.PrimaryFileName;
+            ws.Cells[row, 12].Value = e.CreatedByEmp;
+            ws.Cells[row, 13].Value = e.CreatedAt.ToString("dd-MMM-yyyy HH:mm");
+        }
+        ws.Cells[1, 1, Math.Max(rows.Count + 1, 1), headers.Length].AutoFitColumns();
+    }
+
+    // Excel sheet names: max 31 chars, no \ / ? * [ ] :
+    private static string SafeSheetName(string name)
+    {
+        var cleaned = new string(name.Where(ch => !"\\/?*[]:".Contains(ch)).ToArray());
+        return cleaned.Length > 31 ? cleaned[..31] : (cleaned.Length == 0 ? "Sheet" : cleaned);
+    }
+
+    private string PrimaryUrl(MomEntry e, bool download) =>
+        MomAttachmentLinkSigner.BuildEntryUrl(DataProtection, e.Id, CurrentUser.EmplId ?? "", download);
+
+    private string AttachmentUrl(MomAttachment a, bool download) =>
+        MomAttachmentLinkSigner.BuildAttachmentUrl(DataProtection, a.Id, _activeEntryId, CurrentUser.EmplId ?? "", download);
+}

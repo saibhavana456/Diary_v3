@@ -1,0 +1,315 @@
+@page "/reports/blood-donation"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MudBlazor
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+@* --- Filters matching ASPX order: State → Zone → Region → Branch → Blood Group → GO → Export --- *@
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid Spacing="2" Class="align-center">
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="State" @bind-Value="_selectedState" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                <MudSelectItem Value="@("all")">All States</MudSelectItem>
+                @foreach (var state in _states)
+                {
+                    <MudSelectItem Value="@state.Code">@state.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="Zone" Value="_selectedZone" ValueChanged="OnZoneChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                <MudSelectItem Value="@("CO")">CENTRAL OFFICE</MudSelectItem>
+                @foreach (var z in _zones)
+                {
+                    <MudSelectItem Value="@z.Code">@z.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="Region" Value="_selectedRegion" ValueChanged="OnRegionChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Disabled="@(_selectedZone == "all" || _selectedZone == "CO")">
+                <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                @foreach (var r in _regions)
+                {
+                    <MudSelectItem Value="@r.Code">@r.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="Branch" @bind-Value="_selectedBranch" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Disabled="@(_selectedRegion == "all")">
+                <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                @foreach (var b in _branches)
+                {
+                    <MudSelectItem Value="@b.Code">@b.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudSelect T="string" Label="Blood Group" @bind-Value="_selectedBloodGroup" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Required="true">
+                <MudSelectItem Value="@string.Empty">-- SELECT --</MudSelectItem>
+                @foreach (var bg in _bloodGroups)
+                {
+                    <MudSelectItem Value="@bg">@bg</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="1">
+            <MudButton Variant="Variant.Filled" Style="background-color:#000066; color:white; font-size:11px;"
+                       OnClick="LoadReport" Disabled="@(string.IsNullOrEmpty(_selectedBloodGroup))">
+                GO
+            </MudButton>
+        </MudItem>
+        <MudItem xs="6" sm="1">
+            <MudButton Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Download"
+                       Style="background-color:#000066; color:white; font-size:11px;"
+                       OnClick="HandleExport">
+                Export
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@* --- As On Date --- *@
+<div class="px-4 d-flex justify-end mb-2">
+    <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+        @_asOnDateLabel
+    </MudText>
+</div>
+
+@* --- Data Table --- *@
+<MudItem xs="12" Class="pa-4">
+    @if (_loading)
+    {
+        <div class="d-flex justify-center pa-10">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </div>
+    }
+    else if (_data.Count == 0 && _hasSearched)
+    {
+        <MudText Typo="Typo.subtitle1" Color="Color.Error" Class="text-center pa-4">No records found</MudText>
+    }
+    else if (_data.Count > 0)
+    {
+        <MudTable Items="_data" Dense="true" Striped="true" Bordered="true" Hover="true" FixedHeader="true"
+                  Height="600px" Elevation="2" Style="font-size:12px;">
+            <HeaderContent>
+                <MudTh Style="background-color:#2a2f5b; color:white; width:50px;">S.No</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Name</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Location</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Region</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Zone</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Mobile</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Blood Group</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">Gender</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">State</MudTh>
+                <MudTh Style="background-color:#2a2f5b; color:white;">City</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd Style="text-align:center;">@((_data.IndexOf(context) + 1))</MudTd>
+                <MudTd>@GetVal(context, "NAME")</MudTd>
+                <MudTd>@GetVal(context, "DESCR1")</MudTd>
+                <MudTd>@GetVal(context, "region_name")</MudTd>
+                <MudTd>@GetVal(context, "zone_name_eng")</MudTd>
+                <MudTd>@GetVal(context, "PHONE")</MudTd>
+                <MudTd>@GetVal(context, "BLOOD_GROUP")</MudTd>
+                <MudTd>@GetVal(context, "SEX")</MudTd>
+                <MudTd>@GetVal(context, "State_Name")</MudTd>
+                <MudTd>@GetVal(context, "CITY")</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <td colspan="10" style="text-align:center; padding:40px;">
+                    <MudText Typo="Typo.subtitle1" Color="Color.Error">No records found</MudText>
+                </td>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 25, 50, 100 }" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudItem>
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "all", _selectedRegion = "all", _selectedBranch = "all", _asOnDateLabel = "";
+    private bool _loading = false;
+    private bool _hasSearched = false;
+
+    private string _selectedBloodGroup = "";
+    private string _selectedState = "all";
+    private List<string> _bloodGroups = new();
+    private List<(string Code, string Name)> _states = new();
+    private List<(string Code, string Name)> _zones = new();
+    private List<(string Code, string Name)> _regions = new();
+    private List<(string Code, string Name)> _branches = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // All 3 dropdown lookups are independent — load in parallel
+            var bgTask = ReportService.ExecuteRawQueryAsync(
+                "SELECT DISTINCT BLOOD_GROUP FROM Staff_Blood_Donation_Details WHERE BLOOD_GROUP IS NOT NULL AND BLOOD_GROUP <> '' ORDER BY BLOOD_GROUP");
+
+            var stateTask = ReportService.ExecuteRawQueryAsync(
+                "SELECT DISTINCT State_Code, State_Name FROM State_Master_Parivar WHERE State_Code IS NOT NULL ORDER BY State_Name");
+
+            var zoneTask = ReportService.ExecuteRawQueryAsync(
+                "SELECT zone_solid, zone_name_eng FROM zone_master WHERE status='A' ORDER BY zone_name_eng");
+
+            await Task.WhenAll(bgTask, stateTask, zoneTask);
+
+            _bloodGroups = bgTask.Result.Select(r => r["BLOOD_GROUP"]?.ToString() ?? "").Where(x => !string.IsNullOrEmpty(x)).ToList();
+
+            _states = stateTask.Result.Select(r => (
+                Code: r["State_Code"]?.ToString() ?? "",
+                Name: r["State_Name"]?.ToString() ?? ""
+            )).ToList();
+
+            _zones = zoneTask.Result.Select(r => (
+                Code: r["zone_solid"]?.ToString() ?? "",
+                Name: r["zone_name_eng"]?.ToString() ?? ""
+            )).ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[BloodDonation] Error initializing dropdowns");
+        }
+
+        _asOnDateLabel = $"Data As On - {AppTime.Now:dd-MMM-yyyy}";
+    }
+
+    private async Task OnZoneChanged(string value)
+    {
+        _selectedZone = value;
+        _selectedRegion = "all";
+        _selectedBranch = "all";
+        _regions.Clear();
+        _branches.Clear();
+
+        if (value != "all" && value != "CO")
+        {
+            var regionData = await ReportService.ExecuteRawQueryAsync(
+                $"SELECT region_solid, region_name FROM region_master WHERE zone_solid='{value}' ORDER BY region_name");
+            _regions = regionData.Select(r => (
+                Code: r["region_solid"]?.ToString() ?? "",
+                Name: r["region_name"]?.ToString() ?? ""
+            )).ToList();
+        }
+    }
+
+    private async Task OnRegionChanged(string value)
+    {
+        _selectedRegion = value;
+        _selectedBranch = "all";
+        _branches.Clear();
+
+        if (value != "all")
+        {
+            var branchData = await ReportService.ExecuteRawQueryAsync(
+                $"SELECT SOL_ID, CONCAT(UPPER(branch_name),'  (',branch_code,')') AS Branch_Name FROM branch_master WHERE region_solid='{value}' ORDER BY branch_name");
+            _branches = branchData.Select(r => (
+                Code: r["SOL_ID"]?.ToString() ?? "",
+                Name: r["Branch_Name"]?.ToString() ?? ""
+            )).ToList();
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        if (string.IsNullOrEmpty(_selectedBloodGroup))
+            return;
+
+        _loading = true;
+        _hasSearched = true;
+        StateHasChanged();
+
+        try
+        {
+            string where = $"A.BLOOD_GROUP = '{_selectedBloodGroup}' AND UBI_CO_FLAG='Y'";
+
+            if (_selectedState != "all")
+                where += $" AND A.STATE = '{_selectedState}'";
+
+            if (_selectedZone == "CO")
+                where += " AND B.REGION_CODE='CO'";
+            else if (_selectedZone != "all")
+                where += $" AND bm.zone_solid = '{_selectedZone}'";
+
+            if (_selectedRegion != "all")
+                where += $" AND bm.region_solid = '{_selectedRegion}'";
+
+            if (_selectedBranch != "all")
+                where += $" AND bm.sol_id = '{_selectedBranch}'";
+
+            // RBAC: clamp to the logged-in user's own scope for non-CO users (fail-closed to BRANCH).
+            {
+                var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+                if (__scope.IsZone) where += $" AND bm.zone_solid = '{__scope.ZoneSolid}'";
+                else if (__scope.IsRegion) where += $" AND bm.region_solid = '{__scope.RegionSolid}'";
+                else if (__scope.IsBranch) where += $" AND bm.sol_id = '{__scope.BranchSolid}'";
+            }
+
+            string finalQuery = $@"SELECT A.Name AS NAME, B.DESCR1, bm.region_name, bm.zone_name_eng, A.PHONE, 
+                A.BLOOD_GROUP, A.SEX, S.State_Name, A.CITY 
+                FROM Staff_Blood_Donation_Details A 
+                LEFT JOIN StaffDetails B ON A.EMPLID = B.EMPLID 
+                LEFT JOIN Branch_Master bm ON B.BRSOLID = bm.SOL_ID 
+                JOIN State_Master_Parivar S ON A.STATE = S.State_Code 
+                WHERE {where}";
+
+            _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+            _asOnDateLabel = $"Data As On - {AppTime.Now:dd-MMM-yyyy}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[BloodDonation] Error loading report");
+            _data = new();
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private string GetVal(Dictionary<string, object> row, string key)
+    {
+        return row.TryGetValue(key, out var val) ? val?.ToString() ?? "" : "";
+    }
+
+    private async Task HandleExport()
+    {
+        try
+        {
+            var exportCols = new List<ColumnConfig>
+            {
+                new ColumnConfig { Header = "Name", PropertyName = "NAME" },
+                new ColumnConfig { Header = "Location", PropertyName = "DESCR1" },
+                new ColumnConfig { Header = "Region", PropertyName = "region_name" },
+                new ColumnConfig { Header = "Zone", PropertyName = "zone_name_eng" },
+                new ColumnConfig { Header = "Mobile", PropertyName = "PHONE" },
+                new ColumnConfig { Header = "Blood Group", PropertyName = "BLOOD_GROUP" },
+                new ColumnConfig { Header = "Gender", PropertyName = "SEX" },
+                new ColumnConfig { Header = "State", PropertyName = "State_Name" },
+                new ColumnConfig { Header = "City", PropertyName = "CITY" }
+            };
+            var bytes = ReportService.ExportToExcel(_data, exportCols, "BloodDonation");
+            await JS.InvokeVoidAsync("BlazorDownloadFile", "BloodDonation.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[BloodDonation] Export error");
+        }
+    }
+}

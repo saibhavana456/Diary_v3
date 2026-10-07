@@ -1,0 +1,197 @@
+@page "/my-feedback/{Id:long}"
+@using MudBlazor
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@using global::RequestPortal.Web.Shared
+@inject IFeedbackRepo FeedbackRepo
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_ticket?.TicketNo ?? "Feedback")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_ticket is null || !string.Equals(_ticket.EmpCode, CurrentUser.EmpCode, StringComparison.OrdinalIgnoreCase))
+{
+    <MudAlert Severity="Severity.Error">Ticket not found.</MudAlert>
+}
+else
+{
+    <PageHeader PageKey="my-feedback-detail" Title="@($"#{_ticket.TicketNo} — {CategoryLabel(_ticket.Category)}")" Crumbs="_crumbs" />
+
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-6" Elevation="1">
+                <MudChip T="string" Color="@StatusColor(_ticket.Status)">@_ticket.Status</MudChip>
+                @if (_ticket.Severity is not null)
+                {
+                    <MudChip T="string" Color="@SeverityColor(_ticket.Severity.Value)" Class="ml-1">@_ticket.Severity</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Class="ml-1">Not triaged</MudChip>
+                }
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.body2"><b>Category:</b> @CategoryLabel(_ticket.Category)</MudText>
+                <MudText Typo="Typo.body2"><b>Zone / Region / Branch:</b> @_ticket.Zone / @_ticket.Region / @_ticket.Branch</MudText>
+                <MudText Typo="Typo.body2"><b>Submitted:</b> @_ticket.CreatedAt.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.h6">Description</MudText>
+                <MudText Style="white-space: pre-wrap;">@_ticket.Description</MudText>
+
+                @if (_ticket.Attachments.Count > 0)
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.h6" Class="mb-2">Attachments</MudText>
+                    @foreach (var att in _ticket.Attachments)
+                    {
+                        <div class="d-flex align-center gap-2 mb-1">
+                            <MudIcon Icon="@AttIcon(att.Mime)" Size="Size.Small" />
+                            <MudLink Href="@("/" + att.FilePath)" Target="_blank">@att.FileName</MudLink>
+                        </div>
+                    }
+                }
+            </MudPaper>
+
+            @if (_ticket.Status == FeedbackStatus.Closed)
+            {
+                <MudPaper Class="pa-6 mt-4" Elevation="1">
+                    @if (_ticket.Rating is not null)
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2">Your rating</MudText>
+                        <MudRating SelectedValue="_ticket.Rating.Value" ReadOnly="true" />
+                        @if (!string.IsNullOrWhiteSpace(_ticket.RatingComments))
+                        {
+                            <MudText Typo="Typo.body2" Class="mt-1">"@_ticket.RatingComments"</MudText>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.h6">How was the resolution?</MudText>
+                        <MudRating @bind-SelectedValue="_rating" />
+                        <MudTextField @bind-Value="_ratingComments" Lines="2" Label="Comments (optional)" Class="mt-2" />
+                        <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitRatingAsync" Disabled="@_ratingBusy">
+                            @(_ratingBusy ? "Submitting…" : "Submit rating")
+                        </MudButton>
+                    }
+                </MudPaper>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Update history</MudText>
+                <MudTimeline TimelinePosition="TimelinePosition.Start">
+                    <MudTimelineItem Color="Color.Info" Variant="Variant.Filled">
+                        <ItemContent>
+                            <MudText Typo="Typo.body1"><b>Submitted</b></MudText>
+                            <MudText Typo="Typo.body2">Ticket created — Status: Open</MudText>
+                            <MudText Class="timeline-actor">@_ticket.CreatedAt.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                        </ItemContent>
+                    </MudTimelineItem>
+                    @foreach (var u in _ticket.Updates)
+                    {
+                        <MudTimelineItem Color="@(u.NewStatus is not null ? StatusColor(u.NewStatus.Value) : Color.Default)" Variant="Variant.Filled">
+                            <ItemContent>
+                                <MudText Typo="Typo.body1">
+                                    <b>
+                                        @if (u.NewStatus is not null) { @($"Status → {u.NewStatus}") }
+                                        @if (u.NewStatus is not null && u.NewSeverity is not null) { @(" · ") }
+                                        @if (u.NewSeverity is not null) { @($"Severity → {u.NewSeverity}") }
+                                        @if (u.NewStatus is null && u.NewSeverity is null) { @("Update") }
+                                    </b>
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(u.UpdateText))
+                                {
+                                    <MudText Typo="Typo.body2">@u.UpdateText</MudText>
+                                }
+                                <MudText Class="timeline-actor">@u.UpdatedAt.ToString("dd-MMM-yyyy HH:mm")</MudText>
+                            </ItemContent>
+                        </MudTimelineItem>
+                    }
+                </MudTimeline>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+<style>
+    .timeline-actor { font-size: .78rem; opacity: .65; }
+</style>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private FeedbackTicket? _ticket;
+    private bool _loading = true;
+    private List<PageHeader.Crumb> _crumbs = new();
+    private int _rating = 5;
+    private string? _ratingComments;
+    private bool _ratingBusy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _ticket = await FeedbackRepo.GetTicketAsync(Id);
+        _crumbs = new()
+        {
+            new("MIS", "MIS"), new("My Feedbacks", "my-feedback"), new($"#{_ticket?.TicketNo ?? "?"}")
+        };
+        _loading = false;
+    }
+
+    private async Task SubmitRatingAsync()
+    {
+        if (_ticket is null) return;
+        _ratingBusy = true;
+        try
+        {
+            await FeedbackRepo.SubmitRatingAsync(_ticket.Id, _rating, _ratingComments);
+            Snackbar.Add("Thanks for the feedback.", Severity.Success);
+            _ticket = await FeedbackRepo.GetTicketAsync(_ticket.Id);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "FeedbackTicketView: submit rating failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+        finally
+        {
+            _ratingBusy = false;
+        }
+    }
+
+    private static string AttIcon(string? mime) => mime switch
+    {
+        "application/pdf" => Icons.Material.Filled.PictureAsPdf,
+        "image/png" or "image/jpeg" => Icons.Material.Filled.Image,
+        _ => Icons.Material.Filled.AttachFile
+    };
+
+    private static string CategoryLabel(FeedbackCategory c) => c switch
+    {
+        FeedbackCategory.FunctionalDefects => "Functional Defects",
+        FeedbackCategory.PerformanceIssues => "Performance Issues",
+        FeedbackCategory.UiUxImprovements => "UI/UX Improvements",
+        FeedbackCategory.NewFeatureRequests => "New Feature Requests",
+        FeedbackCategory.DataIssues => "Data Issues",
+        _ => c.ToString()
+    };
+
+    private static Color SeverityColor(FeedbackSeverity s) => s switch
+    {
+        FeedbackSeverity.Critical => Color.Error,
+        FeedbackSeverity.High => Color.Warning,
+        FeedbackSeverity.Medium => Color.Info,
+        _ => Color.Default
+    };
+
+    private static Color StatusColor(FeedbackStatus s) => s switch
+    {
+        FeedbackStatus.Closed => Color.Success,
+        FeedbackStatus.InProgress => Color.Warning,
+        _ => Color.Primary
+    };
+}

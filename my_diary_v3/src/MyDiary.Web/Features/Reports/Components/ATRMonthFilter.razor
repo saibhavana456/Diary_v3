@@ -1,0 +1,338 @@
+@using MudBlazor
+@using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@inject DynamicReportService ReportService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+@* ───────────────────────────────────────────────────────────────────────
+   ATRMonthFilter — Month + Zone/Region/Branch filter bar shared by the four
+   monthly ATR MIS reports. Zone/Region/Branch are locked to the logged-in
+   user's claims (privilege / zone_solid / region_solid / branch_solid), the
+   same way DynamicDashboard does it. OnGo emits an AtrFilterSelection that is
+   already resolved against the user's privilege.
+   The <style> block below is shared by all four report pages.
+   ─────────────────────────────────────────────────────────────────────── *@
+<style>
+    .atr-scroll {width: 100%;max-width: 100%;max-height: 65vh;overflow-x: auto;overflow-y: auto;display: block;scrollbar-gutter: stable;}
+    .atr-scroll:focus {outline: 1px solid #9a93ec;}
+    .atr-table {border-collapse: collapse;font-size: 12px;width: max-content;min-width: 100%;}
+    .atr-table th, .atr-table td { border: 1px solid #d0d4e4; padding: 4px 8px; white-space: nowrap; }
+    .atr-table thead th { position:sticky;top:0; z-index: 5; background-color: #2a2f5b; color: #fff; text-align: center; }
+    .atr-table tbody tr { background-color: #fff; }
+    .atr-table tbody tr:nth-child(even) { background-color: #f6f7fb; }
+    .atr-table tbody tr:hover { background-color: #e8ebf7; }
+    .atr-table tfoot td { background-color: #e3e6f3; font-weight: bold; }
+    .atr-table .atr-left { text-align: left; }
+    .atr-table .atr-center { text-align: center; }
+    .atr-table .atr-num { text-align: right; }
+    .atr-table .atr-sticky { position: sticky; left: 0; background: inherit; z-index: 1; }
+    .atr-c  { background-color: #d9f2e3; color: #14532d; text-align: center; font-weight: 600; }
+    .atr-nc { background-color: #fdecc8; color: #7a4b00; text-align: center; font-weight: 600; }
+    .atr-ns { background-color: #fbd9d9; color: #8a1c1c; text-align: center; font-weight: 600; }
+    .atr-legend span { display: inline-block; padding: 2px 10px; margin-right: 8px; border-radius: 4px; font-size: 12px; }
+
+    /* REGION-WISE REPORT - FROZEN FIRST 4 COLUMNS SNO, Branch Name, Branch Code, Branch SOL */
+    .atr-region-table .atr-sticky-sno {position: sticky;left: 0;width: 45px;min-width: 45px;max-width: 45px;z-index: 3;}
+    .atr-region-table .atr-sticky-branch {position: sticky;left: 45px;width: 235px;min-width: 235px;max-width: 235px;z-index: 3;}
+    .atr-region-table .atr-sticky-code {position: sticky;left: 280px; width: 90px;min-width: 90px;max-width: 90px;z-index: 3;}
+    .atr-region-table .atr-sticky-sol {position: sticky;left: 370px;width: 85px;min-width: 85px;max-width: 85px;z-index: 3;}
+
+    /* Give frozen BODY cells an opaque background. Otherwise the date columns scrolling underneath them remain visible and the text overlaps. */
+    /* Odd rows */
+    .atr-region-table tbody tr:nth-child(odd) > .atr-sticky-sno,
+    .atr-region-table tbody tr:nth-child(odd) > .atr-sticky-branch,
+    .atr-region-table tbody tr:nth-child(odd) > .atr-sticky-code,
+    .atr-region-table tbody tr:nth-child(odd) > .atr-sticky-sol {background-color: #ffffff;}
+    /* Even rows */
+    .atr-region-table tbody tr:nth-child(even) > .atr-sticky-sno,
+    .atr-region-table tbody tr:nth-child(even) > .atr-sticky-branch,
+    .atr-region-table tbody tr:nth-child(even) > .atr-sticky-code,
+    .atr-region-table tbody tr:nth-child(even) > .atr-sticky-sol {background-color: #f6f7fb;}
+
+    /* Keep hover behaviour for frozen columns also */
+    .atr-region-table tbody tr:hover > .atr-sticky-sno,
+    .atr-region-table tbody tr:hover > .atr-sticky-branch,
+    .atr-region-table tbody tr:hover > .atr-sticky-code,
+    .atr-region-table tbody tr:hover > .atr-sticky-sol {background-color: #e8ebf7;}
+
+    /* FROZEN HEADERS: These need the highest z-index because they are sticky vertically AND horizontally. */
+    .atr-region-table thead th.atr-sticky-sno,
+    .atr-region-table thead th.atr-sticky-branch,
+    .atr-region-table thead th.atr-sticky-code,
+    .atr-region-table thead th.atr-sticky-sol {position: sticky;top: 0;z-index: 20; background-color: #2a2f5b;color: #ffffff;}
+
+    /* Divider showing where frozen area ends */
+    .atr-region-table .atr-sticky-sol { box-shadow: 3px 0 4px rgba(0, 0, 0, 0.18);}
+</style>
+
+@if (_privilege == "BRANCH" && !BranchUserAllowed)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-2">This report is not available for branch-level users.</MudAlert>
+}
+else
+{
+    <MudGrid Spacing="2" Class="pa-2 align-center">
+        <MudItem xs="12" sm="2">
+            <MudDatePicker @bind-Date="_month" Label="Report Month" OpenTo="OpenTo.Month" FixDay="1" DateFormat="MMMM yyyy" MaxDate="@DateTime.Today"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" RequiredError="Month is Mandatory" />
+        </MudItem>
+
+        @if (ShowZone)
+        {
+            <MudItem xs="12" sm="2">
+                <MudSelect T="string" Label="Zone" Value="_zone" ValueChanged="HandleZoneChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           Disabled="@_zoneLocked"
+                           UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Zone" } })">
+                    @if (AllZonesOption)
+                    {
+                        <MudSelectItem Value="@("all")">All Zones</MudSelectItem>
+                    }
+                    @foreach (var z in _zones)
+                    {
+                        <MudSelectItem Value="@z["zone_solid"].ToString()">@z["zone_name_eng"].ToString()</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        }
+
+        @if (ShowRegion)
+        {
+            <MudItem xs="12" sm="2">
+                <MudSelect T="string" Label="Region" Value="_region" ValueChanged="HandleRegionChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           Disabled="@(_regionLocked || IsAll(_zone))"
+                           UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Region" } })">
+                    @foreach (var r in _regions)
+                    {
+                        <MudSelectItem Value="@r["region_solid"].ToString()">@r["region_name"].ToString()</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        }
+
+        @if (ShowBranch)
+        {
+            <MudItem xs="12" sm="3">
+                <MudSelect T="string" Label="Branch" Value="_branch" ValueChanged="HandleBranchChanged"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           Disabled="@(_branchLocked || IsAll(_region))"
+                           UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Branch" } })">
+                    @foreach (var b in _branches)
+                    {
+                        <MudSelectItem Value="@b["SOL_ID"].ToString()">@b["Branch_Name"].ToString()</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        }
+
+        <MudItem xs="12" sm="1">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="text-white"
+                       OnClick="OnGoInternal">GO</MudButton>
+        </MudItem>
+
+        <MudSpacer />
+
+        @if (ShowExport)
+        {
+            <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                <MudButton Variant="Variant.Filled" StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                           Style="background-color: #000066; color: white; font-size: 11px;"
+                           Disabled="@(!ExportEnabled)"
+                           OnClick="OnExportInternal">Export To Excel</MudButton>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public bool ShowZone { get; set; } = true;
+    [Parameter] public bool ShowRegion { get; set; }
+    [Parameter] public bool ShowBranch { get; set; }
+    [Parameter] public bool RequireZone { get; set; }
+    [Parameter] public bool RequireRegion { get; set; }
+    [Parameter] public bool RequireBranch { get; set; }
+    /// <summary>Adds an "All Zones" entry (and makes it the default for Central Office).</summary>
+    [Parameter] public bool AllZonesOption { get; set; }
+    /// <summary>Branch-level users can open only the branch-wise report.</summary>
+    [Parameter] public bool BranchUserAllowed { get; set; }
+    [Parameter] public bool ShowExport { get; set; } = true;
+    [Parameter] public bool ExportEnabled { get; set; }
+    [Parameter] public EventCallback<AtrFilterSelection> OnGo { get; set; }
+    [Parameter] public EventCallback OnExport { get; set; }
+
+    private DateTime? _month = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private string _zone = "", _region = "", _branch = "";
+    private List<Dictionary<string, object>> _zones = new(), _regions = new(), _branches = new();
+    private bool _zoneLocked, _regionLocked, _branchLocked;
+
+    private string _privilege = "CO";
+    private string _uZone = "00000", _uRegion = "00000", _uBranch = "00000";
+    private string _uZoneName = "", _uRegionName = "", _uBranchName = "";
+
+    private static bool IsAll(string? v) => string.IsNullOrEmpty(v) || v.Equals("all", StringComparison.OrdinalIgnoreCase);
+
+    // Values are only ever taken from our own dropdown lists / claims, but they are concatenated into
+    // the lookup condition (existing DynamicReportService style), so strip anything unexpected.
+    private static string Safe(string? v) => Regex.Replace(v ?? "", @"[^A-Za-z0-9_\-]", "");
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _privilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+            _uZone = user.FindFirst("zone_solid")?.Value ?? "00000";
+            _uRegion = user.FindFirst("region_solid")?.Value ?? "00000";
+            _uBranch = user.FindFirst("branch_solid")?.Value ?? "00000";
+            _uZoneName = user.FindFirst("zone_name")?.Value ?? "";
+            _uRegionName = user.FindFirst("region_name")?.Value ?? "";
+            _uBranchName = user.FindFirst("branch_name")?.Value ?? "";
+        }
+
+        _zones = await SafeLookupAsync("zone_master", "*", "status='A'", "zone_name_eng");
+        if (AllZonesOption && _privilege == "CO") _zone = "all";
+
+        await ApplyRoleAsync();
+    }
+
+    public async Task ResetForTabChangeAsync()
+    {
+        // Month is intentionally retained.
+        _zone = "";
+        _region = "";
+        _branch = "";
+
+        _regions.Clear();
+        _branches.Clear();
+
+        // Restore claim-based selections for scoped users.
+        await ApplyRoleAsync();
+
+        // CO user on reports supporting all zones.
+        if (_privilege == "CO" && AllZonesOption)
+            _zone = "all";
+
+        StateHasChanged();
+    }
+
+    private async Task<List<Dictionary<string, object>>> SafeLookupAsync(string table, string cols, string condition, string order)
+    {
+        try
+        {
+            var task = ReportService.GetLookupDataAsync(table, cols, condition, order);
+            if (await Task.WhenAny(task, Task.Delay(5000)) == task)
+                return await task;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[ATRMonthFilter] Error loading lookup data: " + ex.Message);
+            Snackbar.Add("Failed to load filter data. Please retry.", Severity.Error);
+        }
+        return new();
+    }
+
+    private async Task LoadRegionsAsync(string zone)
+        => _regions = await SafeLookupAsync("region_master", "*", $"zone_solid='{Safe(zone)}'", "region_name");
+
+    private async Task LoadBranchesAsync(string region)
+        => _branches = await SafeLookupAsync("branch_master",
+            "CONCAT(UPPER(branch_name),' (',branch_code,')') As Branch_Name, SOL_ID",
+            $"region_solid='{Safe(region)}'", "BRANCH_NAME");
+
+    private async Task ApplyRoleAsync()
+    {
+        switch (_privilege)
+        {
+            case "ZONE":
+                _zone = _uZone; _zoneLocked = true;
+                EnsureZone();
+                await LoadRegionsAsync(_uZone);
+                break;
+
+            case "REGION":
+                _zone = _uZone; _region = _uRegion; _zoneLocked = true; _regionLocked = true;
+                EnsureZone();
+                await LoadRegionsAsync(_uZone);
+                EnsureRegion();
+                await LoadBranchesAsync(_uRegion);
+                break;
+
+            case "BRANCH":
+                _zone = _uZone; _region = _uRegion; _branch = _uBranch;
+                _zoneLocked = _regionLocked = _branchLocked = true;
+                EnsureZone();
+                await LoadRegionsAsync(_uZone);
+                EnsureRegion();
+                await LoadBranchesAsync(_uRegion);
+                if (!_branches.Any(b => b["SOL_ID"].ToString() == _uBranch))
+                    _branches.Insert(0, new() { { "SOL_ID", _uBranch }, { "Branch_Name", _uBranchName } });
+                break;
+        }
+    }
+
+    // A user's own zone/region may be missing from the master list (e.g. inactive) — show it anyway.
+    private void EnsureZone()
+    {
+        if (!string.IsNullOrEmpty(_uZone) && _uZone != "00000" && !_zones.Any(z => z["zone_solid"].ToString() == _uZone))
+            _zones.Insert(0, new() { { "zone_solid", _uZone }, { "zone_name_eng", _uZoneName } });
+    }
+
+    private void EnsureRegion()
+    {
+        if (!string.IsNullOrEmpty(_uRegion) && _uRegion != "00000" && !_regions.Any(r => r["region_solid"].ToString() == _uRegion))
+            _regions.Insert(0, new() { { "region_solid", _uRegion }, { "region_name", _uRegionName } });
+    }
+
+    private async Task HandleZoneChanged(string v)
+    {
+        if (_zoneLocked) return;
+        _zone = v; _region = ""; _branch = "";
+        _regions = new(); _branches = new();
+        if (!IsAll(v) && ShowRegion) await LoadRegionsAsync(v);
+    }
+
+    private async Task HandleRegionChanged(string v)
+    {
+        if (_regionLocked) return;
+        _region = v; _branch = "";
+        _branches = new();
+        if (!IsAll(v) && ShowBranch) await LoadBranchesAsync(v);
+    }
+
+    private void HandleBranchChanged(string v)
+    {
+        if (_branchLocked) return;
+        _branch = v;
+    }
+
+    private async Task OnGoInternal()
+    {
+        if (_month is null) { Snackbar.Add("Please select the report month.", Severity.Warning); return; }
+
+        string? zone = IsAll(_zone) ? null : _zone;
+        string? region = IsAll(_region) ? null : _region;
+        string? branch = IsAll(_branch) ? null : _branch;
+
+        if (RequireZone && zone is null) { Snackbar.Add("Please select a Zone.", Severity.Warning); return; }
+        if (RequireRegion && region is null) { Snackbar.Add("Please select a Region.", Severity.Warning); return; }
+        if (RequireBranch && branch is null) { Snackbar.Add("Please select a Branch.", Severity.Warning); return; }
+
+        var zoneName = zone is null ? null : _zones.FirstOrDefault(z => z["zone_solid"].ToString() == zone)?["zone_name_eng"]?.ToString();
+        var regionName = region is null ? null : _regions.FirstOrDefault(r => r["region_solid"].ToString() == region)?["region_name"]?.ToString();
+        var branchName = branch is null ? null : _branches.FirstOrDefault(b => b["SOL_ID"].ToString() == branch)?["Branch_Name"]?.ToString();
+
+        var m = new DateTime(_month.Value.Year, _month.Value.Month, 1);
+        await OnGo.InvokeAsync(new AtrFilterSelection(m, zone, region, branch, zoneName, regionName, branchName));
+    }
+
+    private async Task OnExportInternal()
+    {
+        if (OnExport.HasDelegate) await OnExport.InvokeAsync();
+    }
+}

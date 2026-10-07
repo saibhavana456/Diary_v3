@@ -1,0 +1,100 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@* Add / edit a menu row attached to a leaf module. *@
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                <MudSelect T="long" @bind-Value="_moduleId" Label="Leaf module" Required="true">
+                    @foreach (var m in LeafModules)
+                    {
+                        <MudSelectItem T="long" Value="@m.Id">@ModulePathFn(m.Id) (@m.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_code" Label="Code" Required="true" HelperText="MENU.* style code" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_label" Label="Label" Required="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_route" Label="Route" Required="true" HelperText="e.g. /requests/mine" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_icon" Label="Icon (Material name)" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField T="int" @bind-Value="_sort" Label="Sort order" Min="0" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudCheckBox T="bool" @bind-Value="_active" Label="Active (visible to RBAC engine)" />
+            </MudItem>
+        </MudGrid>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dlg { get; set; } = null!;
+    [Parameter] public AppMenu? Editing { get; set; }
+    [Parameter] public List<AppModule> LeafModules { get; set; } = new();
+    [Parameter] public Func<long, string> ModulePathFn { get; set; } = id => $"#{id}";
+
+    private long _moduleId;
+    private string _code = "";
+    private string _label = "";
+    private string _route = "";
+    private string? _icon;
+    private int _sort = 10;
+    private bool _active = true;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Editing is not null)
+        {
+            _moduleId = Editing.ModuleId;
+            _code = Editing.Code;
+            _label = Editing.Label;
+            _route = Editing.Route;
+            _icon = Editing.Icon;
+            _sort = Editing.SortOrder;
+            _active = Editing.IsActive;
+        }
+        else if (LeafModules.Count > 0)
+        {
+            _moduleId = LeafModules[0].Id;
+        }
+    }
+
+    private void Cancel() => Dlg.Cancel();
+
+    private void Submit()
+    {
+        _error = null;
+        if (_moduleId == 0 || string.IsNullOrWhiteSpace(_code) || string.IsNullOrWhiteSpace(_label) || string.IsNullOrWhiteSpace(_route))
+        {
+            _error = "Module, Code, Label and Route are required.";
+            return;
+        }
+        var m = Editing ?? new AppMenu();
+        m.ModuleId = _moduleId;
+        m.Code = _code.Trim();
+        m.Label = _label.Trim();
+        m.Route = _route.Trim();
+        m.Icon = _icon;
+        m.SortOrder = _sort;
+        m.IsActive = _active;
+        // IsEnabled is NOT toggled here — that is a SuperAdmin action on the list page.
+        if (Editing is null) m.IsEnabled = true;
+        Dlg.Close(DialogResult.Ok(m));
+    }
+}

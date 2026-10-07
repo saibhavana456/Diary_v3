@@ -1,0 +1,139 @@
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Services
+@using global::RequestPortal.Web.Shared
+@inject BreadcrumbState Breadcrumb
+@inject NavigationManager Nav
+
+@* ───────────────────────────────────────────────────────────────────────
+   ReportBreadcrumb — gradient breadcrumb + title banner for report/detail
+   pages opened from Assurance Hub / Business Hub cards. Styled to match
+   the app-wide rp-page-header (RequestPortal.Web.Shared.PageHeader) —
+   same --rp-grad gradient, same rp-breadcrumbs/rp-title classes — plus
+   the ⓘ page-info icon, consistent with every other page header.
+   ─────────────────────────────────────────────────────────────────────── *@
+
+@if (_hasContext)
+{
+    <div class="rp-page-header" role="region" aria-labelledby="rb-title">
+        <div class="rp-page-header-row">
+            <div style="flex:1; min-width:0;">
+                <nav aria-label="Breadcrumb">
+                    <ol class="rp-breadcrumbs" style="list-style:none; margin:0; padding:0;">
+                        <li style="display:inline-flex; align-items:center; gap:4px;">
+                            <MudIcon Icon="@Icons.Material.Filled.Home" Size="Size.Small" aria-hidden="true" Style="font-size:15px;" />
+                            <MudLink OnClick="GoToLanding" Underline="Underline.None" Style="color:rgba(255,255,255,.9)">Home</MudLink>
+                        </li>
+                        <li aria-hidden="true" class="rp-sep">&rsaquo;</li>
+
+                        <li style="display:inline-flex; align-items:center; gap:4px;">
+                            <MudLink OnClick="GoHome" Underline="Underline.None" Style="color:rgba(255,255,255,.9)">@Breadcrumb.SourceLabel</MudLink>
+                        </li>
+
+                        @if (!string.IsNullOrWhiteSpace(_category))
+                        {
+                            <li aria-hidden="true" class="rp-sep">&rsaquo;</li>
+                            <li style="display:inline-flex; align-items:center; gap:4px;">
+                                <MudLink OnClick="GoToCategory" Underline="Underline.None" Style="color:rgba(255,255,255,.9)">@_category</MudLink>
+                            </li>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(_subCategory))
+                        {
+                            <li aria-hidden="true" class="rp-sep">&rsaquo;</li>
+                            <li style="display:inline-flex; align-items:center; gap:4px;">
+                                <MudLink OnClick="GoToSubCategory" Underline="Underline.None" Style="color:rgba(255,255,255,.9)">@_subCategory</MudLink>
+                            </li>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(Breadcrumb.SelectorLabel) && !string.IsNullOrWhiteSpace(Breadcrumb.SelectorHref))
+                        {
+                            <li aria-hidden="true" class="rp-sep">&rsaquo;</li>
+                            <li style="display:inline-flex; align-items:center; gap:4px;">
+                                <MudLink OnClick="GoToSelector" Underline="Underline.None" Style="color:rgba(255,255,255,.9)">@Breadcrumb.SelectorLabel</MudLink>
+                            </li>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(_currentLabel))
+                        {
+                            <li aria-hidden="true" class="rp-sep">&rsaquo;</li>
+                            <li style="display:inline-flex; align-items:center; gap:4px;">
+                                <span class="rp-current" aria-current="page">@_currentLabel</span>
+                            </li>
+                        }
+                    </ol>
+                </nav>
+
+                <h1 class="rp-title" id="rb-title">@_currentLabel</h1>
+            </div>
+
+            @* ── Page info ⓘ ── *@
+            <RequestPortal.Web.Shared.PageInfoIcon PageKey="@_pageKey" />
+        </div>
+    </div>
+}
+
+@code {
+    private string? _category;
+    private string? _subCategory;
+    private string? _currentLabel;
+    private string _pageKey = "";
+    private bool _hasContext;
+
+    protected override void OnInitialized()
+    {
+        // Derive a stable PageKey from the current route, e.g.
+        // "reports/atmworkingdailydashboard" — lets Page Config carry
+        // metadata for individual report pages without a bespoke seed
+        // per report; shows "not configured" gracefully until added.
+        var relPath = new Uri(Nav.Uri).AbsolutePath.Trim('/').ToLowerInvariant();
+        _pageKey = relPath.Replace('/', '-');
+
+        if (Breadcrumb.HasContext && !string.IsNullOrWhiteSpace(Breadcrumb.CurrentLabel))
+        {
+            _category = Breadcrumb.Category;
+            _subCategory = Breadcrumb.SubCategory;
+            _currentLabel = Breadcrumb.CurrentLabel;
+            _hasContext = true;
+            return;
+        }
+
+        var uri = new Uri(Nav.Uri);
+        var qs = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var qName = qs["bc_name"];
+        var qCat = qs["bc_cat"];
+        var qSub = qs["bc_sub"];
+        var qSel = qs["bc_sel"];
+        var qSelHref = qs["bc_sel_href"];
+
+        if (!string.IsNullOrWhiteSpace(qName))
+        {
+            _currentLabel = qName;
+            _category = string.IsNullOrWhiteSpace(qCat) ? null : qCat;
+            _subCategory = string.IsNullOrWhiteSpace(qSub) ? null : qSub;
+
+            if (!string.IsNullOrWhiteSpace(qSel) && !string.IsNullOrWhiteSpace(qSelHref))
+            {
+                Breadcrumb.SetFromSelector(qSel, qSelHref, qName, _category, _subCategory);
+            }
+            else
+            {
+                Breadcrumb.SetFromDashboard(qName, _category, _subCategory);
+            }
+
+            _hasContext = true;
+        }
+    }
+
+    private void GoToLanding() => Nav.NavigateTo("home-dashboard");
+
+    private void GoHome() => Nav.NavigateTo(Breadcrumb.SourceHref);
+
+    private void GoToCategory() =>
+        Nav.NavigateTo($"{Breadcrumb.SourceHref}?category={Uri.EscapeDataString(_category!)}");
+
+    private void GoToSubCategory() =>
+        Nav.NavigateTo(
+            $"{Breadcrumb.SourceHref}?category={Uri.EscapeDataString(_category!)}&subcategory={Uri.EscapeDataString(_subCategory!)}");
+
+    private void GoToSelector() => Nav.NavigateTo(Breadcrumb.SelectorHref!);
+}

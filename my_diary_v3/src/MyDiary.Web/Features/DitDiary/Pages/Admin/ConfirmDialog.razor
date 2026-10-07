@@ -1,0 +1,35 @@
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="d-flex align-center">
+            <MudIcon Icon="@Icon" Color="@IconColor" Class="mr-2" />
+            @Title
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body1">@Message</MudText>
+        @if (!string.IsNullOrEmpty(SubMessage))
+        {
+            <MudText Typo="Typo.caption" Class="mt-2 d-block" Style="color:#757575;">@SubMessage</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="@ConfirmColor" Variant="Variant.Filled" OnClick="Confirm" Class="mr-2">@ConfirmText</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string Title { get; set; } = "Confirm";
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string? SubMessage { get; set; }
+    [Parameter] public string ConfirmText { get; set; } = "Yes";
+    [Parameter] public Color ConfirmColor { get; set; } = Color.Primary;
+    [Parameter] public string Icon { get; set; } = Icons.Material.Filled.Help;
+    [Parameter] public Color IconColor { get; set; } = Color.Warning;
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+}

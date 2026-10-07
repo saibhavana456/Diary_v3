@@ -1,0 +1,1079 @@
+@page "/login"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@layout MyDiary.Web.Components.Layout.LoginLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.WebUtilities
+@using MyDiary.Web.Auth
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Services
+@using MyDiary.Web.Core.Services.Storage
+@using MyDiary.Core.Abstractions
+@using CoreStaff = MyDiary.Core.Models.StaffDetails
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject AuthApiService AuthService
+@inject CustomAuthenticationStateProvider AuthProvider
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISessionStorageService SessionStorage
+@inject ISessionRepository SessionRepo
+@inject IHttpContextAccessor HttpCtx
+@inject IConfiguration Config
+@inject IJSRuntime JS
+@inject IWebHostEnvironment HostEnv
+@using global::RequestPortal.Core.Abstractions
+@inject IRbacService RbacService
+@implements IDisposable
+
+<PageTitle>@(_showOtpScreen ? "OTP Verification — My Diary | Union Bank of India" : "Login — My Diary | Union Bank of India")</PageTitle>
+<style>
+    .login-scroll-wrapper {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background-color: white;
+        z-index: 100;
+    }
+
+    .login-main-viewport {
+        min-height: 100vh;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        display: grid;
+        grid-template-columns: 30vw 70vw;
+    }
+
+    .left-panel-branding {
+        position: relative;
+        min-height: 100vh;
+        width: 100%;
+        background-image: url('images/Login_left_bg.jpeg');
+        background-size: cover;
+        background-position: center right;
+        background-repeat: no-repeat;
+    }
+
+    .right-panel-interaction {
+        position: relative;
+        min-height: 100vh;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 40px 20px;
+        background-image: url('images/Login_right_bg.jpeg');
+        background-size: cover;
+        background-position: center left;
+        background-repeat: no-repeat;
+    }
+
+    .login-card-container {
+        background-color: white;
+        width: clamp(320px, 30vw, 400px);
+        padding: clamp(20px, 2.5vw, 40px);
+        height: auto !important;
+        flex-grow: 0 !important;
+        margin: auto;
+        border-radius: 25px;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.35);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 10;
+        transition: all 0.2s ease-in-out;
+    }
+
+        .login-card-container::after {
+            content: "";
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            right: -8px;
+            bottom: -8px;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 32px;
+            pointer-events: none;
+        }
+
+    .logo-ubi {
+        height: clamp(50px, 6vh, 80px);
+        margin-bottom: 12px;
+        width: auto;
+    }
+
+    .logo-diary {
+        height: clamp(90px, 7vh, 85px);
+        margin-bottom: 15px;
+    }
+
+    .login-title {
+        font-size: clamp(1.1rem, 1.3vw, 1.4rem);
+        color: #1c62a5;
+        margin-bottom: 15px;
+        font-weight: 500;
+        text-align: center;
+        border-top: 1px solid #e0e0e0;
+        width: 100%;
+        padding-top: 15px;
+        margin-top: 0;
+        line-height: 1.4;
+    }
+
+    .pill-input .mud-input-outlined-border {
+        display: none !important;
+    }
+
+    .pill-input .mud-input-outlined {
+        background-color: #f1f3f6 !important;
+        border-radius: 50px !important;
+        border: none !important;
+        margin-bottom: 10px;
+    }
+
+    .pill-input .mud-input-slot {
+        padding: 14px 20px !important;
+        font-size: 0.9rem;
+        color: #444;
+    }
+
+    .pill-input input::placeholder {
+        color: #4a4a4a !important;
+        opacity: 1;
+    }
+
+    .pill-input .mud-input-label, .pill-input label.mud-label {
+        color: #4a4a4a !important;
+    }
+
+    .pill-input .mud-input-adornment-end {
+        margin-right: 12px;
+    }
+
+    .captcha-question-bar {
+        background-color: #1c62a5;
+        color: white;
+        width: 100%;
+        border-radius: 50px;
+        padding: 10px;
+        text-align: center;
+        font-size: 0.9rem;
+        font-weight: 500;
+        margin-bottom: 10px;
+        box-shadow: 0 3px 6px rgba(28, 98, 165, 0.2);
+    }
+
+    .btn-login-pill {
+        background-color: #e31e24 !important;
+        color: white !important;
+        border-radius: 50px !important;
+        height: 48px;
+        font-size: 1.05rem;
+        font-weight: 600;
+        box-shadow: 0 5px 15px rgba(227, 30, 36, 0.25);
+        margin-top: 8px;
+        text-transform: none;
+    }
+
+    .btn-otp-pill {
+        border-radius: 50px !important;
+        height: 48px;
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-top: 8px;
+        text-transform: none;
+        background-color: #1a7a32 !important;
+        color: #ffffff !important;
+        box-shadow: 0 5px 15px rgba(26, 122, 50, 0.3);
+    }
+
+        .btn-otp-pill.mud-button-disable-elevation:disabled,
+        .btn-otp-pill[disabled],
+        .btn-otp-pill.mud-button-disable-elevation:disabled .mud-button-root,
+        .btn-otp-pill[disabled] .mud-button-root {
+            background-color: #c8e6c9 !important;
+            color: #1a3a24 !important;
+            box-shadow: none !important;
+            opacity: 1 !important;
+        }
+
+    .footer-text {
+        margin-top: 15px;
+        color: #595959;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+    }
+
+    @@media (max-width: 1200px) {
+        .login-main-viewport {
+            grid-template-columns: 40vw 60vw;
+        }
+    }
+
+    @@media (max-width: 960px) {
+        .login-main-viewport {
+            grid-template-columns: 1fr;
+        }
+
+        .left-panel-branding {
+            display: none;
+        }
+
+        .right-panel-interaction {
+            width: 100%;
+        }
+
+        .login-card-container {
+            width: 90%;
+            max-width: 360px;
+        }
+    }
+</style>
+
+<div class="login-scroll-wrapper">
+    <div class="login-main-viewport">
+        <div class="left-panel-branding" aria-hidden="true"></div>
+        <div class="right-panel-interaction">
+            <div class="login-card-container" role="main">
+                <MudImage Src="images/UBI_Logo.png" Alt="Union Bank Logo" Class="logo-ubi" />
+                <MudImage Src="images/My_Diary_Log-transparent_small.png" Alt="My Diary Logo" Class="logo-diary" />
+
+                <div class="login-title">लॉगिन | LOGIN</div>
+
+                @if (_showLogoutOnly)
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mb-4">
+                        You already have an active session.
+                    </MudAlert>
+                    <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Error" FullWidth="true" OnClick="ForceLogout">
+                        LOGOUT
+                    </MudButton>
+                }
+                else if (!_showOtpScreen)
+                {
+                    <MudForm @ref="_form" @bind-IsValid="_isFormValid" Style="width: 100%;">
+                        <MudTextField @bind-Value="_userId"
+                                      Placeholder="पीएफ नंबर | EMPLOYEE ID"
+                                      Variant="Variant.Outlined"
+                                      Class="pill-input"
+                                      DisableUnderLine="true"
+                                      Immediate="true"
+                                      Required="true"
+                                      RequiredError="Employee ID is required" MaxLength="6" Validation="ValidatePfNo" OnKeyDown="HandlePfKeyDown" />
+
+                        <MudTextField @bind-Value="_credential"
+                                      Placeholder="पासवर्ड | Password"
+                                      InputType="@_passwordInputType"
+                                      Variant="Variant.Outlined"
+                                      Class="pill-input"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@_passwordInputIcon"
+                                      AdornmentAriaLabel="@(_isShowPassword ? "Hide password" : "Show password")"
+                                      OnAdornmentClick="TogglePasswordVisibility"
+                                      DisableUnderLine="true"
+                                      Required="true"
+                                      RequiredError="Password is required" />
+
+                        <div class="captcha-question-bar" id="captcha-question" aria-live="polite">
+                            @GetCaptchaQuestionText()
+                        </div>
+
+                        <MudTextField @bind-Value="_captchaInput"
+                                      Label="Captcha Answer"
+                                      Placeholder="केप्चा भरे | Enter captcha"
+                                      Variant="Variant.Outlined"
+                                      Class="pill-input"
+                                      Underline="false"
+                                      Style="text-align: center;"
+                                      Required="true"
+                                      RequiredError="Captcha is required"
+                                      Error="@_captchaError"
+                                      ErrorText="Incorrect Captcha. Please try again."
+                                      Immediate="true"
+                                      InputMode="InputMode.text"
+                                      UserAttributes="@(new Dictionary<string,object>{ ["pattern"] = "[0-9]*", ["inputmode"] = "numeric", ["aria-describedby"] = "captcha-question" })"
+                                      OnKeyDown="ResetCaptchaError" />
+
+                        @if (!string.IsNullOrWhiteSpace(_error))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_error</MudAlert>
+                        }
+
+                        <MudButton Variant="Variant.Filled"
+                                   FullWidth="true"
+                                   Class="btn-login-pill"
+                                   OnClick="SubmitCredentials"
+                                   Disabled="@(!_isFormValid || _isLoading)">
+                            लॉगिन | LOGIN
+                        </MudButton>
+
+                        @if (HostEnv.IsDevelopment() && Config.GetValue<bool>("DevSettings:BypassAuth"))
+                        {
+                            <MudLink OnClick="PerformBypassLogin" Class="d-block mt-3 text-center" Typo="Typo.caption" Style="color:#b71c1c;">
+                                Developer Bypass
+                            </MudLink>
+                        }
+                    </MudForm>
+                }
+                else
+                {
+                    @if (_isEmailOtpEnabled && !string.IsNullOrEmpty(_maskedEmail))
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mb-4 rounded-xl">OTP sent to: <b>******@(_maskedMobile)</b> and <b>@(_maskedEmail)</b></MudAlert>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mb-4 rounded-xl">OTP sent to: <b>******@(_maskedMobile)</b></MudAlert>
+                    }
+
+                    <MudTextField @bind-Value="_otpInput"
+                                  Label="One-Time Password"
+                                  Placeholder="Enter 6-digit OTP"
+                                  Variant="Variant.Outlined"
+                                  MaxLength="6"
+                                  Immediate="true"
+                                  Class="pill-input" />
+
+                    @if (!string.IsNullOrWhiteSpace(_error))
+                    {
+                        <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_error</MudAlert>
+                    }
+
+                    <MudButton Variant="Variant.Filled" FullWidth="true" Class="btn-otp-pill"
+                               OnClick="SubmitOtp" Disabled="@(string.IsNullOrWhiteSpace(_otpInput) || _isLoading)">
+                        VERIFY &amp; SIGN IN
+                    </MudButton>
+
+                    <div class="d-flex justify-space-between align-center mt-3" style="width:100%;">
+                        @if (_canResendOtp)
+                {
+                            <MudLink OnClick="ResendOtp" Style="font-size:0.85rem; font-weight:600; color:#1c62a5; cursor:pointer;">
+                                Resend OTP
+                            </MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Style="color:#595959;">
+                                Resend OTP in @(_resendCountdown)s
+                            </MudText>
+                        }
+
+                        <MudButton Variant="Variant.Text"
+                                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                                   Color="MudBlazor.Color.Dark"
+                                   Size="MudBlazor.Size.Small"
+                                   Style="text-transform:none; font-weight:600; font-size:0.85rem;"
+                                   OnClick="BackToLogin">
+                            Back to Login
+                        </MudButton>
+                    </div>
+                }
+
+                @if (_isLoading)
+                {
+                    <MudProgressLinear Color="MudBlazor.Color.Error" Indeterminate="true" Class="mt-4 rounded-xl" />
+                }
+
+                <div class="footer-text">
+                    2026© Union Bank Of India
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    MudForm _form;
+    bool _isFormValid;
+    bool _isLoading = false;
+    string _userId;
+    string _credential = string.Empty;
+    string _captchaInput;
+    int _num1, _num2, _expectedAnswer;
+    string _mathOperator;
+    bool _captchaError = false;
+    bool _isShowPassword;
+    InputType _passwordInputType = InputType.Password;
+    string _passwordInputIcon = Icons.Material.Filled.VisibilityOff;
+    bool _showOtpScreen = false;
+    string _otpInput, _transactionUid, _userMobile, _maskedMobile;
+    string _userEmail, _maskedEmail;
+    bool _isEmailOtpEnabled;
+    StaffDetailsResult _pendingUser;
+    int _resendCountdown = 0;
+    bool _canResendOtp = false;
+    System.Threading.Timer? _resendTimer;
+    bool _showLogoutOnly = false;
+    string? _error;
+    bool _isLoadTesting => Config.GetValue<bool>("DevSettings:LoadTestingMode");
+    string? _returnUrl;
+
+    private string ValidatePfNo(string value)
+    {
+
+        if (string.IsNullOrWhiteSpace(value))
+
+            return "Employee ID is required";
+
+
+        if (value.Length != 6)
+
+            return "Employee ID must be exactly 6 digits";
+
+
+        if (!value.All(char.IsDigit))
+
+            return "Employee ID must contain only numbers";
+
+        return null; // Valid
+
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Already authenticated? Redirect to the current home page (same check V3's
+        // existing Login.razor performs).
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Nav.NavigateTo("home", replace: true);
+            return;
+        }
+
+        GenerateCaptcha();
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("returnUrl", out var returnUrl))
+        {
+            _returnUrl = returnUrl;
+        }
+    }
+
+    void GenerateCaptcha()
+    {
+        if (_isLoadTesting)
+        {
+            _num1 = 1; _num2 = 1; _mathOperator = "+"; _expectedAnswer = 2; _captchaError = false;
+            return;
+        }
+        _num1 = SecureRandom.Next(1, 10);
+        _num2 = SecureRandom.Next(1, 10);
+        int op = SecureRandom.Next(0, 3);
+        switch (op)
+        {
+            case 0:
+                _mathOperator = "+";
+                _expectedAnswer = _num1 + _num2;
+
+                break;
+
+            case 1:
+                _mathOperator = "-";
+                if (_num1 < _num2) (_num1, _num2) = (_num2, _num1);
+                _expectedAnswer = _num1 - _num2;
+
+                break;
+
+            case 2:
+                _mathOperator = "×";
+                _num1 = SecureRandom.Next(2, 10);
+                _num2 = SecureRandom.Next(2, 6);
+                _expectedAnswer = _num1 * _num2;
+
+                break;
+        }
+        _captchaError = false;
+    }
+    string GetCaptchaQuestionText() => _mathOperator switch
+    {
+        "+" => $"What is {_num1} + {_num2} ?",
+
+        "-" => $"What is {_num1} - {_num2} ?",
+
+        "×" => $"What is {_num1} × {_num2} ?",
+        _ => $"{_num1} {_mathOperator} {_num2} = ?"
+    };
+
+    void TogglePasswordVisibility()
+    {
+        if (_isShowPassword) { _isShowPassword = false; _passwordInputIcon = Icons.Material.Filled.VisibilityOff; _passwordInputType = InputType.Password; }
+        else { _isShowPassword = true; _passwordInputIcon = Icons.Material.Filled.Visibility; _passwordInputType = InputType.Text; }
+        var pressed = _isShowPassword ? "true" : "false";
+        var label = _isShowPassword ? "Hide password" : "Show password";
+
+        JS.InvokeVoidAsync("eval", $@"
+            (function() {{
+                var btn = document.querySelector('.pill-input .mud-input-adornment-end button');
+                if (btn) {{
+                    btn.setAttribute('aria-pressed', '{pressed}');
+                    btn.setAttribute('aria-label', '{label}');
+                }}
+            }})();
+        ");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Task.Delay(100);
+            await JS.InvokeVoidAsync("eval", @"
+                (function() {
+                    var btn = document.querySelector('.pill-input .mud-input-adornment-end button');
+                    if (btn) {
+                        btn.setAttribute('tabindex', '0');
+                        btn.setAttribute('role', 'button');
+                        btn.setAttribute('aria-label', 'Show password');
+                        btn.setAttribute('aria-pressed', 'false');
+                    }
+                })();
+            ");
+        }
+    }
+
+    void ResetCaptchaError() { if (_captchaError) _captchaError = false; }
+
+    async Task SubmitCredentials()
+    {
+        _error = null;
+        _captchaError = false;
+        if (!int.TryParse(_captchaInput?.Trim(), out int captchaValue) || captchaValue != _expectedAnswer)
+        {
+            _captchaError = true;
+            Snackbar.Add("Incorrect Captcha", Severity.Error);
+
+            GenerateCaptcha();
+            _captchaInput = null;
+            return;
+        }
+        _isLoading = true;
+
+        try
+        {
+            // ── Closed-group access control: restrict login to configured PF IDs / zones ──
+            // Validation is performed BEFORE the AD call to avoid triggering OTP generation
+            // for unauthorized users. Super Admins (RP_RBAC_SUPER_ADMIN table) always bypass.
+            var accessControlEnabled = await AuthService.IsAccessControlEnabledAsync();
+            if (accessControlEnabled && !await ValidateAccessAsync())
+            {
+                _error = await BuildAccessRestrictedMessageAsync();
+                Snackbar.Add(_error, Severity.Error);
+                _isLoading = false;
+                GenerateCaptcha();
+                return;
+            }
+
+            var canLogin = await SessionRepo.CanLoginAsync(_userId);
+            if (!canLogin)
+            {
+                Snackbar.Add("User already logged in. Please logout from the other session or try after 20 minutes.", Severity.Warning);
+                await SessionStorage.SetAsync("UserId", _userId);
+                _isLoading = false;
+                _showLogoutOnly = true;
+                return;
+            }
+            char[] credentialChars = _credential.ToCharArray();
+            _credential = string.Empty;
+            await SessionStorage.SetAsync("UserId", _userId);
+            await SessionStorage.SetAsync("Pwd", new string(credentialChars));
+            var result = await AuthService.ValidateDomainUserAsync(_userId, credentialChars);
+            Array.Clear(credentialChars, 0, credentialChars.Length);
+            if (result.IsSuccess)
+            {
+                // Guard: OTP UID must be present to proceed to OTP screen
+                if (!_isLoadTesting && string.IsNullOrEmpty(result.Uid))
+                {
+                    _error = "Authentication failed. OTP could not be generated. Please verify your credentials.";
+                    Snackbar.Add(_error, Severity.Error);
+                    GenerateCaptcha();
+                    _isLoading = false;
+                    return;
+                }
+
+                _transactionUid = result.Uid;
+                _pendingUser = result.StaffData;
+
+                _userMobile = _isLoadTesting ? "9999999999" : _pendingUser?.staffdetails?.PHONE;
+                if (!string.IsNullOrEmpty(_userMobile) && _userMobile.Length > 4)
+                    _maskedMobile = _isLoadTesting ? "9999" : _userMobile.Substring(_userMobile.Length - 4);
+
+                _isEmailOtpEnabled = string.Equals(Config["ApiEndpoints:EmailOtpFlag"], "Y", StringComparison.OrdinalIgnoreCase)
+                    && !Config.GetValue<bool>("DevSettings:LoadTestingMode");
+
+                if (_isEmailOtpEnabled)
+                {
+                    _userEmail = _isLoadTesting ? "test@test.com" : _pendingUser?.staffdetails?.EMAIL;
+                    if (!string.IsNullOrEmpty(_userEmail) && _userEmail.Contains("@"))
+                    {
+                        var parts = _userEmail.Split('@');
+                        var localPart = parts[0];
+                        var domainPart = parts[1];
+                        _maskedEmail = localPart.Length > 3
+                            ? localPart.Substring(0, 3) + "***@" + domainPart
+                            : localPart + "***@" + domainPart;
+                    }
+                }
+
+                _showOtpScreen = true;
+                Snackbar.Add(_isEmailOtpEnabled
+                    ? "Credentials Verified. OTP sent to mobile & email."
+                    : "Credentials Verified. OTP Sent.", Severity.Info);
+
+                StartResendTimer();
+            }
+            else
+            {
+                _error = !string.IsNullOrWhiteSpace(result.Message)
+                    ? result.Message
+                    : "Invalid credentials. Please verify your PF Number and Password.";
+                Snackbar.Add(_error, Severity.Error);
+
+                GenerateCaptcha();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Any DB/unexpected error during login (e.g. an Oracle ORA-xxxxx from the
+            // session/access-control lookups) must NOT be shown raw to the user. Log the
+            // full detail for troubleshooting and show the approved generic message.
+            AppLogger.LogError(ex, $"Login: unexpected error during credential submission for {_userId}");
+            _error = UserFacingError.Generic;
+            Snackbar.Add(_error, Severity.Error);
+            GenerateCaptcha();
+        }
+        _isLoading = false;
+    }
+
+    async Task SubmitOtp()
+    {
+        _isLoading = true;
+        _error = null;
+        if (_isLoadTesting)
+        {
+            await CompleteLoginAsync(_pendingUser);
+            Snackbar.Add("Login Successful (Load Test)!", Severity.Success);
+        }
+        else
+        {
+            var result = await AuthService.VerifyMobileOtpAsync(_userMobile, _transactionUid, _otpInput);
+            if (result.IsSuccess)
+            {
+                await CompleteLoginAsync(_pendingUser);
+                Snackbar.Add("Login Successful!", Severity.Success);
+            }
+            else
+            {
+                // Check if the OTP expired — API returns "OTP_EXPIRED" as the message code
+                if (!string.IsNullOrEmpty(result.Message) &&
+                    result.Message.Contains("OTP_EXPIRED", StringComparison.OrdinalIgnoreCase))
+                {
+                    _error = "The OTP has expired. Please try again with a new OTP.";
+                    _otpInput = "";
+                    // Enable resend immediately so user can request a fresh OTP
+                    _canResendOtp = true;
+                    _resendCountdown = 0;
+                    _resendTimer?.Dispose();
+                }
+                else
+                {
+                    _error = result.Message;
+                }
+                Snackbar.Add(_error, Severity.Error);
+            }
+        }
+        _isLoading = false;
+    }
+    /// <summary>
+    /// Maps the V2-shaped AD response (StaffDetailsResult) onto V3's own
+    /// MyDiary.Core.Models.StaffDetails, then hands off to V3's native session
+    /// pipeline (ISessionRepository.AddSessionAsync + CustomAuthenticationStateProvider
+    /// .MarkAuthenticatedAsync) — identical to what V3's existing Login.razor does for
+    /// its own AD result, so the resulting session, claims and RBAC enrichment are
+    /// fully native to V3. Finishes by landing on "/home", V3's current post-login page.
+    /// </summary>
+    private async Task CompleteLoginAsync(StaffDetailsResult v2Result)
+    {
+        var d = v2Result?.staffdetails;
+        if (d is null)
+        {
+            _error = "Login succeeded but no staff details were returned.";
+            Snackbar.Add(_error, Severity.Error);
+            return;
+        }
+        var staff = new CoreStaff
+            {
+                EmplId = d.EMPLID ?? _userId,
+
+                Name = d.NAME ?? "",
+
+                UserName = d.UserName ?? d.EMPLID ?? _userId,
+
+                Privilege = d.Privilege,
+
+                Email = d.EMAIL,
+
+                Phone = d.PHONE,
+
+                Sex = d.SEX,
+
+                Location = d.LOCATION,
+
+                DepartmentDescr = d.DEPARTMENT_Descr,
+
+                DepartmentDescrExtra = d.DEPARTMENT_Descr_EXTRA,
+
+                StaffRegionCode = d.Staff_Region_Code,
+
+                StaffRegionName = d.Staff_Region_Name,
+
+                StaffDivisionCode = d.Staff_Division_Code,
+
+                StaffDivisionName = d.Staff_Division_Name,
+
+                EmpDesignation = d.EMP_DESGN,
+
+                EmpDesignationDesc = d.EMP_DESGN_DESC,
+
+                EmpScaleCode = d.EMP_SCALE_CODE,
+
+                EmpScaleDescr = d.EMP_SCALE_DESCR,
+
+                DateOfBirth = d.EMP_DATE_OF_BIRTH,
+
+                JoiningDate = d.EMP_JOINING_DATE,
+
+                ExpectedEndDate = d.EXPECTED_END_DATE,
+
+                PostingDate = d.POSTING_DATE,
+
+                DataAsOn = d.DataAsOn,
+
+                LastUpdateDate = d.LastUpdateDate,
+
+                AccNum = d.ACC_NUM,
+
+                BranchEcCode = d.BRANCH_EC_CD,
+
+                BrSolid = d.BRSOLID,
+
+                Access = d.Access,
+
+                Status = d.MUD_Status,
+
+                RegionSolid = d.MUD_Region_Solid,
+
+                RegionCode = d.MUD_Region_Code,
+
+                RegionName = d.MUD_Region_Name,
+
+                ZoneSolid = d.MUD_Zone_Solid,
+
+                ZoneCode = d.MUD_Zone_Code,
+
+                ZoneName = d.MUD_Zone_Name,
+
+                BranchSolid = d.MUD_Branch_Solid,
+
+                BranchCode = d.MUD_Branch_Code,
+
+                BranchName = d.MUD_Branch_Name,
+
+                Mobile = d.MUD_Mobile ?? d.PHONE,
+
+                LastEntryDate = d.MUD_Last_Entry_Date,
+
+                LastWeekStart = d.MUD_Last_Week_Start_Date,
+
+                LastWeekEnd = d.MUD_Last_Week_End_Date,
+
+                UserType = v2Result.userType
+            };
+        var ip = HttpCtx.HttpContext?.Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim()
+
+                 ?? HttpCtx.HttpContext?.Connection.RemoteIpAddress?.ToString()
+
+                 ?? "unknown";
+        // AddSessionAsync is a side effect — doesn't need to block navigation.
+        _ = SessionRepo.AddSessionAsync(staff.EmplId, ip);
+        // These two are independent of each other — run together.
+        await Task.WhenAll(
+            SessionStorage.SetAsync("UserId", staff.EmplId),
+            AuthProvider.MarkAuthenticatedAsync(staff));
+        // Routing logic:
+        // CO users: Scale 1-3 (emp_scale_code 8,7,6) → /home, Scale 4+ (code ≤5) → /home-dashboard
+        // emp_scale_code is stored in reverse: Scale 1=8, Scale 2=7, Scale 3=6, Scale 4=5, etc.
+        // Branch/Region/Zone users: always /home-dashboard
+        var targetRoute = "home-dashboard";
+        if (!string.IsNullOrEmpty(_returnUrl))
+        {
+            targetRoute = _returnUrl.TrimStart('/');
+        }
+        else
+        {
+            var privilege = (staff.Privilege ?? "").ToUpperInvariant();
+            if (privilege == "CO" || privilege == "CORPORATE")
+            {
+                int scale = 0;
+                if (!string.IsNullOrEmpty(staff.EmpScaleCode))
+                    int.TryParse(staff.EmpScaleCode, out scale);
+                // emp_scale_code >= 6 means Scale 1-3 → /home
+                targetRoute = scale >= 6 ? "home" : "home-dashboard";
+            }
+        }
+        Nav.NavigateTo(targetRoute, forceLoad: false);
+    }
+
+    async void PerformBypassLogin()
+    {
+        // Parity with V3's existing Login.razor dev-bypass path — reads
+        // DevSettings:TestUser and logs straight in without calling the AD API.
+        // SECURITY: Hard-blocked in non-Development environments regardless of config.
+        if (!HostEnv.IsDevelopment()) return;
+        try
+        {
+            var testUser = Config.GetSection("DevSettings:TestUser").Get<DevTestUser>();
+            if (testUser is null) return;
+            var staff = new CoreStaff
+                {
+                    EmplId = testUser.Username,
+
+                    Name = testUser.Name,
+
+                    UserName = testUser.Username,
+
+                    Email = testUser.Email,
+
+                    Phone = testUser.Phone,
+
+                    Privilege = testUser.Privilege,
+
+                    BranchCode = testUser.BranchCode,
+
+                    BranchName = testUser.BranchName,
+
+                    BranchSolid = testUser.BranchSolId,
+
+                    BrSolid = testUser.BranchSolId,
+
+                    RegionCode = testUser.RegionCode,
+
+                    RegionSolid = testUser.RegionSolId,
+
+                    ZoneCode = testUser.ZoneCode,
+
+                    ZoneSolid = testUser.ZoneSolId,
+
+                    Status = "Active",
+
+                    UserType = testUser.Role
+                };
+            _ = SessionRepo.AddSessionAsync(staff.EmplId, "dev-bypass");
+            await Task.WhenAll(
+                SessionStorage.SetAsync("UserId", staff.EmplId),
+                AuthProvider.MarkAuthenticatedAsync(staff));
+            // Match same routing logic: CO Scale 1-3 (code >= 6) → home, else → home-dashboard
+            var testPrivilege = (testUser.Privilege ?? "").ToUpperInvariant();
+            var bypassRoute = "home-dashboard";
+            if (testPrivilege == "CO" || testPrivilege == "CORPORATE")
+            {
+                int testScale = 0;
+                var scaleStr = testUser.GetType().GetProperty("EmpScaleCode")?.GetValue(testUser) as string ?? "";
+                int.TryParse(scaleStr, out testScale);
+                bypassRoute = testScale >= 6 ? "home" : "home-dashboard";
+            }
+            Nav.NavigateTo(bypassRoute, forceLoad: false);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "Login: bypass login failed");
+            Snackbar.Add(UserFacingError.Generic, Severity.Error);
+        }
+    }
+
+    void StartResendTimer()
+    {
+        _canResendOtp = false;
+        _resendCountdown = Config.GetValue<int>("ApiEndpoints:OtpResendCountdownSeconds", 180);
+        _resendTimer?.Dispose();
+        _resendTimer = new System.Threading.Timer(async _ =>
+        {
+            _resendCountdown--;
+            if (_resendCountdown <= 0)
+            {
+                _canResendOtp = true;
+                _resendTimer?.Dispose();
+            }
+            await InvokeAsync(StateHasChanged);
+        }, null, 1000, 1000);
+    }
+
+    async Task ResendOtp()
+    {
+        if (_isLoadTesting || !_canResendOtp) return;
+        _isLoading = true;
+
+        StateHasChanged();
+        var storedPwd = await SessionStorage.GetAsync<string>("Pwd") ?? "";
+        char[] credentialChars = storedPwd.ToCharArray();
+
+        storedPwd = null;
+        var result = await AuthService.ValidateDomainUserAsync(_userId, credentialChars);
+        Array.Clear(credentialChars, 0, credentialChars.Length);
+        if (result.IsSuccess)
+        {
+            _transactionUid = result.Uid;
+            Snackbar.Add(_isEmailOtpEnabled
+                ? "OTP resent to mobile & email."
+                : "OTP Resent Successfully.", Severity.Info);
+
+            StartResendTimer();
+        }
+        else
+        {
+            Snackbar.Add("Failed to resend OTP. Please try again.", Severity.Error);
+        }
+        _isLoading = false;
+    }
+
+    void BackToLogin()
+    {
+        _showOtpScreen = false;
+        _otpInput = "";
+        _resendTimer?.Dispose();
+        _canResendOtp = false;
+        _resendCountdown = 0;
+    }
+
+    public void Dispose()
+    {
+        _resendTimer?.Dispose();
+    }
+
+    async Task ForceLogout()
+    {
+        _isLoading = true;
+        var userId = await SessionStorage.GetAsync<string>("UserId");
+        if (!string.IsNullOrEmpty(userId))
+        {
+            await SessionRepo.RemoveSessionAsync(userId);
+        }
+        await SessionStorage.RemoveAsync("UserId");
+        await SessionStorage.RemoveAsync("Pwd");
+        await AuthProvider.MarkLoggedOutAsync();
+        _isLoading = false;
+        Nav.NavigateTo("login", true);
+    }
+
+    private async Task HandlePfKeyDown(KeyboardEventArgs e)
+    {
+        // Clear previous access-control error when user starts typing a new PF
+        if (_error != null && e.Key != "Tab" && e.Key != "Enter")
+        {
+            _error = null;
+            return;
+        }
+
+        if (e.Key == "Tab" || e.Key == "Enter")
+        {
+            if (string.IsNullOrWhiteSpace(_userId) || _userId.Trim().Length != 6)
+                return;
+
+            var accessControlEnabled = await AuthService.IsAccessControlEnabledAsync();
+            if (!accessControlEnabled)
+                return;
+
+            if (!await ValidateAccessAsync())
+            {
+                Snackbar.Add(await BuildAccessRestrictedMessageAsync(), Severity.Error);
+                _userId = string.Empty;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task<bool> ValidateAccessAsync()
+    {
+        // Access control validation — checks are evaluated in priority order. The
+        // whole configuration lives in Oracle MyDiaryDB (no appsettings):
+        //   1. PF whitelist (MD_ALLOWED_PF) — if PF matches, allow immediately.
+        //   2. Super Admin (RP_RBAC_SUPER_ADMIN table) — always bypasses zone restriction.
+        //   3. Zone check — user's zone (from StaffDetails/Branch_Master) must be in
+        //      the allowed list configured in MD_ALLOWED_ZONE (fetched dynamically
+        //      via AuthService.ValidateUserAccessAsync).
+
+        // Check 1: PF whitelist (MD_ALLOWED_PF)
+        if (await AuthService.IsPfAllowedAsync(_userId.Trim()))
+            return true;
+
+        // Check 2: Super Admin always allowed
+        bool isSuperAdmin = false;
+        try
+        {
+            isSuperAdmin = await RbacService.IsSuperAdminAsync(_userId.Trim());
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Login: failed to check super admin status for {_userId} — {ex.Message}");
+        }
+
+        if (isSuperAdmin)
+            return true;
+
+        // Check 3: Zone-based access — user must belong to an allowed zone
+        var result = await AuthService.ValidateUserAccessAsync(_userId.Trim());
+        return result.IsAuthorized;
+    }
+
+    // Builds the "access restricted" message using the zone name(s) configured in
+    // the database (MD_ALLOWED_ZONE), instead of a hardcoded "Mumbai".
+    private async Task<string> BuildAccessRestrictedMessageAsync()
+    {
+        const string baseMsg = "Access restricted. You are not authorized to access this application.";
+        try
+        {
+            var zoneNames = await AuthService.GetAllowedZoneNamesAsync();
+            if (!string.IsNullOrWhiteSpace(zoneNames))
+                return $"{baseMsg} Application is currently enabled for the users of {zoneNames} zone.";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"Login: failed to build dynamic access-restricted message — {ex.Message}");
+        }
+        return baseMsg;
+    }
+
+    private sealed class DevTestUser
+    {
+        public string Username { get; set; } = "";
+
+        public string Name { get; set; } = "";
+
+        public string Role { get; set; } = "";
+
+        public string Privilege { get; set; } = "BRANCH";
+
+        public string Email { get; set; } = "";
+
+        public string Phone { get; set; } = "";
+
+        public string BranchCode { get; set; } = "";
+
+        public string BranchName { get; set; } = "";
+
+        public string BranchSolId { get; set; } = "";
+
+        public string RegionCode { get; set; } = "";
+
+        public string RegionSolId { get; set; } = "";
+
+        public string ZoneCode { get; set; } = "";
+
+        public string ZoneSolId { get; set; } = "";
+    }
+}

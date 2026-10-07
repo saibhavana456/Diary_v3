@@ -1,0 +1,146 @@
+@* Confirmation shown before a month's capital utilization is submitted *@
+
+<MudDialog>
+	<TitleContent>
+		<div style="display:flex;align-items:center;gap:12px;">
+			<div style="width:40px;height:40px;border-radius:11px;background:#f4f2ff;display:flex;align-items:center;justify-content:center;flex:none;">
+				<MudIcon Icon="@Icons.Material.Filled.AccountBalance" Style="color:#594ae2;" />
+			</div>
+			<div>
+				<div style="font-size:1.05rem;font-weight:600;line-height:1.25;color:#111827;">Confirm Capital Submission</div>
+				<div style="font-size:0.75rem;color:#6b7280;">This month cannot be changed once submitted</div>
+			</div>
+		</div>
+	</TitleContent>
+
+	<DialogContent>
+
+		<div style="background:#f4f2ff;border:1px solid #ddd8f7;border-radius:12px;padding:11px 15px;">
+			<div style="font-size:0.92rem;font-weight:600;color:#111827;word-break:break-word;">@ProjectName</div>
+			<div style="font-size:0.76rem;color:#5b5570;margin-top:2px;">
+				@SectionName &nbsp;·&nbsp; @Month &nbsp;·&nbsp; FY @FyLabel
+			</div>
+		</div>
+
+		<div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-top:14px;">
+			<div style="padding:9px 15px;background:#fafafa;border-bottom:1px solid #e5e7eb;font-size:0.68rem;letter-spacing:.07em;text-transform:uppercase;color:#6b7280;">
+				Actual utilisation — @Month
+			</div>
+			<table style="width:100%;border-collapse:collapse;font-size:0.86rem;">
+				<tbody>
+					<tr style="border-bottom:1px solid #f4f5f6;">
+						<td style="padding:9px 15px;color:#4b5563;">Actual Spillover Utilized</td>
+						<td style="padding:9px 15px;text-align:right;font-weight:600;color:#111827;white-space:nowrap;">@Money(ActualSpillover)</td>
+					</tr>
+					<tr style="border-bottom:1px solid #f4f5f6;">
+						<td style="padding:9px 15px;color:#4b5563;">Actual Fresh Utilized</td>
+						<td style="padding:9px 15px;text-align:right;font-weight:600;color:#111827;white-space:nowrap;">@Money(ActualFresh)</td>
+					</tr>
+					<tr style="border-top:2px solid #594ae2;background:#f4f2ff;">
+						<td style="padding:12px 15px;font-weight:700;color:#594ae2;">Actual Total</td>
+						<td style="padding:12px 15px;text-align:right;font-weight:700;font-size:1.05rem;color:#594ae2;white-space:nowrap;">@Money(ActualTotal)</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-top:14px;">
+			<div style="padding:9px 15px;background:#fafafa;border-bottom:1px solid #e5e7eb;font-size:0.68rem;letter-spacing:.07em;text-transform:uppercase;color:#6b7280;">
+				Estimate for @(string.IsNullOrWhiteSpace(NextMonth) ? "next month" : NextMonth)
+			</div>
+			<table style="width:100%;border-collapse:collapse;font-size:0.86rem;">
+				<tbody>
+					<tr style="border-bottom:1px solid #f4f5f6;">
+						<td style="padding:9px 15px;color:#4b5563;">Estimated Spillover</td>
+						<td style="padding:9px 15px;text-align:right;font-weight:600;color:#111827;white-space:nowrap;">@Money(EstSpilloverNext)</td>
+					</tr>
+					<tr>
+						<td style="padding:9px 15px;color:#4b5563;">Estimated Fresh</td>
+						<td style="padding:9px 15px;text-align:right;font-weight:600;color:#111827;white-space:nowrap;">@Money(EstFreshNext)</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<div style="border:1px solid #e5e7eb;border-radius:12px;padding:13px 15px;margin-top:14px;">
+			<div style="font-size:0.68rem;letter-spacing:.07em;text-transform:uppercase;color:#6b7280;margin-bottom:9px;">Budget impact</div>
+
+			<div style="display:flex;gap:10px;flex-wrap:wrap;">
+				<div style="flex:1 1 30%;min-width:96px;">
+					<div style="font-size:0.7rem;color:#6b7280;">Allotted</div>
+					<div style="font-size:0.9rem;font-weight:600;color:#111827;white-space:nowrap;">@Money(Allotted)</div>
+				</div>
+				<div style="flex:1 1 30%;min-width:96px;">
+					<div style="font-size:0.7rem;color:#6b7280;">Used so far</div>
+					<div style="font-size:0.9rem;font-weight:600;color:#111827;white-space:nowrap;">@Money(UtilisedSoFar)</div>
+				</div>
+				<div style="flex:1 1 30%;min-width:96px;">
+					<div style="font-size:0.7rem;color:#6b7280;">After this entry</div>
+					<div style="@($"font-size:0.9rem;font-weight:700;white-space:nowrap;color:{(IsOver ? "#c62828" : "#594ae2")};")">@Money(AfterThis)</div>
+				</div>
+			</div>
+
+			<div style="height:7px;border-radius:4px;background:#eceff1;margin-top:11px;overflow:hidden;">
+				<div style="@($"height:100%;width:{BarPercent.ToString("0.#")}%;background:{(IsOver ? "#c62828" : "#594ae2")};")"></div>
+			</div>
+		</div>
+
+		@if (IsOver)
+		{
+			<div style="display:flex;gap:9px;align-items:flex-start;margin-top:14px;padding:10px 13px;background:#fdecea;border:1px solid #f5c6c2;border-radius:9px;">
+				<MudIcon Icon="@Icons.Material.Filled.WarningAmber" Size="Size.Small" Style="color:#c62828;flex:none;" />
+				<span style="font-size:0.78rem;line-height:1.5;color:#8c1f1a;">
+					This entry takes the project <b>@Money(AfterThis - Allotted) over</b> its capital allotment.
+					Capital utilisation cannot exceed the sanctioned amount — the save will be rejected unless the allotment is revised first.
+				</span>
+			</div>
+		}
+
+		<div style="margin-top:14px;padding:10px 13px;background:#fafafa;border:1px solid #eceff1;border-radius:9px;">
+			<div style="font-size:0.68rem;letter-spacing:.07em;text-transform:uppercase;color:#6b7280;margin-bottom:3px;">Justification</div>
+			@if (string.IsNullOrWhiteSpace(Justification))
+			{
+				<div style="font-size:0.82rem;color:#c62828;font-style:italic;">Nothing entered</div>
+			}
+			else
+			{
+				<div style="font-size:0.82rem;color:#374151;line-height:1.5;white-space:pre-wrap;word-break:break-word;">@Justification</div>
+			}
+		</div>
+	</DialogContent>
+
+	<DialogActions>
+		<MudButton OnClick="Cancel" Variant="Variant.Text" Style="color:#6b7280;">Go Back</MudButton>
+		<MudButton OnClick="Ok" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Send"
+				   Style="background:#594ae2;color:#ffffff;margin-left:8px;">
+			Submit @Month
+		</MudButton>
+	</DialogActions>
+</MudDialog>
+
+@code {
+	[CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+	[Parameter] public string ProjectName { get; set; } = "";
+	[Parameter] public string SectionName { get; set; } = "";
+	[Parameter] public string Month { get; set; } = "";
+	[Parameter] public string NextMonth { get; set; } = "";
+	[Parameter] public string FyLabel { get; set; } = "";
+	[Parameter] public decimal ActualSpillover { get; set; }
+	[Parameter] public decimal ActualFresh { get; set; }
+	[Parameter] public decimal EstSpilloverNext { get; set; }
+	[Parameter] public decimal EstFreshNext { get; set; }
+	[Parameter] public decimal Allotted { get; set; }
+	[Parameter] public decimal UtilisedSoFar { get; set; }
+	[Parameter] public string Justification { get; set; } = "";
+
+	private decimal ActualTotal => ActualSpillover + ActualFresh;
+	private decimal AfterThis => UtilisedSoFar + ActualTotal;
+	private bool IsOver => Allotted > 0 && AfterThis > Allotted;
+	private decimal BarPercent => Allotted <= 0 ? 0 : Math.Min(100m, AfterThis / Allotted * 100m);
+
+	private string Money(decimal v) => "₹ " + v.ToString("N2") + " Cr";
+
+	private void Ok() => MudDialog.Close(DialogResult.Ok(true));
+	private void Cancel() => MudDialog.Cancel();
+}

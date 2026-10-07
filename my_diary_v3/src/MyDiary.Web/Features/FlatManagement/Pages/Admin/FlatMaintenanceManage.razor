@@ -1,0 +1,315 @@
+@page "/flatmgmt/admin/flat-maintenance-manage"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using System.Security.Claims
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inject IAdminFlatAllocationService AllocationService
+@inject IAdminFlatMaintenanceService MaintenanceService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Flat Maintenance - Flat Management System</PageTitle>
+
+<div class="fmm-page">
+    <a href="flatmgmt/admin/flat-maintenance" class="fmm-back">&laquo; Back to Flat Maintenance</a>
+
+    <PageHeader Title="Flat Maintenance" Crumbs="_crumbs" PageKey="flatmgmt-admin-flat-maintenance-manage" />
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Class="my-6" />
+    }
+    else if (loadError is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Filled">@loadError</MudAlert>
+    }
+    else
+    {
+        <MudCard Class="fmm-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="fmm-section-title">Flat Details</MudText></MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fmm-label">Flat No.</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat!.FlatNo</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fmm-label">Type / Area</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.BhkDetails / @flat.FlatArea Sqmtr</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fmm-label">Category / Status</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.FamilyDetails / @occupancyLabel</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudGrid>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fmm-label">Building / Location</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.SocietyName - @flat.LocationName</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body2" Class="fmm-label">Address</MudText></MudItem>
+                            <MudItem xs="6"><MudText Typo="Typo.body1">@flat.Address</MudText></MudItem>
+                        </MudGrid>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="fmm-card mt-4" Elevation="2">
+            <MudCardHeader><MudText Typo="Typo.subtitle1" Class="fmm-section-title">Current Occupant Details</MudText></MudCardHeader>
+            <MudCardContent Class="pa-0">
+                <MudTable Items="@currentOccupants" Hover="true" Bordered="true" Dense="true" Class="fmm-table">
+                    <HeaderContent>
+                        <MudTh>PF No.</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Designation</MudTh>
+                        <MudTh>Email</MudTh>
+                        <MudTh>Phone</MudTh>
+                        <MudTh>Department</MudTh>
+                        <MudTh>Occupy Date</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd DataLabel="PF No.">@row.EmployeePf</MudTd>
+                        <MudTd DataLabel="Name">@row.EmployeeName</MudTd>
+                        <MudTd DataLabel="Designation">@row.EmployeeDesignation</MudTd>
+                        <MudTd DataLabel="Email">@row.Email</MudTd>
+                        <MudTd DataLabel="Phone">@row.Phone</MudTd>
+                        <MudTd DataLabel="Department">@row.EmployeeDepartment</MudTd>
+                        <MudTd DataLabel="Occupy Date">@row.OccupyDate</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No Current Occupant</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="fmm-card mt-4" Elevation="2">
+            <MudCardContent>
+                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="fmm-tabs" PanelClass="pa-0 pt-4">
+                    <MudTabPanel Text="Add New Maintenance">
+                        <MudGrid>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="maintenanceType" Label="Nature of Work*" Variant="Variant.Outlined" Required="true" MaxLength="40" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="vendorName" Label="Vendor Name*" Variant="Variant.Outlined" Required="true" MaxLength="40" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="billNo" Label="Bill No.*" Variant="Variant.Outlined" Required="true" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="billDate" Label="Bill Date*" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" Required="true" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="billAmount" Label="Bill Amount* (Rs.)" Variant="Variant.Outlined" Required="true" MaxLength="6" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudDatePicker @bind-Date="maintenanceDate" Label="Maintenance Date" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Editable="true" Mask="@(new PatternMask("00-00-0000"))" />
+                                    </MudItem>
+                                    <MudItem xs="12">
+                                        <MudTextField @bind-Value="remark" Label="Remark" Variant="Variant.Outlined" Lines="3" />
+                                    </MudItem>
+                                </MudGrid>
+                            </MudItem>
+                        </MudGrid>
+
+                        <div class="fmm-actions">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@isSaving" OnClick="HandleAddMaintenance">
+                                @(isSaving ? "Saving..." : "Add Details")
+                            </MudButton>
+                        </div>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Maintenance History">
+                        <MudTable Items="@maintenanceHistory" Hover="true" Bordered="true" Dense="true" Class="fmm-table">
+                            <HeaderContent>
+                                <MudTh>Nature of Work</MudTh>
+                                <MudTh>Vendor Name</MudTh>
+                                <MudTh>Maintenance Date</MudTh>
+                                <MudTh>Bill No.</MudTh>
+                                <MudTh>Bill Date</MudTh>
+                                <MudTh>Bill Amount</MudTh>
+                                <MudTh>Remark</MudTh>
+                                <MudTh>Delete</MudTh>
+                            </HeaderContent>
+                            <RowTemplate Context="row">
+                                <MudTd DataLabel="Nature of Work">@row.MaintenanceTypeName</MudTd>
+                                <MudTd DataLabel="Vendor Name">@row.VendorName</MudTd>
+                                <MudTd DataLabel="Maintenance Date">@row.MaintenanceDate</MudTd>
+                                <MudTd DataLabel="Bill No.">@row.BillNo</MudTd>
+                                <MudTd DataLabel="Bill Date">@row.BillDate</MudTd>
+                                <MudTd DataLabel="Bill Amount">@row.BillAmount</MudTd>
+                                <MudTd DataLabel="Remark">@row.Remark</MudTd>
+                                <MudTd DataLabel="Delete">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => HandleDeleteMaintenance(row))" />
+                                </MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText>No Maintenance Yet</MudText>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </MudTabPanel>
+                </MudTabs>
+            </MudCardContent>
+        </MudCard>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="fmm-modal-overlay" @onclick="() => message = null">
+            <div class="fmm-modal @(isError ? "fmm-modal-error" : "fmm-modal-success")" @onclick:stopPropagation="true">
+                <div class="fmm-modal-icon">@(isError ? "!" : "✓")</div>
+                <p class="fmm-modal-text">@message</p>
+                <button type="button" class="fmm-btn @(isError ? "fmm-btn-secondary" : "fmm-btn-primary")" @onclick="() => message = null">OK</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Flat Maintenance") };
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [SupplyParameterFromQuery(Name = "flatId")]
+    public string? FlatId { get; set; }
+
+    private string adminPfNo = "";
+    private bool isLoading = true;
+    private string? loadError;
+    private FlatAllocationFlatInfo? flat;
+    private string occupancyLabel = "";
+
+    private List<FlatOccupantRow> currentOccupants = new();
+    private List<FlatMaintenanceRow> maintenanceHistory = new();
+
+    private string maintenanceType = "";
+    private string vendorName = "";
+    private string billNo = "";
+    private DateTime? billDate;
+    private string billAmount = "";
+    private DateTime? maintenanceDate;
+    private string remark = "";
+    private bool isSaving;
+
+    private string? message;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var state = await AuthStateTask;
+            adminPfNo = CurrentUser.EmplId ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(FlatId))
+        {
+            loadError = "Invalid request.";
+            isLoading = false;
+            return;
+        }
+
+        await LoadAllAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadAllAsync()
+    {
+        flat = await AllocationService.GetFlatInfoAsync(FlatId!);
+        if (flat is null)
+        {
+            loadError = "Flat Details with this Flat No. doesn't exist..";
+            return;
+        }
+
+        occupancyLabel = string.Equals(flat.OccupancyStatus, "Vacant", StringComparison.OrdinalIgnoreCase)
+            ? "Vacant"
+            : $"{flat.OccupantCount}-Occupants";
+
+        currentOccupants = await AllocationService.GetCurrentOccupantsAsync(FlatId!);
+        maintenanceHistory = await MaintenanceService.GetMaintenanceHistoryAsync(FlatId!);
+    }
+
+    private async Task HandleAddMaintenance()
+    {
+        message = null;
+
+        if (string.IsNullOrWhiteSpace(maintenanceType)) { ShowError("Maintenance type cannot be empty"); return; }
+        if (string.IsNullOrWhiteSpace(vendorName)) { ShowError("Fill vendor name"); return; }
+        if (string.IsNullOrWhiteSpace(billNo)) { ShowError("Fill bill number"); return; }
+        if (billDate is null) { ShowError("Fill Bill date"); return; }
+        if (string.IsNullOrWhiteSpace(billAmount)) { ShowError("Fill Bill Amount"); return; }
+
+        isSaving = true;
+        try
+        {
+            var result = await MaintenanceService.AddMaintenanceAsync(new AddMaintenanceRequest(
+                FlatId: FlatId!,
+                FlatNo: flat?.FlatNo,
+                MaintenanceTypeName: maintenanceType.Trim(),
+                MaintenanceDate: maintenanceDate?.ToString("dd/MM/yyyy"),
+                VendorName: vendorName.Trim(),
+                BillDate: billDate.Value.ToString("dd/MM/yyyy"),
+                BillNo: billNo.Trim(),
+                BillAmount: billAmount.Trim(),
+                Remark: string.IsNullOrWhiteSpace(remark) ? null : remark.Trim(),
+                EnteredBy: adminPfNo));
+
+            if (!result.Success)
+            {
+                ShowError(result.Error ?? "Some Error Occured. Please try later...");
+                return;
+            }
+
+            maintenanceHistory = await MaintenanceService.GetMaintenanceHistoryAsync(FlatId!);
+            ResetForm();
+            ShowSuccess("Maintenance Details Added SuccessFully..");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task HandleDeleteMaintenance(FlatMaintenanceRow row)
+    {
+        var success = await MaintenanceService.DeleteMaintenanceAsync(new DeleteMaintenanceRequest(
+            FlatId: FlatId!,
+            MaintenanceTypeName: row.MaintenanceTypeName,
+            VendorName: row.VendorName,
+            MaintenanceDate: row.MaintenanceDate,
+            BillNo: row.BillNo,
+            BillDate: row.BillDate,
+            BillAmount: row.BillAmount,
+            Remark: row.Remark));
+
+        if (!success)
+        {
+            ShowError("Some Error Occured. Please try later...");
+            return;
+        }
+
+        maintenanceHistory = await MaintenanceService.GetMaintenanceHistoryAsync(FlatId!);
+        ShowSuccess("Maintenance record deleted.");
+    }
+
+    private void ResetForm()
+    {
+        maintenanceType = "";
+        vendorName = "";
+        billNo = "";
+        billDate = null;
+        billAmount = "";
+        maintenanceDate = null;
+        remark = "";
+    }
+
+    private void ShowError(string text) { message = text; isError = true; }
+    private void ShowSuccess(string text) { message = text; isError = false; }
+}

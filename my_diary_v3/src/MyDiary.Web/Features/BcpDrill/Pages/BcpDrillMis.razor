@@ -1,0 +1,208 @@
+@page "/bcp-drill/mis"
+@using System.Security.Claims
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+@using MyDiary.Web.Features.BcpDrill.Components
+@using MyDiary.Web.Features.BcpDrill.Models
+@using MyDiary.Web.Features.BcpDrill.Services
+@inject IBcpDrillService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IWebHostEnvironment Env
+
+<PageTitle>BCP / DR Drill MIS - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="BCP / DR Drill - MIS &amp; reports"
+                Subtitle="Branch-wise, RO-wise, ZO-wise and period-wise compliance. Use From / To (or a financial year and quarter) for date-range and 'as on date' status."
+                Crumbs="_crumbs" PageKey="bcp-drill-mis" />
+
+    <BcpFilterBar Filter="_filter" OnApply="LoadAsync" ShowSearch="false"
+                  StatusItems="@(new List<(string, string)> { ("ALL", "All branches"), ("SUBMITTED", "Submitted"), ("NOT", "Not submitted") })" />
+
+    <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+        <MudText Typo="Typo.caption" Color="Color.Secondary">@WindowText()</MudText>
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.TableView" OnClick="ExportExcelAsync">Excel</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.PictureAsPdf" OnClick="ExportPdfAsync">PDF</MudButton>
+            <MudButton Variant="Variant.Text" OnClick="@(() => Nav.NavigateTo("bcp-drill"))">Back</MudButton>
+        </div>
+    </div>
+
+    @if (_loading) { <MudProgressCircular Indeterminate="true" /> }
+    else
+    {
+        <MudGrid Spacing="3" Class="mb-3">
+            <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Mapped branches</MudText><MudText Typo="Typo.h5">@_mapped</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Submitted</MudText><MudText Typo="Typo.h5" Color="Color.Success">@_submitted</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Pending</MudText><MudText Typo="Typo.h5" Color="Color.Warning">@(_mapped - _submitted)</MudText></MudPaper></MudItem>
+            <MudItem xs="6" md="3"><MudPaper Elevation="1" Class="pa-3"><MudText Typo="Typo.overline">Compliance</MudText><MudText Typo="Typo.h5">@(_mapped == 0 ? 0 : Math.Round(_submitted * 100d / _mapped, 1))%</MudText></MudPaper></MudItem>
+        </MudGrid>
+
+        <MudTabs Elevation="0" Rounded="true" PanelClass="pt-3" @bind-ActivePanelIndex="_tab">
+            <MudTabPanel Text="Branch-wise">
+                <MudTable Items="_branchRows" Dense="true" Hover="true" Bordered="true" Striped="true" T="BcpBranchMisRow" Breakpoint="Breakpoint.Sm" RowsPerPage="25" FixedHeader="true" Height="60vh">
+                    <HeaderContent>
+                        <MudTh>Sr</MudTh><MudTh>Branch Name</MudTh><MudTh>Branch Code</MudTh><MudTh>SOL ID</MudTh><MudTh>RO Name</MudTh><MudTh>RO Code</MudTh><MudTh>ZO Name</MudTh><MudTh>ZO Code</MudTh>
+                        <MudTh>Drill</MudTh><MudTh>BCP Drill Date</MudTh><MudTh>BCP Branch Name</MudTh><MudTh>BCP Branch SOL ID</MudTh><MudTh>Status</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@(_branchRows.IndexOf(context) + 1)</MudTd>
+                        <MudTd>@context.BranchName</MudTd><MudTd>@context.BranchCode</MudTd><MudTd>@context.SolId</MudTd>
+                        <MudTd>@context.RegionName</MudTd><MudTd>@context.RegionCode</MudTd><MudTd>@context.ZoneName</MudTd><MudTd>@context.ZoneCode</MudTd>
+                        <MudTd>@(context.DrillType is null ? "-" : BcpTypes.Label(context.DrillType))</MudTd>
+                        <MudTd>@(context.DrillDate?.ToString("dd-MMM-yyyy") ?? "-")</MudTd>
+                        <MudTd>@context.AltBranchName</MudTd><MudTd>@context.AltSolId</MudTd>
+                        <MudTd><MudChip T="string" Size="Size.Small" Color="@(context.Submitted ? Color.Success : Color.Warning)" Variant="Variant.Filled">@context.ComplianceLabel</MudChip></MudTd>
+                    </RowTemplate>
+                    <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" /></PagerContent>
+                </MudTable>
+            </MudTabPanel>
+
+            <MudTabPanel Text="RO-wise">
+                <MudTable Items="_regionFlat" Dense="true" Hover="true" Bordered="true" Striped="true" T="BcpRegionMisRow">
+                    <HeaderContent>
+                        <MudTh>Zone</MudTh><MudTh>Region (RO)</MudTh><MudTh Style="text-align:right">Mapped branches</MudTh><MudTh Style="text-align:right">Submissions</MudTh>
+                        <MudTh Style="text-align:right">Pending</MudTh><MudTh Style="min-width:180px">Compliance</MudTh><MudTh Style="text-align:right">Acknowledged</MudTh><MudTh Style="text-align:right">RO certificates</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.ZoneName</MudTd><MudTd>@(context.RegionName ?? context.RegionCode)</MudTd>
+                        <MudTd Style="text-align:right">@context.MappedBranches</MudTd><MudTd Style="text-align:right">@context.Submitted</MudTd><MudTd Style="text-align:right">@context.Pending</MudTd>
+                        <MudTd>
+                            <div class="d-flex align-center gap-2">
+                                <MudProgressLinear Color="@PctColor(context.CompliancePct)" Value="@context.CompliancePct" Size="Size.Medium" Rounded="true" Style="flex:1" />
+                                <span style="min-width:48px;text-align:right">@context.CompliancePct.ToString("N1")%</span>
+                            </div>
+                        </MudTd>
+                        <MudTd Style="text-align:right">@context.Acknowledged</MudTd>
+                        <MudTd Style="text-align:right">@context.RoCertificates</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudTabPanel>
+
+            <MudTabPanel Text="ZO-wise">
+                @foreach (var z in _zones)
+                {
+                    <MudPaper Elevation="1" Class="pa-4 mb-3">
+                        <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+                            <MudText Typo="Typo.h6">@(z.ZoneName ?? z.ZoneCode)</MudText>
+                            <div class="d-flex gap-2">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@z.Submitted / @z.MappedBranches branches</MudChip>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@PctColor(z.CompliancePct)">@z.CompliancePct.ToString("N1")%</MudChip>
+                            </div>
+                        </div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-1">Comparison across Regional Offices</MudText>
+                        @foreach (var r in z.Regions.OrderByDescending(x => x.CompliancePct))
+                        {
+                            <div class="d-flex align-center gap-2 mb-1">
+                                <span style="width:200px">@(r.RegionName ?? r.RegionCode)</span>
+                                <MudProgressLinear Color="@PctColor(r.CompliancePct)" Value="@r.CompliancePct" Size="Size.Medium" Rounded="true" Style="flex:1" />
+                                <span style="width:110px;text-align:right">@r.Submitted / @r.MappedBranches (@r.CompliancePct.ToString("N0")%)</span>
+                            </div>
+                        }
+                    </MudPaper>
+                }
+                @if (_zones.Count == 0) { <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No data in your scope.</MudAlert> }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Period-wise">
+                <MudTable Items="_periods" Dense="true" Hover="true" Bordered="true" T="BcpPeriodRow">
+                    <HeaderContent><MudTh>Financial year</MudTh><MudTh>Quarter</MudTh><MudTh>Drill type</MudTh><MudTh Style="text-align:right">Drills submitted</MudTh><MudTh Style="text-align:right">Branches covered</MudTh></HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.FinYear</MudTd><MudTd>@context.Quarter</MudTd><MudTd>@BcpTypes.Label(context.DrillType)</MudTd>
+                        <MudTd Style="text-align:right">@context.Drills</MudTd><MudTd Style="text-align:right">@context.Branches</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AuthenticatedOnly>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("BCP / DR Drill Compliance", "bcp-drill"), new("MIS") };
+
+    private ClaimsPrincipal _user = new();
+    private readonly BcpDrillFilter _filter = new();
+    private bool _loading = true;
+    private int _tab;
+    private List<BcpBranchMisRow> _branchRows = new();
+    private List<BcpZoneMisRow> _zones = new();
+    private List<BcpRegionMisRow> _regionFlat = new();
+    private List<BcpPeriodRow> _periods = new();
+    private int _mapped, _submitted;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _branchRows = await Svc.GetBranchMisAsync(_user, _filter);
+            _zones = await Svc.GetRegionMisAsync(_user, new BcpDrillFilter
+            {
+                ZoneCode = _filter.ZoneCode, RegionCode = _filter.RegionCode, SolId = _filter.SolId, DrillType = _filter.DrillType, From = _filter.From, To = _filter.To
+            });
+            _regionFlat = _zones.SelectMany(z => z.Regions).ToList();
+            _periods = await Svc.GetPeriodMisAsync(_user, _filter);
+            _mapped = _zones.Sum(z => z.MappedBranches);
+            _submitted = _zones.Sum(z => z.Submitted);
+        }
+        catch (Exception ex) { Snackbar.Add("Could not load MIS: " + ex.Message, Severity.Error); }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private string WindowText()
+    {
+        var type = _filter.DrillType is null ? "BCP and DR drills" : BcpTypes.Label(_filter.DrillType);
+        if (_filter.From.HasValue && _filter.To.HasValue) return $"{type}: {_filter.From:dd-MMM-yyyy} to {_filter.To:dd-MMM-yyyy}";
+        if (_filter.To.HasValue) return $"{type}: status as on {_filter.To:dd-MMM-yyyy}";
+        if (_filter.From.HasValue) return $"{type}: from {_filter.From:dd-MMM-yyyy}";
+        return $"{type}: all dates";
+    }
+
+    private static Color PctColor(double pct) => pct >= 80 ? Color.Success : pct >= 50 ? Color.Info : pct >= 25 ? Color.Warning : Color.Error;
+
+    private (string Name, string[] Headers, List<string[]> Rows) CurrentTable() => _tab switch
+    {
+        0 => Wrap("Branch-wise", BcpDocuments.BranchTable(_branchRows)),
+        1 or 2 => Wrap(_tab == 1 ? "RO-wise" : "ZO-wise", BcpDocuments.RegionTable(_zones)),
+        _ => ("Period-wise",
+              new[] { "Financial year", "Quarter", "Drill type", "Drills submitted", "Branches covered" },
+              _periods.Select(p => new[] { p.FinYear, p.Quarter, BcpTypes.Label(p.DrillType), p.Drills.ToString(), p.Branches.ToString() }).ToList())
+    };
+
+    private static (string, string[], List<string[]>) Wrap(string name, (string[] H, List<string[]> R) t) => (name, t.H, t.R);
+
+    private async Task ExportExcelAsync()
+    {
+        try
+        {
+            var (name, headers, rows) = CurrentTable();
+            var bytes = BcpDocuments.Xlsx(name, "BCP / DR Drill Compliance - " + name, WindowText() + $"  |  Generated {DateTime.Now:dd-MMM-yyyy HH:mm}", headers, rows);
+            await JS.InvokeVoidAsync("BlazorDownloadFile", $"BCP_DR_{name}_{DateTime.Now:yyyyMMdd}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { Snackbar.Add("Export failed: " + ex.Message, Severity.Error); }
+    }
+
+    private async Task ExportPdfAsync()
+    {
+        try
+        {
+            var (name, headers, rows) = CurrentTable();
+            var bytes = BcpDocuments.MisPdf("BCP / DR Drill Compliance - " + name, WindowText(), headers, rows,
+                BcpDocuments.LoadLogo(Env.WebRootPath, "UBI_Logo.png"), BcpDocuments.LoadLogo(Env.WebRootPath, "My_Diary_Log-transparent_small.png"));
+            await JS.InvokeVoidAsync("BlazorDownloadFile", $"BCP_DR_{name}_{DateTime.Now:yyyyMMdd}.pdf", "application/pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { Snackbar.Add("Export failed: " + ex.Message, Severity.Error); }
+    }
+}

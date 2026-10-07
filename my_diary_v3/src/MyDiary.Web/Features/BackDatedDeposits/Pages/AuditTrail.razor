@@ -1,0 +1,76 @@
+@page "/deposits/audit-trail"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using Microsoft.AspNetCore.WebUtilities
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@inject IBackDatedDepositRepo DepositRepo
+@inject NavigationManager Nav
+
+<PageTitle>Audit Trail - Back-Dated Deposit Approvals</PageTitle>
+<PageHeader Title="Audit Trail" Subtitle="Full immutable action history — every Recommend/Return/Clarify/Approve/Reject, with actor, SPOC and timestamp." Crumbs="_crumbs" PageKey="bdd-audit" />
+
+<MudPaper Class="pa-4 mb-4" Elevation="0">
+    <MudTextField @bind-Value="_filterRef" Label="Filter by Reference No." Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" OnAdornmentClick="ApplyFilterAsync"
+                  Immediate="true" OnKeyUp="@(async e => { if (e.Key == "Enter") await ApplyFilterAsync(); })" />
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="_actions" Hover="true" Dense="true" Bordered="true">
+        <HeaderContent>
+            <MudTh>Proposal</MudTh><MudTh>Level</MudTh><MudTh>Action</MudTh><MudTh>Actor</MudTh><MudTh>Role</MudTh>
+            <MudTh>From → To</MudTh><MudTh>Remarks</MudTh><MudTh>SPOC</MudTh><MudTh>When</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@(_refByProposalId.TryGetValue(context.ProposalId, out var r) ? r : context.ProposalId.ToString())</MudTd>
+            <MudTd>@context.Level</MudTd>
+            <MudTd>@context.Action</MudTd>
+            <MudTd>@context.ActorEmpCode</MudTd>
+            <MudTd>@context.ActorRole</MudTd>
+            <MudTd>@context.FromStatus → @context.ToStatus</MudTd>
+            <MudTd>@context.Remarks</MudTd>
+            <MudTd>@context.SpocName @(string.IsNullOrEmpty(context.SpocEmail) ? "" : $"({context.SpocEmail})")</MudTd>
+            <MudTd>@context.ActedAt.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Back-Dated Deposit Approvals", "deposits/hub"), new("Audit Trail") };
+    private bool _loading = true;
+    private string _filterRef = "";
+    private IReadOnlyList<BackDatedDepositAction> _actions = Array.Empty<BackDatedDepositAction>();
+    private Dictionary<long, string> _refByProposalId = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("ref", out var r))
+            _filterRef = r.ToString();
+
+        var all = await DepositRepo.ListAllAsync();
+        _refByProposalId = all.ToDictionary(p => p.Id, p => p.RefNo);
+
+        await ApplyFilterAsync();
+    }
+
+    private async Task ApplyFilterAsync()
+    {
+        _loading = true;
+        var all = await DepositRepo.ListAllActionsAsync();
+        if (!string.IsNullOrWhiteSpace(_filterRef))
+        {
+            var matchIds = _refByProposalId.Where(kv => kv.Value.Contains(_filterRef, StringComparison.OrdinalIgnoreCase))
+                                            .Select(kv => kv.Key).ToHashSet();
+            all = all.Where(a => matchIds.Contains(a.ProposalId)).ToList();
+        }
+        _actions = all;
+        _loading = false;
+    }
+}

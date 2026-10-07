@@ -1,0 +1,556 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/SBAccountOpenDataDeficiency"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>SB Accounts Opened Deficiencies — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private string _selectedZone = "1", _selectedRegion = "1", _selectedBranch = "1", _asOnDateLabel = "";
+    private bool _loading = true;
+    private ReportConfig _activeConfig = new();
+
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Default to Summary (Aggregated) columns — matches gvZoneRegionwise
+    private List<ColumnConfig> _detailedCols = new()
+{
+    new ColumnConfig { Header = "Zone",                           PropertyName = "zone_name_eng",  Width = "14%" },
+    new ColumnConfig { Header = "Region",                         PropertyName = "region_name",    Width = "14%" },
+    new ColumnConfig { Header = "Branch",                         PropertyName = "branch_name",    Width = "18%" },
+    new ColumnConfig { Header = "Sol ID",                         PropertyName = "Solid",          Width = "8%"  },
+    new ColumnConfig { Header = "No of SB Accounts Opened",       PropertyName = "NoOfAccounts",   Width = "10%" },
+    new ColumnConfig { Header = "Balance (Lacs)",                 PropertyName = "BalanceInLacs",  Width = "10%" },
+    new ColumnConfig { Header = "Accounts without Mobile No",     PropertyName = "WithoutMob",     Width = "10%" },
+    new ColumnConfig { Header = "Accounts without Email ID",      PropertyName = "WithoutEmail",   Width = "10%" },
+    new ColumnConfig { Header = "Accounts without PAN/Form60",    PropertyName = "WithoutPANForm60", Width = "12%" },
+    new ColumnConfig { Header = "Accounts without Nomination",    PropertyName = "WithoutNomination", Width = "12%" }
+};
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "branch important contact";
+
+        // Load User Context
+        // var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = authState.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) filters)
+    {
+        _selectedZone = filters.zone;
+        _selectedRegion = filters.region;
+        _selectedBranch = filters.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _activeConfig.Title = "SB A/c Opened - Deficiencies (Data for current F.Y)";
+
+        // Interpret the dropdown-like filters (same semantics as ASPX)
+        bool zoneIsSummary = string.Equals(_selectedZone, "1", StringComparison.OrdinalIgnoreCase);
+        bool zoneIsAllWise = string.Equals(_selectedZone, "all", StringComparison.OrdinalIgnoreCase);
+        bool zoneIsSpecific = !(zoneIsSummary || zoneIsAllWise);
+
+        bool regionIsSummary = string.Equals(_selectedRegion, "1", StringComparison.OrdinalIgnoreCase);
+        bool regionIsAllWise = string.Equals(_selectedRegion, "all", StringComparison.OrdinalIgnoreCase);
+        bool regionIsSpecific = !(regionIsSummary || regionIsAllWise);
+
+        bool branchIsSummary = string.Equals(_selectedBranch, "1", StringComparison.OrdinalIgnoreCase);
+        bool branchIsAllWise = string.Equals(_selectedBranch, "all", StringComparison.OrdinalIgnoreCase);
+        bool branchIsSpecific = !(branchIsSummary || branchIsAllWise);
+
+        // In WebForms, "breakup" (gvBranchwise) shows when user presses View Breakup + branch context.
+        // Here we mirror the most common behavior: if a specific branch is selected, show breakup.
+        bool isBreakup = branchIsSpecific;
+
+        // Choose columns for the view that will be shown
+        if (isBreakup)
+        {
+            // Breakup (Detailed) columns — matches gvBranchwise
+            _activeConfig.Columns = new List<ColumnConfig>
+        {
+            new ColumnConfig { Header = "S No.",           PropertyName = "SNo",           Width = "6%"  },
+            new ColumnConfig { Header = "Zone",            PropertyName = "zone_name_eng", Width = "12%" },
+            new ColumnConfig { Header = "Region",          PropertyName = "region_name",   Width = "12%" },
+            new ColumnConfig { Header = "Branch Name",     PropertyName = "Branch_Name",   Width = "18%" },
+            new ColumnConfig { Header = "Sol ID",          PropertyName = "Solid",         Width = "8%"  },
+            new ColumnConfig { Header = "Account Number",  PropertyName = "AccountNo",     Width = "12%" },
+            new ColumnConfig { Header = "Name",            PropertyName = "AccountName",   Width = "14%" },
+            new ColumnConfig { Header = "CIF ID",          PropertyName = "CIFId",         Width = "10%" },
+            new ColumnConfig { Header = "SchemeCode",      PropertyName = "SchemeCode",    Width = "10%" },
+            new ColumnConfig { Header = "Balance",         PropertyName = "Balance",       Width = "10%" },
+            new ColumnConfig { Header = "Phone No",        PropertyName = "PhoneNo",       Width = "12%" },
+            new ColumnConfig { Header = "Email",           PropertyName = "EmailID",       Width = "16%" },
+            new ColumnConfig { Header = "PAN/Form60",      PropertyName = "PAN",           Width = "14%" },
+            new ColumnConfig { Header = "Nominee Regd",    PropertyName = "NominationFlg", Width = "10%" }
+        };
+        }
+        else
+        {
+            // Summary columns (default set above)
+            _activeConfig.Columns = _detailedCols;
+        }
+
+        // Common fragments copied from your CS
+        string fromJoin = "SBCDAccountOpenData A Join Branch_Master B On A.SolID = B.Sol_ID";
+        string commonWhere = "IsNull(ExcludeFlg,'N') = 'N' And SchemeType = 'SBA' and region_solid <> '00000' and region_solid<>' '";
+        string orderByZRB = "Order By Zone_Name_Eng,Region_Name,Branch_Name";
+
+        // Aggregation projection used in all summary queries (exactly as in CS)
+        string summaryAgg = @"
+Count(AccountNo) NoOfAccounts,
+Round(Sum(Balance)/100000,2) BalanceInLacs,
+Sum(Case When Len(PhoneNo) < 10 Then 1 Else 0 End) WithoutMob,
+Sum(Case When EmailID = '' Or EmailID Not Like '%@%'  Then 1 Else 0 End) WithoutEmail,
+Sum(Case When (PAN = '' Or Len(PAN) <> 10) And (Form60 <> '60' And Form60 <> '61')  Then 1 Else 0 End) WithoutPANForm60,
+Sum(Case When IsNull(NominationFlg,'N') = 'N' And ConstitutionCode = '001'  Then 1 Else 0 End) WithoutNomination
+";
+
+        // Breakup projection (exactly as in CS; build PAN/Form60 text)
+        string breakupSelect = @"
+AccountNo,
+AccountName,
+CIFId,
+SchemeCode,
+Balance,
+PhoneNo,
+EmailID,
+(PAN + ' ' + Case Form60 When '60' Then 'Form 60' When '61' Then 'Form 61' else Form60 end) PAN,
+Form60,
+NominationFlg,
+Branch_Name,
+region_name,
+zone_name_eng,
+Sol_Id As Solid
+";
+
+        // Build SQL according to privilege + filter combinations (mirrors DisplayData())
+        string sql;
+
+        switch ((_userPrivilege ?? "CO").ToUpperInvariant())
+        {
+            case "CO":
+                {
+                    if (!zoneIsSpecific) // Zone = -1 (not used) or "1" (All Summary) or "all" (Zonewise)
+                    {
+                        if (zoneIsSummary)
+                        {
+                            // All zones total (single row)
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere}
+) T
+";
+                        }
+                        else // zoneIsAllWise → Zone-wise summary
+                        {
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere}
+    GROUP BY Zone_SolId, zone_name_eng
+) T
+{orderByZRB}
+";
+                        }
+                    }
+                    else // specific zone
+                    {
+                        if (regionIsSummary)
+                        {
+                            // Specific Zone — single-row summary
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, 'All' As region_name, zone_name_eng, Zone_SolId As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and zone_solid = '{_selectedZone}'
+    GROUP BY Zone_SolId, zone_name_eng
+) T
+{orderByZRB}
+";
+                        }
+                        else if (regionIsAllWise)
+                        {
+                            if (branchIsSummary)
+                            {
+                                // Total of all regions of the zone (region-wise summary)
+                                sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, region_name, zone_name_eng, region_SolId As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and zone_solid = '{_selectedZone}'
+    GROUP BY region_name, region_SolId, zone_name_eng
+) T
+{orderByZRB}
+";
+                            }
+                            else if (branchIsAllWise)
+                            {
+                                // Branch-wise under this zone
+                                sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name, Branch_Name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           Branch_Name, region_name, zone_name_eng, Sol_Id As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and zone_solid = '{_selectedZone}'
+    GROUP BY Zone_Name_Eng, Region_Name, Branch_Name, Sol_ID
+) T
+{orderByZRB}
+";
+                            }
+                            else
+                            {
+                                // Specific branch → Breakup
+                                sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY Zone_Name_Eng, Region_Name, Branch_Name, AccountNo) AS SNo,
+       {breakupSelect}
+FROM {fromJoin}
+WHERE {commonWhere} and zone_solid = '{_selectedZone}'
+{orderByZRB}
+";
+                            }
+                        }
+                        else // specific region
+                        {
+                            if (branchIsSummary)
+                            {
+                                // Region summary (single row)
+                                sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, region_name, zone_name_eng, region_SolId As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and region_solid = '{_selectedRegion}'
+    GROUP BY Region_name, region_SolId, zone_name_eng
+) T
+{orderByZRB}
+";
+                            }
+                            else if (branchIsAllWise)
+                            {
+                                // Branch-wise for that region
+                                sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name, Branch_Name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           Branch_Name, region_name, zone_name_eng, Sol_Id As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and region_solid = '{_selectedRegion}'
+    GROUP BY Zone_Name_Eng, Region_Name, Branch_Name, Sol_ID
+) T
+{orderByZRB}
+";
+                            }
+                            else
+                            {
+                                // Specific branch → Breakup
+                                sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY Zone_Name_Eng, Region_Name, Branch_Name, AccountNo) AS SNo,
+       {breakupSelect}
+FROM {fromJoin}
+WHERE {commonWhere} and sol_id = '{_selectedBranch}'
+{orderByZRB}
+";
+                            }
+                        }
+                    }
+                    break;
+                }
+
+            case "ZONE":
+                {
+                    string userZoneSolId = _userZoneSolid;
+
+                    if (regionIsSummary)
+                    {
+                        // Summary of ZO
+                        sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and Zone_solid = '{userZoneSolId}'
+) T
+{orderByZRB}
+";
+                    }
+                    else if (regionIsAllWise)
+                    {
+                        if (branchIsSummary)
+                        {
+                            // Regionwise summary
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, region_name, zone_name_eng, region_solid As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and Zone_solid = '{userZoneSolId}'
+    GROUP BY Region_name, region_SolId, zone_name_eng
+) T
+{orderByZRB}
+";
+                        }
+                        else if (branchIsAllWise)
+                        {
+                            // Branch-wise under the zone
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name, Branch_Name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           Branch_Name, region_name, zone_name_eng, Sol_Id As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and Zone_solid = '{userZoneSolId}'
+    GROUP BY Zone_Name_Eng, Region_Name, Branch_Name, Sol_ID
+) T
+{orderByZRB}
+";
+                        }
+                        else
+                        {
+                            // Specific branch → Breakup
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY Zone_Name_Eng, Region_Name, Branch_Name, AccountNo) AS SNo,
+       {breakupSelect}
+FROM {fromJoin}
+WHERE {commonWhere} and Zone_solid = '{userZoneSolId}'
+{orderByZRB}
+";
+                        }
+                    }
+                    else // specific region under ZO
+                    {
+                        if (branchIsSummary)
+                        {
+                            // Selected Region Summary
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, region_name, zone_name_eng, region_solid As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and Zone_solid = '{userZoneSolId}' and region_solid = '{_selectedRegion}'
+    GROUP BY Region_name, region_SolId, zone_name_eng
+) T
+{orderByZRB}
+";
+                        }
+                        else if (branchIsAllWise)
+                        {
+                            // Branch-wise for the selected region
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name, Branch_Name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           Branch_Name, region_name, zone_name_eng, Sol_Id As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and Zone_solid = '{userZoneSolId}' and region_solid = '{_selectedRegion}'
+    GROUP BY Zone_Name_Eng, Region_Name, Branch_Name, Sol_ID
+) T
+{orderByZRB}
+";
+                        }
+                        else
+                        {
+                            // Specific branch → Breakup
+                            sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY Zone_Name_Eng, Region_Name, Branch_Name, AccountNo) AS SNo,
+       {breakupSelect}
+FROM {fromJoin}
+WHERE {commonWhere} and zone_solid = '{userZoneSolId}' and sol_id = '{_selectedBranch}'
+{orderByZRB}
+";
+                        }
+                    }
+                    break;
+                }
+
+            case "REGION":
+                {
+                    string userRegionSolId = _userRegionSolid;
+
+                    if (branchIsSummary)
+                    {
+                        // Region Summary
+                        sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, region_name, zone_name_eng, region_solid As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and region_solid = '{userRegionSolId}'
+    GROUP BY Region_name, region_SolId, zone_name_eng
+) T
+{orderByZRB}
+";
+                    }
+                    else if (branchIsAllWise)
+                    {
+                        // Branch-wise under this region
+                        sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name, Branch_Name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           Branch_Name, region_name, zone_name_eng, Sol_Id As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and region_solid = '{userRegionSolId}'
+    GROUP BY Branch_Name, region_name, zone_name_eng, Sol_Id
+) T
+{orderByZRB}
+";
+                    }
+                    else
+                    {
+                        // Specific branch → Breakup
+                        sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY Zone_Name_Eng, Region_Name, Branch_Name, AccountNo) AS SNo,
+       {breakupSelect}
+FROM {fromJoin}
+WHERE {commonWhere} and region_solid = '{userRegionSolId}' and sol_id = '{_selectedBranch}'
+{orderByZRB}
+";
+                    }
+                    break;
+                }
+
+            case "BRANCH":
+                {
+                    string userBranchSolId = _userBranchSolid;
+
+                    if (isBreakup)
+                    {
+                        // Breakup for the branch
+                        sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY Zone_Name_Eng, Region_Name, Branch_Name, AccountNo) AS SNo,
+       {breakupSelect}
+FROM {fromJoin}
+WHERE {commonWhere} and sol_id = '{userBranchSolId}'
+{orderByZRB}
+";
+                    }
+                    else
+                    {
+                        // Summary for the branch
+                        sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY zone_name_eng, region_name, Branch_Name) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           Branch_Name, region_name, zone_name_eng, Sol_Id As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere} and sol_id = '{userBranchSolId}'
+    GROUP BY Branch_Name, region_name, zone_name_eng, Sol_Id
+) T
+{orderByZRB}
+";
+                    }
+                    break;
+                }
+
+            default:
+                {
+                    // Fallback: All zones total (single row)
+                    sql = $@"
+SELECT ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS SNo, *
+FROM (
+    SELECT {summaryAgg},
+           'All' As Branch_Name, 'All' As region_name, 'All' As zone_name_eng, 'All' As Solid
+    FROM {fromJoin}
+    WHERE {commonWhere}
+) T
+";
+                    break;
+                }
+        }
+
+        // Execute
+        _data = await ReportService.ExecuteRawQueryAsync(sql);
+
+        // As-on label (exactly as in CS: always "Amount in Lakhs")
+        string dateLabel = "";
+        try
+        {
+            var dtRows = await ReportService.ExecuteRawQueryAsync("SELECT Max(AcOpenDate) AS MaxAcOpenDate FROM SBCDAccountOpenData");
+            if (dtRows?.Count > 0 && dtRows[0].TryGetValue("MaxAcOpenDate", out var v) && v is not null
+                && DateTime.TryParse(Convert.ToString(v), out var maxDate))
+            {
+                dateLabel = $" , Data Last Updated On - {maxDate:dd-MM-yyyy}";
+            }
+        }
+        catch (Exception ex) {
+            AppLogger.LogError(ex, "[SBAccountOpenDataDeficiency] Unhandled error: " + ex.Message);
+        }
+
+        _asOnDateLabel = $"(Amount in Lakhs{dateLabel})";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "SBAccountDeficiency");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "SBAccountOpenDataDeficiency.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

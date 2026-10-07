@@ -1,0 +1,643 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/transactions"
+@using Microsoft.JSInterop
+@using System.Linq
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Models
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Transaction Report — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        width: 100%;
+        table-layout: auto !important;     /* Allow flexible width where needed */
+        border-collapse: collapse;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .thead-dark {
+        background-color: #2a2f5b;
+        color: white;
+    }
+
+    .thead-dark th {
+        border-right: 1px solid #d0d0d0;
+        text-align: center;
+        font-weight: 700;
+        border-bottom: 1px solid #d0d0d0;
+        white-space: nowrap;
+        padding: 8px 6px;
+    }
+
+    /* WIDE TEXT COLUMNS (Zone / Region / Branch) */
+    .col-zone {
+        width: 240px !important;
+        min-width: 220px !important;
+        max-width: 360px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-region {
+        width: 240px !important;
+        min-width: 220px !important;
+        max-width: 360px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .col-branch {
+        width: 300px !important;
+        min-width: 260px !important;
+        max-width: 420px;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    /* SolID column */
+    .col-solid {
+        width: 120px !important;
+        min-width: 100px !important;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    /* NUMBER COLUMNS compact and right aligned */
+    .col-num {
+        width: 90px !important;
+        min-width: 80px !important;
+        text-align: right !important;
+        white-space: nowrap !important;
+        padding-right: 10px;
+    }
+
+    .td-left  { text-align: left; }
+    .td-right { text-align: right; }
+    .td-center { text-align: center; }
+
+    .fixed-table td {
+        border-bottom: 1px solid #eee;
+        padding: 6px 6px;
+        vertical-align: middle;
+    }
+
+    .group-divider {
+        border-right: 1px solid silver;
+    }
+
+    @@media (max-width: 992px) {
+        .col-num {
+            width: 80px !important;
+            min-width: 72px !important;
+        }
+    }
+</style>
+
+
+<!-- ================== TRANSACTION REPORT TABLE ================== -->
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color:#fff;">
+
+            
+
+            <!-- FILTERS -->
+            <MudGrid Spacing="2" Class="pa-4 align-center">
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Zone" Value="SelectedZone" ValueChanged="HandleZoneChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Zonewise)</MudSelectItem>
+                        @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">@z["zone_name_eng"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Region" Value="SelectedRegion" ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(SelectedZone == "1")">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Regionwise)</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">@r["region_name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" Label="Branch" Value="SelectedBranch" ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               Disabled="@(SelectedRegion == "1")">
+                        <MudSelectItem Value="@("1")">All(Summary)</MudSelectItem>
+                        <MudSelectItem Value="@("all")">All(Branchwise)</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["SOL_ID"].ToString()">@b["Branch_Name"].ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color:#000066; color:#fff; font-size:11px;"
+                               OnClick="OnExport">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- DATES HEADER -->
+            <div class="px-4 pb-2 d-flex justify-end">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color:#666;">
+                    Average Transactions Per Day, from @_fromDate To @_toDate &nbsp;&nbsp;|&nbsp;&nbsp;
+                    No of Transactions On @_tranDate
+                </MudText>
+            </div>
+
+
+            <!-- ================== TABLE ================== -->
+            <div class="mud-table-container px-4 pb-4">
+                <table class="mud-table fixed-table" aria-label="Transaction Report">
+
+                    <thead class="thead-dark">
+                        <tr>
+                            <th rowspan="2" class="col-zone">Zone</th>
+                            <th rowspan="2" class="col-region">Region</th>
+                            <th rowspan="2" class="col-branch">Branch</th>
+                            <th rowspan="2" class="col-solid">SolID</th>
+
+                            <th colspan="2" class="group-divider">Staff Position in Branch</th>
+
+                            <th colspan="5" class="group-divider">
+                                Average Transactions Per Day, from @_fromDate To @_toDate
+                            </th>
+
+                            <th colspan="5">No of Transactions On @_tranDate</th>
+                        </tr>
+
+                        <tr>
+                            <!-- Staff -->
+                            <th class="col-num">Officers</th>
+                            <th class="col-num group-divider">Clerks</th>
+
+                            <!-- Averages -->
+                            <th class="col-num">Cash</th>
+                            <th class="col-num">Clearing</th>
+                            <th class="col-num">Transfer</th>
+                            <th class="col-num">NEFT/RTGS</th>
+                            <th class="col-num group-divider">Digital</th>
+
+                            <!-- On-Date -->
+                            <th class="col-num">Cash</th>
+                            <th class="col-num">Clearing</th>
+                            <th class="col-num">Transfer</th>
+                            <th class="col-num">NEFT/RTGS</th>
+                            <th class="col-num">Digital</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @if (_loading)
+                        {
+                            <tr><td colspan="16" class="td-center">Loading�</td></tr>
+                        }
+                        else if (_data.Count == 0)
+                        {
+                            <tr><td colspan="16" class="td-center" style="color:crimson;">No Data Found!</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in _data)
+                            {
+                                <tr>
+                                    <td class="td-left col-zone">@Get(row, "zone_name_eng")</td>
+                                    <td class="td-left col-region">@Get(row, "region_name")</td>
+                                    <td class="td-left col-branch">@Get(row, "Branch_Name")</td>
+                                    <td class="td-left col-solid">@Get(row, "SolId")</td>
+
+                                    <td class="td-right col-num">@FmtInt(row, "OfficerCount")</td>
+                                    <td class="td-right col-num group-divider">@FmtInt(row, "ClerkCount")</td>
+
+                                    <td class="td-right col-num">@FmtInt(row, "AvgCashTxn")</td>
+                                    <td class="td-right col-num">@FmtInt(row, "AvgClearingTxn")</td>
+                                    <td class="td-right col-num">@FmtInt(row, "AvgTransferTxn")</td>
+                                    <td class="td-right col-num">@FmtInt(row, "AvgPORDMTxn")</td>
+                                    <td class="td-right col-num group-divider">@FmtInt(row, "AvgDigitalTxn")</td>
+
+                                    <td class="td-right col-num">@FmtInt(row, "CashTxn")</td>
+                                    <td class="td-right col-num">@FmtInt(row, "ClearingTxn")</td>
+                                    <td class="td-right col-num">@FmtInt(row, "TransferTxn")</td>
+                                    <td class="td-right col-num">@FmtInt(row, "PORDMTxn")</td>
+                                    <td class="td-right col-num">@FmtInt(row, "DigitalTxn")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+
+                </table>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // Filters and data
+    private string SelectedZone { get; set; } = "1";
+    private string SelectedRegion { get; set; } = "1";
+    private string SelectedBranch { get; set; } = "1";
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+    private List<Dictionary<string, object>> _data = new();
+
+    // Dates for header
+    private string _fromDate = "", _toDate = "", _tranDate = "";
+
+    // Privilege (map from claims if available)
+    private string _userPrivilege = "CO"; // CO | ZONE | REGION | BRANCH
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    private bool _loading = true;
+
+    // Export columns (flat)
+    private readonly List<ColumnConfig> _exportCols = new()
+    {
+        new ColumnConfig{ Header="Zone",         PropertyName="zone_name_eng" },
+        new ColumnConfig{ Header="Region",       PropertyName="region_name" },
+        new ColumnConfig{ Header="Branch",       PropertyName="Branch_Name" },
+        new ColumnConfig{ Header="SolID",        PropertyName="SolId" },
+        new ColumnConfig{ Header="Officers",     PropertyName="OfficerCount", IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Clerks",       PropertyName="ClerkCount",   IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Avg Cash",     PropertyName="AvgCashTxn",   IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Avg Clearing", PropertyName="AvgClearingTxn",IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Avg Transfer", PropertyName="AvgTransferTxn",IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Avg NEFT/RTGS",PropertyName="AvgPORDMTxn",  IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Avg Digital",  PropertyName="AvgDigitalTxn",IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Cash",         PropertyName="CashTxn",      IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Clearing",     PropertyName="ClearingTxn",  IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Transfer",     PropertyName="TransferTxn",  IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="NEFT/RTGS",    PropertyName="PORDMTxn",     IsNumeric=true, Format="N0" },
+        new ColumnConfig{ Header="Digital",      PropertyName="DigitalTxn",   IsNumeric=true, Format="N0" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _zones = await ReportService.GetLookupDataAsync("zone_master", "*", "status='A'", "zone_name_eng");
+        await LoadReport();
+    }
+
+    private async Task HandleZoneChanged(string v)
+    {
+        SelectedZone = v; SelectedRegion = "1"; SelectedBranch = "1";
+        if (v != "1" && v != "all")
+            _regions = await ReportService.GetLookupDataAsync("region_master", "*", $"zone_solid='{v}'", "region_name");
+        else
+            _regions.Clear();
+        _branches.Clear();
+        await LoadReport();
+    }
+
+    private async Task HandleRegionChanged(string v)
+    {
+        SelectedRegion = v; SelectedBranch = "1";
+        if (v != "1" && v != "all")
+            _branches = await ReportService.GetLookupDataAsync("branch_master",
+                "CONCAT(UPPER(branch_name),'  (',branch_code,')') As Branch_Name,SOL_ID",
+                $"region_solid='{v}'",
+                "BRANCH_NAME");
+        else
+            _branches.Clear();
+        await LoadReport();
+    }
+
+    private async Task HandleBranchChanged(string v)
+    {
+        SelectedBranch = v;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Build SELECT/WHERE/GROUP BY
+            string columns = "";
+            string where = "C.region_solid <> '00000' and C.region_solid <> ' '";
+            string groupBy = "";
+            string orderBy = ""; // set per mode
+
+            string fromJoin =
+                " FROM VoucherDataReport A " +
+                " JOIN VoucherDataAverageReport B ON A.SolID = B.SolId AND A.TranDate = B.ToDate " +
+                " JOIN Branch_Master C ON A.SolId = C.Sol_Id ";
+
+            // Projections
+            string SummaryAll() =>
+                " CONVERT(varchar, A.TranDate, 103) TranDate," +
+                " SUM(A.CashTxn) CashTxn, SUM(A.ClearingTxn) ClearingTxn, SUM(A.TransferTxn) TransferTxn, SUM(A.DigitalTxn) DigitalTxn, SUM(A.PORDMTxn) PORDMTxn," +
+                " CONVERT(varchar, B.FromDate, 103) FromDate, CONVERT(varchar, B.ToDate, 103) ToDate," +
+                " SUM(B.CashTxn) AvgCashTxn, SUM(B.ClearingTxn) AvgClearingTxn, SUM(B.TransferTxn) AvgTransferTxn, SUM(B.DigitalTxn) AvgDigitalTxn, SUM(B.PORDMTxn) AvgPORDMTxn," +
+                " SUM(CAST(ISNULL(C.Officer,0) as int)) OfficerCount, SUM(CAST(ISNULL(C.Clerk,0) as int)) ClerkCount," +
+                " 'All' AS Branch_Name, 'All' AS region_name, 'All' AS zone_name_eng, 'All' AS SolId ";
+
+            string ZoneSummaryRow() =>
+                " CONVERT(varchar, A.TranDate, 103) TranDate," +
+                " SUM(A.CashTxn) CashTxn, SUM(A.ClearingTxn) ClearingTxn, SUM(A.TransferTxn) TransferTxn, SUM(A.DigitalTxn) DigitalTxn, SUM(A.PORDMTxn) PORDMTxn," +
+                " CONVERT(varchar, B.FromDate, 103) FromDate, CONVERT(varchar, B.ToDate, 103) ToDate," +
+                " SUM(B.CashTxn) AvgCashTxn, SUM(B.ClearingTxn) AvgClearingTxn, SUM(B.TransferTxn) AvgTransferTxn, SUM(B.DigitalTxn) AvgDigitalTxn, SUM(B.PORDMTxn) AvgPORDMTxn," +
+                " SUM(CAST(ISNULL(C.Officer,0) as int)) OfficerCount, SUM(CAST(ISNULL(C.Clerk,0) as int)) ClerkCount," +
+                " 'All' AS Branch_Name, 'All' AS region_name, C.zone_name_eng, C.Zone_SolId AS SolId ";
+
+            string RegionSummaryRow() =>
+                " CONVERT(varchar, A.TranDate, 103) TranDate," +
+                " SUM(A.CashTxn) CashTxn, SUM(A.ClearingTxn) ClearingTxn, SUM(A.TransferTxn) TransferTxn, SUM(A.DigitalTxn) DigitalTxn, SUM(A.PORDMTxn) PORDMTxn," +
+                " CONVERT(varchar, B.FromDate, 103) FromDate, CONVERT(varchar, B.ToDate, 103) ToDate," +
+                " SUM(B.CashTxn) AvgCashTxn, SUM(B.ClearingTxn) AvgClearingTxn, SUM(B.TransferTxn) AvgTransferTxn, SUM(B.DigitalTxn) AvgDigitalTxn, SUM(B.PORDMTxn) AvgPORDMTxn," +
+                " SUM(CAST(ISNULL(C.Officer,0) as int)) OfficerCount, SUM(CAST(ISNULL(C.Clerk,0) as int)) ClerkCount," +
+                " 'All' AS Branch_Name, C.region_name, C.zone_name_eng, C.region_SolId AS SolId ";
+
+            string BranchSummaryRow() =>
+                " CONVERT(varchar, A.TranDate, 103) TranDate," +
+                " SUM(A.CashTxn) CashTxn, SUM(A.ClearingTxn) ClearingTxn, SUM(A.TransferTxn) TransferTxn, SUM(A.DigitalTxn) DigitalTxn, SUM(A.PORDMTxn) PORDMTxn," +
+                " CONVERT(varchar, B.FromDate, 103) FromDate, CONVERT(varchar, B.ToDate, 103) ToDate," +
+                " SUM(B.CashTxn) AvgCashTxn, SUM(B.ClearingTxn) AvgClearingTxn, SUM(B.TransferTxn) AvgTransferTxn, SUM(B.DigitalTxn) AvgDigitalTxn, SUM(B.PORDMTxn) AvgPORDMTxn," +
+                " SUM(CAST(ISNULL(C.Officer,0) as int)) OfficerCount, SUM(CAST(ISNULL(C.Clerk,0) as int)) ClerkCount," +
+                " C.Branch_Name, C.region_name, C.zone_name_eng, C.Sol_Id AS SolId ";
+
+            string BranchDetailRow() =>
+                " CONVERT(varchar, A.TranDate, 103) TranDate," +
+                " A.SolID, A.CashTxn, A.ClearingTxn, A.TransferTxn, A.DigitalTxn, A.PORDMTxn," +
+                " CONVERT(varchar, B.FromDate, 103) FromDate, CONVERT(varchar, B.ToDate, 103) ToDate," +
+                " B.CashTxn AvgCashTxn, B.ClearingTxn AvgClearingTxn, B.TransferTxn AvgTransferTxn, B.DigitalTxn AvgDigitalTxn, B.PORDMTxn AvgPORDMTxn," +
+                " CAST(ISNULL(C.Officer,0) as int) OfficerCount, CAST(ISNULL(C.Clerk,0) as int) ClerkCount," +
+                " C.Branch_Name, C.region_name, C.zone_name_eng, C.Sol_Id AS SolId ";
+
+            // Privilege branching
+            if (_userPrivilege == "CO")
+            {
+                if (SelectedZone == "1")
+                {
+                    columns = SummaryAll();
+                    groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate ";
+                    orderBy = " ORDER BY A.TranDate, B.FromDate, B.ToDate";
+                }
+                else if (SelectedZone.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (SelectedRegion == "1")
+                    {
+                        columns = ZoneSummaryRow();
+                        groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.Zone_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng";
+                    }
+                    else if (SelectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (SelectedBranch == "1")
+                        {
+                            columns = RegionSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (SelectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            columns = BranchSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else
+                        {
+                            columns = BranchDetailRow();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                    else
+                    {
+                        where += $" AND C.region_solid = '{SelectedRegion}'";
+                        if (SelectedBranch == "1")
+                        {
+                            columns = RegionSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (SelectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            columns = BranchSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else
+                        {
+                            columns = BranchDetailRow();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                }
+                else
+                {
+                    where += $" AND C.zone_solid = '{SelectedZone}'";
+                    if (SelectedRegion == "1")
+                    {
+                        columns = ZoneSummaryRow();
+                        groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.Zone_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng";
+                    }
+                    else if (SelectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (SelectedBranch == "1")
+                        {
+                            columns = RegionSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (SelectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            columns = BranchSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else
+                        {
+                            columns = BranchDetailRow();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                    else
+                    {
+                        where += $" AND C.region_solid = '{SelectedRegion}'";
+                        if (SelectedBranch == "1")
+                        {
+                            columns = RegionSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                        }
+                        else if (SelectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                        {
+                            columns = BranchSummaryRow();
+                            groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                        else
+                        {
+                            columns = BranchDetailRow();
+                            orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                        }
+                    }
+                }
+            }
+            else if (_userPrivilege == "ZONE")
+            {
+                where += $" AND C.Zone_solid = '{_userZoneSolid}'";
+                if (SelectedRegion == "1")
+                {
+                    columns = SummaryAll();
+                    groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate ";
+                    orderBy = " ORDER BY A.TranDate, B.FromDate, B.ToDate";
+                }
+                else if (SelectedRegion.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (SelectedBranch == "1")
+                    {
+                        columns = RegionSummaryRow();
+                        groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                    }
+                    else if (SelectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        columns = BranchSummaryRow();
+                        groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                    else
+                    {
+                        columns = BranchDetailRow();
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                }
+                else
+                {
+                    where += $" AND C.region_solid = '{SelectedRegion}'";
+                    if (SelectedBranch == "1")
+                    {
+                        columns = RegionSummaryRow();
+                        groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                    }
+                    else if (SelectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        columns = BranchSummaryRow();
+                        groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                    else
+                    {
+                        columns = BranchDetailRow();
+                        orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                    }
+                }
+            }
+            else if (_userPrivilege == "REGION")
+            {
+                where += $" AND C.region_solid = '{_userRegionSolid}'";
+                if (SelectedBranch == "1")
+                {
+                    columns = RegionSummaryRow();
+                    groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.region_name, C.region_SolId, C.zone_name_eng ";
+                    orderBy = " ORDER BY C.zone_name_eng, C.region_name";
+                }
+                else if (SelectedBranch.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    columns = BranchSummaryRow();
+                    groupBy = " GROUP BY A.TranDate, B.FromDate, B.ToDate, C.zone_name_eng, C.region_name, C.Branch_Name, C.Sol_ID ";
+                    orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                }
+                else
+                {
+                    columns = BranchDetailRow();
+                    orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+                }
+            }
+            else if (_userPrivilege == "BRANCH")
+            {
+                where += $" AND C.sol_id = '{_userBranchSolid}'";
+                columns = BranchDetailRow();
+                orderBy = " ORDER BY C.zone_name_eng, C.region_name, C.Branch_Name";
+            }
+
+            string finalQuery = $"SELECT {columns} {fromJoin} WHERE {where}{groupBy}{orderBy}";
+            _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+            // Header dates
+            var dateRow = (await ReportService.ExecuteRawQueryAsync(
+                "SELECT " +
+                " CONVERT(nvarchar, MAX(A.TranDate), 103) AS TranDate, " +
+                " CONVERT(nvarchar, MAX(B.FromDate), 103) AS FromDate, " +
+                " CONVERT(nvarchar, MAX(B.ToDate), 103) AS ToDate " +
+                fromJoin + " WHERE 1=1")).FirstOrDefault() ?? new();
+
+            _tranDate = dateRow.TryGetValue("TranDate", out var t) ? t?.ToString() ?? "" : "";
+            _fromDate = dateRow.TryGetValue("FromDate", out var f) ? f?.ToString() ?? "" : "";
+            _toDate = dateRow.TryGetValue("ToDate", out var d) ? d?.ToString() ?? "" : "";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[Transactions] Unhandled error: " + ex.Message);
+            _data = new();
+            _tranDate = _fromDate = _toDate = "";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _exportCols, "TransactionReport");
+        await JS.InvokeVoidAsync("BlazorDownloadFile", "TransactionReport.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    // Helpers to format values
+    private string Get(Dictionary<string, object> row, string key) =>
+        row.TryGetValue(key, out var v) && v != null && v != DBNull.Value ? v.ToString()! : "-";
+
+    private string FmtInt(Dictionary<string, object> row, string key)
+    {
+        if (!row.TryGetValue(key, out var v) || v == null || v == DBNull.Value) return "-";
+        if (decimal.TryParse(v.ToString(), out var d)) return d.ToString("N0");
+        return v.ToString()!;
+    }
+}

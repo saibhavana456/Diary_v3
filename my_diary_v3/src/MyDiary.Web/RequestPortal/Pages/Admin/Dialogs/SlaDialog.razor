@@ -1,0 +1,49 @@
+@namespace RequestPortal.Web.Pages.Admin.Dialogs
+@* SLA config edit \u2014 RequestType + Level + WorkingDays *@
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudSelect T="long?" Label="Request type" @bind-Value="RequestTypeId" Required="true">
+                    @foreach (var rt in RequestTypes)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)rt.Id)">@rt.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="int" Label="Level" @bind-Value="LevelNo" Required="true">
+                    <MudSelectItem T="int" Value="1">L1</MudSelectItem>
+                    <MudSelectItem T="int" Value="2">L2</MudSelectItem>
+                    <MudSelectItem T="int" Value="3">L3</MudSelectItem>
+                    <MudSelectItem T="int" Value="4">L4</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudNumericField T="int" Label="Working days" @bind-Value="WorkingDays" Min="1" Max="30" Required="true" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(!IsValid)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<RequestType> RequestTypes { get; set; } = Array.Empty<RequestType>();
+
+    [Parameter] public long? RequestTypeId { get; set; }
+    [Parameter] public int LevelNo { get; set; } = 1;
+    [Parameter] public int WorkingDays { get; set; } = 2;
+
+    private bool IsValid => RequestTypeId.HasValue && LevelNo is >= 1 and <= 4 && WorkingDays > 0;
+
+    private void Save() => Dialog.Close(DialogResult.Ok(new SlaFormResult(RequestTypeId!.Value, LevelNo, WorkingDays)));
+    private void Cancel() => Dialog.Cancel();
+
+    public sealed record SlaFormResult(long RequestTypeId, int LevelNo, int WorkingDays);
+}

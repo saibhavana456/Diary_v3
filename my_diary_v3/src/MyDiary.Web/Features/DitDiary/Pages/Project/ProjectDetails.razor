@@ -1,0 +1,406 @@
+@page "/dit/project/details"
+@using MyDiary.Web.Features.DitDiary.Interfaces
+@using MyDiary.Web.Features.DitDiary.Models.Entities
+@using MyDiary.Web.Features.DitDiary.Models.DTO
+@using MyDiary.Web.Features.DitDiary.Services
+@inject IProjectMasterService ProjectService
+@inject ProjectBudgetService BudgetSvc
+@inject IAdminMasterService AdminService
+@inject DitUserSession Session
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.h4">Project List</MudText>
+        <div style="width: 220px;">
+            <MudSelect T="int" Label="Financial Year" Value="_fyId" ValueChanged="OnFyChanged"
+                       ToStringFunc="@FyText"
+                       Variant="Variant.Outlined" Dense="true">
+                @foreach (var fy in _fys)
+                {
+                    <MudSelectItem T="int" Value="@fy.FyId">@fy.FyLabel</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    </div>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="5">
+        <MudGrid Spacing="1" AlignItems="AlignItems.Center">
+
+            <MudItem xs="12" md="3">
+               <MudSelect T="long?" Label="Department" Value="_deptId" ValueChanged="OnDeptChanged"
+                           ToStringFunc="@DeptText"
+                           Disabled="@_deptLocked" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                    @if (!_deptLocked)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)null)">All Departments</MudSelectItem>
+                    }
+                    @foreach (var d in _depts)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)d.DeptId)">@d.DeptName</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" md="3">
+                <MudSelect T="long?" Label="Section" @bind-Value="_sectionId"
+                           ToStringFunc="@SecText"
+                           Disabled="@(_sectionLocked || _deptId == null)"
+                           Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                    @if (!_sectionLocked)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)null)">All Sections</MudSelectItem>
+                    }
+                    @foreach (var s in _sections)
+                    {
+                        <MudSelectItem T="long?" Value="@((long?)s.SectionId)">@s.SectionName</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" md="1">
+                <MudSelect T="string" Label="Overall Status" @bind-Value="_status" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("All")">All</MudSelectItem>
+                    @foreach (var s in _distinctStatuses)
+                    {
+                        <MudSelectItem Value="@s">@s</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" md="2">
+                <MudTextField @bind-Value="_search" Label="Search Name" Variant="Variant.Outlined"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true" Dense="true" Margin="Margin.Dense" />
+            </MudItem>
+
+            <MudItem xs="12" md="3" Class="d-flex justify-end">
+                @if (CanAddProject)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddProjectDialog"
+                               Size="Size.Medium" Style="text-transform:none; min-width:150px;">
+                        Add Project
+                    </MudButton>
+                }
+                else
+                {
+                    <MudChip T="string" Icon="@Icons.Material.Filled.Visibility"
+                             Color="Color.Default" Size="Size.Small" Variant="Variant.Text">View only</MudChip>
+                }
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_sessionLoaded && !IsAdmin && Session.User is not null && Session.User.SectionIds.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4">
+            You are not mapped to any section yet, so nothing can be shown.
+            Please ask the administrator to add you under Admin &rarr; Sections &rarr; Team.
+        </MudAlert>
+    }
+
+    <MudTable Items="@FilteredProjects" Hover="true" Striped="true" FixedHeader="true" Height="550px" Elevation="4" Class="rounded-lg">
+        <HeaderContent>
+            <MudTh>Code</MudTh>
+            <MudTh>Project Name</MudTh>
+            <MudTh>Department</MudTh>
+            <MudTh>Section</MudTh>
+            <MudTh Style="text-align:right;">Allotted (Cr)</MudTh>
+            <MudTh>Provider (SP)</MudTh>
+            <MudTh>Overall Status</MudTh>
+            <MudTh>Timeline</MudTh>
+            <MudTh Style="text-align: center;">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Code">@context.ProjectCode</MudTd>
+            <MudTd DataLabel="Name"><b>@context.ProjectName</b></MudTd>
+            <MudTd DataLabel="Department">@DeptNameOf(context.DEPT_ID)</MudTd>
+            <MudTd DataLabel="Section">@SecNameOf(context.SECTION_ID)</MudTd>
+            <MudTd DataLabel="Allotted" Style="text-align:right;">
+                @{
+                    var hasCap = _capAllot.TryGetValue(context.ProjectId, out var capVal);
+                    var hasRev = _revAllot.TryGetValue(context.ProjectId, out var revVal); 
+                }
+                @if (!hasCap && !hasRev)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">Not allotted</MudChip>
+                }
+                else
+                {
+                    <div style="line-height:1.25;">
+                        @if (hasCap)
+                        {
+                        <div><span style="color:#594ae2;font-weight:600;">C</span> <b>@capVal.ToString("N2")</b></div>
+                        }
+                        @if (hasRev)
+                        {
+                            <div><span style="color:#00897b;font-weight:600;">R</span> <b>@revVal.ToString("N2")</b></div>
+                        }
+                    </div>
+                }
+               
+            </MudTd>
+            <MudTd DataLabel="Provider">@context.SpName</MudTd>
+            <MudTd DataLabel="Overall Status">@(string.IsNullOrWhiteSpace(context.OverallStatus) ? "-" : context.OverallStatus)</MudTd>
+            <MudTd DataLabel="Timeline">
+                @{
+                    var timelineStatus = ProjectService.GetProjectTimelineStatus(context.CurrentPhase, context.ProjectEndDate);
+                    Color color = timelineStatus == "On Track" ? Color.Success : timelineStatus == "Dropped" ? Color.Default : Color.Error;
+                    <MudChip T="string" Color="@color" Size="Size.Small" Variant="Variant.Text">@timelineStatus</MudChip>
+                }
+            </MudTd>
+            <MudTd Style="text-align: center;">
+                <MudStack Row="true" Spacing="0" Justify="Justify.Center">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Color="Color.Info" Size="Size.Small"
+                                   OnClick="@(() => ShowMasterDetails(context))" Title="View Details" />
+                    @if (CanEditProject(context))
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary" Size="Size.Small"
+                                       OnClick="@(() => EditProject(context))" Title="Edit" />
+                    }
+                    @if (IsAdmin)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                       OnClick="@(() => DeleteProject(context.ProjectId))" Title="Delete" />
+                    }
+                </MudStack>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent><MudTablePager /></PagerContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private List<ProjectsMaster> _allProjects = new();
+    private List<string> _distinctStatuses = new();
+
+    private string _search = "", _status = "All";
+
+    private List<DeptItem> _depts = new();
+    private List<DeptItem> _allDepts = new();
+    private List<SecItem> _sections = new();
+    private List<SecItem> _allSections = new();
+    private List<FyItem> _fys = new();
+    private Dictionary<int, decimal> _capAllot = new(), _revAllot = new();
+
+    private int _fyId;
+    private long? _deptId, _sectionId;
+    private bool _deptLocked, _sectionLocked;
+    private bool _sessionLoaded;
+    private bool IsAdmin => Session.User?.IsAdmin == true;
+
+    private bool CanAddProject => IsAdmin || (Session.User?.SectionIds.Count ?? 0) > 0;
+
+    private bool CanEditProject(ProjectsMaster p) =>
+            IsAdmin || (p.SECTION_ID != null
+                        && Session.User is not null
+                        && Session.User.SectionIds.Contains(p.SECTION_ID.Value));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInitialData();
+        _distinctStatuses = GetDistinctValues(p => p.OverallStatus);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionLoaded) return;
+        _sessionLoaded = true;
+
+        await Session.LoadAsync();
+        await Session.EnsureScopeAsync(AdminService);
+
+        _fys = await BudgetSvc.GetFinancialYearsAsync();
+        _fyId = await BudgetSvc.GetCurrentFyIdAsync();
+        if (_fyId == 0 && _fys.Count > 0) _fyId = _fys[0].FyId;
+
+        _allDepts = await BudgetSvc.GetDepartmentsAsync();
+        _allSections = await BudgetSvc.GetAllSectionsAsync();
+        await LoadAllotments();
+        _depts = _allDepts;
+
+        var u = Session.User;
+        if (u is not null && !u.IsAdmin && u.DeptIds.Count > 0)
+        {
+            _depts = _allDepts.Where(d => u.DeptIds.Contains(d.DeptId)).ToList();
+
+            if (_depts.Count == 1)
+            {
+                _deptId = _depts[0].DeptId;
+                _deptLocked = true;
+                await LoadSections();
+
+                if (_sections.Count == 1)
+                {
+                    _sectionId = _sections[0].SectionId;
+                    _sectionLocked = true;
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadAllotments()
+    {
+        _capAllot = await BudgetSvc.GetAllotmentsAsync("CAPITAL", _fyId);
+        _revAllot = await BudgetSvc.GetAllotmentsAsync("REVENUE", _fyId);
+    }
+
+    private async Task OnFyChanged(int id)
+    {
+        _fyId = id;
+        await LoadAllotments();
+    }
+
+    private async Task LoadSections()
+    {
+        _sections = _deptId == null
+            ? new List<SecItem>()
+            : await BudgetSvc.GetSectionsAsync(_deptId.Value);
+
+        var u = Session.User;
+        if (u is not null && !u.IsAdmin && u.SectionIds.Count > 0)
+            _sections = _sections.Where(s => u.SectionIds.Contains(s.SectionId)).ToList();
+    }
+
+    private async Task OnDeptChanged(long? id)
+    {
+        _deptId = id;
+        _sectionId = null;
+        await LoadSections();
+    }
+
+    private string DeptNameOf(long? id) =>
+        id == null ? "-" : (_allDepts.FirstOrDefault(d => d.DeptId == id)?.DeptName ?? "-");
+
+    private string SecNameOf(long? id) =>
+        id == null ? "-" : (_allSections.FirstOrDefault(s => s.SectionId == id)?.SectionName ?? "-");
+
+    // MudSelect cannot resolve its own display text when the value is set in code
+    // (locked department / section, current FY), so give it the text explicitly.
+    private string FyText(int id) => _fys.FirstOrDefault(f => f.FyId == id)?.FyLabel ?? "";
+
+    private string DeptText(long? id) =>
+        id == null ? "All Departments" : (_allDepts.FirstOrDefault(d => d.DeptId == id)?.DeptName ?? "");
+
+    private string SecText(long? id) =>
+        id == null ? "All Sections" : (_allSections.FirstOrDefault(s => s.SectionId == id)?.SectionName ?? "");
+
+    private async Task LoadInitialData() => _allProjects = await ProjectService.GetProjectsMastersAsync();
+
+    // A non-admin can never see outside their own sections.
+    private List<ProjectsMaster> ScopedProjects
+    {
+        get
+        {
+            var u = Session.User;
+            if (u is null || u.IsAdmin) return _allProjects;
+            if (u.SectionIds.Count == 0) return new List<ProjectsMaster>();
+
+            return _allProjects
+                .Where(p => p.SECTION_ID.HasValue && u.SectionIds.Contains(p.SECTION_ID.Value))
+                .ToList();
+        }
+    }
+
+    private IEnumerable<ProjectsMaster> FilteredProjects =>
+        ScopedProjects.Where(p =>
+            (string.IsNullOrWhiteSpace(_search) ||
+             (p.ProjectName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+             (p.SpName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)) &&
+            (_status == "All" || p.OverallStatus == _status) &&
+            (_deptId == null || p.DEPT_ID == _deptId) &&
+            (_sectionId == null || p.SECTION_ID == _sectionId));
+
+    private void ShowMasterDetails(ProjectsMaster project)
+    {
+        var parameters = new DialogParameters { ["Projects"] = project };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraLarge, CloseButton = true, BackdropClick = true };
+        DialogService.Show<ProjectDialog>($" {project?.ProjectName} | {project?.ProjectCode}", parameters, options);
+    }
+
+    private List<string> GetDistinctValues(System.Func<ProjectsMaster, string?> selector) =>
+        _allProjects.Select(selector).Where(v => !string.IsNullOrEmpty(v)).Distinct().OrderBy(v => v).ToList()!;
+
+    private async Task OpenAddProjectDialog()
+    {
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraLarge, CloseButton = true };
+
+        var pm = new ProjectsMaster { DEPT_ID = (int?)_deptId, SECTION_ID = (int?)_sectionId };
+
+        var parameters = new DialogParameters
+        {
+            ["Projects"] = pm,
+            ["Milestone"] = new ProjectMilestone(),
+            ["ProjectIssue"] = new ProjectIssue(),
+            ["ProjectResource"] = new ProjectResource(),
+            ["Document"] = new Document(),
+            ["BudgetFyId"] = _fyId
+        };
+
+        var dialog = DialogService.Show<ProjectEntryDialog>("Add New Project", parameters, options);
+        var result = await dialog.Result;
+
+        await LoadInitialData();
+        await LoadAllotments();
+
+        if (!result.Canceled) Snackbar.Add("Saved successfully.", Severity.Success);
+    }
+
+    private async Task EditProject(ProjectsMaster project)
+    {
+        var milestoneList = await ProjectService.GetMilestoneListByProjectAsync(project.ProjectCode);
+        var issueList = await ProjectService.GetIssueListByProjectAsync(project.ProjectCode);
+        var resourceList = await ProjectService.GetResourceListByProjectAsync(project.ProjectCode);
+        var documentList = await ProjectService.GetDocumentListByProjectAsync(project.ProjectCode);
+
+        var parameters = new DialogParameters
+        {
+            ["Projects"] = project,
+            ["Milestone"] = new ProjectMilestone { Status = "Pending" },
+            ["ProjectIssue"] = new ProjectIssue { Status = "Open", DateRaised = DateTime.Now },
+            ["ProjectResource"] = new ProjectResource { ProjectCode = project.ProjectCode, ProjectId = project.ProjectId },
+            ["Document"] = new Document(),
+            ["MilestoneList"] = milestoneList,
+            ["IssueList"] = issueList,
+            ["ResourceList"] = resourceList,
+            ["DocumentList"] = documentList,
+            ["BudgetFyId"] = _fyId
+        };
+
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraLarge, CloseButton = true };
+
+        var dialog = DialogService.Show<ProjectEntryDialog>("Edit Project", parameters, options);
+        var result = await dialog.Result;
+
+        // Always reload - the dialog edits the same object that is in _allProjects.
+        await LoadInitialData();
+        await LoadAllotments();
+
+        if (!result.Canceled) Snackbar.Add("Updated successfully.", Severity.Success);
+    }
+
+    private async Task DeleteProject(int projectId)
+    {
+        bool? result = await DialogService.ShowMessageBox(
+            "Warning", "Delete this project and ALL related data? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (result == true)
+        {
+            var success = await ProjectService.DeleteProjectAsync(projectId);
+            if (success)
+            {
+                Snackbar.Add("Deleted successfully.", Severity.Success);
+                await LoadInitialData();
+                await LoadAllotments();
+            }
+            else Snackbar.Add("Error deleting. Check logs for details.", Severity.Error);
+        }
+    }
+}

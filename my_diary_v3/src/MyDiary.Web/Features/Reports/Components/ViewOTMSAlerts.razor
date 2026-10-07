@@ -1,0 +1,213 @@
+﻿@page "/reports/otms-alerts"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>View OTMS Alerts — My Diary</PageTitle>
+
+<DynamicDashboard Config="_config"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_zone"
+                  SelectedRegion="@_region"
+                  SelectedBranch="@_branch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+
+    private List<Dictionary<string, object>> _data = new();
+    private bool _loading = true;
+
+    // Default values (same as ASPX dropdown)
+    private string _zone = "1";
+    private string _region = "1";
+    private string _branch = "1";
+
+    private string _asOnDateLabel = "";
+    private ReportConfig _config = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _config.Title = "OTMS Alerts";
+        await LoadData();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) f)
+    {
+        _zone = f.zone ?? "1";
+        _region = f.region ?? "1";
+        _branch = f.branch ?? "1";
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            string sql = "";
+
+            // RBAC: for a non-CO user, force the drill-down selectors to their own level so they can
+            // only ever reach their zone/region/branch (fail-closed to BRANCH for unknown privilege).
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            if (__scope.IsZone) { _zone = "all"; _region = "1"; }
+            else if (__scope.IsRegion) { _zone = "all"; _region = "all"; _branch = "1"; }
+            else if (__scope.IsBranch) { _zone = "all"; _region = "all"; _branch = "all"; }
+
+            string zone = _zone.ToLower();
+            string region = _region.ToLower();
+            string branch = _branch.ToLower();
+
+            // ✅ CASE 1: Total Summary
+            if (zone == "1")
+            {
+                sql = @"SELECT
+                        SUM(CONVERT(NUMERIC, branch_total)) AS BranchLevelPendency,
+                        SUM(CONVERT(NUMERIC, region_total)) AS ROLevelPendency,
+                        SUM(CONVERT(NUMERIC, fgmo_total)) AS FGMOPendency,
+                        SUM(CONVERT(NUMERIC, total)) AS TotalPendency
+                        FROM OtmsAlertsZone
+                        WHERE zone_code IS NOT NULL";
+
+                _config.Columns = new()
+                {
+                    new ColumnConfig{ Header="Branch Level Pendency", PropertyName="BranchLevelPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="RO Level Pendency", PropertyName="ROLevelPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="FGMO Level Pendency", PropertyName="FGMOPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="Total Pendency", PropertyName="TotalPendency", IsNumeric=true }
+                };
+            }
+
+            // ✅ CASE 2: Zonewise
+            else if (zone == "all" && region == "1")
+            {
+                sql = @"SELECT
+                        zone_name AS ZoneName,
+                        zone_code AS ZoneCode,
+                        branch_total AS BranchLevelPendency,
+                        region_total AS ROLevelPendency,
+                        fgmo_total AS FGMOPendency,
+                        total AS TotalPendency
+                        FROM OtmsAlertsZone";
+
+                _config.Columns = new()
+                {
+                    new ColumnConfig{ Header="Zone Name", PropertyName="ZoneName" },
+                    new ColumnConfig{ Header="Zone Code", PropertyName="ZoneCode" },
+                    new ColumnConfig{ Header="Branch Level Pendency", PropertyName="BranchLevelPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="RO Level Pendency", PropertyName="ROLevelPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="FGMO Level Pendency", PropertyName="FGMOPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="Total Pendency", PropertyName="TotalPendency", IsNumeric=true }
+                };
+            }
+
+            // ✅ CASE 3: Region Level
+            else if (zone == "all" && region == "all" && branch == "1")
+            {
+                sql = @"SELECT
+                        otms.zone_name AS ZoneName,
+                        otms.ro_name AS RegionName,
+                        otms.ro_code AS RegionCode,
+                        days_lessthn7 AS BranchLt7,
+                        days_grtthn7 AS BranchGt7,
+                        total_branch AS TotalBranch,
+                        total_ro AS ROLevelPendency,
+                        total_fgmo AS FGMOPendency,
+                        total AS GrandTotal
+                        FROM OtmsAlertsRegion otms
+                        JOIN region_master rm ON otms.ro_code = rm.region_code";
+
+                _config.Columns = new()
+                {
+                    new ColumnConfig{ Header="Zone Name", PropertyName="ZoneName" },
+                    new ColumnConfig{ Header="Region Name", PropertyName="RegionName" },
+                    new ColumnConfig{ Header="Region Code", PropertyName="RegionCode" },
+                    new ColumnConfig{ Header="<7 Days", PropertyName="BranchLt7", IsNumeric=true },
+                    new ColumnConfig{ Header=">7 Days", PropertyName="BranchGt7", IsNumeric=true },
+                    new ColumnConfig{ Header="Total Branch", PropertyName="TotalBranch", IsNumeric=true },
+                    new ColumnConfig{ Header="RO Pending", PropertyName="ROLevelPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="FGMO Pending", PropertyName="FGMOPendency", IsNumeric=true },
+                    new ColumnConfig{ Header="Grand Total", PropertyName="GrandTotal", IsNumeric=true }
+                };
+            }
+
+            // ✅ CASE 4: Branch Level
+            else
+            {
+                sql = @"SELECT
+                        otms.branch_code AS BranchCode,
+                        otms.branch_name AS BranchName,
+                        days_lessthn7 AS BranchLt7,
+                        days_grtthn7 AS BranchGt7,
+                        total AS TotalBranch
+                        FROM OtmsAlertsBranch otms
+                        JOIN Branch_Master rm ON otms.branch_code = rm.BRANCH_CODE";
+
+                _config.Columns = new()
+                {
+                    new ColumnConfig{ Header="Branch Code", PropertyName="BranchCode" },
+                    new ColumnConfig{ Header="Branch Name", PropertyName="BranchName" },
+                    new ColumnConfig{ Header="<7 Days", PropertyName="BranchLt7", IsNumeric=true },
+                    new ColumnConfig{ Header=">7 Days", PropertyName="BranchGt7", IsNumeric=true },
+                    new ColumnConfig{ Header="Total", PropertyName="TotalBranch", IsNumeric=true }
+                };
+            }
+
+            // RBAC: clamp to the logged-in user's own scope for non-CO users (fail-closed to BRANCH).
+            {
+                if (!__scope.IsCo)
+                {
+                    string __sep = sql.IndexOf(" WHERE ", StringComparison.OrdinalIgnoreCase) >= 0 ? " AND " : " WHERE ";
+                    if (__scope.IsZone)
+                        sql += $"{__sep}zone_code = '{__scope.ZoneCode}'";          // CASE 2: OtmsAlertsZone
+                    else if (__scope.IsRegion)
+                        sql += $"{__sep}otms.ro_code = '{__scope.RegionCode}'";     // CASE 3: OtmsAlertsRegion otms
+                    else if (__scope.IsBranch)
+                        sql += $"{__sep}otms.branch_code = '{__scope.BranchCode}'"; // CASE 4: OtmsAlertsBranch otms
+                }
+            }
+
+            // ✅ Execute query
+            _data = await ReportService.ExecuteRawQueryAsync(sql) ?? new();
+
+            // ✅ As On Date
+            var dt = await ReportService.ExecuteRawQueryAsync(
+                "SELECT TOP 1 upload_date FROM OtmsAlertsZone ORDER BY upload_date DESC");
+
+            _asOnDateLabel = dt.Count > 0
+                ? $"Data as on Date : {dt[0]["upload_date"]}"
+                : "No Data";
+
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[ViewOTMSAlerts] Error loading data: " + ex.Message);
+            _data = new();
+            _asOnDateLabel = "Error loading data";
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _config.Columns, "OTMS");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "OTMS.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}

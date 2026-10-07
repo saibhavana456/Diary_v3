@@ -1,0 +1,90 @@
+@using System.Data
+@using MyDiary.Web.Core.Extensions
+@using MyDiary.Web.Features.Focus360.Models
+
+<div class="f360-ops-panel">
+    <div class="f360-ops-subheader" style="background:#204060;color:#fff;font-weight:700;">
+        Cash Holding
+    </div>
+
+    @if (_error)
+    {
+        <div class="pa-2" role="alert"><small class="text-warning">Data unavailable for this panel.</small></div>
+    }
+    else if (_data == null)
+    {
+        <div class="text-center pa-2"><small class="text-muted">No data available</small></div>
+    }
+    else
+    {
+        <table class="f360-ops-table">
+            <thead>
+                <tr style="background:#c6e0b4;">
+                    <th></th>
+                    <th>Previous Month<br/><small>(@_data.PrevMonthDt)</small></th>
+                    <th>Previous Day<br/><small>(@_data.PrevDayDt)</small></th>
+                    <th class="today-col">Present Day<br/><small>(@_data.TodayDt)</small></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="lbl">Limit (INR Lacs)</td>
+                    <td>@FmtD(_data.CashLimitPrevMonth)</td>
+                    <td>@FmtD(_data.CashLimitPrevDay)</td>
+                    <td class="today-col fw-bold">@FmtD(_data.CashLimitToday)</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Actual (INR Lacs)</td>
+                    <td>@FmtD(_data.CashActualPrevMonth)</td>
+                    <td>@FmtD(_data.CashActualPrevDay)</td>
+                    <td class="today-col fw-bold @CashColor(_data.CashActualToday, _data.CashLimitToday)">@FmtD(_data.CashActualToday)</td>
+                </tr>
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public DataSet? DashboardData { get; set; }
+
+    private F360CashHoldingModel? _data;
+    private bool _error;
+
+    protected override void OnParametersSet()
+    {
+        if (DashboardData == null) return;
+        try { _data = Extract(DashboardData); _error = false; }
+        catch (Exception ex) { AppLogger.LogError(ex, "[F360CashHoldingPanel] Extract failed"); _error = true; }
+    }
+
+    private F360CashHoldingModel? Extract(DataSet ds)
+    {
+        var m = new F360CashHoldingModel();
+        foreach (DataTable table in ds.Tables)
+        {
+            if (table.Rows.Count == 0 || !table.Columns.Contains("TableName")) continue;
+            var name = table.Rows[0]["TableName"]?.ToString();
+            var r = table.Rows[0];
+
+            if (name == "CashHoldingReport")
+            {
+                m.PrevMonthDt = SafeDate(r, "PrevMonthDt");
+                m.PrevDayDt = SafeDate(r, "PrevDay2Dt");
+                m.TodayDt = SafeDate(r, "PrevDayDt");
+                m.CashLimitPrevMonth = SafeDec(r, "PrevMonthLimit");
+                m.CashLimitPrevDay = SafeDec(r, "PrevDay2Limit");
+                m.CashLimitToday = SafeDec(r, "PrevDayLimit");
+                m.CashActualPrevMonth = SafeDec(r, "PrevMonthTotal");
+                m.CashActualPrevDay = SafeDec(r, "PrevDay2Total");
+                m.CashActualToday = SafeDec(r, "PrevDayTotal");
+                break;
+            }
+        }
+        return m;
+    }
+
+    private static string SafeDate(DataRow r, string col) { try { return r.Table.Columns.Contains(col) && r[col] != DBNull.Value ? Convert.ToDateTime(r[col]).ToString("dd/MM/yyyy") : "—"; } catch { return "—"; } }
+    private static decimal SafeDec(DataRow r, string col) { try { return r.Table.Columns.Contains(col) && r[col] != DBNull.Value ? Convert.ToDecimal(r[col]) : 0m; } catch { return 0m; } }
+    private static string FmtD(decimal v) => v.ToString("N2");
+    private static string CashColor(decimal actual, decimal limit) => actual > limit ? "text-danger" : "text-success";
+}

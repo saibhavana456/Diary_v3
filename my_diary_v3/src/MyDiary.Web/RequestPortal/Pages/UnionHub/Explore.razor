@@ -1,0 +1,823 @@
+@page "/union-hub/explore"
+@using Microsoft.AspNetCore.Components.Authorization
+
+@namespace RequestPortal.Web.Pages.UnionHub
+@attribute [Authorize]
+@* @inject ICurrentUser CurrentUser *@
+@inject IEventFeedService EventsSvc
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@inject INotificationApi NotificationApi
+@inject ILandingDashboardV2Service LandingDashboardService
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "OpsOversight")]
+@using MyDiary.Core.Abstractions
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Models
+@using MyDiary.Web.Features.Landing_Dashboard_V2.Services
+@inject IMasterRepo Masters
+@inject RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+
+<PageTitle>Union Hub — Explore</PageTitle>
+
+<PageHeader Title="Union Hub — Explore" Crumbs="@(new List<PageHeader.Crumb> { new("Union Hub", "union-hub"), new("Explore") })" />
+<style>
+    .ev-modal-card {
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .ev-modal {
+        position: fixed;
+        inset: 0;
+        overflow-y: auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .ev-header {
+        display: flex;
+        justify-content: flex-end;
+        padding: 16px 24px;
+    }
+
+    .ev-header-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .ev-btn-primary {
+        padding: 10px 18px;
+    }
+</style>
+<div class="ev-scope">
+
+    @if (_canPost)
+    {
+        <div class="ev-header">
+            <div class="ev-header-actions">
+                @if (_isSuperAdmin)
+                {
+                    <button class="ev-btn-primary" @onclick="OpenTags">
+                        Manage <span class="ev-plus"> # </span> Tags
+                    </button>
+                }
+
+                <button class="ev-btn-primary" @onclick="OpenEventComposer">
+                    Post Upcoming Event <span class="ev-plus"> + </span>
+                </button>
+
+                <button class="ev-btn-primary" @onclick="OpenComposer">
+                    Share Event Updates  <span class="ev-plus"> + </span>
+                </button>
+            </div>
+        </div>
+       @*  <div class="ev-header">
+            <div class="ev-header-actions" style="margin-left:auto;">
+                @if (_isSuperAdmin)
+                {
+                    <button class="ev-btn-primary" @onclick="OpenTags"><span class="ev-plus">#</span> Manage Tags</button>
+                }
+                <button class="ev-btn-primary" @onclick="OpenEventComposer"><span class="ev-plus">+</span> Post Upcoming Event</button>
+                <button class="ev-btn-primary" @onclick="OpenComposer"><span class="ev-plus">+</span> Share Event Updates</button>
+            </div>
+        </div> *@
+    }
+
+    <div class="ev-grid">
+        <!-- Feed column -->
+        <div class="ev-feed-col">
+            @if (_loading)
+            {
+                <div class="ev-empty"><p>Loading feed…</p></div>
+            }
+            else if (!_posts.Any())
+            {
+                <div class="ev-empty"><p>No event updates yet.</p></div>
+            }
+            @foreach (var post in _posts)
+            {
+                <article class="ev-card ev-post">
+                    <div class="ev-post-head">
+                        <div class="ev-avatar ev-avatar-md ev-ring-blue">@post.VerticalInitials</div>
+                        <div class="ev-post-meta">
+                            <p class="ev-post-author">@post.VerticalName</p>
+                            <p class="ev-post-time">Posted @post.PostedAgo · Central Office · PF @post.PostedByEmp</p>
+                        </div>
+                        @if (!string.IsNullOrEmpty(post.TagName))
+                        {
+                            <span class="ev-chip ev-chip-blue">@post.TagName</span>
+                        }
+                    </div>
+                    <p class="ev-post-text">@post.Caption</p>
+                    @if (!string.IsNullOrEmpty(post.EventName))
+                    {
+                        <p class="ev-post-event">📅 @post.EventName</p>
+                    }
+                    @if (post.Images.Any())
+                    {
+                        <div class="ev-post-imgs ev-cols-@Math.Min(post.Images.Count, 3)">
+                            @for (var i = 0; i < post.Images.Count; i++)
+                            {
+                                var idx = i;
+                                var media = post.Images[i];
+                                @if (media.IsVideo)
+                                {
+                                    <div class="ev-post-video-thumb"
+                                         @onclick="@(() => OpenLightbox(post.Images, idx, post.Caption))">
+                                        <video src="@media.Url" class="ev-post-img" muted preload="metadata"></video>
+                                        <span class="ev-play-overlay">▶</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <img src="@media.Url" alt="Event photo" class="ev-post-img"
+                                         @onclick="@(() => OpenLightbox(post.Images, idx, post.Caption))" />
+                                }
+                            }
+                        </div>
+                    }
+                    @* <div class="ev-actions">
+                        <button class="ev-act @(post.Liked ? "ev-liked" : "")" @onclick="@(() => ToggleLike(post))">
+                            <span class="ev-heart">@(post.Liked ? "♥" : "♡")</span> Likes · @post.Likes
+                        </button>
+                        <button class="ev-act ev-hover-blue" @onclick="@(() => post.ShowComments = !post.ShowComments)">
+                            💬 Comments · @post.Comments.Count
+                        </button>
+                        <button class="ev-act ev-act-right @(post.Saved ? "ev-saved" : "")" @onclick="@(() => post.Saved = !post.Saved)">
+                            @(post.Saved ? "🔖 Saved" : "🏷 Save")
+                        </button>
+                    </div> *@
+                    @if (post.ShowComments)
+                    {
+                        <div class="ev-comments">
+                            @foreach (var c in post.Comments)
+                            {
+                                <div class="ev-comment">
+                                    <div class="ev-avatar ev-avatar-sm">@InitialsOf(c.Author)</div>
+                                    <div class="ev-comment-bubble">
+                                        <p class="ev-comment-author">@c.Author</p>
+                                        <p class="ev-comment-text">@c.Text</p>
+                                    </div>
+                                </div>
+                            }
+                            <div class="ev-comment-compose">
+                                <div class="ev-avatar ev-avatar-sm ev-ring-blue">@InitialsOf(_empName)</div>
+                                <input class="ev-comment-input" placeholder="Write a comment…"
+                                       @bind="post.Draft" @bind:event="oninput"
+                                       @onkeydown="@(e => { if (e.Key == "Enter") AddComment(post); })" />
+                                <button class="ev-comment-send" @onclick="@(() => AddComment(post))">Post</button>
+                            </div>
+                        </div>
+                    }
+                </article>
+            }
+
+            @if (!_loading && _hasMore)
+            {
+                <div class="ev-viewmore">
+                    <button class="ev-btn-ghost" @onclick="LoadMore" disabled="@_loadingMore">
+                        @(_loadingMore ? "Loading…" : "Load more")
+                    </button>
+                </div>
+            }
+        </div>
+
+        <!-- Right rail -->
+        <aside class="ev-side-col">
+            @* <div class="ev-card ev-side-card">
+                <h3 class="ev-side-title">Trending Tags</h3>
+                <div class="ev-tags">
+                    @if (_tags.Any())
+                    {
+                        @foreach (var t in _tags)
+                        {
+                            <span class="ev-chip ev-chip-blue">@t.Name</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="ev-post-time">No tags enabled.</span>
+                    }
+                </div>
+            </div> *@
+            <div class="ev-card ev-upcoming">
+                <h3 class="ev-upcoming-title">Upcoming Events</h3>
+                <div class="ev-upcoming-list">
+                    @if (_events.Any())
+                    {
+                        @foreach (var ev in _events.Take(6))
+                        {
+                            <div class="ev-upcoming-item">
+                                <p class="ev-upcoming-name">@ev.Name</p>
+                                <p class="ev-upcoming-when">@ev.WhenText</p>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="ev-upcoming-item"><p class="ev-upcoming-when">No events posted yet.</p></div>
+                    }
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<!-- Lightbox carousel -->
+@if (_lbItems is not null)
+{
+    <div class="ev-lightbox" tabindex="0" @ref="_lbRef" @onkeydown="OnLbKey" @onclick="CloseLightbox">
+        <div class="ev-lb-inner" @onclick:stopPropagation="true">
+            @if (_lbItems.Count > 1)
+            {
+                <button class="ev-lb-arrow" @onclick="LbPrev" aria-label="Previous item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                </button>
+            }
+            <div class="ev-lb-figure">
+                @{
+                    var current = _lbItems[_lbIndex];
+                }
+                @if (current.IsVideo)
+                {
+                    @* @key forces Blazor to rebuild the <video> when navigating between items,
+                       so the correct source loads instead of reusing the previous element. *@
+                    <video @key="current.Url" src="@current.Url" class="ev-lightbox-video" controls autoplay
+                           controlsList="nodownload" oncontextmenu="return false;"></video>
+                }
+                else
+                {
+                    <img src="@current.Url" alt="Preview" class="ev-lightbox-img" />
+                }
+                <div class="ev-lb-caption">
+                    @if (!string.IsNullOrWhiteSpace(_lbCaption)) { <span>@_lbCaption</span> }
+                    @if (_lbItems.Count > 1) { <span class="ev-lb-count">@(_lbIndex + 1) / @_lbItems.Count</span> }
+                </div>
+            </div>
+            @if (_lbItems.Count > 1)
+            {
+                <button class="ev-lb-arrow" @onclick="LbNext" aria-label="Next item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+            }
+        </div>
+        <button class="ev-lightbox-close" @onclick="CloseLightbox">×</button>
+    </div>
+}
+
+<!-- Post Upcoming Event modal -->
+@if (_eventOpen)
+{
+    <div class="ev-modal" @onclick="@(() => _eventOpen = false)">
+        <div class="ev-modal-card" @onclick:stopPropagation="true">
+            <div class="ev-modal-head">
+                <div><h3 class="ev-modal-title">Post an Upcoming Event</h3><p class="ev-modal-sub">Add an event to the Upcoming Events list</p></div>
+                <button class="ev-modal-close" @onclick="@(() => _eventOpen = false)">×</button>
+            </div>
+            <div class="ev-modal-body">
+                <label class="ev-label">Vertical</label>
+                <select class="ev-input" @bind="_evVertId">
+                    @foreach (var v in _verticals) { <option value="@v.Id">@v.Name</option> }
+                </select>
+                <label class="ev-label">Event name</label>
+                <input class="ev-input" @bind="_evName" placeholder="e.g. Q4 Town Hall" />
+                <label class="ev-label">Date</label>
+                <input class="ev-input" type="date" @bind="_evDate" />
+                <label class="ev-label">Time</label>
+                <input class="ev-input" @bind="_evTime" placeholder="e.g. 3:00 PM" />
+                <label class="ev-label">Venue</label>
+                <input class="ev-input" @bind="_evVenue" placeholder="e.g. Main Auditorium" />
+            </div>
+            <div class="ev-modal-foot">
+                <button class="ev-btn-text" @onclick="@(() => _eventOpen = false)">Cancel</button>
+                <button class="ev-btn-primary" @onclick="PublishEvent" disabled="@_busy">Add Event</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Share Event Update modal -->
+@if (_composerOpen)
+{
+    <div class="ev-modal" @onclick="CloseComposer">
+        <div class="ev-modal-card" @onclick:stopPropagation="true">
+            <div class="ev-modal-head">
+                <div><h3 class="ev-modal-title">Share an Event Update</h3><p class="ev-modal-sub">Post to the Union Hub feed</p></div>
+                <button class="ev-modal-close" @onclick="CloseComposer">×</button>
+            </div>
+            <div class="ev-modal-body">
+                <label class="ev-label">Vertical</label>
+                <select class="ev-input" @bind="_poVertId">
+                    @foreach (var v in _verticals) { <option value="@v.Id">@v.Name</option> }
+                </select>
+
+                <label class="ev-label">Event <span style="font-weight:400;color:#94a3b8;">(optional)</span></label>
+                <select class="ev-input" @bind="_poEventId">
+                    <option value="">— None —</option>
+                    @foreach (var ev in _events.Where(e => e.VerticalId == _poVertId))
+                    {
+                        <option value="@ev.Id">@ev.Name</option>
+                    }
+                </select>
+
+                <label class="ev-label">Tag <span style="font-weight:400;color:#94a3b8;">(optional)</span></label>
+                <select class="ev-input" @bind="_poTagId">
+                    <option value="">— None —</option>
+                    @foreach (var t in _tags) { <option value="@t.Id">@t.Name</option> }
+                </select>
+
+                <label class="ev-label">Caption</label>
+                <textarea class="ev-input ev-textarea" rows="2" @bind="_poCaption" placeholder="Say something about this moment…"></textarea>
+
+                <label class="ev-label">Photos &amp; Videos <span style="font-weight:400;color:#94a3b8;">(up to @MaxPhotos items — photos max 5 MB, videos max 100 MB each)</span></label>
+                <label class="ev-upload-btn">
+                    <InputFile OnChange="OnFilesSelected" multiple accept="image/*,video/*" style="display:none" />
+                    <span class="ev-plus">+</span> Add photos or videos
+                </label>
+                <div class="ev-upload-hint">@_poImages.Count / @MaxPhotos attached</div>
+                @if (!string.IsNullOrEmpty(_uploadError)) { <div class="ev-upload-error">@_uploadError</div> }
+                @if (_poImages.Any())
+                {
+                    <div class="ev-upload-previews">
+                        @for (var i = 0; i < _poImages.Count; i++)
+                        {
+                            var idx = i;
+                            <div class="ev-upload-thumb">
+                                @if (_poImages[i].IsVideo)
+                                {
+                                    <video src="@_poImages[i].DataUri" muted preload="metadata"></video>
+                                    <span class="ev-thumb-badge">▶</span>
+                                }
+                                else
+                                {
+                                    <img src="@_poImages[i].DataUri" alt="Attached photo" />
+                                }
+                                <button type="button" @onclick="@(() => _poImages.RemoveAt(idx))" aria-label="Remove item">×</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_showPreview)
+                {
+                    var pv = _verticals.FirstOrDefault(v => v.Id == _poVertId);
+                    var ptag = _tags.FirstOrDefault(t => t.Id == _poTagId);
+                    var pev = _events.FirstOrDefault(e => e.Id == _poEventId);
+                    <div class="ev-preview-wrap">
+                        <div class="ev-preview-label">Preview — how your update will appear</div>
+                        <article class="ev-card ev-post">
+                            <div class="ev-post-head">
+                                <div class="ev-avatar ev-avatar-md ev-ring-blue">@VerticalInitials(pv?.Name ?? pv?.Code)</div>
+                                <div class="ev-post-meta">
+                                    <p class="ev-post-author">@(pv?.Name ?? "Vertical")</p>
+                                    <p class="ev-post-time">Posting now · Central Office · PF @_empId</p>
+                                </div>
+                                @if (ptag is not null) { <span class="ev-chip ev-chip-blue">@ptag.Name</span> }
+                            </div>
+                            <p class="ev-post-text">@(string.IsNullOrWhiteSpace(_poCaption) ? "(no caption)" : _poCaption)</p>
+                            @if (pev is not null) { <p class="ev-post-event">📅 @pev.Name</p> }
+                            @if (_poImages.Any())
+                            {
+                                <div class="ev-post-imgs ev-cols-@Math.Min(_poImages.Count, 3)">
+                                    @foreach (var img in _poImages)
+                                    {
+                                        @if (img.IsVideo)
+                                        {
+                                            <video src="@img.DataUri" class="ev-post-img" style="cursor:default;" muted preload="metadata"></video>
+                                        }
+                                        else
+                                        {
+                                            <img src="@img.DataUri" alt="Preview photo" class="ev-post-img" style="cursor:default;" />
+                                        }
+                                    }
+                                </div>
+                            }
+                            <div class="ev-actions">
+                                <span class="ev-act"><span class="ev-heart">♡</span> Likes · 0</span>
+                                <span class="ev-act">💬 Comments · 0</span>
+                            </div>
+                        </article>
+                    </div>
+                }
+            </div>
+            <div class="ev-modal-foot">
+                <button class="ev-btn-text" @onclick="CloseComposer">Cancel</button>
+                <button class="ev-btn-ghost" @onclick="@(() => _showPreview = !_showPreview)">
+                    @(_showPreview ? "Hide Preview" : "Preview")
+                </button>
+                <button class="ev-btn-primary" @onclick="PublishPost" disabled="@_busy">Publish to Feed</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Manage Tags modal (super admin) -->
+@if (_tagOpen)
+{
+    <div class="ev-modal" @onclick="@(() => _tagOpen = false)">
+        <div class="ev-modal-card" @onclick:stopPropagation="true">
+            <div class="ev-modal-head">
+                <div><h3 class="ev-modal-title">Manage Tags</h3><p class="ev-modal-sub">Enable the hashtags admins can use on posts</p></div>
+                <button class="ev-modal-close" @onclick="@(() => _tagOpen = false)">×</button>
+            </div>
+            <div class="ev-modal-body">
+                <label class="ev-label">Add a tag</label>
+                <div style="display:flex;gap:8px;">
+                    <input class="ev-input" @bind="_newTagName" placeholder="#EventName" style="flex:1;" />
+                    <button class="ev-btn-primary" @onclick="AddTag" disabled="@_busy">Add</button>
+                </div>
+                <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto;">
+                    @foreach (var t in _allTags)
+                    {
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;">
+                            <span style="font-weight:600;color:@(t.IsEnabled ? "#0f172a" : "#94a3b8");">@t.Name</span>
+                            <button class="ev-btn-text" @onclick="@(() => ToggleTag(t))">
+                                @(t.IsEnabled ? "Disable" : "Enable")
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="ev-modal-foot">
+                <button class="ev-btn-primary" @onclick="@(() => _tagOpen = false)">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true, _busy;
+    private bool _isSuperAdmin, _canPost;
+
+    // Feed paging ("Load more")
+    private const int FeedPageSize = 5;
+    private int _feedTake = FeedPageSize;
+    private bool _hasMore;
+    private bool _loadingMore;
+
+    private List<Vertical> _verticals = new();
+    private List<EventTag> _tags = new();
+    private List<UpcomingEventItem> _events = new();
+    private List<FeedPost> _posts = new();
+
+    private const int MaxPhotos = 5;                          // per-post media cap (photos + videos)
+    private const long MaxPhotoBytes = 5L * 1024 * 1024;      // 5 MB per photo
+    private const long MaxVideoBytes = 100L * 1024 * 1024;    // 100 MB per video
+
+    // lightbox — each item carries its stream URL and whether it's a video (so the enlarged
+    // view renders a <video> player) or a photo (<img>).
+    private sealed record LightboxItem(string Url, bool IsVideo);
+    private List<LightboxItem>? _lbItems;
+    private int _lbIndex;
+    private string? _lbCaption;
+    private ElementReference _lbRef;
+    private bool _lbFocusPending;
+
+    // post-event modal
+    private bool _eventOpen;
+    private long _evVertId;
+    private string _evName = "";
+    private DateTime? _evDate;
+    private string _evTime = "", _evVenue = "";
+
+    // share-update modal
+    private bool _composerOpen;
+    private long _poVertId;
+    private long? _poEventId;
+    private long? _poTagId;
+    private string _poCaption = "";
+    private readonly List<PendingImage> _poImages = new();
+    private string? _uploadError;
+    private bool _showPreview;
+
+    // User claims for RBAC   
+    private string _empId = "";
+    private string _empName = "";
+    private SendResult? _lastResult;
+    private sealed record SendResult(int Total, int Sent, int Failures);
+     private bool _sending;
+
+    // tags modal
+    private bool _tagOpen;
+    private List<EventTag> _allTags = new();
+    private string _newTagName = "";
+    private List<StaffDetailsUnionHub> _audience = new();
+
+    private sealed record PendingImage(string Name, string ContentType, byte[] Data, string DataUri, bool IsVideo);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            _isSuperAdmin = authState.User.HasClaim("rp_super_admin", "true");
+            _empId = user.FindFirst("emplid")?.Value;
+            _empName = user.FindFirst("NAME")?.Value;
+
+            _canPost = _isSuperAdmin || user.HasClaim((RoleCode.CoVertAdmin).ToString(),"true");
+
+            // _isSuperAdmin = CurrentUser.Roles.Any(r => r is RoleCode.SuperAdmin or RoleCode.AppAdmin);
+            // _canPost = _isSuperAdmin || CurrentUser.Roles.Contains(RoleCode.CoVertAdmin);
+
+            // Tags, events, feed, and verticals are all independent — load in parallel
+            var tagsTask = EventsSvc.ListTagsAsync(true);
+            var eventsTask = EventsSvc.ListEventsAsync(null);
+            var feedTask = ReloadFeed();
+
+            if (_canPost)
+            {
+                var verticalsTask = EventsSvc.GetPostableVerticalsAsync(_empId ?? "", _isSuperAdmin);
+                await Task.WhenAll(tagsTask, eventsTask, feedTask, verticalsTask);
+                _verticals = verticalsTask.Result.ToList();
+            }
+            else
+            {
+                await Task.WhenAll(tagsTask, eventsTask, feedTask);
+            }
+
+            _tags = tagsTask.Result.ToList();
+            _events = eventsTask.Result.ToList();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "UnionHub Explore: failed to initialize page data");
+        }
+        _loading = false;
+    }
+
+    private async Task ReloadFeed()
+    {
+        _posts = (await EventsSvc.GetFeedAsync(null, _feedTake)).ToList();
+        // If the feed filled the requested page, assume there may be more to load.
+        _hasMore = _posts.Count >= _feedTake;
+    }
+
+    private async Task LoadMore()
+    {
+        _loadingMore = true;
+        _feedTake += FeedPageSize;
+        await ReloadFeed();
+        _loadingMore = false;
+    }
+
+    // ── interactions (client-side) ──
+    private void ToggleLike(FeedPost p) { p.Liked = !p.Liked; p.Likes += p.Liked ? 1 : -1; }
+    private void AddComment(FeedPost p)
+    {
+        var t = (p.Draft ?? "").Trim();
+        if (t.Length == 0) return;
+        p.Comments.Add(new PostComment("You", t));
+        p.Draft = "";
+    }
+
+    // ── lightbox ──
+    private void OpenLightbox(List<FeedPostImage> media, int index, string? caption)
+    {
+        _lbItems = media.Select(m => new LightboxItem(m.Url, m.IsVideo)).ToList();
+        _lbIndex = index; _lbCaption = caption; _lbFocusPending = true;
+    }
+    private void CloseLightbox() => _lbItems = null;
+    private void LbPrev() { if (_lbItems is { Count: > 0 }) _lbIndex = (_lbIndex - 1 + _lbItems.Count) % _lbItems.Count; }
+    private void LbNext() { if (_lbItems is { Count: > 0 }) _lbIndex = (_lbIndex + 1) % _lbItems.Count; }
+    private void OnLbKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "ArrowLeft") LbPrev();
+        else if (e.Key == "ArrowRight") LbNext();
+        else if (e.Key == "Escape") CloseLightbox();
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_lbFocusPending && _lbItems is not null) { _lbFocusPending = false; await _lbRef.FocusAsync(); }
+    }
+
+    // ── Post Upcoming Event ──
+    private void OpenEventComposer()
+    {
+        _evVertId = _verticals.FirstOrDefault()?.Id ?? 0;
+        _evName = ""; _evDate = null; _evTime = ""; _evVenue = "";
+        _eventOpen = true;
+    }
+    private async Task PublishEvent()
+    {
+        if (_evVertId == 0 || string.IsNullOrWhiteSpace(_evName)) { Snackbar.Add("Vertical and event name are required.", Severity.Warning); return; }
+        _busy = true;
+        try
+        {
+            await EventsSvc.CreateEventAsync(new CreateEventDto(_evVertId, _evName.Trim(), _evDate, _evTime, _evVenue),
+                _empId ?? "", _isSuperAdmin);
+            _events = (await EventsSvc.ListEventsAsync(null)).ToList();
+            Snackbar.Add("Event posted.", Severity.Success);
+            _eventOpen = false;
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "UnionHub Explore: failed to post event"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    // ── Share Event Update ──
+    private void OpenComposer()
+    {
+        _poVertId = _verticals.FirstOrDefault()?.Id ?? 0;
+        _poEventId = null; _poTagId = null; _poCaption = "";
+        _poImages.Clear(); _uploadError = null; _showPreview = false;
+        _composerOpen = true;
+    }
+    private void CloseComposer()
+    {
+        _composerOpen = false;
+        _poImages.Clear(); _uploadError = null; _poCaption = ""; _showPreview = false;
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        _uploadError = null;
+        IReadOnlyList<IBrowserFile> files;
+        try { files = e.GetMultipleFiles(20); }
+        catch (Exception ex) { AppLogger.LogWarning($"UnionHub Explore: file selection error — {ex.Message}"); _uploadError = "Too many files selected."; return; }
+
+        foreach (var file in files)
+        {
+            if (_poImages.Count >= MaxPhotos) { _uploadError = $"You can attach up to {MaxPhotos} items."; break; }
+
+            var isImage = file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+            var isVideo = file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+            if (!isImage && !isVideo) continue;   // only photos and videos are supported
+
+            var maxBytes = isVideo ? MaxVideoBytes : MaxPhotoBytes;
+            if (file.Size > maxBytes)
+            {
+                _uploadError = isVideo
+                    ? $"\"{file.Name}\" is larger than 100 MB and was skipped."
+                    : $"\"{file.Name}\" is larger than 5 MB and was skipped.";
+                continue;
+            }
+            try
+            {
+                using var stream = file.OpenReadStream(maxBytes);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+                var uri = $"data:{file.ContentType};base64,{Convert.ToBase64String(bytes)}";
+                _poImages.Add(new PendingImage(file.Name, file.ContentType, bytes, uri, isVideo));
+            }
+            catch (Exception ex) { AppLogger.LogWarning($"UnionHub Explore: could not read file '{file.Name}' — {ex.Message}"); _uploadError = $"\"{file.Name}\" could not be read."; }
+        }
+    }
+
+    private async Task PublishPost()
+    {
+        if (_poVertId == 0) { Snackbar.Add("Select a vertical.", Severity.Warning); return; }
+        _busy = true;
+        try
+        {
+            var imgs = _poImages.Select(i => new NewPostImage(i.Name, i.ContentType, i.Data)).ToList();
+            await EventsSvc.CreatePostAsync(
+                new CreatePostDto(_poVertId, _poEventId, _poTagId, _poCaption?.Trim() ?? "", imgs),
+                _empId ?? "", _isSuperAdmin);
+            await ReloadFeed();
+            Snackbar.Add("Update published.", Severity.Success);            
+
+
+           @*  var sent = 0; var failed = 0;
+            try
+            {
+                foreach (var u in _audience)
+                {
+                    try
+                    {
+                        await NotificationApi.CreateAsync(new CreateNotificationRequest
+                            {
+                                UserId = Convert.ToInt32(u.EmpCode),
+                                Title = _poImages.FirstOrDefault()?.Name ?? "",                                
+                                Message = _poCaption ?? "New Event Update Posted",
+                                Category = _poImages.FirstOrDefault()?.ContentType ?? "",
+                                EventCode = "Events",
+                                Source = NotificationSource.System,
+                                RedirectUrl = "/notifications",
+                            });
+
+                        // await NotificationRepository.CreateInAppAsync({
+
+                        // });
+
+                        sent++;
+                    }
+                    catch { failed++; }
+                }
+                _lastResult = new SendResult(_audience.Count, sent, failed);
+                Snackbar.Add($"Pushed to {sent} of {_audience.Count} recipients.", failed == 0 ? Severity.Success : Severity.Warning);
+            }
+            finally { _sending = false; } *@
+
+
+            CloseComposer();
+
+            _ = Task.Run(async () =>
+        {
+            try
+            {
+                var audience = await LandingDashboardService.GetBranchStaffDataAsync();
+
+                var notification = new CreateNotificationRequest
+                    {
+                        Title = _poImages.FirstOrDefault()?.Name ?? "New Event Update",
+                        Message = _poCaption ?? "New Event Update Posted",
+                        Category = _poImages.FirstOrDefault()?.ContentType ?? "Events",
+                        EventCode = "Events",
+                        Source = NotificationSource.System,
+                        RedirectUrl = "union-hub"
+                    };
+
+                int sent = 0;
+                int failed = 0;
+
+                foreach (var batch in audience.Chunk(1000))
+                {
+                    var tasks = batch.Select(async user =>
+                    {
+                        try
+                        {
+                            await NotificationApi.CreateAsync(
+                                new CreateNotificationRequest
+                                    {
+                                        UserId = Convert.ToInt32(user.EmpCode),
+                                        Title = notification.Title,
+                                        Message = notification.Message,
+                                        Category = notification.Category,
+                                        EventCode = notification.EventCode,
+                                        Source = notification.Source,
+                                        RedirectUrl = notification.RedirectUrl
+                                    });
+
+                            Interlocked.Increment(ref sent);
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLogger.LogWarning($"UnionHub Explore: notification send failed for user {user.EmpCode} — {ex.Message}");
+                            Interlocked.Increment(ref failed);
+                        }
+                    });
+
+                    await Task.WhenAll(tasks);
+                }
+
+                AppLogger.LogInfo($"Union Hub - Explore: Notifications Sent={sent}, Failed={failed}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError(ex, "[Union Hub - Explore] Unhandled Notification error: " + ex.Message);
+            }
+        });
+        }
+      
+        catch (Exception ex) { AppLogger.LogError(ex, "UnionHub Explore: failed to publish post"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+
+    // ── Tags ──
+    private async Task OpenTags()
+    {
+        _allTags = (await EventsSvc.ListTagsAsync(false)).ToList();
+        _newTagName = "";
+        _tagOpen = true;
+    }
+    private async Task AddTag()
+    {
+        if (string.IsNullOrWhiteSpace(_newTagName)) return;
+        _busy = true;
+        try
+        {
+            await EventsSvc.AddTagAsync(_newTagName, _empId ?? "");
+            _allTags = (await EventsSvc.ListTagsAsync(false)).ToList();
+            _tags = (await EventsSvc.ListTagsAsync(true)).ToList();
+            _newTagName = "";
+        }
+        catch (Exception ex) { AppLogger.LogError(ex, "UnionHub Explore: failed to add tag"); Snackbar.Add(UserFacingError.Generic, Severity.Error); }
+        finally { _busy = false; }
+    }
+    private async Task ToggleTag(EventTag t)
+    {
+        await EventsSvc.SetTagEnabledAsync(t.Id, !t.IsEnabled, _empId ?? "");
+        _allTags = (await EventsSvc.ListTagsAsync(false)).ToList();
+        _tags = (await EventsSvc.ListTagsAsync(true)).ToList();
+    }
+
+    private static string InitialsOf(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+    }
+
+    private static string VerticalInitials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var words = name.Split(new[] { ' ', '-', '_', '/' }, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 1) return words[0][..Math.Min(3, words[0].Length)].ToUpperInvariant();
+        return (words[0][0].ToString() + words[1][0]).ToUpperInvariant();
+    }
+}

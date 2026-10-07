@@ -1,0 +1,227 @@
+@page "/recon/admin/recon-admins"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AppAdmin")]
+@using global::RequestPortal.Core
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Models
+@inject IReconRbacService ReconRbacService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@inject ISnackbar Snackbar
+
+<PageTitle>Recon Admin Allocation</PageTitle>
+<PageHeader PageKey="recon-admin-allocation" Title="Recon Admin Allocation" Crumbs="_crumbs" />
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+    Branch/RO/ZO roles are assigned automatically from each employee's existing attributes — nothing to do
+    here for those. <b>Recon Vertical User</b> (CO/Vertical desk for Annexure 3) is a Recon-specific role
+    and needs explicit assignment below, managed by a <b>Recon Admin</b>.
+</MudAlert>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    @if (_canManageAdmins)
+    {
+        <MudPaper Elevation="1" Class="pa-3 mb-4">
+            <div class="d-flex flex-wrap align-center mb-3">
+                <MudText Typo="Typo.h6">Recon Admins</MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenAddAdminDialog">Add Recon Admin</MudButton>
+            </div>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                A Recon Admin may assign/revoke the Recon Vertical User role below, without full
+                Application Admin rights. Restricted to App/Super Admins to grant.
+            </MudText>
+            @if (_admins.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No Recon Admins assigned yet — only App/Super Admins can assign the Recon Vertical User role until one is added.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@_admins" Dense="true" Hover="true" Striped="true">
+                    <HeaderContent>
+                        <MudTh>Employee Code</MudTh><MudTh>Assigned By</MudTh><MudTh>Assigned At</MudTh><MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Employee Code">@context.EmpCode</MudTd>
+                        <MudTd DataLabel="Assigned By">@context.AssignedByEmp</MudTd>
+                        <MudTd DataLabel="Assigned At">@context.AssignedAtUtc.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                           Title="Revoke" OnClick="@(() => RevokeAdminAsync(context.EmpCode))" aria-label="Revoke" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+
+    <MudPaper Elevation="1" Class="pa-3 mb-4">
+        <div class="d-flex flex-wrap align-center mb-3">
+            <MudText Typo="Typo.h6">Recon Vertical User Assignments</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenAddRoleDialog" Disabled="@(!_canManageVerticalUsers)">Assign Vertical User</MudButton>
+        </div>
+        @if (!_canManageVerticalUsers)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-2">
+                You are not a Recon Admin (or App/Super Admin) — you can view assignments but not change them.
+            </MudAlert>
+        }
+        @if (_assignments.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No Recon Vertical Users assigned yet.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_assignments" Dense="true" Hover="true" Striped="true">
+                <HeaderContent>
+                    <MudTh>Employee Code</MudTh><MudTh>Assigned By</MudTh><MudTh>Assigned At</MudTh><MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Employee Code">@context.EmpCode</MudTd>
+                    <MudTd DataLabel="Assigned By">@context.AssignedByEmp</MudTd>
+                    <MudTd DataLabel="Assigned At">@context.AssignedAtUtc.ToString("dd-MMM-yyyy HH:mm")</MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       Disabled="@(!_canManageVerticalUsers)" Title="Revoke"
+                                       OnClick="@(() => RevokeRoleAsync(context.Id))" aria-label="Revoke" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+<MudDialog @bind-Visible="_addAdminOpen" Options="_dialogOptions">
+    <TitleContent>Add Recon Admin</TitleContent>
+    <DialogContent>
+        <MudTextField T="string" Label="Employee Code (PF Number)" @bind-Value="_newAdminEmpCode"
+                       Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addAdminOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAdminAsync" Disabled="@_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="_addRoleOpen" Options="_dialogOptions">
+    <TitleContent>Assign Recon Vertical User</TitleContent>
+    <DialogContent>
+        <MudTextField T="string" Label="Employee Code (PF Number)" @bind-Value="_newRoleEmpCode"
+                       Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3">
+            Assigning replaces any existing active Recon Vertical User assignment for this employee.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addRoleOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveRoleAsync" Disabled="@_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Applications", "app-portal1"), new("Recon Certificates", "recon/hub"), new("Recon Admin Allocation") };
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _loading = true, _saving;
+    private bool _canManageVerticalUsers;
+    private bool _canManageAdmins;
+    private List<ReconAdmin> _admins = new();
+    private List<ReconVerticalUserAssignment> _assignments = new();
+
+    private bool _addAdminOpen;
+    private string _newAdminEmpCode = "";
+
+    private bool _addRoleOpen;
+    private string _newRoleEmpCode = "";
+
+    private string ActorEmpCode => CurrentUser.EmplId ?? "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _canManageVerticalUsers = await ReconRbacService.CanManageVerticalUsersAsync(ActorEmpCode);
+        _canManageAdmins = await ReconRbacService.CanManageAdminsAsync(ActorEmpCode);
+        _admins = (await ReconRbacService.ListAdminsAsync()).Where(a => a.IsActive).ToList();
+        _assignments = (await ReconRbacService.ListVerticalUserAssignmentsAsync()).Where(a => a.IsActive).ToList();
+    }
+
+    private void OpenAddAdminDialog() { _newAdminEmpCode = ""; _addAdminOpen = true; }
+
+    private async Task SaveAdminAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newAdminEmpCode))
+        {
+            Snackbar.Add("Employee code is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await ReconRbacService.GrantAdminAsync(ActorEmpCode, _newAdminEmpCode.Trim());
+            Snackbar.Add("Recon Admin added.", Severity.Success);
+            _addAdminOpen = false;
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Save failed: {ex.Message}", Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task RevokeAdminAsync(string empCode)
+    {
+        try
+        {
+            await ReconRbacService.RevokeAdminAsync(ActorEmpCode, empCode);
+            Snackbar.Add("Recon Admin revoked.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Revoke failed: {ex.Message}", Severity.Error); }
+    }
+
+    private void OpenAddRoleDialog() { _newRoleEmpCode = ""; _addRoleOpen = true; }
+
+    private async Task SaveRoleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newRoleEmpCode))
+        {
+            Snackbar.Add("Employee code is required.", Severity.Warning);
+            return;
+        }
+        _saving = true;
+        try
+        {
+            await ReconRbacService.AssignVerticalUserAsync(ActorEmpCode, _newRoleEmpCode.Trim());
+            Snackbar.Add("Recon Vertical User assigned.", Severity.Success);
+            _addRoleOpen = false;
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Save failed: {ex.Message}", Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task RevokeRoleAsync(long assignmentId)
+    {
+        try
+        {
+            await ReconRbacService.RevokeVerticalUserAsync(ActorEmpCode, assignmentId);
+            Snackbar.Add("Recon Vertical User revoked.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Revoke failed: {ex.Message}", Severity.Error); }
+    }
+}

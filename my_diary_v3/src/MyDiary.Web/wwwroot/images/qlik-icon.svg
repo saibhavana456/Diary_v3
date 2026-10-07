@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Outer green circle -->
+  <circle cx="110" cy="110" r="90" fill="#0a9444" />
+
+  <!-- Inner light ring -->
+  <circle cx="110" cy="110" r="55" fill="white" />
+
+  <!-- Inner grey circle -->
+  <circle cx="110" cy="110" r="35" fill="#5f6368" />
+
+  <!-- Handle (approximation) -->
+  <rect x="160" y="150" width="70" height="30" rx="10" ry="10" 
+        transform="rotate(45 160 150)" fill="#0a9444" />
+</svg>

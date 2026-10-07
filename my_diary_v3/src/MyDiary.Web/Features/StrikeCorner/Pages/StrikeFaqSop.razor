@@ -1,0 +1,170 @@
+@page "/strike-corner/faq-sop"
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@using MyDiary.Web.Features.StrikeCorner.Models
+@using MyDiary.Web.Features.StrikeCorner.Services
+@inject IStrikeCornerService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+<PageTitle>FAQs and SOPs - Strike Corner - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+    <PageHeader Title="FAQs and SOPs" Subtitle="Upload, view and download FAQ and SOP documents for strike management." Crumbs="_crumbs" PageKey="strike-corner-faq-sop" />
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <div class="d-flex justify-end mb-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.UploadFile" OnClick="OpenUpload">Upload document</MudButton>
+        </div>
+
+        <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+            <MudTabPanel Text="FAQs" Icon="@Icons.Material.Filled.QuestionAnswer">
+                @if (_faqs.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No FAQ documents uploaded yet.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_faqs" Dense="true" Hover="true" Bordered="true" T="StrikeFaqDoc">
+                        <HeaderContent><MudTh>Title</MudTh><MudTh>File</MudTh><MudTh>Uploaded</MudTh><MudTh></MudTh></HeaderContent>
+                        <RowTemplate>@DocRow(context)</RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+            <MudTabPanel Text="SOPs" Icon="@Icons.Material.Filled.Rule">
+                @if (_sops.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">No SOP documents uploaded yet.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_sops" Dense="true" Hover="true" Bordered="true" T="StrikeFaqDoc">
+                        <HeaderContent><MudTh>Title</MudTh><MudTh>File</MudTh><MudTh>Uploaded</MudTh><MudTh></MudTh></HeaderContent>
+                        <RowTemplate>@DocRow(context)</RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    }
+</AuthenticatedOnly>
+
+<MudDialog @bind-Visible="_uploadOpen" Options="_dlgOptions">
+    <TitleContent>Upload document</TitleContent>
+    <DialogContent>
+        <MudSelect T="string" @bind-Value="_category" Label="Category" Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem T="string" Value="@("FAQ")">FAQ</MudSelectItem>
+            <MudSelectItem T="string" Value="@("SOP")">SOP</MudSelectItem>
+        </MudSelect>
+        <MudTextField @bind-Value="_title" Label="Title" Variant="Variant.Outlined" Class="mb-3" MaxLength="300" />
+        <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+            <ActivatorContent><MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Upload">Choose file</MudButton></ActivatorContent>
+        </MudFileUpload>
+        @if (_fileName is not null) { <div class="mt-2">@_fileName</div> }
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-2">PDF, Word, Excel or PowerPoint. Max 10 MB.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _uploadOpen = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync" Disabled="_saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Assurance 360°", "assurance-360"), new("Strike Corner", "strike-corner"), new("FAQs and SOPs") };
+    private DialogOptions _dlgOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+
+    private bool _loading = true, _uploadOpen, _saving;
+    private string _actor = "";
+    private List<StrikeFaqDoc> _faqs = new(), _sops = new();
+
+    private string _category = "FAQ";
+    private string _title = "";
+    private byte[]? _fileBytes;
+    private string? _fileName;
+    private string? _contentType;
+    private int _scaleCode;
+    private const long MaxBytes = 10 * 1024 * 1024;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _actor = state.User.FindFirst("emplid")?.Value ?? "";
+        var isSuperAdmin = state.User.HasClaim("rp_super_admin", "true");
+        if (!isSuperAdmin &&
+          _scaleCode != 1 &&
+          _scaleCode != 2 &&
+          _scaleCode != 17)
+        {
+            Nav.NavigateTo("home", true);
+            return;
+        }
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _faqs = await Svc.ListFaqDocsAsync("FAQ");
+        _sops = await Svc.ListFaqDocsAsync("SOP");
+    }
+
+    private RenderFragment DocRow(StrikeFaqDoc doc) =>
+        @<text>
+            <MudTd DataLabel="Title">@doc.Title</MudTd>
+            <MudTd DataLabel="File">@doc.FileName</MudTd>
+            <MudTd DataLabel="Uploaded"><MudText Typo="Typo.caption">@doc.EntryBy</MudText><br /><MudText Typo="Typo.caption" Color="Color.Secondary">@doc.EntryAt?.ToString("dd-MMM-yyyy HH:mm")</MudText></MudTd>
+            <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Href="@($"{Nav.BaseUri}strike-corner/doc/{doc.Id}?download=false")" Target="_blank" />
+            <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" Href="@($"{Nav.BaseUri}strike-corner/doc/{doc.Id}?download=true")" Target="_blank" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteAsync(doc))" />
+            </MudTd>
+        </text>;
+
+    private void OpenUpload()
+    {
+        _category = "FAQ"; _title = ""; _fileBytes = null; _fileName = null; _contentType = null;
+        _uploadOpen = true;
+    }
+
+    private async Task OnFileSelected(IBrowserFile file)
+    {
+        if (file.Size > MaxBytes) { Snackbar.Add("File must be 10 MB or smaller.", Severity.Warning); return; }
+        using var ms = new MemoryStream();
+        await using (var s = file.OpenReadStream(MaxBytes)) await s.CopyToAsync(ms);
+        _fileBytes = ms.ToArray();
+        _fileName = file.Name;
+        _contentType = file.ContentType;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_title)) { Snackbar.Add("Title is required.", Severity.Warning); return; }
+        if (_fileBytes is null) { Snackbar.Add("Please choose a file.", Severity.Warning); return; }
+        _saving = true;
+        try
+        {
+            await Svc.SaveFaqDocAsync(_category, _title, _fileBytes, _contentType ?? "application/octet-stream", _fileName!, _actor);
+            _uploadOpen = false;
+            await ReloadAsync();
+            Snackbar.Add("Document uploaded.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteAsync(StrikeFaqDoc doc)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete '{doc.Title}'?")) return;
+        await Svc.DeleteFaqDocAsync(doc.Id);
+        await ReloadAsync();
+        Snackbar.Add("Document deleted.", Severity.Success);
+    }
+}

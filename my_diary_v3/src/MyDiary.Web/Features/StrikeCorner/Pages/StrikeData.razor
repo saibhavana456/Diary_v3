@@ -1,0 +1,313 @@
+@page "/strike-corner/data"
+
+@using global::RequestPortal.Web.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.StrikeCorner.Models
+@using MyDiary.Web.Features.StrikeCorner.Services
+
+@inject IStrikeCornerService Svc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<PageTitle>Strike Data - Strike Corner - My Diary</PageTitle>
+
+<AuthenticatedOnly>
+
+    <PageHeader Title="Strike Data"
+                Subtitle="Upload, view and download strike-related documents."
+                Crumbs="_crumbs"
+                PageKey="strike-corner-data" />
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <div class="d-flex justify-end mb-3">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.UploadFile"
+                       OnClick="OpenUpload">
+                Upload Document
+            </MudButton>
+        </div>
+
+        @if (_docs.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                No documents uploaded yet.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_docs"
+                      Dense="true"
+                      Hover="true"
+                      Bordered="true"
+                      T="StrikeFaqDoc">
+
+                <HeaderContent>
+                    <MudTh>Title</MudTh>
+                    <MudTh>File Name</MudTh>
+                    <MudTh>Uploaded By</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>@DocRow(context)</RowTemplate>
+ @*                <RowTemplate>
+                    <MudTd DataLabel="Title">@context.Title</MudTd>
+
+                    <MudTd DataLabel="File Name">
+                        @context.FileName
+                    </MudTd>
+
+                    <MudTd DataLabel="Uploaded By">
+                        <MudText Typo="Typo.caption">
+                            @context.EntryBy
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @context.EntryAt?.ToString("dd-MMM-yyyy HH:mm")
+                        </MudText>
+                    </MudTd>
+
+              <MudTd>
+
+    <MudIconButton
+        Icon="@Icons.Material.Filled.Visibility"
+        Size="Size.Small"
+        Href="@($"{Nav.BaseUri}strike-corner/data-doc/{context.Id}?download=falseata-doc/{context.Id}?download=true")"
+        Target="_blank" />
+
+
+                    </MudTd>
+                </RowTemplate> *@
+
+            </MudTable>
+        }
+    }
+
+</AuthenticatedOnly>
+
+<MudDialog @bind-Visible="_uploadOpen"
+           Options="_dlgOptions">
+
+    <TitleContent>
+        Upload Document
+    </TitleContent>
+
+    <DialogContent>
+
+        <MudTextField @bind-Value="_title"
+                      Label="Title"
+                      Variant="Variant.Outlined"
+                      Class="mb-3"
+                      MaxLength="300" />
+
+        <MudFileUpload T="IBrowserFile"
+                       FilesChanged="OnFileSelected"
+                       Accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+
+            <ActivatorContent>
+                <MudButton Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Upload">
+                    Choose File
+                </MudButton>
+            </ActivatorContent>
+
+        </MudFileUpload>
+
+        @if (!string.IsNullOrWhiteSpace(_fileName))
+        {
+            <div class="mt-2">@_fileName</div>
+        }
+
+        <MudText Typo="Typo.caption"
+                 Color="Color.Secondary"
+                 Class="d-block mt-2">
+            PDF, Word, Excel or PowerPoint. Max 10 MB.
+        </MudText>
+
+    </DialogContent>
+
+    <DialogActions>
+
+        <MudButton OnClick="@(() => _uploadOpen = false)">
+            Cancel
+        </MudButton>
+
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   Disabled="_saving"
+                   OnClick="SaveAsync">
+            Save
+        </MudButton>
+
+    </DialogActions>
+
+</MudDialog>
+
+@code {
+
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Assurance 360°", "assurance-360"),
+        new("Strike Corner", "strike-corner"),
+        new("Strike Data")
+    };
+
+    private DialogOptions _dlgOptions = new()
+    {
+        MaxWidth = MaxWidth.Small,
+        FullWidth = true,
+        CloseOnEscapeKey = true
+    };
+
+    private bool _loading = true;
+    private bool _uploadOpen;
+    private bool _saving;
+
+    private string _actor = "";
+    private int _scaleCode;
+
+    private List<StrikeFaqDoc> _docs = new();
+
+    private string _title = "";
+    private byte[]? _fileBytes;
+    private string? _fileName;
+    private string? _contentType;
+
+    private const long MaxBytes = 10 * 1024 * 1024;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        _actor = state.User.FindFirst("emplid")?.Value ?? "";
+
+        int.TryParse(
+            state.User.FindFirst("employee_scale_code")?.Value,
+            out _scaleCode);
+
+        var isSuperAdmin =
+            state.User.HasClaim("rp_super_admin", "true");
+
+        if (!isSuperAdmin &&
+            _scaleCode != 1 &&
+            _scaleCode != 2 &&
+            _scaleCode != 17)
+        {
+            Nav.NavigateTo("home", true);
+            return;
+        }
+
+        await ReloadAsync();
+
+        _loading = false;
+    }
+    private RenderFragment DocRow(StrikeFaqDoc doc) =>
+    @<text>
+        <MudTd DataLabel="Title">@doc.Title</MudTd>
+        <MudTd DataLabel="File">@doc.FileName</MudTd>
+        <MudTd DataLabel="Uploaded"><MudText Typo="Typo.caption">@doc.EntryBy</MudText><br /><MudText Typo="Typo.caption" Color="Color.Secondary">@doc.EntryAt?.ToString("dd-MMM-yyyy HH:mm")</MudText></MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Href="@($"{Nav.BaseUri}strike-corner/data-doc/{doc.Id}?download=false")" Target="_blank" />
+            <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" Href="@($"{Nav.BaseUri}strike-corner/data-doc/{doc.Id}?download=true")" Target="_blank" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteAsync(doc))" />
+        </MudTd>
+    </text>;
+
+    private async Task ReloadAsync()
+    {
+        _docs = await Svc.ListStrikeDataDocsAsync();
+    }
+
+    private void OpenUpload()
+    {
+        _title = "";
+        _fileBytes = null;
+        _fileName = null;
+        _contentType = null;
+
+        _uploadOpen = true;
+    }
+
+    private async Task OnFileSelected(IBrowserFile file)
+    {
+        if (file.Size > MaxBytes)
+        {
+            Snackbar.Add("File must be 10 MB or smaller.", Severity.Warning);
+            return;
+        }
+
+        using var ms = new MemoryStream();
+
+        await using (var s = file.OpenReadStream(MaxBytes))
+        {
+            await s.CopyToAsync(ms);
+        }
+
+        _fileBytes = ms.ToArray();
+        _fileName = file.Name;
+        _contentType = file.ContentType;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_title))
+        {
+            Snackbar.Add("Title is required.", Severity.Warning);
+            return;
+        }
+
+        if (_fileBytes is null)
+        {
+            Snackbar.Add("Please choose a file.", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            await Svc.SaveStrikeDataDocAsync(
+                _title,
+                _fileBytes,
+                _contentType ?? "application/octet-stream",
+                _fileName!,
+                _actor);
+
+            _uploadOpen = false;
+
+            await ReloadAsync();
+
+            Snackbar.Add("Document uploaded.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync(StrikeFaqDoc doc)
+    {
+        if (!await JS.InvokeAsync<bool>(
+                "confirm",
+                $"Delete '{doc.Title}'?"))
+            return;
+
+        await Svc.DeleteStrikeDataDocAsync(doc.Id);
+
+        await ReloadAsync();
+
+        Snackbar.Add("Document deleted.", Severity.Success);
+    }
+}

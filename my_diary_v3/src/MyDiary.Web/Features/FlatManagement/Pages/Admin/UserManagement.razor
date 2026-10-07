@@ -1,0 +1,196 @@
+@page "/flatmgmt/admin/users"
+@attribute [Authorize(Policy = "AppAdmin")]
+@using MyDiary.Web.Features.FlatManagement.Models.DTO
+@using MyDiary.Web.Features.FlatManagement.Services
+@using Microsoft.AspNetCore.Authorization
+@using MudBlazor
+@inject IAdminUserManagementService UserManagementService
+@inject MyDiary.Core.Abstractions.ICurrentUser CurrentUser
+@using global::RequestPortal.Web.Shared
+
+<PageTitle>Admin Management - Flat Management System</PageTitle>
+
+<div class="aum-page">
+    <PageHeader Title="Admin Management" Crumbs="_crumbs" PageKey="flatmgmt-admin-user-management" />
+
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" Class="aum-tabs mt-4" PanelClass="pa-0">
+        <MudTabPanel Text="Admin User">
+            <MudCard Class="aum-card" Elevation="0">
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="userLocation" Label="Search By Location" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="userEmpPf" Label="Employee PF or Name" Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+
+                    <div class="aum-actions">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="HandleUserView" Disabled="@isUserLoading">
+                            View
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Class="ml-2" OnClick="HandleUserReset" Disabled="@isUserLoading">
+                            Reset
+                        </MudButton>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+
+            <MudCard Class="aum-card mt-4" Elevation="0">
+                <MudCardContent Class="pa-0">
+                    <MudTable @ref="userTable" ServerData="@ServerReloadUsers" Hover="true" Bordered="true" Dense="true"
+                              Class="aum-table" Loading="@isUserLoading" RowsPerPage="10">
+                        <HeaderContent>
+                            <MudTh>S.No.</MudTh>
+                            <MudTh>Emp ID</MudTh>
+                            <MudTh>Name</MudTh>
+                            <MudTh>User Type</MudTh>
+                            <MudTh>Scale</MudTh>
+                            <MudTh>Designation</MudTh>
+                            <MudTh>Location</MudTh>
+                            <MudTh>Contact No</MudTh>
+                            <MudTh>Email</MudTh>
+                        </HeaderContent>
+                        <RowTemplate Context="row">
+                            <MudTd DataLabel="S.No.">@(userPageStartIndex + userRows.IndexOf(row) + 1)</MudTd>
+                            <MudTd DataLabel="Emp ID">
+                                <MudLink Href="@($"flatmgmt/admin/user-detail?emp={row.EmpId}&type=admin")">@row.EmpId</MudLink>
+                            </MudTd>
+                            <MudTd DataLabel="Name">@row.Name</MudTd>
+                            <MudTd DataLabel="User Type">@row.UserType</MudTd>
+                            <MudTd DataLabel="Scale">@row.ScaleDesc</MudTd>
+                            <MudTd DataLabel="Designation">@row.JobDesc</MudTd>
+                            <MudTd DataLabel="Location">@row.LocationDesc</MudTd>
+                            <MudTd DataLabel="Contact No">@row.ContactNo</MudTd>
+                            <MudTd DataLabel="Email">@row.EmailId</MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText>No users found.</MudText>
+                        </NoRecordsContent>
+                        <PagerContent>
+                            <MudTablePager PageSizeOptions="new[] { 10, 25, 50 }" />
+                        </PagerContent>
+                    </MudTable>
+                </MudCardContent>
+            </MudCard>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Vendor">
+            <MudCard Class="aum-card" Elevation="0">
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="vendorLocation" Label="Search By Location" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="vendorNameOrCode" Label="Vendor Code or Name" Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+
+                    <div class="aum-actions">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="HandleVendorView" Disabled="@isVendorLoading">
+                            View
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Class="ml-2" OnClick="HandleVendorReset" Disabled="@isVendorLoading">
+                            Reset
+                        </MudButton>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+
+            <MudCard Class="aum-card mt-4" Elevation="0">
+                <MudCardContent Class="pa-0">
+                    <MudTable @ref="vendorTable" ServerData="@ServerReloadVendors" Hover="true" Bordered="true" Dense="true"
+                              Class="aum-table" Loading="@isVendorLoading" RowsPerPage="10">
+                        <HeaderContent>
+                            <MudTh>S.No.</MudTh>
+                            <MudTh>Vendor Code</MudTh>
+                            <MudTh>Vendor Name</MudTh>
+                            <MudTh>Address</MudTh>
+                            <MudTh>Mobile</MudTh>
+                            <MudTh>Email</MudTh>
+                            <MudTh>Status</MudTh>
+                        </HeaderContent>
+                        <RowTemplate Context="row">
+                            <MudTd DataLabel="S.No.">@(vendorPageStartIndex + vendorRows.IndexOf(row) + 1)</MudTd>
+                            <MudTd DataLabel="Vendor Code">
+                                <MudLink Href="@($"flatmgmt/admin/vendor-detail?vendorId={row.VendorId}&type=vendor")">@row.VendorCode</MudLink>
+                            </MudTd>
+                            <MudTd DataLabel="Vendor Name">@row.VendorName</MudTd>
+                            <MudTd DataLabel="Address">@row.VendorAddress</MudTd>
+                            <MudTd DataLabel="Mobile">@row.VendorMobile</MudTd>
+                            <MudTd DataLabel="Email">@row.VendorEmail</MudTd>
+                            <MudTd DataLabel="Status">
+                                <MudChip T="string" Color="@(string.Equals(row.Status, "Active", StringComparison.OrdinalIgnoreCase) ? Color.Success : Color.Default)" Size="Size.Small">
+                                    @(row.Status ?? "-")
+                                </MudChip>
+                            </MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText>No vendors found.</MudText>
+                        </NoRecordsContent>
+                        <PagerContent>
+                            <MudTablePager PageSizeOptions="new[] { 10, 25, 50 }" />
+                        </PagerContent>
+                    </MudTable>
+                </MudCardContent>
+            </MudCard>
+        </MudTabPanel>
+    </MudTabs>
+</div>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new() { new("Flat Management", "flatmgmt/my"), new("Admin Management") };
+    private string userLocation = "";
+    private string userEmpPf = "";
+    private bool isUserLoading = true;
+    private List<AdminUserRow> userRows = new();
+    private int userPageStartIndex;
+    private MudTable<AdminUserRow> userTable = null!;
+
+    private string vendorLocation = "";
+    private string vendorNameOrCode = "";
+    private bool isVendorLoading = true;
+    private List<AdminVendorRow> vendorRows = new();
+    private int vendorPageStartIndex;
+    private MudTable<AdminVendorRow> vendorTable = null!;
+
+    private async Task<TableData<AdminUserRow>> ServerReloadUsers(TableState state, CancellationToken ct)
+    {
+        isUserLoading = true;
+        var result = await UserManagementService.GetUsersAsync(userEmpPf, userLocation, state.Page, state.PageSize);
+        userRows = result.Rows.ToList();
+        userPageStartIndex = state.Page * state.PageSize;
+        isUserLoading = false;
+        return new TableData<AdminUserRow> { TotalItems = result.TotalCount, Items = userRows };
+    }
+
+    private async Task<TableData<AdminVendorRow>> ServerReloadVendors(TableState state, CancellationToken ct)
+    {
+        isVendorLoading = true;
+        var result = await UserManagementService.GetVendorsAsync(vendorNameOrCode, vendorLocation, state.Page, state.PageSize);
+        vendorRows = result.Rows.ToList();
+        vendorPageStartIndex = state.Page * state.PageSize;
+        isVendorLoading = false;
+        return new TableData<AdminVendorRow> { TotalItems = result.TotalCount, Items = vendorRows };
+    }
+
+    private async Task HandleUserView() => await userTable.ReloadServerData();
+
+    private async Task HandleUserReset()
+    {
+        userLocation = "";
+        userEmpPf = "";
+        await userTable.ReloadServerData();
+    }
+
+    private async Task HandleVendorView() => await vendorTable.ReloadServerData();
+
+    private async Task HandleVendorReset()
+    {
+        vendorLocation = "";
+        vendorNameOrCode = "";
+        await vendorTable.ReloadServerData();
+    }
+}

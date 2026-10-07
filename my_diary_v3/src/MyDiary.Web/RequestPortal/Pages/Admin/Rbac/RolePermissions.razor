@@ -1,0 +1,178 @@
+@namespace RequestPortal.Web.Pages.Admin.Rbac
+@page "/admin/rbac/role-permissions"
+@inject IRbacRepo Repo
+@inject IRbacService Rbac
+@inject IUserRepo Users
+@inject ICurrentUser Me
+@inject ISnackbar Snackbar
+
+<PageTitle>Role Permissions</PageTitle>
+
+<PageHeader PageKey="rbac-role-permissions" Title="Role Permissions" Subtitle="One role at a time — toggle View / Add / Modify / Delete / Authorize per module"
+            Crumbs="_crumbs" />
+
+<MudPaper Elevation="1" Class="pa-3 mb-3">
+    <MudGrid Spacing="2" AlignItems="Center">
+        <MudItem xs="12" md="4">
+            <MudSelect T="long" Value="_roleId" ValueChanged="OnRoleChanged" Label="Role" Dense="true">
+                @foreach (var r in _roles)
+                {
+                    <MudSelectItem T="long" Value="@r.Id">@r.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudCheckBox T="bool" @bind-Value="_onlyTx" Label="Show transactional modules only" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="Save" Disabled="@(_roleId == 0 || !_dirty)">Save changes</MudButton>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">@(_dirty ? "Unsaved changes" : "All changes saved")</MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Elevation="1" Class="pa-3">
+    @if (_roleId == 0)
+    {
+        <MudText>Select a role to edit its permissions.</MudText>
+    }
+    else
+    {
+        <MudTable Items="@VisibleModules" Dense="true" Hover="true" Striped="true" Class="rp-data-table">
+            <HeaderContent>
+                <MudTh>Module</MudTh>
+                <MudTh>Kind</MudTh>
+                <MudTh Style="text-align:center">View</MudTh>
+                <MudTh Style="text-align:center">Add</MudTh>
+                <MudTh Style="text-align:center">Modify</MudTh>
+                <MudTh Style="text-align:center">Delete</MudTh>
+                <MudTh Style="text-align:center">Authorize</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                @{
+                    var perm = GetOrCreate(context);
+                    var nonTx = context.Kind != ModuleKind.Transactional;
+                }
+                <MudTd>@PathOf(context)</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@KindColor(context.Kind)">@context.Kind</MudChip>
+                </MudTd>
+                <MudTd Style="text-align:center">
+                    <MudCheckBox T="bool" Value="@perm.CanView" ValueChanged="@(v => { perm.CanView = v; _dirty = true; })" />
+                </MudTd>
+                <MudTd Style="text-align:center">
+                    <MudCheckBox T="bool" Value="@perm.CanAdd" Disabled="@nonTx" ValueChanged="@(v => { perm.CanAdd = v; _dirty = true; })" />
+                </MudTd>
+                <MudTd Style="text-align:center">
+                    <MudCheckBox T="bool" Value="@perm.CanModify" Disabled="@nonTx" ValueChanged="@(v => { perm.CanModify = v; _dirty = true; })" />
+                </MudTd>
+                <MudTd Style="text-align:center">
+                    <MudCheckBox T="bool" Value="@perm.CanDelete" Disabled="@nonTx" ValueChanged="@(v => { perm.CanDelete = v; _dirty = true; })" />
+                </MudTd>
+                <MudTd Style="text-align:center">
+                    <MudCheckBox T="bool" Value="@perm.CanAuthorize" Disabled="@nonTx" ValueChanged="@(v => { perm.CanAuthorize = v; _dirty = true; })" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("Administration"),
+        new("Role Permissions"),
+    };
+
+    private List<AppRole> _roles = new();
+    private List<AppModule> _modules = new();
+    private Dictionary<long, RoleModulePerm> _byModule = new();
+    private long _roleId;
+    private bool _onlyTx = false;
+    private bool _dirty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rolesTask = Users.ListRolesAsync();
+            var modulesTask = Repo.ListModulesAsync();
+            await Task.WhenAll(rolesTask, modulesTask);
+            _roles = rolesTask.Result.OrderBy(r => r.Code).ToList();
+            _modules = modulesTask.Result.Where(m => m.IsActive).ToList();
+            if (_roles.Count > 0) _roleId = _roles[0].Id;
+            await LoadForRoleAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "RolePermissions: failed to load roles/modules");
+        }
+    }
+
+    private async Task OnRoleChanged(long newRoleId)
+    {
+        _roleId = newRoleId;
+        await LoadForRoleAsync();
+    }
+
+    private async Task LoadForRoleAsync()
+    {
+        var rows = await Repo.ListRolePermsAsync(_roleId);
+        _byModule = rows.ToDictionary(r => r.ModuleId, r => r);
+        _dirty = false;
+    }
+
+    private IEnumerable<AppModule> VisibleModules =>
+        (_onlyTx ? _modules.Where(m => m.Kind == ModuleKind.Transactional) : _modules)
+            .OrderBy(m => PathOf(m));
+
+    private RoleModulePerm GetOrCreate(AppModule m)
+    {
+        if (!_byModule.TryGetValue(m.Id, out var p))
+        {
+            p = new RoleModulePerm { RoleId = _roleId, ModuleId = m.Id };
+            _byModule[m.Id] = p;
+        }
+        return p;
+    }
+
+    private string PathOf(AppModule m)
+    {
+        var parts = new List<string> { m.Name };
+        var cur = m;
+        while (cur.ParentId is long pid)
+        {
+            var parent = _modules.FirstOrDefault(x => x.Id == pid);
+            if (parent is null) break;
+            parts.Insert(0, parent.Name);
+            cur = parent;
+        }
+        return string.Join(" → ", parts);
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            var empCode = Me.EmpCode ?? "";
+            await Task.WhenAll(_byModule.Values.Select(p => Rbac.UpsertRolePermAsync(empCode, p)));
+            Snackbar.Add("Role permissions saved", Severity.Success);
+            _dirty = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Snackbar.Add("Application Admin or SuperAdmin required", Severity.Error);
+        }
+    }
+
+    private static Color KindColor(ModuleKind k) => k switch
+    {
+        ModuleKind.Transactional => Color.Primary,
+        ModuleKind.Inquiry       => Color.Info,
+        ModuleKind.Report        => Color.Secondary,
+        ModuleKind.MIS           => Color.Warning,
+        ModuleKind.Dashboard     => Color.Success,
+        _                        => Color.Default
+    };
+}

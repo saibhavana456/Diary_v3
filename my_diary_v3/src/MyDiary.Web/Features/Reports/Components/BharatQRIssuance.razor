@@ -1,0 +1,367 @@
+﻿@page "/reports/BharatQRIssuance"
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Bharat QR Issuance Report — My Diary</PageTitle>
+
+<style>
+    .fixed-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+    }
+
+    .mud-table-container {
+        overflow-x: auto;
+    }
+
+    .mud-table-head {
+        background-color: #2a2f5b;
+    }
+</style>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+
+                <!-- Filters + Export -->
+                <MudGrid Spacing="2" Class="pa-4 align-center">
+                    <!-- Zone -->
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string"
+                                   Label="Zone"
+                                   Value="SelectedZone"
+                                   ValueChanged="HandleZoneChanged"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true"
+                                   UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Zone" } })">
+                            <MudSelectItem Value="@("All")">All</MudSelectItem>
+                            @foreach (var z in _zones)
+                        {
+                            <MudSelectItem Value="@z["zone_solid"].ToString()">
+                                @z["zone_name_eng"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Region -->
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Region"
+                               Value="SelectedRegion"
+                               ValueChanged="HandleRegionChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true"
+                               UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Region" } })">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var r in _regions)
+                        {
+                            <MudSelectItem Value="@r["region_solid"].ToString()">
+                                @r["region_name"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Branch -->
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               Label="Branch"
+                               Value="SelectedBranch"
+                               ValueChanged="HandleBranchChanged"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Dense="true"
+                               UserAttributes="@(new Dictionary<string, object> { { "aria-label", "Select Branch" } })">
+                        <MudSelectItem Value="@("All")">All</MudSelectItem>
+                        @foreach (var b in _branches)
+                        {
+                            <MudSelectItem Value="@b["sol_id"].ToString()">
+                                @b["branch_name"].ToString()
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudSpacer />
+
+                <MudItem xs="12" sm="3" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled"
+                               StartIcon="@MudBlazor.Icons.Material.Filled.Download"
+                               Style="background-color: #000066; color: white; font-size: 11px;"
+                               OnClick="OnExportInternal">
+                        Export To Excel
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Period Labels -->
+            <div class="px-4 d-flex justify-between">
+                <MudText Typo="Typo.caption" Style="font-weight:bold; color: #333;">
+                    FY BQR Issuance Period: @_fyFromDate � @_fyToDate
+                </MudText>
+                <MudText Typo="Typo.caption" Style="font-weight:bold; font-style:italic; color: #666;">
+                    No. of BQR Issuance on: @_tranDate
+                </MudText>
+            </div>
+
+            <!-- Data Table -->
+            <MudItem xs="12" Class="pa-4">
+                <MudTable Items="_data"
+                          Loading="_loading"
+                          Dense="true"
+                          Striped="true"
+                          Bordered="true"
+                          FixedHeader="true"
+                          Height="700px"
+                          Elevation="2"
+                          Class="fixed-table"
+                          RowsPerPage="50"
+                          UserAttributes="@(new Dictionary<string, object>{ ["aria-label"] = "Bharat QR Issuance Report Table." })">
+                    <HeaderContent>
+                        <MudTh Style="background-color:#2a2f5b; color:white; width: 60px; text-align: center;">S.No</MudTh>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTh Style="@($"background-color:#2a2f5b; color:white; width: {col.Width}; text-align: center;")">
+                                <MudTableSortLabel SortBy="new Func<Dictionary<string, object>, object>(x => x.ContainsKey(col.PropertyName) ? x[col.PropertyName] : string.Empty)">
+                                    @col.Header
+                                </MudTableSortLabel>
+                            </MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd Style="text-align: center;">@(_data.IndexOf(context) + 1)</MudTd>
+                        @foreach (var col in _cols)
+                        {
+                            <MudTd Style="@(col.IsNumeric ? "text-align: right;" : "text-align: left;")">
+                                @FormatValue(context, col)
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <td colspan="@(_cols.Count + 1)" style="text-align:center; padding: 40px;">
+                            <MudText Typo="Typo.subtitle1" Color="Color.Error">No Data Found!</MudText>
+                        </td>
+                    </NoRecordsContent>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                    </PagerContent>
+                </MudTable>
+            </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // ---- UI / State ----
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private string _title => string.IsNullOrWhiteSpace(Title) ? "Bharat QR Issuance Report" : Title!;
+    private bool _loading = true;
+
+    private string SelectedZone { get; set; } = "All";
+    private string SelectedRegion { get; set; } = "All";
+    private string SelectedBranch { get; set; } = "All";
+
+    private List<Dictionary<string, object>> _zones = new();
+    private List<Dictionary<string, object>> _regions = new();
+    private List<Dictionary<string, object>> _branches = new();
+    private List<Dictionary<string, object>> _data = new();
+
+    // Period labels
+    private string _fyFromDate = "";
+    private string _fyToDate = "";
+    private string _tranDate = "";
+
+    // ---- Columns (match SELECT aliases) ----
+    private readonly List<ColumnConfig> _cols = new()
+    {
+        new ColumnConfig { Header = "Zone",                       PropertyName = "zone",       Width = "16%" },
+        new ColumnConfig { Header = "Region",                     PropertyName = "region",     Width = "20%" },
+        new ColumnConfig { Header = "Branch",                     PropertyName = "branch",     Width = "24%" },
+        new ColumnConfig { Header = "Sol ID",                     PropertyName = "solid",      Width = "10%" },
+        new ColumnConfig { Header = "FY BQR Issuance",            PropertyName = "fy_count",   Width = "15%", IsNumeric = true, Format = "N0" },
+        new ColumnConfig { Header = "BQR Issuance (on TranDate)", PropertyName = "count",      Width = "15%", IsNumeric = true, Format = "N0" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Zone, Region, Branch lookups are independent — load in parallel with data
+        var zonesTask = ReportService.GetLookupDataAsync(
+            "zone_master",
+            "zone_name_eng, zone_solid",
+            "status='A'",
+            "zone_name_eng"
+        );
+
+        var regionsTask = ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            "1=1",
+            "region_name"
+        );
+
+        var branchesTask = ReportService.GetLookupDataAsync(
+            "branch_master",
+            "branch_name, sol_id",
+            "1=1",
+            "branch_name"
+        );
+
+        var dataTask = LoadData();
+
+        await Task.WhenAll(zonesTask, regionsTask, branchesTask, dataTask);
+        _zones = zonesTask.Result;
+        _regions = regionsTask.Result;
+        _branches = branchesTask.Result;
+    }
+
+    private async Task HandleZoneChanged(string value)
+    {
+        SelectedZone = value ?? "All";
+        SelectedRegion = "All";
+        SelectedBranch = "All";
+
+        var regionWhere = SelectedZone.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"zone_solid = '{SelectedZone}'";
+        _regions = await ReportService.GetLookupDataAsync(
+            "region_master",
+            "region_name, region_solid",
+            regionWhere,
+            "region_name"
+        );
+
+        // Reset branches for All region
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "branch_name, sol_id",
+            "1=1",
+            "branch_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleRegionChanged(string value)
+    {
+        SelectedRegion = value ?? "All";
+        SelectedBranch = "All";
+
+        var branchWhere = SelectedRegion.Equals("All", StringComparison.OrdinalIgnoreCase)
+            ? "1=1"
+            : $"region_solid = '{SelectedRegion}'";
+        _branches = await ReportService.GetLookupDataAsync(
+            "branch_master",
+            "branch_name, sol_id",
+            branchWhere,
+            "branch_name"
+        );
+
+        await LoadData();
+    }
+
+    private async Task HandleBranchChanged(string value)
+    {
+        SelectedBranch = value ?? "All";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Period info (get max dates)
+        string metaQuery =
+            "SELECT " +
+            " CONVERT(nvarchar, MAX(TranDate), 103) AS TranDate, " +
+            " CONVERT(nvarchar, MAX(FromDate), 103) AS FromDate, " +
+            " CONVERT(nvarchar, MAX(ToDate), 103)   AS ToDate " +
+            "FROM BQRIssuanceDataReport A " +
+            "RIGHT JOIN BQRIssuanceDataFYReport B ON A.SolID = B.SolId AND A.TranDate = B.ToDate " +
+            "JOIN Branch_Master C ON B.SolId = C.Sol_Id";
+
+        var meta = await ReportService.ExecuteRawQueryAsync(metaQuery);
+        if (meta.Count > 0)
+        {
+            _tranDate = meta[0].TryGetValue("TranDate", out var t) ? t?.ToString() ?? "" : "";
+            _fyFromDate = meta[0].TryGetValue("FromDate", out var f) ? f?.ToString() ?? "" : "";
+            _fyToDate = meta[0].TryGetValue("ToDate", out var o) ? o?.ToString() ?? "" : "";
+        }
+        else
+        {
+            _tranDate = _fyFromDate = _fyToDate = "";
+        }
+
+        // Base FROM/JOIN
+        string fromJoin =
+            "BQRIssuanceDataReport A " +
+            "RIGHT JOIN BQRIssuanceDataFYReport B ON A.SolID = B.SolId AND A.TranDate = B.ToDate " +
+            "JOIN Branch_Master C ON B.SolId = C.Sol_Id";
+
+        // Filters (mimic WebForms logic sans the '00000' guard rails)
+        string where = "1=1 AND C.region_solid <> '00000' AND LTRIM(RTRIM(C.region_solid)) <> ''";
+        if (!string.Equals(SelectedZone, "All", StringComparison.OrdinalIgnoreCase))
+            where += $" AND C.zone_solid = '{SelectedZone}'";
+        if (!string.Equals(SelectedRegion, "All", StringComparison.OrdinalIgnoreCase))
+            where += $" AND C.region_solid = '{SelectedRegion}'";
+        if (!string.Equals(SelectedBranch, "All", StringComparison.OrdinalIgnoreCase))
+            where += $" AND C.Sol_Id = '{SelectedBranch}'";
+
+        // RBAC: clamp to the logged-in user's own scope for non-CO users (fail-closed to BRANCH).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            if (__scope.IsZone) where += $" AND C.zone_solid = '{__scope.ZoneSolid}'";
+            else if (__scope.IsRegion) where += $" AND C.region_solid = '{__scope.RegionSolid}'";
+            else if (__scope.IsBranch) where += $" AND C.Sol_Id = '{__scope.BranchSolid}'";
+        }
+
+        // Final query (grouped per branch; FY_Count = SUM(B.Count), Count = SUM(ISNULL(A.Count,0)))
+        string finalQuery =
+            "SELECT " +
+            " C.zone_name_eng AS zone, " +
+            " C.region_name   AS region, " +
+            " C.branch_name   AS branch, " +
+            " C.Sol_Id        AS solid, " +
+            " SUM(ISNULL(A.Count,0)) AS [count], " +
+            " SUM(B.Count)           AS fy_count " +
+            $"FROM {fromJoin} " +
+            $"WHERE {where} " +
+            "GROUP BY C.zone_name_eng, C.region_name, C.branch_name, C.Sol_Id " +
+            "ORDER BY C.zone_name_eng, C.region_name, C.branch_name";
+
+        _data = await ReportService.ExecuteRawQueryAsync(finalQuery);
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnExportInternal()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _cols, "BharatQR_Issuance");
+        await JS.InvokeVoidAsync("BlazorDownloadFile",
+            "BharatQR_Issuance.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private string FormatValue(Dictionary<string, object> row, ColumnConfig col)
+    {
+        if (!row.TryGetValue(col.PropertyName, out var val) || val == DBNull.Value || val == null) return "-";
+        if (col.IsNumeric && decimal.TryParse(val.ToString(), out var d)) return d.ToString(col.Format);
+        return val.ToString();
+    }
+}

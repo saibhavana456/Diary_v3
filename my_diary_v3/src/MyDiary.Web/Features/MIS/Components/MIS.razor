@@ -1,0 +1,452 @@
+@page "/MIS"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using MudBlazor
+@using MyDiary.Web.Features.MIS.Models
+@using MyDiary.Web.Features.MIS.Services
+@using MyDiary.Web.Core.Extensions
+@using System.Security.Claims
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject IMISService MISService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+
+<PageTitle>MIS — My Diary | Union Bank of India</PageTitle>
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #1E3A8A 0%, #EF4444 100%);
+    }
+
+    .active-tab-btn {
+        background: var(--primary-gradient) !important;
+        color: white !important;
+        box-shadow: 0 10px 26px rgba(30,58,138,0.45) !important;
+        border: none !important;
+    }
+
+    .tab-btn-base {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.08);
+        color: #1f2937;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: none !important;
+    }
+
+    .app-card-btn {
+        background: rgba(255, 255, 255, 0.95) !important;
+        border-radius: 20px !important;
+        padding: 0 !important;
+        border: 1px solid #e0e0e0 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+        transition: all 0.25s ease !important;
+        height: 100% !important;
+        display: block !important;
+        text-align: left !important;
+        text-transform: none !important;
+    }
+
+    /* Cards grid — 4 cards per row, responsive */
+    .mis-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 24px;
+    }
+
+    @@media (max-width: 1200px) {
+        .mis-cards-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+    }
+
+    @@media (max-width: 900px) {
+        .mis-cards-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @@media (max-width: 600px) {
+        .mis-cards-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+        .app-card-btn:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.15) !important;
+        }
+
+    .card-content-wrapper {
+        padding: 20px 22px;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+    }
+
+
+
+    .card-title {
+        font-weight: 700;
+        color: #111827;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        white-space: normal !important;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        font-size: 16px !important;
+    }
+
+
+
+    .icon-badge {
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 12px;
+        border: 1px solid #e2e8f0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 52px;
+        height: 52px;
+    }
+
+
+    /* Fixed GO button background style */
+
+    .go-btn-style {
+        background: var(--primary-gradient) !important;
+        color: white !important;
+        font-weight: 800 !important;
+        border-radius: 999px !important;
+        padding-left: 20px !important;
+        padding-right: 20px !important;
+        letter-spacing: 1px;
+    }
+
+    .my-3, .app-divider {
+        height: 1px;
+        background-color: #d1d5db !important;
+        margin: 10px 0 !important;
+    }
+
+    /* --- Sub-category underlined text links (matches Business page) --- */
+    .sub-tab-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        padding: 8px 16px 0;
+        border-bottom: 2px solid #e5e7eb;
+        align-items: flex-end;
+        margin-bottom: 12px;
+    }
+
+    .sub-tab {
+        padding: 6px 2px 8px;
+        font-size: 0.88rem;
+        font-weight: 500;
+        color: #6b7280;
+        cursor: pointer;
+        text-decoration: none;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s;
+        margin-bottom: -2px;
+        background: none;
+        border-top: none;
+        border-left: none;
+        border-right: none;
+    }
+
+        .sub-tab:hover { color: #1E3A8A; }
+
+        .sub-tab.active {
+            color: #111827;
+            font-weight: 700;
+            border-bottom-color: #1E3A8A;
+        }
+
+    /* Align toggle group height with Dense outlined MudTextField */
+/*     .mud-toggle-group {
+        height: var(--mud-input-dense-height, 40px) !important;
+    } */
+</style>
+
+<PageHeader PageKey="mis" Title="Management Information System (MIS)"
+            Crumbs="_crumbs"
+            Subtitle="Reports and dashboards for management oversight" />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Elevation="0" Style="background-color: #ffffff;">
+
+            @* Filter row: categories wrap freely on the left; search+toggle stay pinned top-right *@
+            <div style="display:grid; grid-template-columns:1fr auto; align-items:start;
+                        gap:8px; padding:16px; border-bottom:1px solid #f1f5f9;">
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var cat in _allCategories)
+                    {
+                        bool isActive = _selectedCategory == cat;
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                   Class="@(isActive ? "rounded-pill active-tab-btn px-4" : "rounded-pill tab-btn-base px-4")"
+                                   OnClick="() => OnCategoryChanged(cat)"
+                                   UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = isActive ? "true" : "false" })">@cat</MudButton>
+                    }
+                </div>
+                @* Search + toggle — always top-right, never wraps *@
+                <div class="d-flex align-center gap-2" style="white-space:nowrap;">
+                    <MudTextField @bind-Value="_searchQuery"
+                                  PlaceHolder="Search MIS"
+                                  Variant="Variant.Outlined"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Margin="Margin.Dense"
+                                  Style="max-width:350px; min-width:200px;"
+                                  Immediate="true" />
+                    <MudToggleGroup T="string" Value="@viewMode" ValueChanged="v => viewMode = v"
+                                    Delimiter="false" Color="Color.Info" Rounded="true"
+                                    aria-label="View mode">
+                        <MudToggleItem Value='@("List")' Icon="@Icons.Material.Filled.List" aria-label="List view" />
+                        <MudToggleItem Value='@("Grid")' Icon="@Icons.Material.Filled.GridView" aria-label="Grid view" />
+                    </MudToggleGroup>
+                </div>
+            </div>
+
+            @* Sub-category tabs — only shown when a category is selected *@
+            @if (_selectedCategory != "All" && _filteredSubCategories.Any())
+            {
+                <div class="px-4 py-2">
+                    <div class="sub-tab-row">
+                        @foreach (var sub in _filteredSubCategories)
+                        {
+                            bool isSubActive = _selectedSubCategory == sub;
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                       Class="@(isSubActive ? "active sub-tab" : "sub-tab")"
+                                       OnClick="() => OnSubCategoryChanged(sub)"
+                                       UserAttributes="@(new Dictionary<string, object>{ ["aria-current"] = isSubActive ? "true" : "false" })">@sub</MudButton>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="pa-4">
+                <div aria-live="polite" class="visually-hidden">
+                    @if (!_isLoading)
+                    {
+                        <span>Showing @_selectedCategory results. @FilteredItems.Count() items found. Content updated below the filter section.</span>
+                    }
+                </div>
+                @if (_isLoading)
+                {
+                    <div class="d-flex justify-center pa-10">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                        <MudText Class="ml-3">Loading MIS Data...</MudText>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(_loadError))
+                {
+                    <MudAlert Severity="Severity.Error" Class="mb-4">@_loadError</MudAlert>
+                }
+                else if (_isProcessing)
+                {
+                    <div class="d-flex justify-center pa-10">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                        <MudText Class="ml-3">Processing Secure Ticket...</MudText>
+                    </div>
+                }
+                else if (!FilteredItems.Any())
+                {
+                    <MudAlert Severity="Severity.Info" Class="mb-4">No MIS items found matching your criteria.</MudAlert>
+                }
+                else if (viewMode == "Grid")
+                {
+                    <div class="mis-cards-grid">
+                        @foreach (var item in FilteredItems)
+                        {
+                                <MudButton OnClick="() => RedirectToApp(item)"
+                                           Class="app-card-btn w-100"
+                                           Ripple="true"
+                                           aria-label="@($"Open {item.VERTICAL}")">
+                                    <div class="card-content-wrapper">
+                                        <div class="d-flex align-start gap-4">
+                                            <div class="icon-badge">
+                                                <MudIcon Icon="@GetIcon(item.VERTICAL)" Color="Color.Success" Style="font-size: 2rem;" />
+                                            </div>
+                                            <div class="flex-grow-1 text-container">
+                                                <div class="card-title">@item.VERTICAL</div>
+                                            </div>
+                                        </div>
+                                        <MudDivider Class="my-3" />
+                                        <div style="font-size:0.85rem; color:#444; flex-grow: 1;">
+                                            <div class="mb-1"><b>Category:</b> @item.CATEGORY</div>
+                                            <div><b>Sub Category:</b> @item.SUB_CATEGORY</div>
+                                        </div>
+                                        <div class="d-flex justify-end mt-4">
+                                            <MudButton Class="rounded-pill px-4 go-btn-style"
+                                                       EndIcon="@Icons.Material.Filled.ArrowRightAlt"
+                                                       OnClick="() => RedirectToApp(item)"
+                                                       tabindex="-1"
+                                                       aria-hidden="true">
+                                                GO
+                                            </MudButton>
+                                        </div>
+                                    </div>
+                                </MudButton>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <MudTable Items="FilteredItems.Select((x, i) => new { Item = x, SNo = i + 1 })" Dense="true" Hover="true" Striped="true" Bordered="true">
+                        <HeaderContent>
+                            <MudTh Style="background-color:#2a2f5b; color:white; width:70px;">S.No</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Vertical</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Category</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white;">Sub Category</MudTh>
+                            <MudTh Style="background-color:#2a2f5b; color:white; width:80px;">Action</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.SNo</MudTd>
+                            <MudTd><b>@context.Item.VERTICAL</b></MudTd>
+                            <MudTd>@context.Item.CATEGORY</MudTd>
+                                <MudTd>@context.Item.SUB_CATEGORY</MudTd>
+                                <MudTd>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="Color.Primary" OnClick="() => RedirectToApp(context.Item)" />
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly List<PageHeader.Crumb> _crumbs = new()
+    {
+        new("MIS"),
+    };
+
+    private List<MISModel> _masterData = new();
+    private List<string> _allCategories = new(), _filteredSubCategories = new();
+    private string _selectedCategory = "All", _selectedSubCategory = "All", _searchQuery = "", viewMode = "Grid";
+    private bool _isProcessing = false;
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    private IEnumerable<MISModel> FilteredItems => _masterData
+        .Where(x => (_selectedCategory == "All" || x.CATEGORY == _selectedCategory) &&
+                    (_selectedSubCategory == "All" || x.SUB_CATEGORY == _selectedSubCategory) &&
+                    (string.IsNullOrEmpty(_searchQuery) || x.VERTICAL.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                     x.CATEGORY.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                     x.SUB_CATEGORY.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppLogger.LogInfo("[MIS Page] Initializing — loading MIS data.");
+        try
+        {
+            _isLoading = true;
+            _loadError = null;
+            _masterData = await MISService.GetAllMISDataAsync();
+            AppLogger.LogInfo($"[MIS Page] Loaded {_masterData.Count} MIS items successfully.");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[MIS Page] Failed to load MIS data during initialization.");
+            _loadError = UserFacingError.Generic;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+        var dbCategories = _masterData.Select(x => x.CATEGORY).Distinct().OrderBy(x => x).ToList();
+        _allCategories = new List<string> { "All" };
+        _allCategories.AddRange(dbCategories);
+        AppLogger.LogInfo($"[MIS Page] Categories loaded: {string.Join(", ", _allCategories)}");
+        OnCategoryChanged("All");
+    }
+
+    private void OnCategoryChanged(string category)
+    {
+        AppLogger.LogInfo($"[MIS Page] Category changed to: {category}");
+        _selectedCategory = category;
+        _selectedSubCategory = "All";
+        if (category == "All") _filteredSubCategories = new List<string>();
+        else
+        {
+            var dbSubs = _masterData.Where(x => x.CATEGORY == category).Select(x => x.SUB_CATEGORY).Distinct().OrderBy(x => x).ToList();
+            _filteredSubCategories = new List<string> { "All" };
+            _filteredSubCategories.AddRange(dbSubs);
+            AppLogger.LogInfo($"[MIS Page] Sub-categories for '{category}': {string.Join(", ", _filteredSubCategories)}");
+        }
+    }
+
+    private void OnSubCategoryChanged(string sub)
+    {
+        AppLogger.LogInfo($"[MIS Page] Sub-category changed to: {sub}");
+        _selectedSubCategory = sub;
+    }
+
+    private async Task RedirectToApp(MISModel item)
+    {
+        AppLogger.LogInfo($"[MIS Page] RedirectToApp invoked for item: Vertical={item.VERTICAL}, URL={item.URL}");
+        try
+        {
+            _isProcessing = true;
+            StateHasChanged();
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                AppLogger.LogWarning("[MIS Page] RedirectToApp — userId is empty. User may not be authenticated.");
+                return;
+            }
+
+            AppLogger.LogInfo($"[MIS Page] RedirectToApp — requesting ticket for userId: {userId}");
+            var resp = await MISService.GetTicketAsync(userId);
+
+            if (resp != null && !string.IsNullOrEmpty(resp.ticket))
+            {
+                string finalUrl = $"{resp.hubUrl}{item.URL}?qlikTicket={resp.ticket}";
+
+                if (Uri.IsWellFormedUriString(finalUrl, UriKind.Absolute))
+                {
+                    AppLogger.LogInfo($"[MIS Page] RedirectToApp — opening URL for userId: {userId}, Vertical: {item.VERTICAL}");
+                    await JS.InvokeVoidAsync("open", finalUrl, "_blank", "noopener,noreferrer");
+                }
+                else
+                {
+                    AppLogger.LogWarning($"[MIS Page] RedirectToApp — constructed URL is not well-formed: {finalUrl}");
+                }
+            }
+            else
+            {
+                AppLogger.LogWarning($"[MIS Page] RedirectToApp — ticket service returned null or empty ticket for userId: {userId}");
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, $"[MIS Page] RedirectToApp — unhandled exception for item: {item.VERTICAL}");
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetIcon(string v) => v.ToUpper() switch
+    {
+        "RETAIL" => Icons.Material.Filled.Storefront,
+        "CORPORATE" => Icons.Material.Filled.Business,
+        "TREASURY" => Icons.Material.Filled.AccountBalance,
+        _ => Icons.Material.Filled.Dashboard
+    };
+}

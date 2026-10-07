@@ -1,0 +1,238 @@
+@using global::RequestPortal.Core.Abstractions
+@using global::RequestPortal.Core.Dtos
+@using global::RequestPortal.Web.Hubs
+@using global::MyDiary.Core.Services
+@implements IDisposable
+@inject global::RequestPortal.Core.Abstractions.INotificationApi NotificationApi
+@inject global::RequestPortal.Core.Abstractions.ICurrentUser CurrentUser
+@inject global::RequestPortal.Web.Hubs.NotificationStream Stream
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+
+@* In-app notification bell.
+   Reads the same store (RP_NOTIFICATION via INotificationApi, keyed by numeric
+   UserId) as the "/notifications" page and RequestPortal/Pages/Admin/Broadcast.razor
+   — the three surfaces must share one source of truth or they drift out of sync. *@
+<div style="position:relative; display:inline-block;">
+    <button type="button"
+            class="appbar-icon-btn"
+            aria-label="@($"Notifications — {_unread} unread")"
+            aria-haspopup="true"
+            aria-expanded="@(_panelOpen ? "true" : "false")"
+            @onclick="TogglePanelAsync"
+            @onclick:stopPropagation="true">
+        <MudBadge Content="@(_unread > 0 ? _unread.ToString() : "")"
+                  Color="MudBlazor.Color.Error"
+                  Overlap="true"
+                  Visible="@(_unread > 0)">
+            <MudIcon Icon="@Icons.Material.Filled.Notifications" Style="color:#2a2f5b; font-size:1.5rem;" />
+        </MudBadge>
+    </button>
+
+    @if (_panelOpen)
+    {
+        <div class="inline-popover-panel" role="dialog" aria-label="Notifications"
+             @onclick:stopPropagation="true"
+             style="position:absolute; top:100%; right:0; z-index:9999;
+                    background:white; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.18);
+                    min-width:340px; max-height:480px; overflow-y:auto; margin-top:8px;">
+
+            <div class="d-flex justify-space-between align-center px-4 py-3">
+                <MudText Typo="Typo.subtitle1" Class="fw-bold">Notifications</MudText>
+                @if (_unread > 0)
+                {
+                    <MudButton Variant="Variant.Text" Size="MudBlazor.Size.Small"
+                               OnClick="MarkAllReadAsync">Mark all read</MudButton>
+                }
+            </div>
+            <MudDivider />
+
+            @if (_loading)
+            {
+                <div class="pa-4 text-center">
+                    <MudProgressCircular Indeterminate="true" Size="MudBlazor.Size.Small" />
+                </div>
+            }
+            else if (_notifications.Count == 0)
+            {
+                <div class="pa-4 text-center">
+                    <MudText Typo="Typo.body2" Class="text-muted">No notifications</MudText>
+                </div>
+            }
+            else
+            {
+                @foreach (var n in _notifications)
+                {
+                    <div class="notif-item @(n.IsRead ? "" : "notif-unread")"
+                         @onclick="() => ReadNotifAsync(n)">
+                        <div class="d-flex align-start gap-3 px-4 py-3">
+                            <MudIcon Icon="@Icons.Material.Filled.Circle"
+                                     Style="@($"color:{(n.IsRead ? "#d1d5db" : "#1b4a98")}; font-size:0.6rem; margin-top:6px;")" />
+                            <div>
+                                <MudText Typo="Typo.body2" Class="fw-bold">@n.Title</MudText>
+                                @if (!string.IsNullOrWhiteSpace(n.Message))
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-muted">@n.Message</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Class="text-muted">
+                                    @AppTime.ToIndia(n.CreatedAt).ToString("dd MMM HH:mm")
+                                </MudText>
+                            </div>
+                        </div>
+                        <MudDivider />
+                    </div>
+                }
+            }
+
+            @* Footer — View all notifications (Project A) *@
+            <div class="notif-footer">
+                <MudButton Variant="Variant.Text" Size="MudBlazor.Size.Small" FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.OpenInNew"
+                           OnClick="ViewAll">View all notifications</MudButton>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .appbar-icon-btn { background:none; border:none; padding:8px; cursor:pointer; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:#2a2f5b; transition:background 0.15s; }
+    .appbar-icon-btn:hover { background-color:rgba(0,0,0,0.06); }
+    .appbar-icon-btn:focus-visible { outline:2px solid #1b4a98; outline-offset:2px; }
+    .notif-item { cursor:pointer; transition:background 0.15s; }
+    .notif-item:hover { background-color:#f5f7fd; }
+    .notif-unread { background-color:#eef2ff; }
+    .notif-footer { border-top:1px solid #eceef3; padding:4px; position:sticky; bottom:0; background:#fff; }
+</style>
+
+@code {
+
+    private bool   _panelOpen = false;
+    private bool   _loading   = false;
+    private int    _unread    = 0;
+    private long?  _userId;
+    private List<NotificationView> _notifications = new();
+    private IDisposable? _subscription;
+
+    /// <summary>
+    /// Allows the parent layout to close the notification panel
+    /// (e.g., when another menu is opened or clicking outside).
+    /// </summary>
+    public void ClosePanel()
+    {
+        if (_panelOpen)
+        {
+            _panelOpen = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Raised when the notification panel opens, so the parent can close other menus.
+    /// </summary>
+    [Parameter] public EventCallback OnOpened { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        _userId = Convert.ToInt32(auth.User.FindFirst("emplid")?.Value ?? "");
+        //_empCode = auth.User.FindFirst("emplid")?.Value ?? "";
+
+        //_userId = CurrentUser.UserId; //Convert.ToInt64(CurrentUser.EmpCode);
+
+    // Live push: whenever any producer (workflow events via NotificationService,
+        // or an admin Broadcast) creates a notification, InProcessNotificationPublisher
+        // forwards it here — no polling/refresh needed while the circuit is open.
+        _subscription = Stream.Subscribe(OnPushed);
+
+        // Close popup when user navigates away
+        Nav.LocationChanged += OnNavChanged;
+
+        if (_userId is { } uid)
+            _unread = await NotificationApi.GetUnreadCountAsync(uid);
+    }
+
+    private void OnNavChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (_panelOpen)
+        {
+            _panelOpen = false;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task TogglePanelAsync()
+    {
+        _panelOpen = !_panelOpen;
+        if (_panelOpen)
+        {
+            // Notify parent so it can close other menus (Quick Links, Profile, etc.)
+            await OnOpened.InvokeAsync();
+
+            if (_userId is { } uid)
+            {
+                _loading = true;
+                StateHasChanged();
+                _notifications = (await NotificationApi.ListForUserAsync(uid, 20, unreadOnly: false)).ToList();
+                _unread        = _notifications.Count(n => !n.IsRead);
+                _loading       = false;
+            }
+        }
+    }
+
+    private async Task ReadNotifAsync(NotificationView n)
+    {
+        if (_userId is not { } uid) return;
+
+        if (!n.IsRead)
+        {
+            await NotificationApi.MarkReadAsync(uid, n.Id);
+            n.ReadAt = DateTime.UtcNow;
+            _unread  = Math.Max(0, _unread - 1);
+        }
+
+        _panelOpen = false;
+        if (!string.IsNullOrWhiteSpace(n.RedirectUrl))
+            Nav.NavigateTo(n.RedirectUrl);
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        if (_userId is not { } uid) return;
+        await NotificationApi.MarkAllReadAsync(uid);
+        foreach (var n in _notifications) n.ReadAt = DateTime.UtcNow;
+        _unread = 0;
+    }
+
+    private void ViewAll()
+    {
+        _panelOpen = false;
+        Nav.NavigateTo("notifications");
+    }
+
+    private async void OnPushed(NotificationView n)
+    {
+        try
+        {
+            if (_userId is not { } uid || n.UserId != uid) return;
+            await InvokeAsync(() =>
+            {
+                _unread++;
+                if (_panelOpen) _notifications.Insert(0, n);
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { /* component disposed */ }
+        catch (Exception ex)
+        {
+            AppLogger.LogWarning($"NotificationBell: OnPushed failed — {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        _subscription?.Dispose();
+        Nav.LocationChanged -= OnNavChanged;
+    }
+}

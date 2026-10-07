@@ -1,0 +1,17 @@
+@inherits LayoutComponentBase
+
+@* Login uses its own minimal chrome. Theme/popover/snackbar providers are needed
+   here because MainLayout (which normally hosts them) is not active on /login. *@
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudSnackbarProvider />
+
+<div class="login-root">
+    @Body
+</div>
+
+<style>
+    .login-root {
+        min-height: 100vh;
+    }
+</style>

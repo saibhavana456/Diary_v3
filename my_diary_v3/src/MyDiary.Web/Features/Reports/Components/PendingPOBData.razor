@@ -1,0 +1,226 @@
+﻿@using MyDiary.Web.Core.Extensions
+@page "/reports/pendingpob"
+@using Microsoft.JSInterop
+@using MyDiary.Web.Features.Shared.Models
+@using MyDiary.Web.Features.Shared.Services
+@using MyDiary.Web.Features.Shared.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode())
+@inject DynamicReportService ReportService
+@inject IJSRuntime JS
+@inject MyDiary.Core.Abstractions.ICurrentUser ReportScopeUser
+
+
+<MyDiary.Web.Features.Shared.Components.ReportBreadcrumb />
+
+<PageTitle>Pending POB Data — My Diary</PageTitle>
+
+<DynamicDashboard Config="_activeConfig"
+                  Data="_data"
+                  IsLoading="_loading"
+                  AsOnDateLabel="@_asOnDateLabel"
+                  SelectedZone="@_selectedZone"
+                  SelectedRegion="@_selectedRegion"
+                  SelectedBranch="@_selectedBranch"
+                  OnFilterChanged="HandleFilterChanged"
+                  OnExportRequested="HandleExport" />
+
+@code {
+    [SupplyParameterFromQuery][Parameter] public string? Title { get; set; }
+
+    private List<Dictionary<string, object>> _data = new();
+    private bool _loading = true;
+    private string _asOnDateLabel = string.Empty;
+
+    // PendingPOBData.aspx inserts only "all" items (no "1" / summary mode).
+    // Zone also has a special "CENTRAL OFFICE" value "00000".
+    // Default everything to "all" to match the WebForms UX.
+    private string _selectedZone = "all";
+    private string _selectedRegion = "all";
+    private string _selectedBranch = "all";
+
+    private ReportConfig _activeConfig = new();
+
+    // Privilege context (equivalent to Session["..."] in WebForms)
+    private string _userPrivilege = "CO";
+    private string _userZoneSolid = "00000", _userRegionSolid = "00000", _userBranchSolid = "00000";
+
+    // Fixed columns based on get_pob_data and POBData schema
+    // (POBData + Org_* + Resp_* computed by the SP)
+    private readonly List<ColumnConfig> _cols = new() {
+        // Origin side
+        new ColumnConfig { Header = "Origin Zone",    PropertyName = "Org_Zonename",   Width = "10%" },
+        new ColumnConfig { Header = "Origin Region",  PropertyName = "Org_RegionName", Width = "12%" },
+        new ColumnConfig { Header = "Origin Branch",  PropertyName = "Org_BranchName", Width = "16%" },
+        new ColumnConfig { Header = "From SOL",       PropertyName = "FROM_SOL",       Width = "8%" },
+        // Response side
+        new ColumnConfig { Header = "Resp Zone",      PropertyName = "Resp_Zonename",  Width = "10%" },
+        new ColumnConfig { Header = "Resp Region",    PropertyName = "Resp_Regionname",Width = "12%" },
+        new ColumnConfig { Header = "Resp Branch",    PropertyName = "Resp_BranchName",Width = "16%" },
+        new ColumnConfig { Header = "To SOL",         PropertyName = "TO_SOL",         Width = "8%" },
+        // Core POB fields
+        new ColumnConfig { Header = "A/c No",         PropertyName = "ACT_NO",         Width = "10%" },
+        new ColumnConfig { Header = "A/c Name",       PropertyName = "ACT_NAME",       Width = "16%" },
+        new ColumnConfig { Header = "Tran Date",      PropertyName = "TRAN_DATE",      IsDate = true, Width = "9%" },
+        new ColumnConfig { Header = "Particulars",    PropertyName = "TRAN_PARTICULAR",Width = "20%" },
+        new ColumnConfig { Header = "DD Number",      PropertyName = "DD_NUM",         Width = "10%" },
+        new ColumnConfig { Header = "Balance",        PropertyName = "BALANCE",        IsNumeric = true, Format = "N2", Width = "10%" },
+        new ColumnConfig { Header = "Total Outstanding", PropertyName = "TOT_OUTSTANDING", IsNumeric = true, Format = "N2", Width = "12%" },
+        new ColumnConfig { Header = "Pending Days",   PropertyName = "OFFSET_PENDING_TOTALDAYS", IsNumeric = true, Format = "N0", Width = "8%" },
+        // Last update can be shown or hidden; keeping hidden but usable for sorting if needed
+        // new ColumnConfig { Header = "Last Update", PropertyName = "LastUpdateDate", IsDate = true, Width = "10%" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // RBAC: scope this report to the logged-in user (fail-closed to BRANCH for unknown privilege).
+        {
+            var __scope = MyDiary.Web.Features.Reports.Services.ReportUserScope.Resolve(ReportScopeUser);
+            _userPrivilege = __scope.Privilege;
+            _userZoneSolid = __scope.ZoneSolid;
+            _userRegionSolid = __scope.RegionSolid;
+            _userBranchSolid = __scope.BranchSolid;
+        }
+        _activeConfig.Title = Title ?? "Pending POB Data";
+
+        // If you surface claims, map them here:
+        // var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        // var user = auth.User;
+        // if (user.Identity?.IsAuthenticated == true)
+        // {
+        //     _userPrivilege   = user.FindFirst("privilege")?.Value?.ToUpper() ?? "CO";
+        //     _userZoneSolid   = user.FindFirst("zone_solid")?.Value ?? "00000";
+        //     _userRegionSolid = user.FindFirst("region_solid")?.Value ?? "00000";
+        //     _userBranchSolid = user.FindFirst("branch_solid")?.Value ?? "00000";
+        // }
+
+        await LoadReport();
+    }
+
+    private async Task HandleFilterChanged((string zone, string region, string branch) f)
+    {
+        _selectedZone = f.zone;
+        _selectedRegion = f.region;
+        _selectedBranch = f.branch;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Decide SP parameters based on WebForms getdata()/BindGrid logic:
+        // Zone=all => ("co","")
+        // else Region=all => ("zone", zone)
+        // else Branch=all => ("region", region)
+        // else => ("branch", branch)
+        // Privilege scopes (ZONE/REGION/BRANCH) constrain choices similarly.
+        var (procType, procCode) = BuildProcParams();  // mirrors PendingPOBData.aspx.cs
+                                                       //                                             // (types: "co"|"zone"|"region"|"branch") [1](https://unionbanks-my.sharepoint.com/personal/777956_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/PendingPOBData.aspx.cs)
+
+        // Execute SP (prefer parameterized method if available)
+        // Example: await ReportService.ExecuteStoredProcAsync("dbo.get_pob_data", new { @code = procCode, @type = procType });
+        // Data query and as-on-date are independent - run in parallel
+        var dataTask = ReportService.ExecuteRawQueryAsync(
+            $"EXEC dbo.get_pob_data @code = '{procCode}', @type = '{procType}'"
+        );
+        var dateTask = ReportService.GetAsOnDateAsync("POBData");
+
+        await Task.WhenAll(dataTask, dateTask);
+        _data = dataTask.Result;
+
+        _activeConfig.Columns = _cols;
+
+        string date;
+        try
+        {
+            date = dateTask.Result;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.LogError(ex, "[PendingPOBData] Unhandled error: " + ex.Message);
+            date = AppTime.Now.ToString("dd/MM/yyyy");
+        }
+        _asOnDateLabel = $"Data As On - {date}";
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private (string type, string code) BuildProcParams()
+    {
+        // Start with defaults (CO can see all)
+        string type = "co";
+        string code = "";
+
+        switch (_userPrivilege.ToUpperInvariant())
+        {
+            case "BRANCH":
+                // WebForms hides filters for BRANCH user and binds with their SOL directly. [1](https://unionbanks-my.sharepoint.com/personal/777956_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/PendingPOBData.aspx.cs)
+                type = "branch"; code = _userBranchSolid;
+                break;
+
+            case "REGION":
+                // Region users can optionally pick a branch; otherwise region-level. [1](https://unionbanks-my.sharepoint.com/personal/777956_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/PendingPOBData.aspx.cs)
+                if (_selectedBranch != "all")
+                {
+                    type = "branch"; code = _selectedBranch;
+                }
+                else
+                {
+                    type = "region"; code = _userRegionSolid;
+                }
+                break;
+
+            case "ZONE":
+                // Zone users: prefer most specific selection. [1](https://unionbanks-my.sharepoint.com/personal/777956_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/PendingPOBData.aspx.cs)
+                if (_selectedBranch != "all")
+                {
+                    type = "branch"; code = _selectedBranch;
+                }
+                else if (_selectedRegion != "all")
+                {
+                    type = "region"; code = _selectedRegion;
+                }
+                else
+                {
+                    type = "zone"; code = _userZoneSolid; // includes "00000" if user is CO selection later
+                }
+                break;
+
+            case "CO":
+            default:
+                // Matches your getdata(): zone→region→branch precedence. [1](https://unionbanks-my.sharepoint.com/personal/777956_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/PendingPOBData.aspx.cs)
+                if (_selectedZone == "all")
+                {
+                    type = "co"; code = "";
+                }
+                else if (_selectedRegion == "all")
+                {
+                    type = "zone"; code = _selectedZone;   // "00000" (CENTRAL OFFICE) handled here too. [1](https://unionbanks-my.sharepoint.com/personal/777956_unionbankofindia_bank_in/Documents/Microsoft%20Copilot%20Chat%20Files/PendingPOBData.aspx.cs)
+                }
+                else if (_selectedBranch == "all")
+                {
+                    type = "region"; code = _selectedRegion;
+                }
+                else
+                {
+                    type = "branch"; code = _selectedBranch;
+                }
+                break;
+        }
+
+        return (type, code);
+    }
+
+    private async Task HandleExport()
+    {
+        var bytes = ReportService.ExportToExcel(_data, _activeConfig.Columns, "PendingPOBData");
+        await JS.InvokeVoidAsync(
+            "BlazorDownloadFile",
+            "PendingPOBData.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+}
